@@ -8,10 +8,15 @@
 #include <Windows.h>
 ////#define MP_PLATFORM_WIN32	1
 //#define MP_STDCALL		__stdcall
-//#else
+#else
 //#define MP_STDCALL
+#define DECLSPEC_NOVTABLE
 #endif
 #define MP_STDCALL
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+
 
 // MODIFICATION FOR GMPI_UI !!!
 namespace gmpi
@@ -92,5 +97,7 @@ static const MpGuid MP_IID_RETURNSTRING =
 { 0xab8ffb21, 0x44ff, 0x42b7,{ 0x88, 0x85, 0x29, 0x43, 0x13, 0x99, 0xe7, 0xe4 } };
 
 } // namespace gmpi
+
+#pragma GCC diagnostic pop
 
 #endif //include

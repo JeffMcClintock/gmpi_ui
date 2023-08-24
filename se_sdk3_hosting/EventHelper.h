@@ -9,7 +9,7 @@
 #ifndef EventHelper_h
 #define EventHelper_h
 
-#include "modules/se_sdk3_hosting/CocoaNamespaceMacros.h"
+#include "./CocoaNamespaceMacros.h"
 
 //#define SYNTHEDIT_EVENT_HELPER_CLASSNAME SE_PASTE_MACRO4(EventHelper,SE_MAJOR_VERSION ,SE_MINOR_VERSION , SE_BUILD_NUMBER)
 #define SYNTHEDIT_EVENT_HELPER_CLASSNAME SE_MAKE_CLASSNAME(CocoaEventHelper)

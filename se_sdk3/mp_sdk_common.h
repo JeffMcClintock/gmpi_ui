@@ -26,6 +26,9 @@
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+
 #ifndef GMPI_SDK_REVISION
 #define	GMPI_SDK_REVISION 30800 // 3.08
 #endif
@@ -49,7 +52,7 @@
 //#include <string.h> // for memcpy()
 #include <string>	// for std::wstring
 #include <stdint.h>
-#include "gmpi_common.h"
+#include "../gmpi_common.h"
 
 //==== Globaly Unique Identifiers =====
 #ifndef MP_SDK_GUID_H_INCLUDED
@@ -1165,6 +1168,7 @@ private:
 	char* data_ = {};
 };
 
+#if 0
 template <typename T>
 class MpTypeTraits
 {
@@ -1309,7 +1313,7 @@ inline void VariableFromRaw<std::string>( int size, const void* data, std::strin
 {
 	returnValue.assign( (const char*)data, (size_t) size );
 }
-
+#endif
 // Specializations of above for various types.
 
 #endif	// MP_SDK_PIN_TYPES_H_INCLUDED
@@ -1643,4 +1647,6 @@ namespace GmpiSdk
 	};
 }
 
-#endif
+#pragma GCC diagnostic pop
+
+#endif // include guard

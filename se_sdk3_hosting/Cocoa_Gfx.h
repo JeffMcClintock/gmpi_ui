@@ -9,8 +9,8 @@
 #include "../se_sdk3/Drawing.h"
 #include "../shared/xp_simd.h"
 #include "./Gfx_base.h"
-#include "BundleInfo.h"
-#include "mfc_emulation.h"
+// #include "BundleInfo.h"
+//#include "mfc_emulation.h"
 
 /* TODO
 
@@ -436,7 +436,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
                 }
                 catch(...)
                 {
-                    _RPT0(0, "NSFontManager threw!");
+                    //_RPT0(0, "NSFontManager threw!");
                 } // Logic Pro may throw an Memory exception here. Don't know why. Maybe due to it using a AU2 wrapper.
 
                 for( NSString* familyName in fontFamilies)
@@ -886,7 +886,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 				, fontStretch(pfontStretch)
 				, fontSize(pfontSize)
 			{
-                _RPT1(0, "TextFormat() %d\n", this);
+                //_RPT1(0, "TextFormat() %d\n", this);
          
 				fontFamilyName = fontSubstitute(pfontFamilyName);
                 
@@ -941,7 +941,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
                 }
                 catch(...)
                 {
-                    _RPT0(0, "NSFontManager threw!");
+                    //_RPT0(0, "NSFontManager threw!");
                 } // Logic Pro may throw an Memory exception here. Don't know why. Maybe due to it using a AU2 wrapper.
                 
                 // fallback to system font if nesc.
@@ -982,7 +982,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
             
             ~TextFormat()
             {
-                   _RPT1(0, "~TextFormat() %d\n", this);
+                   //_RPT1(0, "~TextFormat() %d\n", this);
 
 #if !__has_feature(objc_arc)
 //                [native2 release];
@@ -1148,6 +1148,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
                 // is this an in-memory resource?
                 std::string uriString(utf8Uri);
                 std::string binaryData;
+#if 0 // TODO !!!
                 if (uriString.find(BundleInfo::resourceTypeScheme) == 0)
                 {
 //                    _RPT1(0, "Bitmap() A1: %d\n", this);
@@ -1158,6 +1159,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
                                                                           length:binaryData.size()]];
                 }
                 else
+#endif
                 {
 //                    _RPT1(0, "Bitmap() A2: %d\n", this);
                     

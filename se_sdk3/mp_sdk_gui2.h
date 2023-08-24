@@ -36,6 +36,9 @@
 #pragma warning(disable : 4100) // "unreferenced formal parameter"
 #endif
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+
 //===== mp_sdk_gui2.h =====
 #ifndef GMPI_SDK_GUI2_H_INCLUDED
 #define GMPI_SDK_GUI2_H_INCLUDED
@@ -600,5 +603,7 @@ namespace GmpiSdk
 
 } //namespace
 #endif
+
+#pragma GCC diagnostic pop
 
 #endif // MP_GFX_SE_H_INCLUDED INCLUDED

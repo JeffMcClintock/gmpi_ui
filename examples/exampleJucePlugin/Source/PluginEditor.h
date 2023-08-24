@@ -10,25 +10,22 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "../../../se_sdk3/mp_sdk_gui2.h"
 
 //==============================================================================
 /**
 */
 
-#define USE_JUCE_RENDERER 1
-
-#ifdef _WIN32
-// Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
-#include "backends/DrawingFrame_win32.h"
+#define USE_JUCE_RENDERER 0
 
 struct BouncingRectangles
 {
     struct Sprite
-	{
+    {
         juce::Rectangle<int> pos;
-		juce::Point<int> vel;
-		juce::Colour colour;
-	};
+        juce::Point<int> vel;
+        juce::Colour colour;
+    };
 
     std::vector< Sprite > rects;
 
@@ -48,32 +45,36 @@ struct BouncingRectangles
     void step()
     {
         for (auto& s : rects)
-		{
-			s.pos += s.vel;
+        {
+            s.pos += s.vel;
 
-			if (s.pos.getX() < 0)
-			{
-				s.pos.setX(0);
-				s.vel.setX(-s.vel.getX());
-			}
-			if (s.pos.getY() < 0)
-			{
-				s.pos.setY(0);
-				s.vel.setY(-s.vel.getY());
-			}
-			if (s.pos.getRight() > 400)
-			{
-				s.pos.setX(400 - s.pos.getWidth());
-				s.vel.setX(-s.vel.getX());
-			}
-			if (s.pos.getBottom() > 300)
-			{
-				s.pos.setY(300 - s.pos.getHeight());
-				s.vel.setY(-s.vel.getY());
-			}
-		}
-	}
+            if (s.pos.getX() < 0)
+            {
+                s.pos.setX(0);
+                s.vel.setX(-s.vel.getX());
+            }
+            if (s.pos.getY() < 0)
+            {
+                s.pos.setY(0);
+                s.vel.setY(-s.vel.getY());
+            }
+            if (s.pos.getRight() > 400)
+            {
+                s.pos.setX(400 - s.pos.getWidth());
+                s.vel.setX(-s.vel.getX());
+            }
+            if (s.pos.getBottom() > 300)
+            {
+                s.pos.setY(300 - s.pos.getHeight());
+                s.vel.setY(-s.vel.getY());
+            }
+        }
+    }
 };
+
+#ifdef _WIN32
+// Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
+#include "backends/DrawingFrame_win32.h"
 
 
 class JuceDrawingFrame : public GmpiGuiHosting::DrawingFrameBase, public juce::HWNDComponent
@@ -94,18 +95,13 @@ class JuceDrawingFrame : public juce::NSViewComponent
 {
 public:
     ~JuceDrawingFrame();
-    void open(class IGuiHost2* controller, int width, int height);
+    void open(gmpi_gui_api::IMpGraphics3* client, int width, int height);
 };
 
 #endif
 
-// TODO?
-/*
-struct Drawable // IUnknown etc
-{
-    virtual int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) = 0;
-};
-*/
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
 class GmpiCanvas : public gmpi_gui_api::IMpGraphics3
 {
@@ -118,19 +114,19 @@ public:
 	}
 
     // IMpGraphics
-    int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) {return gmpi::MP_OK;}
-    int32_t MP_STDCALL arrange(GmpiDrawing_API::MP1_RECT finalRect) {return gmpi::MP_OK;} // TODO const, and reference maybe?
-    int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext);
-    int32_t MP_STDCALL onPointerDown(int32_t flags, GmpiDrawing_API::MP1_POINT point) {return gmpi::MP_OK;}
-    int32_t MP_STDCALL onPointerMove(int32_t flags, GmpiDrawing_API::MP1_POINT point) {return gmpi::MP_OK;}
-    int32_t MP_STDCALL onPointerUp(int32_t flags, GmpiDrawing_API::MP1_POINT point) {return gmpi::MP_OK;}    // IMpGraphics2
-    int32_t MP_STDCALL hitTest(GmpiDrawing_API::MP1_POINT point) {return gmpi::MP_OK;} // TODO!!! include mouse flags (for Patch Cables)
-    int32_t MP_STDCALL getToolTip(GmpiDrawing_API::MP1_POINT point, gmpi::IString* returnString) {return gmpi::MP_OK;}
+    int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override {return gmpi::MP_OK;}
+    int32_t MP_STDCALL arrange(GmpiDrawing_API::MP1_RECT finalRect) override {return gmpi::MP_OK;} // TODO const, and reference maybe?
+    int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
+    int32_t MP_STDCALL onPointerDown(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
+    int32_t MP_STDCALL onPointerMove(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
+    int32_t MP_STDCALL onPointerUp(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}    // IMpGraphics2
+    int32_t MP_STDCALL hitTest(GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;} // TODO!!! include mouse flags (for Patch Cables)
+    int32_t MP_STDCALL getToolTip(GmpiDrawing_API::MP1_POINT point, gmpi::IString* returnString) override {return gmpi::MP_OK;}
 
     // IMpGraphics3
-    int32_t MP_STDCALL hitTest2(int32_t flags, GmpiDrawing_API::MP1_POINT point) {return gmpi::MP_OK;}
-    int32_t MP_STDCALL onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing_API::MP1_POINT point) {return gmpi::MP_OK;}
-    int32_t MP_STDCALL setHover(bool isMouseOverMe) {return gmpi::MP_OK;}
+    int32_t MP_STDCALL hitTest2(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
+    int32_t MP_STDCALL onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
+    int32_t MP_STDCALL setHover(bool isMouseOverMe) override {return gmpi::MP_OK;}
 
     // IMpUnknown
     int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
@@ -162,6 +158,8 @@ public:
     }
     GMPI_REFCOUNT;
 };
+
+#pragma GCC diagnostic pop
 
 class NewProjectAudioProcessorEditor : public juce::AudioProcessorEditor, juce::Timer
 {

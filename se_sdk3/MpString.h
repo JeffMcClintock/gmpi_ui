@@ -35,7 +35,7 @@ using namespace gmpi_sdk;
 
 #include <string>
 #include "mp_sdk_common.h"
-#include "RefCountMacros.h"
+#include "../RefCountMacros.h"
 
 namespace gmpi_sdk
 {

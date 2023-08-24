@@ -4,9 +4,9 @@
 #include "CocoaNamespaceMacros.h"
 
 #include "./CocoaGuiHost.h"
-#import "./ContainerView.h"
-#include "./JsonDocPresenter.h"
-#include "BundleInfo.h"
+//#import "./ContainerView.h"
+//#include "./JsonDocPresenter.h"
+//#include "BundleInfo.h"
 
 #if defined(SE_TARGET_AU)
 #include "../../../se_au/SEInstrumentBase.h"
@@ -20,10 +20,11 @@ namespace Json
     class Value;
 }
 
-class DrawingFrameCocoa : public gmpi_gui::IMpGraphicsHost, public gmpi::IMpUserInterfaceHost2, public GmpiGuiHosting::PlatformTextEntryObserver
+class DrawingFrameCocoa : public gmpi_gui::IMpGraphicsHost, /*public gmpi::IMpUserInterfaceHost2,*/ public GmpiGuiHosting::PlatformTextEntryObserver
 {
-    gmpi_sdk::mp_shared_ptr<SE2::ContainerView> containerView;
-    IGuiHost2* controller;
+//    gmpi_sdk::mp_shared_ptr<SE2::ContainerView> containerView;
+//    IGuiHost2* controller;
+    gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpGraphics3> client;
     int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
     
@@ -31,6 +32,7 @@ public:
     gmpi::cocoa::DrawingFactory drawingFactory;
     NSView* view;
 
+#if 0
     void Init(SE2::IPresenter* presenter, class IGuiHost2* hostPatchManager, int pviewType)
     {
         controller = hostPatchManager;
@@ -49,10 +51,16 @@ public:
         };
 #endif
      }
+#endif
+    
+    void Init(gmpi_gui_api::IMpGraphics3* pclient)
+    {
+        client = pclient;
+    }
      
      void DeInit()
      {
-        containerView = {};
+         client = {};
      }
 
     ~DrawingFrameCocoa()
@@ -68,10 +76,12 @@ public:
 // controller->OnDrawingFrameDeleted(); // nulls it's 'OnUnloadPlugin' callback
     }
 
+#if 0
     inline SE2::ContainerView* getView()
     {
         return containerView.get();
     }
+#endif
     
     void OnRender(NSView* frame, GmpiDrawing_API::MP1_RECT* dirtyRect)
     {
@@ -79,11 +89,11 @@ public:
         
         context.PushAxisAlignedClip(dirtyRect);
         
-        containerView->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
+        client->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
         
         context.PopAxisAlignedClip();
     }
-    
+#if 0
     // Inherited via IMpUserInterfaceHost2
     virtual int32_t MP_STDCALL pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice = 0) override
     {
@@ -131,7 +141,8 @@ public:
         //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-
+#endif
+    
     // IMpGraphicsHost
     virtual void MP_STDCALL invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRect) override
     {
@@ -194,6 +205,7 @@ public:
     // IUnknown methods
     virtual int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
     {
+#if 0
         if (iid == gmpi::MP_IID_UI_HOST2)
         {
             // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
@@ -201,7 +213,7 @@ public:
             addRef();
             return gmpi::MP_OK;
         }
-        
+#endif
         if (iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
         {
             // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
@@ -235,7 +247,7 @@ class whatever
 public:
     ~whatever()
     {
-        _RPT0(0, "~whatever()\n");
+//        _RPT0(0, "~whatever()\n");
     }
 };
 
@@ -255,6 +267,7 @@ public:
 }
 
 - (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size;
+- (id) initWithClient: (class IMpGraphics3*) _client preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
 
@@ -272,10 +285,6 @@ public:
     
     whatever testIfItGetsDeleted;
 }
-
-// - (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size;
-//- (void)drawRect:(NSRect)dirtyRect;
-//- (void)onTimer: (NSTimer*) t;
 
 @end
 
@@ -311,8 +320,6 @@ public:
         return nil;
     
     return [[[SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME alloc] initWithController:dynamic_cast<IGuiHost2*>(editController) preferredSize:inPreferredSize] autorelease];
-
-//    return [[[SeTestView alloc] initWithController:dynamic_cast<IGuiHost2*>(editController) preferredSize:inPreferredSize] autorelease];
 }
 
 @end
@@ -323,7 +330,7 @@ public:
 
 - (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size_unused
 {
-    _RPT0(0, "SeTestView-initWithController()\n");
+//    _RPT0(0, "SeTestView-initWithController()\n");
     self = [super initWithFrame: NSMakeRect (0, 0, 200, 200)];
     
     if (!self)
@@ -339,7 +346,7 @@ public:
     auto window = [self window];
     if(window)
     {
-        _RPT0(0, "viewDidMoveToWindow. Adding trackingArea\n");
+//        _RPT0(0, "viewDidMoveToWindow. Adding trackingArea\n");
    
         // drawingFrame.drawingFactory.setBestColorSpace(window);
         trackingArea = [NSTrackingArea alloc];
@@ -355,7 +362,7 @@ public:
     // Editor is closing
     if( trackingArea )
     {
-        _RPT0(0, "removeFromSuperview. Removing trackingArea\n");
+//        _RPT0(0, "removeFromSuperview. Removing trackingArea\n");
         [trackingArea release];
         trackingArea = nil;
     }
@@ -377,6 +384,7 @@ public:
 //--------------------------------------------------------------------------------------------------------------
 - (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size_unused
 {
+#if 0
     Json::Value document_json;
     Json::Reader r;
     r.parse(BundleInfo::instance()->getResource("gui.se.json"), document_json);
@@ -399,7 +407,28 @@ public:
         timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
     }
     return self;
+#else
+    return nil;
+#endif
 }
+
+- (id) initWithClient: (class IMpGraphics3*) _client preferredSize: (NSSize) size
+{
+    self = [super initWithFrame: NSMakeRect (0, 0, size.width, size.height)];
+    if (self)
+    {
+        self->trackingArea = [NSTrackingArea alloc];
+        [self->trackingArea initWithRect:NSZeroRect options:(NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect | NSTrackingMouseMoved| NSTrackingActiveAlways) owner:self userInfo:nil];
+        [self addTrackingArea:self->trackingArea ];
+        
+        drawingFrame.view = self;
+        drawingFrame.Init((gmpi_gui_api::IMpGraphics3*) _client);
+        
+        timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
+    }
+    return self;
+}
+
 
 // Opt-in to notification that mouse entered window.
 - (void)viewDidMoveToWindow {
@@ -619,28 +648,6 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 - (void)mouseDown:(NSEvent *)theEvent
 {
-//test    [[self window] setColorSpace:[NSColorSpace genericRGBColorSpace]];
-    // Try to close text edit
-        /*
-    if( [[[self window] firstResponder]isKindOfClass:[NSTextView class]])
-    {
-        auto textview = (NSTextView*) [[self window] firstResponder];
- //       [[textview delegate] textView:<#(nonnull NSTextView *)#> doCommandBySelector:<#(nonnull SEL)#>];
-    }
-
-        
-        drawingFrame.removeTextEdit();
-/ *
-        auto textview = (NSTextView*) [[self window] firstResponder];
-        auto del = textview.delegate;
-        auto notification = [NSNotification alloc];// notification;
-        [del textDidEndEditing:notification];
-  //      [textview.delegate textDidEndEditing:textview];
-//        [[(NSTextView*)[[self window] firstResponder] delegate] textDidEndEditing:<#(nonnull NSNotification *)#>];
-//[[self window] performSelector:@selector(resignFirstResponder:) withObject:myTextField afterDelay:0.0];
- * /
-    }
- */
     drawingFrame.removeTextEdit();
     
     [[self window] makeFirstResponder:self]; // take focus off any text-edit. Works but does not dimiss it.
@@ -655,7 +662,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     ApplyKeyModifiers(flags, theEvent);
     
-    drawingFrame.getView()->onPointerDown(flags, p);
+ // TODO   drawingFrame.getView()->onPointerDown(flags, p);
     
  // no help to edit box   [super mouseDown:theEvent];
 }
@@ -673,7 +680,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     ApplyKeyModifiers(flags, theEvent);
     
-    drawingFrame.getView()->onPointerDown(flags, p);
+    // TODO     drawingFrame.getView()->onPointerDown(flags, p);
 }
 
 - (void)rightMouseUp:(NSEvent *)theEvent
@@ -687,7 +694,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     ApplyKeyModifiers(flags, theEvent);
     
-    drawingFrame.getView()->onPointerUp(flags, p);
+    // TODO     drawingFrame.getView()->onPointerUp(flags, p);
 }
 
 - (void)mouseUp:(NSEvent *)theEvent {
@@ -699,7 +706,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     ApplyKeyModifiers(flags, theEvent);
     
-    drawingFrame.getView()->onPointerUp(flags, p);
+    // TODO     drawingFrame.getView()->onPointerUp(flags, p);
 }
 
 - (void)mouseDragged:(NSEvent *)theEvent {
@@ -714,7 +721,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     ApplyKeyModifiers(flags, theEvent);
     
-    drawingFrame.getView()->onPointerMove(flags, mousePos);
+    // TODO     drawingFrame.getView()->onPointerMove(flags, mousePos);
 }
 
 - (void)scrollWheel:(NSEvent *)theEvent {
@@ -733,12 +740,12 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     constexpr float wheelConversion = 120.0f; // on windows the wheel scrolls 120 per knotch
     if(deltaY)
     {
-        drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaY, mousePos);
+        // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaY, mousePos);
     }
     if(deltaX)
     {
         flags |= gmpi_gui_api::GG_POINTER_SCROLL_HORIZ;
-        drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaX, mousePos);
+        // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaX, mousePos);
     }
 }
 
@@ -760,7 +767,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     ApplyKeyModifiers(flags, theEvent);
     
-    drawingFrame.getView()->onPointerMove(flags, mousePos);
+    // TODO     drawingFrame.getView()->onPointerMove(flags, mousePos);
 }
 
 - (void)mouseExited:(NSEvent *)theEvent {
@@ -771,7 +778,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     if(toolTipTimer-- == 0 && !toolTipShown)
     {
         gmpi_sdk::MpString text;
-        drawingFrame.getView()->getToolTip(mousePos, &text);
+        // TODO         drawingFrame.getView()->getToolTip(mousePos, &text);
         
         if(text.str().empty())
         {
@@ -817,6 +824,13 @@ void* createNativeView(void* parent, class IGuiHost2* controller, int width, int
     [parentView addSubview:native];
     
     return (void*) native;
+}
+
+void* createNativeView(class IMpGraphics3* client, int width, int height)
+{
+    NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
+    
+    return (void*) [[SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME alloc] initWithClient:client preferredSize:inPreferredSize];
 }
 
 void onCloseNativeView(void* ptr)

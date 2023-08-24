@@ -33,7 +33,12 @@ void NewProjectAudioProcessorEditor::timerCallback()
 #if USE_JUCE_RENDERER
 	repaint();
 #else
+#ifdef _WIN32
 	drawingframe.invalidateRect(nullptr);
+#else
+//um    [drawingframe.getView() 
+#endif
+    
 #endif
 }
 
@@ -89,6 +94,8 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 	if (USE_JUCE_RENDERER)
 		return;
 
+    auto client = new GmpiCanvas(model);
+
 #ifdef _WIN32
 	if (auto hwnd = (HWND)getWindowHandle(); hwnd && !drawingframe.getHWND())
 	{
@@ -106,7 +113,6 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 			//		GmpiDrawing::Size(static_cast<float>(drawingframe.viewDimensions), static_cast<float>(drawingframe.viewDimensions))
 			//	);
 
-			auto client = new GmpiCanvas(model);
 
 			drawingframe.AddView(client);// cv);
 
@@ -129,7 +135,7 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 	if (!drawingframe.getView())
 	{
 		const auto r = getBounds();
-		drawingframe.open(&controller, r.getWidth(), r.getHeight());
+		drawingframe.open(client, r.getWidth(), r.getHeight());
 	}
 #endif
 }
@@ -141,7 +147,7 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 
 // without including objective-C headers, we need to create an NSView.
 // forward declare function here to return the view, using void* as return type.
-void* createNativeView(class IGuiHost2* controller, int width, int height);
+void* createNativeView(class IMpGraphics3* client, int width, int height);
 void onCloseNativeView(void* ptr);
 
 #endif
@@ -408,9 +414,9 @@ void JuceDrawingFrame::open(void* parentWnd, int width, int height)
 #else
 
 // macOS
-void JuceDrawingFrame::open(class IGuiHost2* controller, int width, int height)
+void JuceDrawingFrame::open(gmpi_gui_api::IMpGraphics3* client, int width, int height)
 {
-	auto nsView = createNativeView(controller, width, height); // !!!probly need to pass controller
+	auto nsView = createNativeView((class IMpGraphics3*) client, width, height); // !!!probly need to pass controller
 
 	setView(nsView);
 	//    auto y = CFGetRetainCount(nsView);

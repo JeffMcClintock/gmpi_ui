@@ -2,10 +2,11 @@
 
 <JUCERPROJECT id="nSyPkK" name="GMPI_Drawing" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
-              headerPath="C:\SE\gmpi_ui" defines="_UNICODE UNICODE">
+              headerPath="C:\SE\gmpi_ui" defines="_UNICODE UNICODE" cppLanguageStandard="20">
   <MAINGROUP id="wfdSeb" name="GMPI_Drawing">
     <GROUP id="{BD1CCC41-A448-A8AF-D230-9DEF5D00554B}" name="Source">
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">
+        <FILE id="dXyTpN" name="CocoaGuiHost.mm" compile="1" resource="0" file="../../se_sdk3_hosting/CocoaGuiHost.mm"/>
         <FILE id="wy1LCM" name="DirectXGfx.cpp" compile="1" resource="0" file="../../se_sdk3_hosting/DirectXGfx.cpp"/>
         <FILE id="KWNKN2" name="DirectXGfx.h" compile="0" resource="0" file="../../se_sdk3_hosting/DirectXGfx.h"/>
         <FILE id="kp9MLU" name="DrawingFrame_win32.cpp" compile="1" resource="0"
@@ -19,6 +20,10 @@
         <FILE id="vHSSk1" name="it_enum_list.cpp" compile="1" resource="0"
               file="../../se_sdk3/it_enum_list.cpp"/>
         <FILE id="TP1i2d" name="it_enum_list.h" compile="0" resource="0" file="../../se_sdk3/it_enum_list.h"/>
+        <FILE id="ggRuEq" name="SynthEditCocoaView.h" compile="0" resource="0"
+              file="../../se_sdk3_hosting/SynthEditCocoaView.h"/>
+        <FILE id="TBO8hU" name="SynthEditCocoaView.mm" compile="1" resource="0"
+              file="../../se_sdk3_hosting/SynthEditCocoaView.mm"/>
         <FILE id="jA86Ov" name="TimerManager.cpp" compile="1" resource="0"
               file="../../se_sdk3/TimerManager.cpp"/>
         <FILE id="SbGHp2" name="TimerManager.h" compile="0" resource="0" file="../../se_sdk3/TimerManager.h"/>

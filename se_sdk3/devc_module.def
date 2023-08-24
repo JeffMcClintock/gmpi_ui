@@ -1,0 +1,4 @@
+EXPORTS
+DllMain@12 @ 1
+DllMain = DllMain@12 @ 2
+MP_GetFactory = MP_GetFactory@4

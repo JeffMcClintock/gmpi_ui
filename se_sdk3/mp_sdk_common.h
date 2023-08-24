@@ -26,8 +26,10 @@
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 
 #ifndef GMPI_SDK_REVISION
 #define	GMPI_SDK_REVISION 30800 // 3.08
@@ -1646,7 +1648,8 @@ namespace GmpiSdk
 		}
 	};
 }
-
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
 #endif // include guard

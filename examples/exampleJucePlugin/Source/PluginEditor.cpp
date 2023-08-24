@@ -19,11 +19,15 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
 
     setSize (400, 300);
 
+#if USE_JUCE_RENDERER
 	startTimerHz(60);
+#endif
 }
 
 NewProjectAudioProcessorEditor::~NewProjectAudioProcessorEditor()
 {
+	if(client)
+		client->drawinghost = nullptr;
 }
 
 void NewProjectAudioProcessorEditor::timerCallback()
@@ -94,7 +98,13 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 	if (USE_JUCE_RENDERER)
 		return;
 
-    auto client = new GmpiCanvas(model);
+	if (client)
+	{
+		return;
+	}
+
+	client = new GmpiCanvas();
+	client->drawinghost = &drawingframe;
 
 #ifdef _WIN32
 	if (auto hwnd = (HWND)getWindowHandle(); hwnd && !drawingframe.getHWND())

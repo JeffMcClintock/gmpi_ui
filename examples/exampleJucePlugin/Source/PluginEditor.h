@@ -16,7 +16,7 @@
 /**
 */
 
-#define USE_JUCE_RENDERER 0
+#define USE_JUCE_RENDERER 1
 
 struct BouncingRectangles
 {
@@ -100,18 +100,38 @@ public:
 
 #endif
 
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 
-class GmpiCanvas : public gmpi_gui_api::IMpGraphics3
+class GmpiCanvas : public gmpi_gui_api::IMpGraphics3, public TimerClient
 {
-    BouncingRectangles& model;
+    BouncingRectangles model;
 
 public:
+    gmpi_gui::IMpGraphicsHost* drawinghost = {};
 
-    GmpiCanvas(BouncingRectangles& m) : model(m)
+    GmpiCanvas()
     {
+	    StartTimer(1000 / 60);
 	}
+
+    ~GmpiCanvas()
+	{
+		StopTimer();
+	}
+
+    bool OnTimer() override
+    {
+        model.step();
+        if (drawinghost)
+        {
+            drawinghost->invalidateRect(nullptr);
+        }
+        return true;
+    }
+
 
     // IMpGraphics
     int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override {return gmpi::MP_OK;}
@@ -159,7 +179,9 @@ public:
     GMPI_REFCOUNT;
 };
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
 class NewProjectAudioProcessorEditor : public juce::AudioProcessorEditor, juce::Timer
 {
@@ -184,6 +206,7 @@ private:
     // access the processor object that created it.
     NewProjectAudioProcessor& audioProcessor;
     JuceDrawingFrame drawingframe;
+    GmpiCanvas* client = 0;
 
     BouncingRectangles model;
 

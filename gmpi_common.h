@@ -14,8 +14,10 @@
 #endif
 #define MP_STDCALL
 
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 
 
 // MODIFICATION FOR GMPI_UI !!!
@@ -98,6 +100,8 @@ static const MpGuid MP_IID_RETURNSTRING =
 
 } // namespace gmpi
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
 #endif //include

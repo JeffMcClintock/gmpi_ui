@@ -36,8 +36,10 @@
 #pragma warning(disable : 4100) // "unreferenced formal parameter"
 #endif
 
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 
 //===== mp_sdk_gui2.h =====
 #ifndef GMPI_SDK_GUI2_H_INCLUDED
@@ -270,6 +272,8 @@ namespace gmpi_gui
     static const gmpi::MpGuid SE_IID_GRAPHICS_HOST =
     { 0xe394af51, 0xc4d0, 0x4885,{ 0x84, 0xf1, 0x96, 0x3c, 0xa8, 0x18, 0x29, 0x64 } };
 
+
+	// TODO seperate drawing and mouse interaction.
 	class IMpGraphicsHost : public IMpGraphicsHostBase
 	{
 	public:
@@ -604,6 +608,8 @@ namespace GmpiSdk
 } //namespace
 #endif
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
 #endif // MP_GFX_SE_H_INCLUDED INCLUDED

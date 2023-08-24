@@ -8,6 +8,7 @@ This class provides a programmable timer for creating animation effects.
 NOTE: all instances of the module share the same timer, and therefore the same timer interval.
 */
 
+// todo lowercase methods
 class TimerClient
 {
 public:

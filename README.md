@@ -1,2 +1,2 @@
-# gmpi_ui
-A cross-platform UI library for Windows and macOS
+# GMPI-Drawing
+A cross-platform drawing library for Windows and macOS

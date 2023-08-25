@@ -8,6 +8,7 @@ using namespace GmpiGuiHosting;
 #include <vector>
 #include <string>
 
+#include "../se_sdk3/mp_sdk_common.h"
 #include "../se_sdk3/mp_sdk_gui2.h"
 #include "../se_sdk3/mp_gui.h"
 #include "../shared/unicode_conversion.h"
@@ -77,7 +78,7 @@ namespace GmpiGuiHosting
 		{
 			return true;
 		}
-		int32_t MP_STDCALL getUpdateRects(GmpiDrawing_API::MP1_RECT*** rect) override
+		int32_t getUpdateRects(GmpiDrawing_API::MP1_RECT*** rect) override
 		{
 			*rect = &(rects[0]);
 			return gmpi::MP_OK;
@@ -94,18 +95,18 @@ namespace GmpiGuiHosting
 	public:
 		static GgFactory* GetInstance();
 
-		int32_t MP_STDCALL CreatePathGeometry(GmpiDrawing_API::IMpPathGeometry **pathGeometry) override;
-		int32_t MP_STDCALL CreateTextFormat(const char* fontFamilyName, void* unused / * fontCollection * /, GmpiDrawing_API::MP1_FONT_WEIGHT fontWeight, GmpiDrawing_API::MP1_FONT_STYLE fontStyle, GmpiDrawing_API::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 / * localeName * /, GmpiDrawing_API::IMpTextFormat** textFormat) override
+		int32_t CreatePathGeometry(GmpiDrawing_API::IMpPathGeometry **pathGeometry) override;
+		int32_t CreateTextFormat(const char* fontFamilyName, void* unused / * fontCollection * /, GmpiDrawing_API::MP1_FONT_WEIGHT fontWeight, GmpiDrawing_API::MP1_FONT_STYLE fontStyle, GmpiDrawing_API::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 / * localeName * /, GmpiDrawing_API::IMpTextFormat** textFormat) override
 		{
 			assert(false);
 			return gmpi::MP_FAIL;
 		}
-		int32_t MP_STDCALL CreateImage(int32_t width, int32_t height, GmpiDrawing_API::IMpBitmap** returnDiBitmap) override
+		int32_t CreateImage(int32_t width, int32_t height, GmpiDrawing_API::IMpBitmap** returnDiBitmap) override
 		{
 			assert(false);
 			return gmpi::MP_FAIL;
 		}
-		int32_t MP_STDCALL LoadImageU(const char* utf8Uri, GmpiDrawing_API::IMpBitmap** returnDiBitmap) override
+		int32_t LoadImageU(const char* utf8Uri, GmpiDrawing_API::IMpBitmap** returnDiBitmap) override
 		{
 			assert(false);
 			return gmpi::MP_FAIL;
@@ -137,7 +138,7 @@ namespace GmpiGuiHosting
 	public:
 		std::vector<menuInfo> menuInfoList;
 
-		int32_t MP_STDCALL AddItem(const char* text, int32_t id, int32_t flags = 0) override
+		int32_t AddItem(const char* text, int32_t id, int32_t flags = 0) override
 		{
 			menuInfoList.push_back(menuInfo(text, id, flags));
 			return gmpi::MP_OK;
@@ -150,6 +151,7 @@ namespace GmpiGuiHosting
 		GMPI_REFCOUNT_NO_DELETE;
 	};
     
+#if 0 // TODO
 	class ContextItemsSink2 : public gmpi::IMpContextItemSink
 	{
 		struct menuInfo2
@@ -200,7 +202,7 @@ namespace GmpiGuiHosting
 			menuInfoList.push_back(menuInfo2("", 0, gmpi_gui::MP_PLATFORM_MENU_SEPARATOR, nullptr));
 		}
 
-		int32_t MP_STDCALL AddItem(const char* text, int32_t id, int32_t flags = 0) override
+		int32_t AddItem(const char* text, int32_t id, int32_t flags = 0) override
 		{
 			assert(currentCallback != nullptr); // got to set this first.
 
@@ -288,7 +290,7 @@ namespace GmpiGuiHosting
 		GMPI_QUERYINTERFACE1(gmpi::MP_IID_CONTEXT_ITEMS_SINK, gmpi::IMpContextItemSink);
 		GMPI_REFCOUNT_NO_DELETE;
 	};
-
+#endif
 
 #ifdef _WIN32
 
@@ -366,13 +368,13 @@ namespace GmpiGuiHosting
 			return overallRect;
 		}
 
-		int32_t MP_STDCALL getUpdateRects(const GmpiDrawing_API::MP1_RECT** returnRects) override
+		int32_t getUpdateRects(const GmpiDrawing_API::MP1_RECT** returnRects) override
 		{
 			*returnRects = rects.data();
 			return static_cast<int32_t>(rects.size());
 		}
 
-		bool MP_STDCALL isVisible(const GmpiDrawing_API::MP1_RECT* rect) override
+		bool isVisible(const GmpiDrawing_API::MP1_RECT* rect) override
 		{
 			for (auto& r : rects)
 			{
@@ -410,7 +412,7 @@ namespace GmpiGuiHosting
 		{
 		}
 
-		int32_t MP_STDCALL SetText(const char* text) override
+		int32_t SetText(const char* text) override
 		{
 			text_ = text;
 			if( hWndEdit )
@@ -420,7 +422,7 @@ namespace GmpiGuiHosting
 			return gmpi::MP_OK;
 		}
 
-		int32_t MP_STDCALL GetText(IMpUnknown* returnString) override
+		int32_t GetText(IMpUnknown* returnString) override
 		{
 			gmpi::IString* returnValue = 0;
 
@@ -433,9 +435,9 @@ namespace GmpiGuiHosting
 			return gmpi::MP_OK;
 		}
 
-		int32_t MP_STDCALL ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
+		int32_t ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
 
-		virtual int32_t MP_STDCALL SetAlignment(int32_t alignment)
+		int32_t SetAlignment(int32_t alignment) override
 		{
 			align = (alignment & 0x03);
 			multiline_ = (alignment >> 16) == 1;
@@ -447,7 +449,7 @@ namespace GmpiGuiHosting
 			return align;
 		}
 
-		virtual int32_t MP_STDCALL SetTextSize(float height)
+		int32_t SetTextSize(float height) override
 		{
 			textHeight = height;
 			return gmpi::MP_OK;
@@ -486,7 +488,7 @@ namespace GmpiGuiHosting
 			DestroyMenu(hmenu);
 		}
 
-		virtual int32_t MP_STDCALL AddItem(const char* text, int32_t id, int32_t flags)
+		int32_t AddItem(const char* text, int32_t id, int32_t flags) override
 		{
 			UINT nativeFlags = MF_STRING;
 			if ((flags & gmpi_gui::MP_PLATFORM_MENU_TICKED) != 0)
@@ -528,7 +530,7 @@ namespace GmpiGuiHosting
 			return gmpi::MP_OK;
 		}
 
-		int32_t MP_STDCALL ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override
+		int32_t ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override
 		{
 			POINT nativePoint;
 			nativePoint.x = (int)editrect_s.left;
@@ -553,7 +555,7 @@ namespace GmpiGuiHosting
 			return gmpi::MP_OK;
 		}
 
-		virtual int32_t MP_STDCALL SetAlignment(int32_t alignment)
+		int32_t SetAlignment(int32_t alignment) override
 		{
 			switch (alignment)
 			{
@@ -571,7 +573,7 @@ namespace GmpiGuiHosting
 			return gmpi::MP_OK;
 		}
 
-		int32_t MP_STDCALL GetSelectedId() override
+		int32_t GetSelectedId() override
 		{
 			return selectedId;
 		}
@@ -597,7 +599,7 @@ namespace GmpiGuiHosting
 		{
 		}
 
-		int32_t MP_STDCALL AddExtension(const char* extension, const char* description ) override
+		int32_t AddExtension(const char* extension, const char* description ) override
 		{
 			std::string ext(extension);
 			std::string desc(description);
@@ -612,20 +614,20 @@ namespace GmpiGuiHosting
 			extensions.push_back(std::pair<std::string, std::string>(extension, desc));
 			return gmpi::MP_OK;
 		}
-		int32_t MP_STDCALL SetInitialFilename(const char* text) override
+		int32_t SetInitialFilename(const char* text) override
 		{
 			initial_filename = JmUnicodeConversions::Utf8ToWstring( text );
 			return gmpi::MP_OK;
 		}
-		int32_t MP_STDCALL setInitialDirectory(const char* text) override
+		int32_t setInitialDirectory(const char* text) override
 		{
 			initial_folder = JmUnicodeConversions::Utf8ToWstring(text);
 			return gmpi::MP_OK;
 		}
 
-//		int32_t MP_STDCALL Show(IMpUnknown* returnString) override;
-		int32_t MP_STDCALL ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
-		int32_t MP_STDCALL GetSelectedFilename(IMpUnknown* returnString) override;
+//		int32_t Show(IMpUnknown* returnString) override;
+		int32_t ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
+		int32_t GetSelectedFilename(IMpUnknown* returnString) override;
 
 		GMPI_QUERYINTERFACE1(gmpi_gui::SE_IID_GRAPHICS_PLATFORM_FILE_DIALOG, gmpi_gui::IMpFileDialog);
 		GMPI_REFCOUNT;
@@ -647,18 +649,18 @@ namespace GmpiGuiHosting
 		{
 		}
 
-		int32_t MP_STDCALL SetTitle(const char* ptext) override
+		int32_t SetTitle(const char* ptext) override
 		{
 			title = JmUnicodeConversions::Utf8ToWstring(ptext);
 			return gmpi::MP_OK;
 		}
-		int32_t MP_STDCALL SetText(const char* ptext) override
+		int32_t SetText(const char* ptext) override
 		{
 			text = JmUnicodeConversions::Utf8ToWstring(ptext);
 			return gmpi::MP_OK;
 		}
 
-		int32_t MP_STDCALL ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
+		int32_t ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
 
 		GMPI_QUERYINTERFACE1(gmpi_gui::SE_IID_GRAPHICS_OK_CANCEL_DIALOG, gmpi_gui::IMpOkCancelDialog);
 		GMPI_REFCOUNT;
@@ -688,7 +690,7 @@ public:
 	{
 	}
 
-	int32_t MP_STDCALL SetText(const char* text) override
+	int32_t SetText(const char* text) override
 	{
 		text_ = text;
 		//if( hWndEdit )
@@ -698,7 +700,7 @@ public:
 		return gmpi::MP_OK;
 	}
     
-    int32_t MP_STDCALL GetText(IMpUnknown* returnString) override
+    int32_t GetText(IMpUnknown* returnString) override
     {
         gmpi::IString* returnValue = 0;
         
@@ -711,15 +713,15 @@ public:
         return gmpi::MP_OK;
     }
     
-//	virtual int32_t MP_STDCALL Show(float x, float y, float w, float h, IMpUnknown* returnString);
-    int32_t MP_STDCALL ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
+//	int32_t Show(float x, float y, float w, float h, IMpUnknown* returnString);
+    int32_t ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler) override;
 
 	void OnEditReturn()
 	{
 		//		::DestroyWindow(hWndEdit);
 	}
 
-	int32_t MP_STDCALL SetAlignment(int32_t alignment) override
+	int32_t SetAlignment(int32_t alignment) override
 	{/*
 		switch( alignment )
 		{
@@ -738,7 +740,7 @@ public:
 		return gmpi::MP_OK;
 	}
 
-	int32_t MP_STDCALL SetTextSize(float height) override
+	int32_t SetTextSize(float height) override
 	{
 		textHeight = height;
 		return gmpi::MP_OK;

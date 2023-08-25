@@ -8,12 +8,13 @@
 #include "./DrawingFrame_win32.h"
 #include "../shared/xp_dynamic_linking.h"
 #include "../shared/xp_simd.h"
-#include "../SE_DSP_CORE/IGuiHost2.h"
+//#include "../SE_DSP_CORE/IGuiHost2.h"
+#include "../shared/unicode_conversion.h"
 
 using namespace std;
 using namespace gmpi;
 using namespace gmpi_gui;
-using namespace GmpiGuiHosting;
+//using namespace GmpiGuiHosting;
 using namespace GmpiDrawing_API;
 
 using namespace Microsoft::WRL;
@@ -473,7 +474,7 @@ bool DrawingFrameBase::OnTimer()
 			gmpi_gui_client->getToolTip(point, &text);
 			if (!text.str().empty())
 			{
-				toolTipText = Utf8ToWstring(text.str());
+				toolTipText = JmUnicodeConversions::Utf8ToWstring(text.str());
 				ShowToolTip();
 			}
 		}
@@ -744,7 +745,7 @@ void DrawingFrameBase::CreateDevice()
 		&currentDxFeatureLevel,
 		nullptr);
 
-		CLEAR_BITS(flags, D3D11_CREATE_DEVICE_DEBUG);
+//		CLEAR_BITS(flags, D3D11_CREATE_DEVICE_DEBUG);
 
 	} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 
@@ -1099,6 +1100,7 @@ int32_t DrawingFrameBase::createOkCancelDialog(int32_t dialogType, gmpi_gui::IMp
 	return gmpi::MP_OK;
 }
 
+#if 0
 int32_t DrawingFrameBase::pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice)
 {
 	return gmpi::MP_OK;
@@ -1138,6 +1140,7 @@ int32_t DrawingFrameBase::FindResourceU(const char * resourceName, const char * 
 {
 	return gmpi::MP_OK;
 }
+#endif
 
 } //namespace
 

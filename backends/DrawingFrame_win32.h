@@ -14,13 +14,12 @@ using namespace GmpiGuiHosting;
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
 #include "../se_sdk3/TimerManager.h"
-//#include "../../conversion.h"
-#include "../shared/xplatform.h"
 #include "../se_sdk3/mp_sdk_gui2.h"
-#include "../se_sdk3_hosting/gmpi_gui_hosting.h"
+//#include "../se_sdk3_hosting/gmpi_gui_hosting.h"
+#include "./gmpi_gui_hosting.h"
 #include "../se_sdk3_hosting/GraphicsRedrawClient.h"
 
-namespace SE2
+namespace SynthEdit2
 {
 	class IPresenter;
 }
@@ -35,6 +34,7 @@ namespace GmpiGuiHosting
 		UpdateRegionWinGdi updateRegion_native;
 		std::unique_ptr<gmpi::directx::GraphicsContext> context;
 		gmpi_sdk::mp_shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
+		gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpDrawingClient> drawingClient;
 
 	protected:
 		GmpiDrawing::SizeL swapChainSize = {};
@@ -122,9 +122,16 @@ namespace GmpiGuiHosting
 		void CreateDevice();
 		void CreateDeviceSwapChainBitmap();
 
-		void AddView(gmpi_gui_api::IMpGraphics3* pcontainerView)
+		void AddView(gmpi::IMpUnknown* pcontainerView)
 		{
-			gmpi_gui_client = pcontainerView;
+			pcontainerView->queryInterface(gmpi_gui_api::IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+			if(drawingClient)
+			{
+				drawingClient->open(static_cast<gmpi_gui::IMpGraphicsHost*>(this));
+			}
+
+			// legacy
+			pcontainerView->queryInterface(gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
 			pcontainerView->queryInterface(IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
 			pcontainerView->queryInterface(gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.asIMpUnknownPtr());
 

@@ -259,7 +259,7 @@ namespace gmpi
 		}
 
 		Factory::~Factory()
-		{
+		{ 
 			SafeRelease(m_pDirect2dFactory);
 			SafeRelease(writeFactory);
 			SafeRelease(pIWICFactory);
@@ -559,6 +559,7 @@ If so that'd be far more efficient so do that.)
 			// is this an in-memory resource?
 			std::string uriString(utf8Uri);
 			std::string binaryData;
+#if 0 // TODO
 			if (uriString.find(BundleInfo::resourceTypeScheme) == 0)
 			{
 				binaryData = BundleInfo::instance()->getResource(utf8Uri + strlen(BundleInfo::resourceTypeScheme));
@@ -583,6 +584,7 @@ If so that'd be far more efficient so do that.)
 				}
 			}
 			else
+#endif
 			{
 				// auto uriW = stringConverter.from_bytes(utf8Uri);
 				const auto uriW = JmUnicodeConversions::Utf8ToWstring(utf8Uri);

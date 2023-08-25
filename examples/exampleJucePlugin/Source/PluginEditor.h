@@ -105,12 +105,12 @@ public:
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 #endif
 
-class GmpiCanvas : public gmpi_gui_api::IMpGraphics3, public TimerClient
+class GmpiCanvas : public gmpi_gui_api::IMpGraphics3, public TimerClient, public gmpi_gui_api::IMpDrawingClient
 {
     BouncingRectangles model;
+    gmpi_gui::IMpGraphicsHost* drawinghost = {};
 
 public:
-    gmpi_gui::IMpGraphicsHost* drawinghost = {};
 
     GmpiCanvas()
     {
@@ -132,6 +132,16 @@ public:
         return true;
     }
 
+    // IMpDrawingClient
+    int32_t open(gmpi::IMpUnknown* host)  override
+    {
+        // hack, should use queryinterface
+       // drawinghost = dynamic_cast<gmpi_gui::IMpGraphicsHost*>(host);
+
+        return host->queryInterface(gmpi_gui::IMpGraphicsHost::IID(), (void**) &drawinghost);
+    }
+    int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
+    int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
 
     // IMpGraphics
     int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override {return gmpi::MP_OK;}
@@ -152,6 +162,13 @@ public:
     int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
     {
         *returnInterface = nullptr;
+
+        if (iid == IMpDrawingClient::guid)
+        {
+            *returnInterface = static_cast<IMpDrawingClient*>(this);
+            addRef();
+            return gmpi::MP_OK;
+        }
 
         if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
         {

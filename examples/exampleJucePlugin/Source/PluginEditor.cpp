@@ -26,8 +26,8 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
 
 NewProjectAudioProcessorEditor::~NewProjectAudioProcessorEditor()
 {
-	if(client)
-		client->drawinghost = nullptr;
+	//if(client)
+	//	client->drawinghost = nullptr;
 }
 
 void NewProjectAudioProcessorEditor::timerCallback()
@@ -103,8 +103,6 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 		return;
 	}
 
-	client = new GmpiCanvas();
-	client->drawinghost = &drawingframe;
 
 #ifdef _WIN32
 	if (auto hwnd = (HWND)getWindowHandle(); hwnd && !drawingframe.getHWND())
@@ -123,10 +121,14 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 			//		GmpiDrawing::Size(static_cast<float>(drawingframe.viewDimensions), static_cast<float>(drawingframe.viewDimensions))
 			//	);
 
+			if (!client)
+			{
+				client = new GmpiCanvas();
+				//	client->drawinghost = &drawingframe;
+				drawingframe.AddView(static_cast<gmpi_gui_api::IMpDrawingClient*>(client));// cv);
 
-			drawingframe.AddView(client);// cv);
-
-			client->release();
+				client->release();
+			}
 
 //			cv->setDocument(presenter, CF_PANEL_VIEW);
 		}
@@ -144,6 +146,8 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 #else
 	if (!drawingframe.getView())
 	{
+		client = new GmpiCanvas();
+		//	client->drawinghost = &drawingframe;
 		const auto r = getBounds();
 		drawingframe.open(client, r.getWidth(), r.getHeight());
 	}

@@ -154,6 +154,22 @@ namespace gmpi_gui_api
 		{ 0x4a054eb8, 0x6693, 0x4b89, { 0x8c, 0x2b, 0x40, 0x86, 0x44, 0x48, 0x3f, 0xfd } };
 	};
 
+	// TODO: all rects be passed as pointers (for speed and consistency w D2D and C ABI compatibility). !!!
+	class IMpDrawingClient : public gmpi::IMpUnknown
+	{
+	public:
+		virtual int32_t open(gmpi::IMpUnknown* host) = 0;
+
+		// First pass of layout update. Return minimum size required for given available size
+		virtual int32_t MP_STDCALL measure(const MP1_SIZE* availableSize, MP1_SIZE* returnDesiredSize) = 0;
+
+		// Second pass of layout.
+		virtual int32_t MP_STDCALL arrange(const MP1_RECT* finalRect) = 0;
+
+		// {E922D16F-447B-4E82-B0B1-FD995CA4210E}
+		inline static const gmpi::MpGuid guid =
+		{ 0xe922d16f, 0x447b, 0x4e82, { 0xb0, 0xb1, 0xfd, 0x99, 0x5c, 0xa4, 0x21, 0xe } };
+	};
 }
 
 // SDK (implementation of the API).

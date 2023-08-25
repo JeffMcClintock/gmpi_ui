@@ -25,6 +25,7 @@ class DrawingFrameCocoa : public gmpi_gui::IMpGraphicsHost, /*public gmpi::IMpUs
 //    gmpi_sdk::mp_shared_ptr<SE2::ContainerView> containerView;
 //    IGuiHost2* controller;
     gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpGraphics3> client;
+    gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpDrawingClient> drawingClient;
     int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
     
@@ -56,11 +57,17 @@ public:
     void Init(gmpi_gui_api::IMpGraphics3* pclient)
     {
         client = pclient;
+        
+        pclient->queryInterface(gmpi_gui_api::IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+        
+        if(drawingClient)
+            drawingClient->open(this);
     }
      
      void DeInit()
      {
          client = {};
+         drawingClient = {};
      }
 
     ~DrawingFrameCocoa()

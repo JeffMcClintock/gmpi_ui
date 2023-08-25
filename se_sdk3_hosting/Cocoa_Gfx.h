@@ -8,7 +8,7 @@
 #include <map>
 #include "../se_sdk3/Drawing.h"
 #include "../shared/xp_simd.h"
-#include "./Gfx_base.h"
+#include "../backends/Gfx_base.h"
 // #include "BundleInfo.h"
 //#include "mfc_emulation.h"
 

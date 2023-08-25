@@ -150,6 +150,7 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 		//	client->drawinghost = &drawingframe;
 		const auto r = getBounds();
 		drawingframe.open(client, r.getWidth(), r.getHeight());
+        client->release();
 	}
 #endif
 }

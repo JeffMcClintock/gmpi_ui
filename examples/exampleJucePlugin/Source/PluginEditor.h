@@ -11,12 +11,13 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "../../../se_sdk3/mp_sdk_gui2.h"
+#include "../../../se_sdk3/TimerManager.h"
 
 //==============================================================================
 /**
 */
 
-#define USE_JUCE_RENDERER 1
+#define USE_JUCE_RENDERER 0
 
 struct BouncingRectangles
 {
@@ -31,7 +32,13 @@ struct BouncingRectangles
 
     BouncingRectangles()
     {
-        for (int i = 0; i < 100000; ++i)
+#ifdef _WIN32
+        const int numRects = 100000;
+#else
+        const int numRects = 10000;
+#endif
+
+        for (int i = 0; i < numRects; ++i)
         {
             Sprite s;
             s.pos = { rand() % 500, rand() % 500, 1 + rand() % 50, 1 + rand() % 50 };

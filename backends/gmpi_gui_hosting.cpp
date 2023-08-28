@@ -11,11 +11,12 @@
 #include "./gmpi_gui_hosting.h"
 #include "../shared/it_enum_list.h"
 #include "../shared/xp_dynamic_linking.h"
+#include "Drawing.h"
 
 
 using namespace std;
 using namespace gmpi;
-using namespace gmpi_gui;
+//using namespace gmpi_gui;
 using namespace GmpiGuiHosting;
 using namespace GmpiDrawing_API;
 namespace GmpiGuiHosting
@@ -140,7 +141,7 @@ namespace GmpiGuiHosting
 // WIN32 Edit box dialog.
 #ifdef _WIN32
 
-void UpdateRegionWinGdi::copyDirtyRects(HWND window, GmpiDrawing::SizeL swapChainSize)
+void UpdateRegionWinGdi::copyDirtyRects(HWND window, GmpiDrawing_API::MP1_SIZE_L swapChainSize)
 {
 	rects.clear();
 
@@ -180,7 +181,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, GmpiDrawing::SizeL swapChai
 			// Overall bounding rect
 			{
 				auto& r = pRegion->rdh.rcBound;
-				bounds = GmpiDrawing::RectL(r.left, r.top, r.right, r.bottom);
+				bounds = { r.left, r.top, r.right, r.bottom };
 			}
 
 			const RECT* pRect = (const RECT*)& pRegion->Buffer;
@@ -193,7 +194,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, GmpiDrawing::SizeL swapChai
 //				_RPTW4(_CRT_WARN, L"rect %d, %d, %d, %d\n", r.left, r.top, r.right,r.bottom);
 
 				// Direct 2D will fail if any rect outside swapchain bitmap area.
-				r.Intersect(GmpiDrawing::RectL(0, 0, swapChainSize.width, swapChainSize.height));
+				r.Intersect(GmpiDrawing_API::MP1_RECT_L(0, 0, swapChainSize.width, swapChainSize.height));
 
 				if (!r.empty())
 				{
@@ -211,11 +212,13 @@ void UpdateRegionWinGdi::optimizeRects()
 {
 	for (int i1 = 0; i1 < rects.size(); ++i1)
 	{
-		auto area1 = rects[i1].getWidth() * rects[i1].getHeight();
+		GmpiDrawing::RectL r1(rects[i1]);
+		auto area1 = r1.getWidth() * r1.getHeight();
 
 		for (int i2 = i1 + 1; i2 < rects.size(); )
 		{
-			auto area2 = rects[i2].getWidth() * rects[i2].getHeight();
+			GmpiDrawing::RectL r2(rects[i2]);
+			auto area2 = r2.getWidth() * r2.getHeight();
 
 			GmpiDrawing::RectL unionrect(rects[i1]);
 
@@ -254,6 +257,7 @@ UpdateRegionWinGdi::~UpdateRegionWinGdi()
 		DeleteObject(hRegion);
 }
 
+#if 0
 int dialogX;
 int dialogY;
 int dialogW;
@@ -659,5 +663,6 @@ int32_t Gmpi_Win_OkCancelDialog::ShowAsync(gmpi_gui::ICompletionCallback* return
 
 	return gmpi::MP_OK;
 }
+#endif
 
 #endif // desktop

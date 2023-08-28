@@ -14,7 +14,7 @@ using namespace GmpiGuiHosting;
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
 #include "../se_sdk3/TimerManager.h"
-#include "../se_sdk3/mp_sdk_gui2.h"
+//#include "../se_sdk3/mp_sdk_gui2.h"
 //#include "../se_sdk3_hosting/gmpi_gui_hosting.h"
 #include "./gmpi_gui_hosting.h"
 #include "../se_sdk3_hosting/GraphicsRedrawClient.h"
@@ -27,14 +27,20 @@ namespace SynthEdit2
 namespace GmpiGuiHosting
 {
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
-	class DrawingFrameBase : public gmpi_gui::IMpGraphicsHost, /*public gmpi::IMpUserInterfaceHost2,*/ public TimerClient
+	class DrawingFrameBase :
+#ifdef GMPI_HOST_POINTER_SUPPORT
+		public gmpi_gui::IMpGraphicsHost,
+#endif
+		public IDrawingHost,
+		/*public gmpi::IMpUserInterfaceHost2,*/
+		public TimerClient
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 		bool firstPresent = false;
 		UpdateRegionWinGdi updateRegion_native;
 		std::unique_ptr<gmpi::directx::GraphicsContext> context;
 		gmpi_sdk::mp_shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
-		gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpDrawingClient> drawingClient;
+		gmpi_sdk::mp_shared_ptr</*gmpi_gui_api::*/IMpDrawingClient> drawingClient;
 
 	protected:
 		GmpiDrawing::SizeL swapChainSize = {};
@@ -42,8 +48,10 @@ namespace GmpiGuiHosting
 		ID2D1DeviceContext* mpRenderTarget = {};
 		IDXGISwapChain1* m_swapChain = {};
 
+#ifdef GMPI_HOST_POINTER_SUPPORT
 		gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpGraphics3> gmpi_gui_client; // usually a ContainerView at the topmost level
 		gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpKeyClient> gmpi_key_client;
+#endif
 
 		// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
 		std::vector<GmpiDrawing::RectL> backBufferDirtyRects;
@@ -78,8 +86,10 @@ namespace GmpiGuiHosting
 		{
 			StopTimer();
 
+#ifdef GMPI_HOST_POINTER_SUPPORT
 			// Free GUI objects first so they can release fonts etc before releasing factorys.
 			gmpi_gui_client = nullptr;
+#endif
 
 			ReleaseDevice();
 		}
@@ -124,16 +134,18 @@ namespace GmpiGuiHosting
 
 		void AddView(gmpi::IMpUnknown* pcontainerView)
 		{
-			pcontainerView->queryInterface(gmpi_gui_api::IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(/*gmpi_gui_api::*/IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
 			if(drawingClient)
 			{
-				drawingClient->open(static_cast<gmpi_gui::IMpGraphicsHost*>(this));
+				drawingClient->open(this);// static_cast<gmpi_gui::IMpGraphicsHost*>(this));
 			}
 
 			// legacy
-			pcontainerView->queryInterface(gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
 			pcontainerView->queryInterface(IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
+#ifdef GMPI_HOST_POINTER_SUPPORT
+			pcontainerView->queryInterface(gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
 			pcontainerView->queryInterface(gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.asIMpUnknownPtr());
+#endif
 
 #if 0
 			gmpi_sdk::mp_shared_ptr<gmpi::IMpUserInterface2> pinHost;
@@ -165,24 +177,42 @@ namespace GmpiGuiHosting
 #endif
 		// IMpGraphicsHost
 		virtual void invalidateRect(const GmpiDrawing_API::MP1_RECT * invalidRect) override;
+#ifdef GMPI_HOST_POINTER_SUPPORT
 		virtual void invalidateMeasure() override;
 		int32_t setCapture() override;
 		int32_t getCapture(int32_t & returnValue) override;
 		int32_t releaseCapture() override;
-		int32_t GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override
+		int32_t GetDrawingFactory(GmpiDrawing_API::IMpFactory** returnFactory) override
 		{
 			*returnFactory = &DrawingFactory;
 			return gmpi::MP_OK;
 		}
+#endif
+		int32_t getDrawingFactory(gmpi::IMpUnknown** returnFactory) override
+		{
+			*returnFactory = &DrawingFactory;
+			return gmpi::MP_OK;
+		}
+#ifdef GMPI_HOST_POINTER_SUPPORT
 
 		int32_t createPlatformMenu(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override;
 		int32_t createPlatformTextEdit(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override;
 		int32_t createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override;
 		int32_t createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override;
+#endif
 
+#if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
 		int32_t queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
 		{
+			
+			if (iid == IDrawingHost::guid)
+			{
+				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
+				*returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
+				addRef();
+				return gmpi::MP_OK;
+			}
 #if 0
 			if (iid == gmpi::MP_IID_UI_HOST2)
 			{
@@ -192,6 +222,7 @@ namespace GmpiGuiHosting
 				return gmpi::MP_OK;
 			}
 #endif
+#ifdef GMPI_HOST_POINTER_SUPPORT
 			if (iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
 			{
 				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
@@ -199,10 +230,28 @@ namespace GmpiGuiHosting
 				addRef();
 				return gmpi::MP_OK;
 			}
+#else
+			if (iid == gmpi::MP_IID_UNKNOWN)
+			{
+				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
+				*returnInterface = this;
+				addRef();
+				return gmpi::MP_OK;
+			}
+#endif
 
 			*returnInterface = 0;
 			return gmpi::MP_NOSUPPORT;
 		}
+
+		GMPI_REFCOUNT_NO_DELETE;
+
+#ifdef GMPI_HOST_POINTER_SUPPORT
+		auto getClient() {
+			return gmpi_gui_client;
+		}
+#endif
+#endif
 
 		void initTooltip();
 		void TooltipOnMouseActivity();
@@ -212,12 +261,6 @@ namespace GmpiGuiHosting
 		bool OnTimer() override;
 		virtual void autoScrollStart() {}
 		virtual void autoScrollStop() {}
-
-		auto getClient() {
-			return gmpi_gui_client;
-		}
-
-		GMPI_REFCOUNT_NO_DELETE;
 	};
 
 	// This is used in VST3. Native HWND window frame.

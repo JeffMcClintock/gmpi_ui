@@ -8,10 +8,12 @@ using namespace GmpiGuiHosting;
 #include <vector>
 #include <string>
 
-#include "../se_sdk3/mp_sdk_common.h"
-#include "../se_sdk3/mp_sdk_gui2.h"
-#include "../se_sdk3/mp_gui.h"
-#include "../shared/unicode_conversion.h"
+//#include "../se_sdk3/mp_sdk_common.h"
+//#include "../se_sdk3/mp_sdk_gui2.h"
+//#include "../se_sdk3/mp_gui.h"
+//#include "../shared/unicode_conversion.h"
+
+#include "Drawing_API.h"
 
 namespace GmpiGuiHosting
 {
@@ -118,6 +120,7 @@ namespace GmpiGuiHosting
 		GMPI_REFCOUNT_NO_DELETE;
 	};
 	*/
+#if 0 // TODO
 
 	// Context Menus.
 	struct menuInfo
@@ -151,7 +154,6 @@ namespace GmpiGuiHosting
 		GMPI_REFCOUNT_NO_DELETE;
 	};
     
-#if 0 // TODO
 	class ContextItemsSink2 : public gmpi::IMpContextItemSink
 	{
 		struct menuInfo2
@@ -300,21 +302,21 @@ namespace GmpiGuiHosting
 	{
 		HRGN hRegion = 0;
 		std::string regionDataBuffer;
-		std::vector<GmpiDrawing::RectL> rects;
-		GmpiDrawing::RectL bounds;
+		std::vector<GmpiDrawing_API::MP1_RECT_L> rects;
+		GmpiDrawing_API::MP1_RECT_L bounds;
 
 	public:
 		UpdateRegionWinGdi();
 		~UpdateRegionWinGdi();
 
-		void copyDirtyRects(HWND window, GmpiDrawing::SizeL swapChainSize);
+		void copyDirtyRects(HWND window, GmpiDrawing_API::MP1_SIZE_L swapChainSize);
 		void optimizeRects();
 
-		inline std::vector<GmpiDrawing::RectL>& getUpdateRects()
+		inline std::vector<GmpiDrawing_API::MP1_RECT_L>& getUpdateRects()
 		{
 			return rects;
 		}
-		inline GmpiDrawing::RectL& getBoundingRect()
+		inline GmpiDrawing_API::MP1_RECT_L& getBoundingRect()
 		{
 			return bounds;
 		}
@@ -390,6 +392,7 @@ namespace GmpiGuiHosting
 		GMPI_REFCOUNT;
 	};
 */
+#if 0
 	class PGCC_PlatformTextEntry : public gmpi_gui::IMpPlatformText
 	{
 		HWND hWndEdit;
@@ -666,6 +669,7 @@ namespace GmpiGuiHosting
 		GMPI_REFCOUNT;
 	};
 
+#endif
 
 #else
 

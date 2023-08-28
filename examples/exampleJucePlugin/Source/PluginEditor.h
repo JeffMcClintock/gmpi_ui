@@ -10,7 +10,7 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-#include "../../../se_sdk3/mp_sdk_gui2.h"
+#include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
 
 //==============================================================================
@@ -112,11 +112,11 @@ public:
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 #endif
 
-class GmpiCanvas : public gmpi_gui_api::IMpGraphics3, public TimerClient, public gmpi_gui_api::IMpDrawingClient
+class GmpiCanvas : /*public gmpi_gui_api::IMpGraphics3,*/ public TimerClient, public /*gmpi_gui_api::*/IMpDrawingClient
 {
     BouncingRectangles model;
-    gmpi_gui::IMpGraphicsHost* drawinghost = {};
-
+//    gmpi_gui::IMpGraphicsHost* drawinghost = {};
+    IDrawingHost* drawinghost = {};
 public:
 
     GmpiCanvas()
@@ -132,28 +132,38 @@ public:
     bool OnTimer() override
     {
         model.step();
+
         if (drawinghost)
         {
             drawinghost->invalidateRect(nullptr);
         }
+
         return true;
     }
 
     // IMpDrawingClient
     int32_t open(gmpi::IMpUnknown* host)  override
     {
+#ifdef GMPI_HOST_POINTER_SUPPORT
         // hack, should use queryinterface
        // drawinghost = dynamic_cast<gmpi_gui::IMpGraphicsHost*>(host);
 
         return host->queryInterface(gmpi_gui::IMpGraphicsHost::IID(), (void**) &drawinghost);
+#else
+        return host->queryInterface(IDrawingHost::guid, (void**)&drawinghost);
+//        return gmpi::MP_OK;
+#endif
     }
     int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
     int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
 
+#ifdef GMPI_HOST_POINTER_SUPPORT
     // IMpGraphics
     int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override {return gmpi::MP_OK;}
     int32_t MP_STDCALL arrange(GmpiDrawing_API::MP1_RECT finalRect) override {return gmpi::MP_OK;} // TODO const, and reference maybe?
+#endif
     int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
+#ifdef GMPI_HOST_POINTER_SUPPORT
     int32_t MP_STDCALL onPointerDown(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
     int32_t MP_STDCALL onPointerMove(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
     int32_t MP_STDCALL onPointerUp(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}    // IMpGraphics2
@@ -164,19 +174,21 @@ public:
     int32_t MP_STDCALL hitTest2(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
     int32_t MP_STDCALL onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
     int32_t MP_STDCALL setHover(bool isMouseOverMe) override {return gmpi::MP_OK;}
+#endif
 
     // IMpUnknown
     int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
     {
         *returnInterface = nullptr;
 
-        if (iid == IMpDrawingClient::guid)
+        if (iid == IMpDrawingClient::guid || iid == gmpi::MP_IID_UNKNOWN)
         {
             *returnInterface = static_cast<IMpDrawingClient*>(this);
             addRef();
             return gmpi::MP_OK;
         }
 
+#ifdef GMPI_HOST_POINTER_SUPPORT
         if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
         {
             *returnInterface = static_cast<IMpGraphics3*>(this);
@@ -197,6 +209,7 @@ public:
             addRef();
             return gmpi::MP_OK;
         }
+#endif
 
         return gmpi::MP_NOSUPPORT;
     }

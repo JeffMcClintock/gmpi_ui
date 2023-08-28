@@ -38,7 +38,7 @@ void NewProjectAudioProcessorEditor::timerCallback()
 	repaint();
 #else
 #ifdef _WIN32
-	drawingframe.invalidateRect(nullptr);
+//	drawingframe.invalidateRect(nullptr);
 #else
 //um    [drawingframe.getView() 
 #endif
@@ -78,7 +78,7 @@ int32_t GmpiCanvas::OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext)
 	{
 		c.InitFromSrgba(r.colour.getRed(), r.colour.getGreen(), r.colour.getBlue(), r.colour.getFloatAlpha());
 		brush.SetColor(c);
-		g.FillRectangle(r.pos.getX(), r.pos.getY(), r.pos.getRight(), r.pos.getBottom(), brush);
+		g.FillRectangle((float)r.pos.getX(), (float)r.pos.getY(), (float)r.pos.getRight(), (float) r.pos.getBottom(), brush);
 	}
 
 	return gmpi::MP_OK;
@@ -125,7 +125,7 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 			{
 				client = new GmpiCanvas();
 				//	client->drawinghost = &drawingframe;
-				drawingframe.AddView(static_cast<gmpi_gui_api::IMpDrawingClient*>(client));// cv);
+				drawingframe.AddView(static_cast</*gmpi_gui_api::*/IMpDrawingClient*>(client));// cv);
 
 				client->release();
 			}
@@ -181,6 +181,7 @@ LRESULT JuceDrawingFrame::WindowProc(
 {
 	switch (message)
 	{
+#ifdef GMPI_HOST_POINTER_SUPPORT
 	case WM_MBUTTONDOWN:
 	case WM_MBUTTONUP:
 	case WM_MOUSEMOVE:
@@ -272,6 +273,7 @@ LRESULT JuceDrawingFrame::WindowProc(
 		}
 	}
 	break;
+#endif
 
 	case WM_NCACTIVATE:
 		//if( wParam == FALSE ) // USER CLICKED AWAY

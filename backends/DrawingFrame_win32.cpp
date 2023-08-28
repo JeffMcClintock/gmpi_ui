@@ -10,10 +10,11 @@
 #include "../shared/xp_simd.h"
 //#include "../SE_DSP_CORE/IGuiHost2.h"
 #include "../shared/unicode_conversion.h"
+#include "Drawing.h"
 
 using namespace std;
 using namespace gmpi;
-using namespace gmpi_gui;
+//using namespace gmpi_gui;
 //using namespace GmpiGuiHosting;
 using namespace GmpiDrawing_API;
 
@@ -125,8 +126,10 @@ void DrawingFrame::open(void* pParentWnd, const GmpiDrawing_API::MP1_SIZE_L* ove
 		};
 
 		GmpiDrawing_API::MP1_SIZE desired{};
+#ifdef GMPI_HOST_POINTER_SUPPORT
 		gmpi_gui_client->measure(available, &desired);
 		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
+#endif
 
 		// starting Timer latest to avoid first event getting 'in-between' other init events.
 		StartTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
@@ -235,12 +238,18 @@ LRESULT DrawingFrameBase::WindowProc(
 	WPARAM wParam,
 	LPARAM lParam)
 {
-	if(!gmpi_gui_client)
+	if(
+#ifdef GMPI_HOST_POINTER_SUPPORT
+		!gmpi_gui_client &&
+#endif
+		!drawingClient
+		)
 		return DefWindowProc(hwnd, message, wParam, lParam);
 
 	switch (message)
 	{
-		case WM_MBUTTONDOWN:
+#ifdef GMPI_HOST_POINTER_SUPPORT
+	case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_MOUSEMOVE:
 		case WM_LBUTTONDOWN:
@@ -393,6 +402,7 @@ LRESULT DrawingFrameBase::WindowProc(
 		if(gmpi_key_client)
 			gmpi_key_client->OnKeyPress((wchar_t) wParam);
 		break;
+#endif
 
 	case WM_PAINT:
 	{
@@ -447,15 +457,29 @@ void DrawingFrameBase::OnSize(UINT width, UINT height)
 		static_cast<float>(((height) * 96) / dpiY)
 	};
 
+#ifdef GMPI_HOST_POINTER_SUPPORT
 	gmpi_gui_client->arrange({0, 0, available.width, available.height });
+#else
+	if (drawingClient)
+	{
+		const GmpiDrawing_API::MP1_RECT r{ 0, 0, available.width, available.height };
+		drawingClient->arrange(&r);
+	}
+#endif
 }
 
 // Ideally this is called at 60Hz so we can draw as fast as practical, but without blocking to wait for Vsync all the time (makes host unresponsive).
 bool DrawingFrameBase::OnTimer()
 {
 	auto hwnd = getWindowHandle();
-	if (hwnd == nullptr || gmpi_gui_client == nullptr)
+	if (hwnd == nullptr
+#ifdef GMPI_HOST_POINTER_SUPPORT
+		|| gmpi_gui_client == nullptr
+#endif
+		)
 		return true;
+
+#ifdef GMPI_HOST_POINTER_SUPPORT
 
 	// Tooltips
 	if (toolTiptimer-- == 0 && !toolTipShown)
@@ -479,7 +503,8 @@ bool DrawingFrameBase::OnTimer()
 			}
 		}
 	}
-	
+#endif
+
 	if (frameUpdateClient)
 	{
 		frameUpdateClient->PreGraphicsRedraw();
@@ -527,7 +552,14 @@ void DrawingFrameBase::OnPaint()
 	if (containerView)
 #else
 	auto& dirtyRects = updateRegion_native.getUpdateRects();
-	if (gmpi_gui_client && !dirtyRects.empty())
+	if (
+		(
+#ifdef GMPI_HOST_POINTER_SUPPORT
+		gmpi_gui_client ||
+#endif
+			drawingClient
+		)
+		&& !dirtyRects.empty())
 #endif
 	{
 		//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
@@ -572,7 +604,13 @@ void DrawingFrameBase::OnPaint()
 				//_RPTW4(_CRT_WARN, L"GmpiDrawing::Rect dirtyRect{%4d,%4d,%4d,%4d};\n", (int)temp.left, (int)temp.top, (int)temp.right, (int)temp.bottom);
 				graphics.PushAxisAlignedClip(temp);
 
+
+#ifdef GMPI_HOST_POINTER_SUPPORT
 				gmpi_gui_client->OnRender(context.get());
+#endif
+				if(drawingClient)
+					drawingClient->OnRender(context.get());
+
 				graphics.PopAxisAlignedClip();
 			}
 			else
@@ -592,7 +630,12 @@ void DrawingFrameBase::OnPaint()
 
 					graphics.PushAxisAlignedClip(temp);
 
-					gmpi_gui_client->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(context.get()));
+#ifdef GMPI_HOST_POINTER_SUPPORT
+					gmpi_gui_client->OnRender(context.get());
+#endif
+					if (drawingClient)
+						drawingClient->OnRender(context.get());
+
 					graphics.PopAxisAlignedClip();
 				}
 			}
@@ -1050,9 +1093,12 @@ void DrawingFrameBase::invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRe
 	backBufferDirtyRects.push_back(r);
 }
 
+#ifdef GMPI_HOST_POINTER_SUPPORT
+
 void DrawingFrameBase::invalidateMeasure()
 {
 }
+
 
 int32_t DrawingFrameBase::setCapture()
 {
@@ -1099,6 +1145,7 @@ int32_t DrawingFrameBase::createOkCancelDialog(int32_t dialogType, gmpi_gui::IMp
 	*returnDialog = new Gmpi_Win_OkCancelDialog(dialogType, getWindowHandle());
 	return gmpi::MP_OK;
 }
+#endif
 
 #if 0
 int32_t DrawingFrameBase::pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice)

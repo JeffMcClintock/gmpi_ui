@@ -2,6 +2,8 @@
 #ifndef GMPI_COMMON_INCLUDED
 #define GMPI_COMMON_INCLUDED
 
+#include <stdint.h>
+
 //#include "gmpi_common.h"
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN

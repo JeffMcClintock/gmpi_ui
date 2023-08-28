@@ -6,11 +6,7 @@
 #include "../shared/xp_simd.h"
 #include "../shared/fast_gamma.h"
 #include "../shared/unicode_conversion.h"
-//#include "../se_sdk3_hosting/gmpi_gui_hosting.h"
-//#include "BundleInfo.h"
 #include "d2d1helper.h"
-
-//using namespace GmpiGuiHosting;
 
 namespace gmpi
 {

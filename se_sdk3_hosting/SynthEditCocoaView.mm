@@ -7,10 +7,10 @@
 //#import "./ContainerView.h"
 //#include "./JsonDocPresenter.h"
 //#include "BundleInfo.h"
-
-#if defined(SE_TARGET_AU)
-#include "../../../se_au/SEInstrumentBase.h"
-#endif
+#include "../se_sdk3_hosting/GraphicsRedrawClient.h"
+//#if defined(SE_TARGET_AU)
+//#include "../../../se_au/SEInstrumentBase.h"
+//#endif
 
 // In VST3 wrapper this object is a child window of SynthEditPluginCocoaView,
 // It serves to provide a C++ to Objective-C adaptor to the gmpi Drawing framework.
@@ -20,15 +20,23 @@ namespace Json
     class Value;
 }
 
-class DrawingFrameCocoa : public gmpi_gui::IMpGraphicsHost, /*public gmpi::IMpUserInterfaceHost2,*/ public GmpiGuiHosting::PlatformTextEntryObserver
+class DrawingFrameCocoa :
+#ifdef GMPI_HOST_POINTER_SUPPORT
+public gmpi_gui::IMpGraphicsHost,
+public GmpiGuiHosting::PlatformTextEntryObserver,
+#endif
+/*public gmpi::IMpUserInterfaceHost2,*/
+public IDrawingHost
 {
 //    gmpi_sdk::mp_shared_ptr<SE2::ContainerView> containerView;
 //    IGuiHost2* controller;
+    gmpi_sdk::mp_shared_ptr<IMpDrawingClient> drawingClient;
+#ifdef GMPI_HOST_POINTER_SUPPORT
     gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpGraphics3> client;
-    gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpDrawingClient> drawingClient;
     int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
-    
+#endif
+
 public:
     gmpi::cocoa::DrawingFactory drawingFactory;
     NSView* view;
@@ -54,11 +62,11 @@ public:
      }
 #endif
     
-    void Init(gmpi_gui_api::IMpGraphics3* pclient)
+    void Init(gmpi::IMpUnknown* pclient)
     {
-        client = pclient;
+ //todo       client = pclient;
         
-        pclient->queryInterface(gmpi_gui_api::IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+        pclient->queryInterface(IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
         
         if(drawingClient)
             drawingClient->open(this);
@@ -66,7 +74,7 @@ public:
      
      void DeInit()
      {
-         client = {};
+//         client = {};
          drawingClient = {};
      }
 
@@ -96,8 +104,10 @@ public:
         
         context.PushAxisAlignedClip(dirtyRect);
         
-        client->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
-        
+//        client->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
+        if(drawingClient)
+            drawingClient->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
+
         context.PopAxisAlignedClip();
     }
 #if 0
@@ -162,6 +172,8 @@ public:
             [view setNeedsDisplay:YES];
         }
     }
+    
+#if 0
     virtual void MP_STDCALL invalidateMeasure() override
     {
 //TODO        assert(false); // not implemented.
@@ -181,12 +193,20 @@ public:
         mouseCaptured = 0;
         return gmpi::MP_OK;
     }
+#endif
+    int32_t MP_STDCALL getDrawingFactory(gmpi::IMpUnknown ** returnFactory) override
+    {
+        *returnFactory = &drawingFactory;
+        return gmpi::MP_OK;
+    }
+
+#if 0
     virtual int32_t MP_STDCALL GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override
     {
         *returnFactory = &drawingFactory;
         return gmpi::MP_OK;
     }
-    
+
     virtual int32_t MP_STDCALL createPlatformMenu(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override
     {
         *returnMenu = new GmpiGuiHosting::PlatformMenu(view, rect);
@@ -208,10 +228,20 @@ public:
         *returnDialog = new GmpiGuiHosting::PlatformOkCancelDialog(dialogType, view);
         return gmpi::MP_OK;
     }
+#endif
     
     // IUnknown methods
     virtual int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
     {
+        *returnInterface = {};
+
+        if (iid == IDrawingHost::guid)
+        {
+            *returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
+            addRef();
+            return gmpi::MP_OK;
+        }
+
 #if 0
         if (iid == gmpi::MP_IID_UI_HOST2)
         {
@@ -220,7 +250,7 @@ public:
             addRef();
             return gmpi::MP_OK;
         }
-#endif
+
         if (iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
         {
             // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
@@ -228,11 +258,10 @@ public:
             addRef();
             return gmpi::MP_OK;
         }
-        
-        *returnInterface = 0;
+#endif
         return gmpi::MP_NOSUPPORT;
     }
-    
+#if 0
     void removeTextEdit()
     {
         if(!currentTextEdit)
@@ -245,7 +274,7 @@ public:
     {
         currentTextEdit = nullptr;
     }
-    
+#endif
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -274,7 +303,7 @@ public:
 }
 
 - (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size;
-- (id) initWithClient: (class IMpGraphics3*) _client preferredSize: (NSSize) size;
+- (id) initWithClient: (class IMpUnknown*) _client preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
 
@@ -419,7 +448,7 @@ public:
 #endif
 }
 
-- (id) initWithClient: (class IMpGraphics3*) _client preferredSize: (NSSize) size
+- (id) initWithClient: (class IMpUnknown*) _client preferredSize: (NSSize) size
 {
     self = [super initWithFrame: NSMakeRect (0, 0, size.width, size.height)];
     if (self)
@@ -429,7 +458,7 @@ public:
         [self addTrackingArea:self->trackingArea ];
         
         drawingFrame.view = self;
-        drawingFrame.Init((gmpi_gui_api::IMpGraphics3*) _client);
+        drawingFrame.Init((gmpi::IMpUnknown*) _client);
         
         timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
     }
@@ -633,7 +662,7 @@ public:
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 
 //-------------------------------------------------------------------------------------------------------------
-
+#if 0
 void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 {
     // <Shift> key?
@@ -652,6 +681,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
         flags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
     }
 }
+
 
 - (void)mouseDown:(NSEvent *)theEvent
 {
@@ -808,6 +838,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
         toolTipTimer = 2;
     }
 }
+#endif
 
 @end
 
@@ -833,7 +864,7 @@ void* createNativeView(void* parent, class IGuiHost2* controller, int width, int
     return (void*) native;
 }
 
-void* createNativeView(class IMpGraphics3* client, int width, int height)
+void* createNativeView(class IMpUnknown* client, int width, int height)
 {
     NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
     

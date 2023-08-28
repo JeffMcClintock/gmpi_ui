@@ -11,7 +11,7 @@
 #include "./gmpi_gui_hosting.h"
 #include "../shared/it_enum_list.h"
 #include "../shared/xp_dynamic_linking.h"
-#include "Drawing.h"
+#include "../se_sdk3/Drawing.h"
 
 
 using namespace std;

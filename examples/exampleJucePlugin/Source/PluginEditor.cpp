@@ -8,6 +8,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "../../../Drawing.h"
 
 //==============================================================================
 NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioProcessor& p)
@@ -162,7 +163,7 @@ void NewProjectAudioProcessorEditor::parentHierarchyChanged()
 
 // without including objective-C headers, we need to create an NSView.
 // forward declare function here to return the view, using void* as return type.
-void* createNativeView(class IMpGraphics3* client, int width, int height);
+void* createNativeView(class IMpUnknown* client, int width, int height);
 void onCloseNativeView(void* ptr);
 
 #endif
@@ -431,9 +432,9 @@ void JuceDrawingFrame::open(void* parentWnd, int width, int height)
 #else
 
 // macOS
-void JuceDrawingFrame::open(gmpi_gui_api::IMpGraphics3* client, int width, int height)
+void JuceDrawingFrame::open(gmpi::IMpUnknown* client, int width, int height)
 {
-	auto nsView = createNativeView((class IMpGraphics3*) client, width, height); // !!!probly need to pass controller
+	auto nsView = createNativeView((class IMpUnknown*) client, width, height); // !!!probly need to pass controller
 
 	setView(nsView);
 	//    auto y = CFGetRetainCount(nsView);

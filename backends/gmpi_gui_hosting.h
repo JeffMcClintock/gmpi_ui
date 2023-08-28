@@ -13,7 +13,7 @@ using namespace GmpiGuiHosting;
 //#include "../se_sdk3/mp_gui.h"
 //#include "../shared/unicode_conversion.h"
 
-#include "Drawing_API.h"
+#include "../se_sdk3/Drawing_API.h"
 
 namespace GmpiGuiHosting
 {
@@ -672,7 +672,7 @@ namespace GmpiGuiHosting
 #endif
 
 #else
-
+#if 0
 class PGCC_PlatformTextEntry : public gmpi_gui::IMpPlatformText
 {
 	void* parentWnd;
@@ -753,6 +753,7 @@ public:
 	GMPI_QUERYINTERFACE1(gmpi_gui::SE_IID_GRAPHICS_PLATFORM_TEXT, gmpi_gui::IMpPlatformText);
 	GMPI_REFCOUNT;
 };
+#endif
 #endif
 
 } // namespace.

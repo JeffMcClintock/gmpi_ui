@@ -56,7 +56,7 @@ using namespace GmpiDrawing;
 #include <assert.h>
 #include "mp_interface_wrapper.h"
 //#include "../shared/unicode_conversion2.h"
-#include "../shared/fast_gamma.h"
+#include "shared/fast_gamma.h"
 #include "MpString.h"
 
 // Perhaps should be Gmpi::Drawing

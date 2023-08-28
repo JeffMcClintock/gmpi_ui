@@ -14,6 +14,7 @@
 
 namespace GmpiGuiHosting
 {
+#if 0
 	// Cocoa don't allow this to be class variable.
 	static NSTextField* textField = nullptr;
 
@@ -514,6 +515,7 @@ namespace GmpiGuiHosting
 		GMPI_QUERYINTERFACE1(gmpi_gui::SE_IID_GRAPHICS_OK_CANCEL_DIALOG, gmpi_gui::IMpOkCancelDialog);
 		GMPI_REFCOUNT;
 	};
+#endif
 
 #ifdef STANDALONE
 	// C++ facade for plugin to interact with the Mac View

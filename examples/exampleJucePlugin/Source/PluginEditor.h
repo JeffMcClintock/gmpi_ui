@@ -12,7 +12,7 @@
 #include "PluginProcessor.h"
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
-
+#include "../../../RefCountMacros.h"
 //==============================================================================
 /**
 */
@@ -102,7 +102,7 @@ class JuceDrawingFrame : public juce::NSViewComponent
 {
 public:
     ~JuceDrawingFrame();
-    void open(gmpi_gui_api::IMpGraphics3* client, int width, int height);
+    void open(gmpi::IMpUnknown* client, int width, int height);
 };
 
 #endif
@@ -112,7 +112,10 @@ public:
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 #endif
 
-class GmpiCanvas : /*public gmpi_gui_api::IMpGraphics3,*/ public TimerClient, public /*gmpi_gui_api::*/IMpDrawingClient
+class GmpiCanvas :
+/*public gmpi_gui_api::IMpGraphics3,*/
+public TimerClient,
+public /*gmpi_gui_api::*/IMpDrawingClient
 {
     BouncingRectangles model;
 //    gmpi_gui::IMpGraphicsHost* drawinghost = {};

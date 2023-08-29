@@ -1,254 +1,76 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin editor.
-
-  ==============================================================================
-*/
-
 #pragma once
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-#include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
-#include "../../../se_sdk3/TimerManager.h"
-#include "../../../RefCountMacros.h"
-//==============================================================================
-/**
-*/
+#include "BouncingRectangles.h"
+#include "GmpiUI.h"
 
-#define USE_JUCE_RENDERER 0
+#define USE_GMPI_RENDERER 0
 
-struct BouncingRectangles
-{
-    struct Sprite
-    {
-        juce::Rectangle<int> pos;
-        juce::Point<int> vel;
-        juce::Colour colour;
-    };
-
-    std::vector< Sprite > rects;
-
-    BouncingRectangles()
-    {
-#ifdef _WIN32
-        const int numRects = 100000;
+#if USE_GMPI_RENDERER
+#define BOXES_BASE_CLASS GmpiViewComponent
 #else
-        const int numRects = 10000;
+#define BOXES_BASE_CLASS  juce::Component
 #endif
 
-        for (int i = 0; i < numRects; ++i)
-        {
-            Sprite s;
-            s.pos = { rand() % 500, rand() % 500, 1 + rand() % 50, 1 + rand() % 50 };
-            s.vel = { rand() % 10 - 5, rand() % 10 - 5 };
-            s.colour = juce::Colour((juce::uint8) (rand() % 255), (juce::uint8) (rand() % 255), (juce::uint8) (rand() % 255), (float) (rand() % 100) * 0.01f);
 
-            rects.push_back(s);
-        }
-    }
-
-    void step()
-    {
-        for (auto& s : rects)
-        {
-            s.pos += s.vel;
-
-            if (s.pos.getX() < 0)
-            {
-                s.pos.setX(0);
-                s.vel.setX(-s.vel.getX());
-            }
-            if (s.pos.getY() < 0)
-            {
-                s.pos.setY(0);
-                s.vel.setY(-s.vel.getY());
-            }
-            if (s.pos.getRight() > 400)
-            {
-                s.pos.setX(400 - s.pos.getWidth());
-                s.vel.setX(-s.vel.getX());
-            }
-            if (s.pos.getBottom() > 300)
-            {
-                s.pos.setY(300 - s.pos.getHeight());
-                s.vel.setY(-s.vel.getY());
-            }
-        }
-    }
-};
-
-#ifdef _WIN32
-// Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
-#include "backends/DrawingFrame_win32.h"
-
-
-class JuceDrawingFrame : public GmpiGuiHosting::DrawingFrameBase, public juce::HWNDComponent
-{
-    GmpiDrawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
-public:
-    HWND getWindowHandle() override
-    {
-        return (HWND)getHWND();
-    }
-
-    LRESULT WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-    void open(void* pParentWnd, int width, int height);
-};
-#else
-
-class JuceDrawingFrame : public juce::NSViewComponent
-{
-public:
-    ~JuceDrawingFrame();
-    void open(gmpi::IMpUnknown* client, int width, int height);
-};
-
-#endif
-
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
-#endif
-
-class GmpiCanvas :
-/*public gmpi_gui_api::IMpGraphics3,*/
-public TimerClient,
-public /*gmpi_gui_api::*/IMpDrawingClient
+class BouncingBoxesComponent :
+    public BOXES_BASE_CLASS,
+    public juce::Timer
 {
     BouncingRectangles model;
-//    gmpi_gui::IMpGraphicsHost* drawinghost = {};
-    IDrawingHost* drawinghost = {};
+
 public:
-
-    GmpiCanvas()
+    BouncingBoxesComponent()
     {
-	    StartTimer(1000 / 60);
-	}
+        startTimerHz(30);
+    }
 
-    ~GmpiCanvas()
-	{
-		StopTimer();
-	}
-
-    bool OnTimer() override
+    void timerCallback() override
     {
         model.step();
-
-        if (drawinghost)
-        {
-            drawinghost->invalidateRect(nullptr);
-        }
-
-        return true;
+        repaint();
     }
 
-    // IMpDrawingClient
-    int32_t open(gmpi::IMpUnknown* host)  override
-    {
-#ifdef GMPI_HOST_POINTER_SUPPORT
-        // hack, should use queryinterface
-       // drawinghost = dynamic_cast<gmpi_gui::IMpGraphicsHost*>(host);
+#if USE_GMPI_RENDERER
 
-        return host->queryInterface(gmpi_gui::IMpGraphicsHost::IID(), (void**) &drawinghost);
+    void OnRender(GmpiDrawing::Graphics& g) override
+    {
+        g.Clear(GmpiDrawing::Color::Green);
+
+        auto brush = g.CreateSolidColorBrush(GmpiDrawing::Color::Red);
+
+        for (auto& r : model.rects)
+        {
+            brush.SetColor( toGmpi(r.colour) );
+            g.FillRectangle( toGmpi(r.pos), brush );
+        }
+    }
 #else
-        return host->queryInterface(IDrawingHost::guid, (void**)&drawinghost);
-//        return gmpi::MP_OK;
-#endif
-    }
-    int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
 
-#ifdef GMPI_HOST_POINTER_SUPPORT
-    // IMpGraphics
-    int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override {return gmpi::MP_OK;}
-    int32_t MP_STDCALL arrange(GmpiDrawing_API::MP1_RECT finalRect) override {return gmpi::MP_OK;} // TODO const, and reference maybe?
-#endif
-    int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
-#ifdef GMPI_HOST_POINTER_SUPPORT
-    int32_t MP_STDCALL onPointerDown(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
-    int32_t MP_STDCALL onPointerMove(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
-    int32_t MP_STDCALL onPointerUp(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}    // IMpGraphics2
-    int32_t MP_STDCALL hitTest(GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;} // TODO!!! include mouse flags (for Patch Cables)
-    int32_t MP_STDCALL getToolTip(GmpiDrawing_API::MP1_POINT point, gmpi::IString* returnString) override {return gmpi::MP_OK;}
-
-    // IMpGraphics3
-    int32_t MP_STDCALL hitTest2(int32_t flags, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
-    int32_t MP_STDCALL onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing_API::MP1_POINT point) override {return gmpi::MP_OK;}
-    int32_t MP_STDCALL setHover(bool isMouseOverMe) override {return gmpi::MP_OK;}
-#endif
-
-    // IMpUnknown
-    int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
+    void paint(juce::Graphics& g) override
     {
-        *returnInterface = nullptr;
+        g.fillAll(juce::Colours::green);
 
-        if (iid == IMpDrawingClient::guid || iid == gmpi::MP_IID_UNKNOWN)
+        for (auto& r : model.rects)
         {
-            *returnInterface = static_cast<IMpDrawingClient*>(this);
-            addRef();
-            return gmpi::MP_OK;
+            g.setColour(r.colour);
+            g.fillRect(r.pos);
         }
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
-        {
-            *returnInterface = static_cast<IMpGraphics3*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-
-        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI2)
-        {
-            *returnInterface = static_cast<IMpGraphics2*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-
-        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI)
-        {
-            *returnInterface = static_cast<IMpGraphics*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-#endif
-
-        return gmpi::MP_NOSUPPORT;
     }
-    GMPI_REFCOUNT;
+#endif
 };
 
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-
-class NewProjectAudioProcessorEditor : public juce::AudioProcessorEditor, juce::Timer
+class PluginEditor : public juce::AudioProcessorEditor
 {
 public:
-    NewProjectAudioProcessorEditor (NewProjectAudioProcessor&);
-    ~NewProjectAudioProcessorEditor() override;
-
-    //==============================================================================
-#if USE_JUCE_RENDERER
-    void paint (juce::Graphics&) override;
-#endif
-
-    void parentHierarchyChanged() override;
+    PluginEditor (NewProjectAudioProcessor&);
     void resized() override;
     
-
-    // timer
-    void timerCallback() override;
-
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
     NewProjectAudioProcessor& audioProcessor;
-    JuceDrawingFrame drawingframe;
-    GmpiCanvas* client = 0;
 
-    BouncingRectangles model;
+    BouncingBoxesComponent boxesComponent;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NewProjectAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

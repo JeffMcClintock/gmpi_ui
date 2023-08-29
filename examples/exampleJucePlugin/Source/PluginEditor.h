@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "BouncingRectangles.h"
-#include "GmpiUI.h"
+#include "../../../GmpiUI.h"
 
 #define USE_GMPI_RENDERER 0
 

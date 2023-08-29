@@ -7,6 +7,7 @@
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
 #include "../../../RefCountMacros.h"
+#include "../../../Drawing.h"
 
 #ifdef _WIN32
 // Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
@@ -240,18 +241,9 @@ public:
     GMPI_REFCOUNT;
 };
 
+#ifdef _WIN32
 inline void GmpiViewComponent::parentHierarchyChanged()
 {
-    // this is an oportunity to detect when parent window is available for the first time.
-    //if (USE_JUCE_RENDERER)
-    //    return;
-
-    //if (client)
-    //{
-    //    return;
-    //}
-
-
 #ifdef _WIN32
     if (auto hwnd = (HWND)getWindowHandle(); hwnd && !getHWND())
     {
@@ -302,7 +294,7 @@ inline void GmpiViewComponent::parentHierarchyChanged()
     }
 #endif
 }
-
+#endif
 
 #ifdef __GNUC__
 #pragma GCC diagnostic pop

@@ -2,8 +2,8 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "JuceGmpiComponent.h"
 #include "BouncingRectangles.h"
-#include "../../../JuceGmpiComponent.h"
 
 #define USE_GMPI_RENDERER 1
 

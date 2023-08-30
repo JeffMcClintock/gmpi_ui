@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="nSyPkK" name="GMPI_Drawing" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
-              headerPath="C:\SE\gmpi_ui" defines="_UNICODE UNICODE" cppLanguageStandard="20">
+              headerPath="../../../.." defines="_UNICODE UNICODE" cppLanguageStandard="20">
   <MAINGROUP id="wfdSeb" name="GMPI_Drawing">
     <GROUP id="{BD1CCC41-A448-A8AF-D230-9DEF5D00554B}" name="Source">
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">

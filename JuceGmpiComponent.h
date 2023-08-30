@@ -5,7 +5,7 @@
 */
 
 #include <JuceHeader.h>
-#include "../../../Drawing.h"
+#include "./Drawing.h"
 
 class GmpiComponent :
 	#ifdef _WIN32

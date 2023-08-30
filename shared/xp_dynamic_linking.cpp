@@ -74,7 +74,7 @@ namespace gmpi_dynamic_linking
 		MP_GetDllHandle(&hmodule);
 
 		wchar_t full_path[MAX_PATH] = L"";
-		GetModuleFileNameW((HMODULE)hmodule, full_path, std::size(full_path));
+		GetModuleFileNameW((HMODULE)hmodule, full_path, (DWORD) std::size(full_path));
 		return std::wstring(full_path);
 	}
     

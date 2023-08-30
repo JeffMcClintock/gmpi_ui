@@ -41,9 +41,7 @@ class GmpiViewComponent : public juce::HWNDComponent, IMpDrawingClient
     GmpiDrawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 
 protected:
-
     void parentHierarchyChanged() override;
-
 
 public:
     GmpiViewComponent() : JuceDrawingFrameBase(*this)
@@ -54,6 +52,7 @@ public:
 	virtual void OnRender(GmpiDrawing::Graphics& g) {}
 
 
+    // IMpDrawingClient interface
 	int32_t open(gmpi::IMpUnknown* host) override { return gmpi::MP_OK; }
 
 	// First pass of layout update. Return minimum size required for given available size
@@ -75,10 +74,10 @@ public:
 		JuceDrawingFrameBase.invalidateRect(nullptr);
     }
 
-	void repaint()
-	{
-		invalidateRect();
-	}
+//	void repaint()
+//	{
+//		invalidateRect();
+//	}
 
 	// TODO GMPI_QUERYINTERFACE(IMpDrawingClient::guid, IMpDrawingClient);
 	int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
@@ -121,12 +120,104 @@ public:
 };
 #else
 
+class JuceComponentProxy : public IMpDrawingClient
+{
+    class GmpiViewComponent* component = {};
+    IDrawingHost* drawinghost = {};
+public:
+    
+    JuceComponentProxy(class GmpiViewComponent* pcomponent) : component(pcomponent){}
+    
+    int32_t open(gmpi::IMpUnknown* host) override
+    {
+        return host->queryInterface(IDrawingHost::guid, (void**)&drawinghost);
+    }
+
+    void invalidateRect()
+    {
+        drawinghost->invalidateRect(nullptr);
+    }
+    
+    // First pass of layout update. Return minimum size required for given available size
+    int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
+
+    // Second pass of layout.
+    int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
+
+    int32_t OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
+    
+    // TODO GMPI_QUERYINTERFACE(IMpDrawingClient::guid, IMpDrawingClient);
+    int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
+    {
+        *returnInterface = nullptr;
+
+        if (iid == IMpDrawingClient::guid || iid == gmpi::MP_IID_UNKNOWN)
+        {
+            *returnInterface = static_cast<IMpDrawingClient*>(this);
+            addRef();
+            return gmpi::MP_OK;
+        }
+
+#ifdef GMPI_HOST_POINTER_SUPPORT
+        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
+        {
+            *returnInterface = static_cast<IMpGraphics3*>(this);
+            addRef();
+            return gmpi::MP_OK;
+        }
+
+        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI2)
+        {
+            *returnInterface = static_cast<IMpGraphics2*>(this);
+            addRef();
+            return gmpi::MP_OK;
+        }
+
+        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI)
+        {
+            *returnInterface = static_cast<IMpGraphics*>(this);
+            addRef();
+            return gmpi::MP_OK;
+        }
+#endif
+
+        return gmpi::MP_NOSUPPORT;
+    }
+    GMPI_REFCOUNT_NO_DELETE;
+};
+
 class GmpiViewComponent : public juce::NSViewComponent
 {
+    JuceComponentProxy proxy;
+    
 public:
+    GmpiViewComponent() : proxy(this){}
     ~GmpiViewComponent();
     void open(gmpi::IMpUnknown* client, int width, int height);
+    void parentHierarchyChanged() override
+    {
+        if(!getView())
+        {
+            const auto r = getLocalBounds();
+            open(&proxy, r.getWidth(), r.getHeight());
+        }
+    }
+    
+    void invalidateRect()
+    {
+        proxy.invalidateRect();
+    }
+
+    // override this in your derived class
+    virtual void OnRender(GmpiDrawing::Graphics& g) {}
 };
+
+inline int32_t JuceComponentProxy::OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext)
+{
+    GmpiDrawing::Graphics g(drawingContext);
+    component->OnRender(g);
+    return gmpi::MP_OK;
+}
 
 #endif
 
@@ -584,7 +675,7 @@ inline void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
 #else
 
 // macOS
-void GmpiViewComponent::open(gmpi::IMpUnknown* client, int width, int height)
+inline void GmpiViewComponent::open(gmpi::IMpUnknown* client, int width, int height)
 {
 	auto nsView = createNativeView((class IMpUnknown*)client, width, height); // !!!probly need to pass controller
 
@@ -592,7 +683,7 @@ void GmpiViewComponent::open(gmpi::IMpUnknown* client, int width, int height)
 	//    auto y = CFGetRetainCount(nsView);
 }
 
-GmpiViewComponent::~GmpiViewComponent()
+inline GmpiViewComponent::~GmpiViewComponent()
 {
 	onCloseNativeView(getView());
 }

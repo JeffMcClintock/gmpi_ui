@@ -5,7 +5,7 @@
 #include "BouncingRectangles.h"
 #include "../../../GmpiUI.h"
 
-#define USE_GMPI_RENDERER 0
+#define USE_GMPI_RENDERER 1
 
 #if USE_GMPI_RENDERER
 #define BOXES_BASE_CLASS GmpiViewComponent
@@ -29,7 +29,12 @@ public:
     void timerCallback() override
     {
         model.step();
+        
+#if USE_GMPI_RENDERER
+        invalidateRect();
+#else
         repaint();
+#endif
     }
 
 #if USE_GMPI_RENDERER

@@ -18,6 +18,7 @@
               file="../../backends/gmpi_gui_hosting.cpp"/>
         <FILE id="C1edYE" name="gmpi_gui_hosting.h" compile="0" resource="0"
               file="../../backends/gmpi_gui_hosting.h"/>
+        <FILE id="djNRtb" name="GmpiUI.h" compile="0" resource="0" file="../../GmpiUI.h"/>
         <FILE id="vHSSk1" name="it_enum_list.cpp" compile="1" resource="0"
               file="../../se_sdk3/it_enum_list.cpp"/>
         <FILE id="TP1i2d" name="it_enum_list.h" compile="0" resource="0" file="../../se_sdk3/it_enum_list.h"/>

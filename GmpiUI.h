@@ -101,10 +101,9 @@ public:
 };
 
 
-class GmpiViewComponent : public juce::HWNDComponent//, IMpDrawingClient
+class GmpiViewComponent : public juce::HWNDComponent
 {
     JuceDrawingFrameBase JuceDrawingFrameBase;
-    GmpiDrawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 	JuceComponentProxy proxy;
 
 protected:
@@ -115,78 +114,16 @@ public:
 	{
 	}
 
-	// override this in your derived class
+	// override this in your derived class to draw on your component.
 	virtual void OnRender(GmpiDrawing::Graphics& g) {}
 
+	// call this to repaint the component.
 	void invalidateRect()
 	{
 		JuceDrawingFrameBase.invalidateRect(nullptr);
 	}
-
-#if 0
-    // IMpDrawingClient interface
-	int32_t open(gmpi::IMpUnknown* host) override { return gmpi::MP_OK; }
-
-	// First pass of layout update. Return minimum size required for given available size
-	int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
-
-	// Second pass of layout.
-	int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
-
-	int32_t OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override
-	{
-		GmpiDrawing::Graphics g(drawingContext);
-		OnRender(g);
-
-		return gmpi::MP_OK;
-	}
-
-//	void repaint()
-//	{
-//		invalidateRect();
-//	}
-
-	// TODO GMPI_QUERYINTERFACE(IMpDrawingClient::guid, IMpDrawingClient);
-	int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
-	{
-		*returnInterface = nullptr;
-
-		if (iid == IMpDrawingClient::guid || iid == gmpi::MP_IID_UNKNOWN)
-		{
-			*returnInterface = static_cast<IMpDrawingClient*>(this);
-			addRef();
-			return gmpi::MP_OK;
-		}
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
-		{
-			*returnInterface = static_cast<IMpGraphics3*>(this);
-			addRef();
-			return gmpi::MP_OK;
-		}
-
-		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI2)
-		{
-			*returnInterface = static_cast<IMpGraphics2*>(this);
-			addRef();
-			return gmpi::MP_OK;
-		}
-
-		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI)
-		{
-			*returnInterface = static_cast<IMpGraphics*>(this);
-			addRef();
-			return gmpi::MP_OK;
-		}
-#endif
-
-		return gmpi::MP_NOSUPPORT;
-	}
-	GMPI_REFCOUNT_NO_DELETE;
-#endif
-
 };
+
 #else
 
 class GmpiViewComponent : public juce::NSViewComponent
@@ -215,10 +152,15 @@ public:
         proxy.invalidateRect();
     }
 
-    // override this in your derived class to draw on your componenet.
+    // override this in your derived class to draw on your component.
     virtual void OnRender(GmpiDrawing::Graphics& g) {}
 };
 
+#endif
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 #endif
 
 inline int32_t JuceComponentProxy::OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext)
@@ -228,122 +170,9 @@ inline int32_t JuceComponentProxy::OnRender(GmpiDrawing_API::IMpDeviceContext* d
 	return gmpi::MP_OK;
 }
 
-
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
-#endif
-
-class GmpiCanvas :
-    /*public gmpi_gui_api::IMpGraphics3,*/
-    //public TimerClient,
-    public /*gmpi_gui_api::*/IMpDrawingClient
-{
-    //    gmpi_gui::IMpGraphicsHost* drawinghost = {};
-    IDrawingHost* drawinghost = {};
-	IMpDrawingClient* juceComponent = {};
-
-public:
-
-    GmpiCanvas(IMpDrawingClient* pJuceComponent) :
-		juceComponent(pJuceComponent)
-    {
-//        StartTimer(1000 / 60);
-    }
-
-    ~GmpiCanvas()
-    {
-//       StopTimer();
-    }
-
-    // IMpDrawingClient
-    int32_t open(gmpi::IMpUnknown* host)  override
-    {
-#ifdef GMPI_HOST_POINTER_SUPPORT
-        // hack, should use queryinterface
-       // drawinghost = dynamic_cast<gmpi_gui::IMpGraphicsHost*>(host);
-
-        return host->queryInterface(gmpi_gui::IMpGraphicsHost::IID(), (void**)&drawinghost);
-#else
-        return host->queryInterface(IDrawingHost::guid, (void**)&drawinghost);
-        //        return gmpi::MP_OK;
-#endif
-    }
-
-    void invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRect = {})
-    {
-        if (drawinghost)
-        {
-            drawinghost->invalidateRect(invalidRect);
-        }
-    }
-
-    int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-    // IMpGraphics
-    int32_t MP_STDCALL measure(GmpiDrawing_API::MP1_SIZE availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL arrange(GmpiDrawing_API::MP1_RECT finalRect) override { return gmpi::MP_OK; } // TODO const, and reference maybe?
-#endif
-    int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
-#ifdef GMPI_HOST_POINTER_SUPPORT
-    int32_t MP_STDCALL onPointerDown(int32_t flags, GmpiDrawing_API::MP1_POINT point) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL onPointerMove(int32_t flags, GmpiDrawing_API::MP1_POINT point) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL onPointerUp(int32_t flags, GmpiDrawing_API::MP1_POINT point) override { return gmpi::MP_OK; }    // IMpGraphics2
-    int32_t MP_STDCALL hitTest(GmpiDrawing_API::MP1_POINT point) override { return gmpi::MP_OK; } // TODO!!! include mouse flags (for Patch Cables)
-    int32_t MP_STDCALL getToolTip(GmpiDrawing_API::MP1_POINT point, gmpi::IString* returnString) override { return gmpi::MP_OK; }
-
-    // IMpGraphics3
-    int32_t MP_STDCALL hitTest2(int32_t flags, GmpiDrawing_API::MP1_POINT point) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing_API::MP1_POINT point) override { return gmpi::MP_OK; }
-    int32_t MP_STDCALL setHover(bool isMouseOverMe) override { return gmpi::MP_OK; }
-#endif
-
-    // IMpUnknown
-    int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
-    {
-        *returnInterface = nullptr;
-
-        if (iid == IMpDrawingClient::guid || iid == gmpi::MP_IID_UNKNOWN)
-        {
-            *returnInterface = static_cast<IMpDrawingClient*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
-        {
-            *returnInterface = static_cast<IMpGraphics3*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-
-        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI2)
-        {
-            *returnInterface = static_cast<IMpGraphics2*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-
-        if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI)
-        {
-            *returnInterface = static_cast<IMpGraphics*>(this);
-            addRef();
-            return gmpi::MP_OK;
-        }
-#endif
-
-        return gmpi::MP_NOSUPPORT;
-    }
-    GMPI_REFCOUNT;
-};
-
 #ifdef _WIN32
 inline void GmpiViewComponent::parentHierarchyChanged()
 {
-#ifdef _WIN32
     if (auto hwnd = (HWND)getWindowHandle(); hwnd && !getHWND())
     {
         const auto r = getBounds();
@@ -352,28 +181,6 @@ inline void GmpiViewComponent::parentHierarchyChanged()
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-#if 0
-        //		auto presenter = new JsonDocPresenter(dynamic_cast<IGuiHost2*>(&controller));
-
-        {
-            //auto cv =
-            //	new SynthEdit2::ContainerView(
-            //		GmpiDrawing::Size(static_cast<float>(drawingframe.viewDimensions), static_cast<float>(drawingframe.viewDimensions))
-            //	);
-
-//               if (!client)
-            {
-                auto client = new GmpiCanvas(this);
-                //	client->drawinghost = &drawingframe;
-                JuceDrawingFrameBase.AddView(static_cast</*gmpi_gui_api::*/IMpDrawingClient*>(client));// cv);
-
-                client->release();
-            }
-
-            //			cv->setDocument(presenter, CF_PANEL_VIEW);
-        }
-#endif
-
 		JuceDrawingFrameBase.AddView(static_cast</*gmpi_gui_api::*/IMpDrawingClient*>(&proxy));
 
 		JuceDrawingFrameBase.open(
@@ -381,31 +188,13 @@ inline void GmpiViewComponent::parentHierarchyChanged()
             (r.getWidth() * dpi) / 96,
             (r.getHeight() * dpi) / 96
         );
-
-        //            StartTimer(15);
     }
-#else
-    if (!drawingframe.getView())
-    {
-        client = new GmpiCanvas();
-        //	client->drawinghost = &drawingframe;
-        const auto r = getBounds();
-        open(client, r.getWidth(), r.getHeight());
-        client->release();
-    }
-#endif
 }
 #endif
 
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
-
-inline int32_t GmpiCanvas::OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext)
-{
-	// defer to client
-	return juceComponent->OnRender(drawingContext);
-}
 
 // move this crap
 #ifdef _WIN32
@@ -421,10 +210,6 @@ void onCloseNativeView(void* ptr);
 
 #ifdef _WIN32
 
-////////////////////////////////////////////////////////////////////////////
-// 
-// 
-// 
 inline LRESULT JuceDrawingFrameBase::WindowProc(
 	HWND hwnd,
 	UINT message,
@@ -688,9 +473,7 @@ inline void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
 inline void GmpiViewComponent::open(gmpi::IMpUnknown* client, int width, int height)
 {
 	auto nsView = createNativeView((class IMpUnknown*)client, width, height); // !!!probly need to pass controller
-
 	setView(nsView);
-	//    auto y = CFGetRetainCount(nsView);
 }
 
 inline GmpiViewComponent::~GmpiViewComponent()

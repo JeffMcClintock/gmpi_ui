@@ -1,4 +1,4 @@
-#include "GmpiUI.h"
+#include "JuceGmpiComponent.h"
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
 #include "../../../RefCountMacros.h"
@@ -6,11 +6,11 @@
 
 class JuceComponentProxy : public IMpDrawingClient
 {
-	class GmpiViewComponent* component = {};
+	class GmpiComponent* component = {};
 	IDrawingHost* drawinghost = {};
 public:
 
-	JuceComponentProxy(class GmpiViewComponent* pcomponent) : component(pcomponent) {}
+	JuceComponentProxy(class GmpiComponent* pcomponent) : component(pcomponent) {}
 
 	int32_t open(gmpi::IMpUnknown* host) override
 	{
@@ -347,7 +347,7 @@ void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
 	}
 }
 
-struct GmpiViewComponent::Pimpl
+struct GmpiComponent::Pimpl
 {
 	JuceComponentProxy proxy;
     JuceDrawingFrameBase JuceDrawingFrameBase;
@@ -368,7 +368,7 @@ struct GmpiViewComponent::Pimpl
     }
 };
 
-void GmpiViewComponent::parentHierarchyChanged()
+void GmpiComponent::parentHierarchyChanged()
 {
     if (auto hwnd = (HWND)getWindowHandle(); hwnd && !getHWND())
     {
@@ -376,17 +376,17 @@ void GmpiViewComponent::parentHierarchyChanged()
     }
 }
 
-void GmpiViewComponent::invalidateRect()
+void GmpiComponent::invalidateRect()
 {
     internal->JuceDrawingFrameBase.invalidateRect(nullptr);
 }
 
-GmpiViewComponent::GmpiViewComponent() :
-    internal(std::make_unique<GmpiViewComponent::Pimpl>(this, *this))
+GmpiComponent::GmpiComponent() :
+    internal(std::make_unique<GmpiComponent::Pimpl>(this, *this))
 {
 }
 
-GmpiViewComponent::~GmpiViewComponent() {}
+GmpiComponent::~GmpiComponent() {}
 
 #else
 // macOS
@@ -395,11 +395,11 @@ GmpiViewComponent::~GmpiViewComponent() {}
 void* createNativeView(class IMpUnknown* client, int width, int height);
 void onCloseNativeView(void* ptr);
 
-struct GmpiViewComponent::Pimpl
+struct GmpiComponent::Pimpl
 {
 	JuceComponentProxy proxy;
 
-    Pimpl(GmpiViewComponent* component) : proxy(component){}
+    Pimpl(GmpiComponent* component) : proxy(component){}
     
 	void open(juce::NSViewComponent* nsview)
 	{
@@ -409,17 +409,17 @@ struct GmpiViewComponent::Pimpl
 	}
 };
 
-GmpiViewComponent::GmpiViewComponent() :
-    internal(std::make_unique<GmpiViewComponent::Pimpl>(this))
+GmpiComponent::GmpiComponent() :
+    internal(std::make_unique<GmpiComponent::Pimpl>(this))
 {
 }
 
-GmpiViewComponent::~GmpiViewComponent()
+GmpiComponent::~GmpiComponent()
 {
     onCloseNativeView(getView());
 }
 
-void GmpiViewComponent::parentHierarchyChanged()
+void GmpiComponent::parentHierarchyChanged()
 {
 	if (!getView())
 	{
@@ -427,7 +427,7 @@ void GmpiViewComponent::parentHierarchyChanged()
 	}
 }
 
-void GmpiViewComponent::invalidateRect()
+void GmpiComponent::invalidateRect()
 {
 	internal->proxy.invalidateRect();
 }

@@ -3,16 +3,17 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "BouncingRectangles.h"
-#include "../../../GmpiUI.h"
+#include "../../../JuceGmpiComponent.h"
 
 #define USE_GMPI_RENDERER 1
 
 #if USE_GMPI_RENDERER
-#define BOXES_BASE_CLASS GmpiViewComponent
+#define BOXES_BASE_CLASS GmpiComponent
 #else
 #define BOXES_BASE_CLASS juce::Component
 #endif
 
+// this class tests the renderer by drawing thousands of colored rectangles.
 class BouncingBoxesComponent :
     public BOXES_BASE_CLASS,
     public juce::Timer
@@ -30,7 +31,7 @@ public:
         model.step();
         
 #if USE_GMPI_RENDERER
-        invalidateRect();
+        invalidateRect(); // GMPI-UI equivalent of 'repaint()'
 #else
         repaint();
 #endif
@@ -38,6 +39,7 @@ public:
 
 #if USE_GMPI_RENDERER
 
+    // GMPI-UI rendering
     void OnRender(GmpiDrawing::Graphics& g) override
     {
         g.Clear(GmpiDrawing::Color::Green);
@@ -52,6 +54,7 @@ public:
     }
 #else
 
+    // JUCE rendering
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colours::green);

@@ -1,13 +1,13 @@
 #pragma once
 
 /*
-#include "GmpiUI.h"
+#include "JuceGmpiComponent.h"
 */
 
 #include <JuceHeader.h>
 #include "../../../Drawing.h"
 
-class GmpiViewComponent :
+class GmpiComponent :
 	#ifdef _WIN32
 		public juce::HWNDComponent
 	#else
@@ -21,8 +21,8 @@ protected:
     void parentHierarchyChanged() override;
 
 public:
-	GmpiViewComponent();
-	~GmpiViewComponent();
+	GmpiComponent();
+	~GmpiComponent();
 
 	// override this in your derived class to draw on your component.
 	virtual void OnRender(GmpiDrawing::Graphics& g) {}

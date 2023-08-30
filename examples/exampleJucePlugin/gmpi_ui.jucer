@@ -18,11 +18,13 @@
               file="../../backends/gmpi_gui_hosting.cpp"/>
         <FILE id="C1edYE" name="gmpi_gui_hosting.h" compile="0" resource="0"
               file="../../backends/gmpi_gui_hosting.h"/>
-        <FILE id="dtrgrh" name="GmpiUI.cpp" compile="1" resource="0" file="../../GmpiUI.cpp"/>
-        <FILE id="djNRtb" name="GmpiUI.h" compile="0" resource="0" file="../../GmpiUI.h"/>
         <FILE id="vHSSk1" name="it_enum_list.cpp" compile="1" resource="0"
               file="../../se_sdk3/it_enum_list.cpp"/>
         <FILE id="TP1i2d" name="it_enum_list.h" compile="0" resource="0" file="../../se_sdk3/it_enum_list.h"/>
+        <FILE id="sL1AYr" name="JuceGmpiComponent.cpp" compile="1" resource="0"
+              file="../../JuceGmpiComponent.cpp"/>
+        <FILE id="yY7PnD" name="JuceGmpiComponent.h" compile="0" resource="0"
+              file="../../JuceGmpiComponent.h"/>
         <FILE id="ggRuEq" name="SynthEditCocoaView.h" compile="0" resource="0"
               file="../../se_sdk3_hosting/SynthEditCocoaView.h"/>
         <FILE id="TBO8hU" name="SynthEditCocoaView.mm" compile="1" resource="0"

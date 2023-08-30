@@ -10,9 +10,8 @@
 #if USE_GMPI_RENDERER
 #define BOXES_BASE_CLASS GmpiViewComponent
 #else
-#define BOXES_BASE_CLASS  juce::Component
+#define BOXES_BASE_CLASS juce::Component
 #endif
-
 
 class BouncingBoxesComponent :
     public BOXES_BASE_CLASS,

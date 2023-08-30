@@ -381,6 +381,13 @@ void GmpiViewComponent::invalidateRect()
     internal->JuceDrawingFrameBase.invalidateRect(nullptr);
 }
 
+GmpiViewComponent::GmpiViewComponent() :
+    internal(std::make_unique<GmpiViewComponent::Pimpl>(this, *this))
+{
+}
+
+GmpiViewComponent::~GmpiViewComponent() {}
+
 #else
 // macOS
 // without including objective-C headers, we need to create an NSView.
@@ -392,24 +399,31 @@ struct GmpiViewComponent::Pimpl
 {
 	JuceComponentProxy proxy;
 
-	void open(juce::NSViewComponent* nsview, int width, int height)
+    Pimpl(GmpiViewComponent* component) : proxy(component){}
+    
+	void open(juce::NSViewComponent* nsview)
 	{
 		const auto r = nsview->getLocalBounds();
 		auto nsView = createNativeView((class IMpUnknown*)&proxy, r.getWidth(), r.getHeight());
 		nsview->setView(nsView);
 	}
-	
-	~Pimpl()
-	{
-		onCloseNativeView(getView());
-	}
 };
+
+GmpiViewComponent::GmpiViewComponent() :
+    internal(std::make_unique<GmpiViewComponent::Pimpl>(this))
+{
+}
+
+GmpiViewComponent::~GmpiViewComponent()
+{
+    onCloseNativeView(getView());
+}
 
 void GmpiViewComponent::parentHierarchyChanged()
 {
 	if (!getView())
 	{
-		internal->open(&proxy);
+		internal->open(this);
 	}
 }
 
@@ -418,13 +432,6 @@ void GmpiViewComponent::invalidateRect()
 	internal->proxy.invalidateRect();
 }
 #endif
-
-GmpiViewComponent::GmpiViewComponent() :
-	internal(std::make_unique<GmpiViewComponent::Pimpl>(this, *this))
-{
-}
-
-GmpiViewComponent::~GmpiViewComponent() {}
 
 int32_t JuceComponentProxy::OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext)
 {

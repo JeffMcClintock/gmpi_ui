@@ -13,7 +13,7 @@ using namespace GmpiGuiHosting;
 //#include "../se_sdk3/mp_gui.h"
 //#include "../shared/unicode_conversion.h"
 
-#include "../se_sdk3/Drawing_API.h"
+#include "../Drawing_API.h"
 
 namespace GmpiGuiHosting
 {
@@ -302,21 +302,21 @@ namespace GmpiGuiHosting
 	{
 		HRGN hRegion = 0;
 		std::string regionDataBuffer;
-		std::vector<GmpiDrawing_API::MP1_RECT_L> rects;
-		GmpiDrawing_API::MP1_RECT_L bounds;
+		std::vector<gmpi_drawing::api::RectL> rects;
+		gmpi_drawing::api::RectL bounds;
 
 	public:
 		UpdateRegionWinGdi();
 		~UpdateRegionWinGdi();
 
-		void copyDirtyRects(HWND window, GmpiDrawing_API::MP1_SIZE_L swapChainSize);
+		void copyDirtyRects(HWND window, gmpi_drawing::api::SizeL swapChainSize);
 		void optimizeRects();
 
-		inline std::vector<GmpiDrawing_API::MP1_RECT_L>& getUpdateRects()
+		inline std::vector<gmpi_drawing::api::RectL>& getUpdateRects()
 		{
 			return rects;
 		}
-		inline GmpiDrawing_API::MP1_RECT_L& getBoundingRect()
+		inline gmpi_drawing::api::RectL& getBoundingRect()
 		{
 			return bounds;
 		}

@@ -159,7 +159,7 @@ enum class DashStyle : int32_t
 
 enum class LineJoin : int32_t
 {
-    Miter        = 0,
+    Miter        = 0, //TODO spelling? Mitre?
     Bevel        = 1,
     Round        = 2,
     MiterOrBevel = 3,
@@ -210,6 +210,12 @@ struct Point
     float y;
 };
 
+struct PointL
+{
+    int32_t x;
+    int32_t y;
+};
+
 struct Rect
 {
     float left;
@@ -256,8 +262,8 @@ struct Matrix3x2
 
 struct BitmapProperties
 {
-    float dpix;
-    float dpiy;
+    float dpiX;
+    float dpiY;
 };
 
 struct Gradientstop
@@ -274,23 +280,23 @@ struct BrushProperties
 
 struct BitmapBrushProperties
 {
-    ExtendMode extendmodex;
-    ExtendMode extendmodey;
-    BitmapInterpolationMode interpolationmode;
+    ExtendMode extendModeX;
+    ExtendMode extendModeY;
+    BitmapInterpolationMode interpolationMode;
 };
 
 struct LinearGradientBrushProperties
 {
-    Point startpoint;
-    Point endpoint;
+    Point startPoint;
+    Point endPoint;
 };
 
 struct RadialGradientBrushProperties
 {
     Point center;
-    Point gradientoriginoffset;
-    float radiusx;
-    float radiusy;
+    Point gradientOriginOffset;
+    float radiusX;
+    float radiusY;
 };
 
 struct BezierSegment
@@ -311,9 +317,9 @@ struct ArcSegment
 {
     Point point;
     Size size;
-    float rotationangle;
-    SweepDirection sweepdirection;
-    ArcSize arcsize;
+    float rotationAngle;
+    SweepDirection sweepDirection;
+    ArcSize arcSize;
 };
 
 struct QuadraticBezierSegment
@@ -325,15 +331,15 @@ struct QuadraticBezierSegment
 struct Ellipse
 {
     Point point;
-    float radiusx;
-    float radiusy;
+    float radiusX;
+    float radiusY;
 };
 
 struct RoundedRect
 {
     Rect rect;
-    float radiusx;
-    float radiusy;
+    float radiusX;
+    float radiusY;
 };
 
 // Notes:
@@ -342,13 +348,13 @@ struct RoundedRect
 // * MP1_CAP_STYLE_TRIANGLE is not supported on macOS, it draws as MP1_CAP_STYLE_ROUND.
 struct StrokeStyleProperties
 {
-    CapStyle startcap;
-    CapStyle endcap;
-    CapStyle dashcap;
-    LineJoin linejoin;
-    float miterlimit;
-    DashStyle dashstyle;
-    float dashoffset;
+    CapStyle startCap;
+    CapStyle endCap;
+    CapStyle dashCap;
+    LineJoin lineJoin;
+    float miterLimit;
+    DashStyle dashStyle;
+    float dashOffset;
     int32_t transformTypeUnused;
 };
 
@@ -377,8 +383,8 @@ struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
     virtual gmpi::ReturnCode setTextAlignment(TextAlignment textAlignment) = 0;
     virtual gmpi::ReturnCode setParagraphAlignment(ParagraphAlignment paragraphAlignment) = 0;
     virtual gmpi::ReturnCode setWordWrapping(WordWrapping wordWrapping) = 0;
-    virtual gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, Size** returnSize) = 0;
-    virtual gmpi::ReturnCode getFontMetrics(FontMetrics** returnFontMetrics) = 0;
+    virtual gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, Size* returnSize) = 0;
+    virtual gmpi::ReturnCode getFontMetrics(FontMetrics* returnFontMetrics) = 0;
 
 	// For the default method use lineSpacing=-1 (spacing depends solely on the content). For uniform spacing, the specified line height overrides the content.
 	// Can also be used to enable legacy-mode for cross-platform vertical font snapping by

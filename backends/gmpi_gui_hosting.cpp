@@ -11,14 +11,15 @@
 #include "./gmpi_gui_hosting.h"
 #include "../shared/it_enum_list.h"
 #include "../shared/xp_dynamic_linking.h"
-#include "../se_sdk3/Drawing.h"
+//#include "../se_sdk3/Drawing.h"
+#include "../Drawing.h"
 
 
 using namespace std;
 using namespace gmpi;
 //using namespace gmpi_gui;
 using namespace GmpiGuiHosting;
-using namespace GmpiDrawing_API;
+//using namespace GmpiDrawing_API;
 namespace GmpiGuiHosting
 {
 	float FastGamma::toFloat[] = {
@@ -141,7 +142,7 @@ namespace GmpiGuiHosting
 // WIN32 Edit box dialog.
 #ifdef _WIN32
 
-void UpdateRegionWinGdi::copyDirtyRects(HWND window, GmpiDrawing_API::MP1_SIZE_L swapChainSize)
+void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi_drawing::api::SizeL swapChainSize)
 {
 	rects.clear();
 
@@ -194,7 +195,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, GmpiDrawing_API::MP1_SIZE_L
 //				_RPTW4(_CRT_WARN, L"rect %d, %d, %d, %d\n", r.left, r.top, r.right,r.bottom);
 
 				// Direct 2D will fail if any rect outside swapchain bitmap area.
-				r.Intersect(GmpiDrawing_API::MP1_RECT_L(0, 0, swapChainSize.width, swapChainSize.height));
+				r.Intersect({ 0, 0, swapChainSize.width, swapChainSize.height });
 
 				if (!r.empty())
 				{

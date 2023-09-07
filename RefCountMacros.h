@@ -22,6 +22,7 @@
 	int32_t release() override {return 1;}
 #endif
 
+#if 0
 // old crap
 
 // Handy macro to save typing.
@@ -49,4 +50,5 @@
 	return gmpi::MP_OK; \
 } \
 return BASE_CLASS::queryInterface(iid, returnInterface); \
-} \
+}
+#endif

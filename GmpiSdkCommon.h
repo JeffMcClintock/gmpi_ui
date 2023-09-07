@@ -101,6 +101,14 @@ public:
 		assert(obj == nullptr); // Free it before you re-use it!
 		return &obj;
 	}
+
+	wrappedObjT** put()
+	{
+		// Free it before you re-use it
+		if (obj){obj->release();}
+		obj = nullptr;
+		return &obj;
+	}
 	void** asIMpUnknownPtr()
 	{
 		assert(obj == 0); // Free it before you re-use it!
@@ -172,6 +180,10 @@ public:
 	{
 		m_ptr = nullptr;
 		return m_ptr.getAddressOf();
+	}
+
+	explicit operator bool() {
+		return m_ptr != nullptr;
 	}
 
 private: // need em?

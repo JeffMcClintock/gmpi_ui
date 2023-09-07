@@ -9,7 +9,7 @@
 #include <dwrite.h>
 #include <codecvt>
 #include <Wincodec.h>
-#include "Drawing.h"
+#include "../Drawing.h"
 //#include "./gmpi_gui_hosting.h"
 #include "RefCountMacros.h"
 

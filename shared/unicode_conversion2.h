@@ -8,6 +8,7 @@ using namespace FastUnicode;
 */
 
 #include <string>
+#include <assert.h>
 
 namespace FastUnicode
 {

@@ -401,7 +401,7 @@ struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
 // INTERFACE 'IResource'
 struct DECLSPEC_NOVTABLE IResource : public gmpi::api::IUnknown
 {
-    virtual gmpi::ReturnCode getFactory(const struct IFactory** factory) = 0;
+    virtual gmpi::ReturnCode getFactory(struct IFactory** factory) = 0;
 };
 
 // INTERFACE 'IBitmapPixels'
@@ -428,12 +428,12 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IBitmap : public IResource
 {
     // DEPRECATED: Should be integer size to avoid costly float->int conversions and for Direct2D compatibility.
-    virtual const Size* getSize() = 0;
+    virtual const Size getSize() = 0;
     // Deprecated, see lockPixels.
     virtual gmpi::ReturnCode lockPixelsOld(IBitmapPixels** returnPixels, bool alphaPremultiplied) = 0;
     // Deprecated. DirectX 11 has SRGB support.
     virtual gmpi::ReturnCode applyAlphaCorrection() = 0;
-    virtual gmpi::ReturnCode getSize(SizeU** returnSize) = 0;
+    virtual gmpi::ReturnCode getSize(SizeU* returnSize) = 0;
     // Same as lockPixelsOld() but with option to avoid overhead of copying pixels back into image. See MP1_BITMAP_LOCK_FLAGS. Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
     virtual gmpi::ReturnCode lockPixels(IBitmapPixels** returnPixels, int32_t flags) = 0;
 
@@ -461,6 +461,7 @@ struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
 {
     virtual gmpi::ReturnCode setExtendModeX(ExtendMode extendModeX) = 0;
     virtual gmpi::ReturnCode setExtendModeY(ExtendMode extendModeY) = 0;
+    virtual gmpi::ReturnCode setInterpolationMode(BitmapInterpolationMode interpolationMode) = 0;
 
     // {10E6068D-75D7-4C36-89AD-1C8878E70988}
     inline static const gmpi::api::Guid guid =
@@ -471,7 +472,7 @@ struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
 struct DECLSPEC_NOVTABLE ISolidColorBrush : public IBrush
 {
     virtual gmpi::ReturnCode setColor(const Color* color) = 0;
-	virtual Color GetColor() = 0; // !!!ERROR !!! RETURNING A STRUCT
+	virtual Color getColor() = 0; // !!!ERROR !!! RETURNING A STRUCT
 
     // {BB3FD251-47A0-4273-90AB-A5CDC88F57B9}
     inline static const gmpi::api::Guid guid =
@@ -572,7 +573,7 @@ struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
 {
     virtual gmpi::ReturnCode open(ISimplifiedGeometrySink** returnGeometrySink) = 0;
 	// in DX, these are part of IMpGeometry. But were added later here, and so added last. not a big deal since we support only one type of geometry, not many like DX.
-    virtual gmpi::ReturnCode strokeContainsPoint(const Point point, float strokeWidth, IStrokeStyle strokeStyle, const Matrix3x2* worldTransform, bool contains) = 0;
+    virtual gmpi::ReturnCode strokeContainsPoint(const Point point, float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, bool contains) = 0;
     virtual gmpi::ReturnCode fillContainsPoint(const Point point, const Matrix3x2* worldTransform, bool contains) = 0;
     virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, const Rect* bounds) = 0;
 
@@ -632,7 +633,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
     virtual gmpi::ReturnCode clear(Color clearColor) = 0;
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
-    virtual gmpi::ReturnCode createCompatibleRenderTarget(const Size* desiredSize, class IMpBitmapRenderTarget** returnBitmapRenderTarget) = 0;
+    virtual gmpi::ReturnCode createCompatibleRenderTarget(const Size* desiredSize, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
 
     // {A1D9751D-0C43-4F57-8958-E0BCE359B2FD}
     inline static const gmpi::api::Guid guid =
@@ -654,7 +655,7 @@ struct DECLSPEC_NOVTABLE IBitmapRenderTarget : public IDeviceContext
 struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode createPathGeometry(IPathGeometry** returnPathGeometry) = 0;
-    virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, const void* unusedFontCollection, FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, ITextFormat** returnTextFormat) = 0;
+    virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, /*const void* unusedFontCollection,*/ FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, ITextFormat** returnTextFormat) = 0;
     virtual gmpi::ReturnCode createImage(int32_t width, int32_t height, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode loadImageU(const char* uri, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;

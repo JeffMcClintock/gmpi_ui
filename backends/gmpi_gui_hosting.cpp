@@ -142,7 +142,7 @@ namespace GmpiGuiHosting
 // WIN32 Edit box dialog.
 #ifdef _WIN32
 
-void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi_drawing::api::SizeL swapChainSize)
+void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)
 {
 	rects.clear();
 
@@ -190,7 +190,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi_drawing::api::SizeL sw
 
 			for (unsigned i = 0; i < pRegion->rdh.nCount; i++)
 			{
-				GmpiDrawing::RectL r(pRect[i].left, pRect[i].top, pRect[i].right, pRect[i].bottom);
+				gmpi::drawing::RectL r(pRect[i].left, pRect[i].top, pRect[i].right, pRect[i].bottom);
 
 //				_RPTW4(_CRT_WARN, L"rect %d, %d, %d, %d\n", r.left, r.top, r.right,r.bottom);
 
@@ -213,15 +213,15 @@ void UpdateRegionWinGdi::optimizeRects()
 {
 	for (int i1 = 0; i1 < rects.size(); ++i1)
 	{
-		GmpiDrawing::RectL r1(rects[i1]);
+		gmpi::drawing::RectL r1(rects[i1]);
 		auto area1 = r1.getWidth() * r1.getHeight();
 
 		for (int i2 = i1 + 1; i2 < rects.size(); )
 		{
-			GmpiDrawing::RectL r2(rects[i2]);
+			gmpi::drawing::RectL r2(rects[i2]);
 			auto area2 = r2.getWidth() * r2.getHeight();
 
-			GmpiDrawing::RectL unionrect(rects[i1]);
+			gmpi::drawing::RectL unionrect(rects[i1]);
 
 			unionrect.top = (std::min)(unionrect.top, rects[i2].top);
 			unionrect.bottom = (std::max)(unionrect.bottom, rects[i2].bottom);

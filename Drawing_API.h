@@ -35,9 +35,9 @@ using namespace GmpiDrawing_API;
 // Platform specific definitions.
 #pragma pack(push,8)
 
-namespace gmpi_drawing
+namespace gmpi
 {
-namespace api
+namespace drawing
 {
 enum class FontWeight : int32_t
 {
@@ -377,6 +377,9 @@ struct FontMetrics
 	}
 };
 
+namespace api
+{
+
 // INTERFACE 'ITextFormat'
 struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
 {
@@ -600,7 +603,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
 			200.0f			// radiusY
 		};
 
-		GradientStop gradientStops[] = {
+		Gradientstop gradientStops[] = {
 			{0.0f, Color::Red   },
 			{1.0f, Color::Green }
 		};
@@ -679,7 +682,8 @@ struct DECLSPEC_NOVTABLE IFactory2 : public IFactory
 };
 
 } // namespace api
-} // namespace gmpi_drawing.
+} // namespace drawing.
+} // namespace gmpi
 
 // Platform specific definitions.
 #pragma pack(pop)

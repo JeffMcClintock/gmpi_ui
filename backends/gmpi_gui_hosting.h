@@ -65,7 +65,7 @@ namespace GmpiGuiHosting
 	/*
 	class UpdateRegionDefault : public GmpiDrawing_API::IUpdateRegion
 	{
-		GmpiDrawing::Rect everything;
+		gmpi::drawing::Rect everything;
 		GmpiDrawing_API::MP1_RECT* rects[2];
 
 	public:
@@ -244,7 +244,7 @@ namespace GmpiGuiHosting
 			//GmpiGui::GraphicsHost host(guihost); // can't create this as may get destructed by action on context menu.
 			//auto menu = host.createPlatformMenu(point);
 
-			GmpiDrawing::Rect rect(point.x, point.y, point.x + 120, point.y + 20);
+			gmpi::drawing::Rect rect(point.x, point.y, point.x + 120, point.y + 20);
 			GmpiGui::PopupMenu menu;
 			guihost->createPlatformMenu(&rect, menu.GetAddressOf());
 
@@ -302,21 +302,21 @@ namespace GmpiGuiHosting
 	{
 		HRGN hRegion = 0;
 		std::string regionDataBuffer;
-		std::vector<gmpi_drawing::api::RectL> rects;
-		gmpi_drawing::api::RectL bounds;
+		std::vector<gmpi::drawing::RectL> rects;
+		gmpi::drawing::RectL bounds;
 
 	public:
 		UpdateRegionWinGdi();
 		~UpdateRegionWinGdi();
 
-		void copyDirtyRects(HWND window, gmpi_drawing::api::SizeL swapChainSize);
+		void copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize);
 		void optimizeRects();
 
-		inline std::vector<gmpi_drawing::api::RectL>& getUpdateRects()
+		inline std::vector<gmpi::drawing::RectL>& getUpdateRects()
 		{
 			return rects;
 		}
-		inline gmpi_drawing::api::RectL& getBoundingRect()
+		inline gmpi::drawing::RectL& getBoundingRect()
 		{
 			return bounds;
 		}
@@ -325,19 +325,19 @@ namespace GmpiGuiHosting
 	// generic GMPI update region
 	class UpdateRegion : public GmpiDrawing_API::IUpdateRegion
 	{
-		std::vector<GmpiDrawing::Rect> rects;
-		GmpiDrawing::Rect overallRect;
+		std::vector<gmpi::drawing::Rect> rects;
+		gmpi::drawing::Rect overallRect;
 
 	public:
 		// Construct from Win32 rects, apply DPI and convert to float.
-		UpdateRegion(const std::vector<GmpiDrawing::RectL>& rects_native, const GmpiDrawing::Matrix3x2& WindowToDips)
+		UpdateRegion(const std::vector<gmpi::drawing::RectL>& rects_native, const gmpi::drawing::Matrix3x2& WindowToDips)
 		{
 			for (auto& r : rects_native)
 			{
-				auto r2 = WindowToDips.TransformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+				auto r2 = WindowToDips.TransformRect(gmpi::drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 				rects.push_back(
-					GmpiDrawing::Rect(
+					gmpi::drawing::Rect(
 						static_cast<float>(FastRealToIntTruncateTowardZero(r2.left)),
 						static_cast<float>(FastRealToIntTruncateTowardZero(r2.top)),
 						static_cast<float>(FastRealToIntTruncateTowardZero(r2.right) + 1),
@@ -355,7 +355,7 @@ namespace GmpiGuiHosting
 		}
 
 		// Construct from parent region, but apply transform to child.
-		UpdateRegion(const UpdateRegion* parent, const GmpiDrawing::Matrix3x2& transform)
+		UpdateRegion(const UpdateRegion* parent, const gmpi::drawing::Matrix3x2& transform)
 		{
 			for (auto& r : parent->rects)
 			{
@@ -365,7 +365,7 @@ namespace GmpiGuiHosting
 			overallRect = transform.TransformRect(parent->overallRect);
 		}
 
-		const GmpiDrawing::Rect& getOverallRect()
+		const gmpi::drawing::Rect& getOverallRect()
 		{
 			return overallRect;
 		}
@@ -380,8 +380,8 @@ namespace GmpiGuiHosting
 		{
 			for (auto& r : rects)
 			{
-				auto objectRect = *reinterpret_cast<const GmpiDrawing::Rect*>(rect);
-				if (!GmpiDrawing::Intersect(r, objectRect).empty())
+				auto objectRect = *reinterpret_cast<const gmpi::drawing::Rect*>(rect);
+				if (!gmpi::drawing::Intersect(r, objectRect).empty())
 					return true;
 			}
 
@@ -400,7 +400,7 @@ namespace GmpiGuiHosting
 		int align;
 		float dpiScale;
 		float textHeight;
-		GmpiDrawing::Rect editrect_s;
+		gmpi::drawing::Rect editrect_s;
 
 	public:
 		std::string text_;
@@ -469,7 +469,7 @@ namespace GmpiGuiHosting
 		HWND parentWnd;
 		int align;
 		float dpiScale;
-		GmpiDrawing::Rect editrect_s;
+		gmpi::drawing::Rect editrect_s;
 		int32_t selectedId;
 		std::vector<int32_t> menuIds;
 

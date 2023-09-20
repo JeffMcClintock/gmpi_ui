@@ -12,6 +12,15 @@
 	return gmpi::ReturnCode::Ok;} \
 	return gmpi::ReturnCode::NoSupport;}
 
+// TODO -phase out the old one and rename
+#define GMPI_QUERYINTERFACE_NEW( CLASS_NAME ) \
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override{ \
+	*returnInterface = {}; \
+	if ((*iid) == CLASS_NAME::guid || (*iid) == gmpi::api::IUnknown::guid ){ \
+	*returnInterface = static_cast<CLASS_NAME*>(this); addRef(); \
+	return gmpi::ReturnCode::Ok;} \
+	return gmpi::ReturnCode::NoSupport;}
+
 #ifndef GMPI_REFCOUNT
 #define GMPI_REFCOUNT int refCount2_ = 1; \
 	int32_t addRef() override {return ++refCount2_;} \

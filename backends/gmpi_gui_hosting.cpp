@@ -195,11 +195,11 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapCh
 //				_RPTW4(_CRT_WARN, L"rect %d, %d, %d, %d\n", r.left, r.top, r.right,r.bottom);
 
 				// Direct 2D will fail if any rect outside swapchain bitmap area.
-				r.Intersect({ 0, 0, swapChainSize.width, swapChainSize.height });
+				const auto res = Intersect(r, { 0, 0, swapChainSize.width, swapChainSize.height });
 
-				if (!r.empty())
+				if (!empty(res))
 				{
-					rects.push_back(r);
+					rects.push_back(res);
 				}
 			}
 		}
@@ -214,12 +214,12 @@ void UpdateRegionWinGdi::optimizeRects()
 	for (int i1 = 0; i1 < rects.size(); ++i1)
 	{
 		gmpi::drawing::RectL r1(rects[i1]);
-		auto area1 = r1.getWidth() * r1.getHeight();
+		auto area1 = getWidth(r1) * getHeight(r1);
 
 		for (int i2 = i1 + 1; i2 < rects.size(); )
 		{
 			gmpi::drawing::RectL r2(rects[i2]);
-			auto area2 = r2.getWidth() * r2.getHeight();
+			auto area2 = getWidth(r2) * getHeight(r2);
 
 			gmpi::drawing::RectL unionrect(rects[i1]);
 
@@ -228,7 +228,7 @@ void UpdateRegionWinGdi::optimizeRects()
 			unionrect.left = (std::min)(unionrect.left, rects[i2].left);
 			unionrect.right = (std::max)(unionrect.right, rects[i2].right);
 
-			auto unionarea = unionrect.getWidth() * unionrect.getHeight();
+			auto unionarea = getWidth(unionrect) * getHeight(unionrect);
 
 			if (unionarea <= area1 + area2)
 			{

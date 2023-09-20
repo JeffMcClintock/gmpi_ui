@@ -418,9 +418,9 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
 		kBGRA,
 		kBGRA_SRGB
 	};
-    virtual uint8_t* getAddress() = 0;
-    virtual int32_t getBytesPerRow() = 0;
-    virtual int32_t getPixelFormat() = 0;
+    virtual gmpi::ReturnCode getAddress(uint8_t** returnGetAddress) = 0;
+    virtual gmpi::ReturnCode getBytesPerRow(int32_t* returnGetBytesPerRow) = 0;
+    virtual gmpi::ReturnCode getPixelFormat(int32_t* returnGetPixelFormat) = 0;
 
     // {CCE4F628-289E-4EAB-9837-1755D9E5F793}
     inline static const gmpi::api::Guid guid =
@@ -430,14 +430,8 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
 // INTERFACE 'IBitmap'
 struct DECLSPEC_NOVTABLE IBitmap : public IResource
 {
-    // DEPRECATED: Should be integer size to avoid costly float->int conversions and for Direct2D compatibility.
-    virtual const Size getSize() = 0;
-    // Deprecated, see lockPixels.
-    virtual gmpi::ReturnCode lockPixelsOld(IBitmapPixels** returnPixels, bool alphaPremultiplied) = 0;
-    // Deprecated. DirectX 11 has SRGB support.
-    virtual gmpi::ReturnCode applyAlphaCorrection() = 0;
-    virtual gmpi::ReturnCode getSize(SizeU* returnSize) = 0;
-    // Same as lockPixelsOld() but with option to avoid overhead of copying pixels back into image. See MP1_BITMAP_LOCK_FLAGS. Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
+    virtual gmpi::ReturnCode getSizeU(SizeU* returnSizeU) = 0;
+    // Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
     virtual gmpi::ReturnCode lockPixels(IBitmapPixels** returnPixels, int32_t flags) = 0;
 
     // {EDF250B7-29FE-4FEC-8C6A-FBCB1F0A301A}
@@ -448,7 +442,6 @@ struct DECLSPEC_NOVTABLE IBitmap : public IResource
 // INTERFACE 'IGradientstopCollection'
 struct DECLSPEC_NOVTABLE IGradientstopCollection : public IResource
 {
-
     // {AEE31225-BFF4-42DE-B8CA-233C5A3441CB}
     inline static const gmpi::api::Guid guid =
     { 0xAEE31225, 0xBFF4, 0x42DE, { 0xB8, 0xCA, 0x23, 0x3C, 0x5A, 0x34, 0x41, 0xCB} };
@@ -534,6 +527,7 @@ struct DECLSPEC_NOVTABLE IStrokeStyle : public IResource
     { 0x27D19BF3, 0x9DB2, 0x49CC, { 0xA8, 0xEE, 0x28, 0xE0, 0x71, 0x6E, 0xA8, 0xB6} };
 };
 
+#if 0
 // INTERFACE 'ISimplifiedGeometrySink'
 struct DECLSPEC_NOVTABLE ISimplifiedGeometrySink : public gmpi::api::IUnknown
 {
@@ -570,15 +564,39 @@ struct DECLSPEC_NOVTABLE IGeometrySink2 : public ISimplifiedGeometrySink
     inline static const gmpi::api::Guid guid1 =
     { 0x10385F43, 0x03C3, 0x436B, { 0xB6, 0xB0, 0x74, 0xA4, 0xEC, 0x61, 0x7A, 0x22} };
 };
+#endif
+
+// INTERFACE 'IGeometrySink'
+struct DECLSPEC_NOVTABLE IGeometrySink : public gmpi::api::IUnknown
+{
+    virtual void beginFigure(const Point startPoint, FigureBegin figureBegin) = 0;
+    virtual void endFigure(FigureEnd figureEnd) = 0;
+    virtual void setFillMode(FillMode fillMode) = 0;
+    virtual gmpi::ReturnCode close() = 0;
+    virtual void addLine(const Point point) = 0;
+    virtual void addLines(const Point* points, uint32_t pointsCount) = 0;
+    virtual void addBezier(const BezierSegment* bezier) = 0;
+    virtual void addBeziers(const BezierSegment* beziers, uint32_t beziersCount) = 0;
+    virtual void addQuadraticBezier(const QuadraticBezierSegment* bezier) = 0;
+    virtual void addQuadraticBeziers(const QuadraticBezierSegment* beziers, uint32_t beziersCount) = 0;
+    virtual void addArc(const ArcSegment* arc) = 0;
+
+    // {A935E374-8F14-4824-A5CB-58287E994193}
+    inline static const gmpi::api::Guid guid =
+    { 0xA935E374, 0x8F14, 0x4824, { 0xA5, 0xCB, 0x58, 0x28, 0x7E, 0x99, 0x41, 0x93} };
+};
 
 // INTERFACE 'IPathGeometry'
 struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
 {
-    virtual gmpi::ReturnCode open(ISimplifiedGeometrySink** returnGeometrySink) = 0;
+    virtual gmpi::ReturnCode open(IGeometrySink** returnGeometrySink) = 0;
 	// in DX, these are part of IMpGeometry. But were added later here, and so added last. not a big deal since we support only one type of geometry, not many like DX.
-    virtual gmpi::ReturnCode strokeContainsPoint(const Point point, float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, bool contains) = 0;
-    virtual gmpi::ReturnCode fillContainsPoint(const Point point, const Matrix3x2* worldTransform, bool contains) = 0;
-    virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, const Rect* bounds) = 0;
+    //virtual gmpi::ReturnCode strokeContainsPoint(const Point point, float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, bool contains) = 0;
+    //virtual gmpi::ReturnCode fillContainsPoint(const Point point, const Matrix3x2* worldTransform, bool contains) = 0;
+    //virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, const Rect* bounds) = 0;
+    virtual gmpi::ReturnCode strokeContainsPoint(const Point* point, float strokeWidth, IStrokeStyle* method, const Matrix3x2* worldTransform, bool* contains) = 0;
+    virtual gmpi::ReturnCode fillContainsPoint(const Point* point, const Matrix3x2* worldTransform, bool* contains) = 0;
+    virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* method, const Matrix3x2* worldTransform, const Rect* bounds) = 0;
 
     // {89C6E868-B8A5-49BF-B771-02FB1EEF38AD}
     inline static const gmpi::api::Guid guid =

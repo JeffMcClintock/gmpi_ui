@@ -61,6 +61,53 @@ namespace gmpi
 {
 namespace drawing
 {
+	// maths on Rects
+	inline float getWidth(Rect r)
+	{
+		return r.right - r.left;
+	}
+
+	inline float getHeight(Rect r)
+	{
+		return r.bottom - r.top;
+	}
+
+	inline int32_t getWidth(RectL r)
+	{
+		return r.right - r.left;
+	}
+
+	inline int32_t getHeight(RectL r)
+	{
+		return r.bottom - r.top;
+	}
+
+	inline RectL Intersect(const RectL& a, const RectL& b)
+	{
+		return
+		{
+		(std::max)(a.left,   (std::min)(a.right,  b.left)),
+		(std::max)(a.top,    (std::min)(a.bottom, b.top)),
+		(std::min)(a.right,  (std::max)(a.left,   b.right)),
+		(std::min)(a.bottom, (std::max)(a.top,    b.bottom))
+		};
+	}
+
+	inline RectL Union(const RectL& a, const RectL& b)
+	{
+		return
+		{
+		(std::min)(a.left,   b.left),
+		(std::min)(a.top,    b.top),
+		(std::max)(a.right,  b.right),
+		(std::max)(a.bottom, b.bottom)
+		};
+	}
+
+	inline bool empty(const RectL& a)
+	{
+		return getWidth(a) <= 0 || getHeight(a) <= 0;
+	}
 #if 0
 	// Wrap structs in friendly classes.
 	template<class SizeClass> struct Size_traits;
@@ -1515,17 +1562,22 @@ namespace drawing
 	public:
 		uint8_t* getAddress()
 		{
-			return get()->getAddress();
+			uint8_t* ret{};
+			get()->getAddress(&ret);
+			return ret;
 		}
 		int32_t getBytesPerRow()
 		{
-			return get()->getBytesPerRow();
+			int32_t ret{};
+			get()->getBytesPerRow(&ret);
+			return ret;
 		}
 		int32_t getPixelFormat()
 		{
-			return get()->getPixelFormat();
+			int32_t ret{};
+			get()->getPixelFormat(&ret);
+			return ret;
 		}
-
 		uint32_t getPixel(int x, int y)
 		{
 			auto data = reinterpret_cast<int32_t*>(getAddress());
@@ -1585,25 +1637,11 @@ namespace drawing
 	public:
 		void operator=(const Bitmap& other) { m_ptr = const_cast<gmpi::drawing::Bitmap*>(&other)->get(); }
 
-		// Deprecated. Integer size more efficient and correct.
-		Size GetSizeF()
-		{
-			return get()->getSize();
-		}
-
 		SizeU GetSize()
 		{
-			SizeU r;
-			get()->getSize(&r);
-			return r;
-		}
-
-		// Deprecated.
-		BitmapPixels lockPixels(bool alphaPremultiplied)
-		{
-			BitmapPixels temp;
-			get()->lockPixelsOld(temp.put(), alphaPremultiplied);
-			return temp;
+			SizeU ret{};
+			get()->getSizeU(&ret);
+			return ret;
 		}
 
 		/*
@@ -1650,12 +1688,6 @@ namespace drawing
 			get()->lockPixels(temp.put(), flags);
 			return temp;
 		}
-
-		// Deprecated.
-		//void ApplyAlphaCorrection()
-		//{
-		//	get()->ApplyAlphaCorrection();
-		//}
 	};
 
 	class GradientStopCollection : public Resource<gmpi::drawing::api::IGradientstopCollection>
@@ -1808,13 +1840,14 @@ namespace drawing
 	};
 	*/
 
-	template <class interfaceType = gmpi::drawing::api::ISimplifiedGeometrySink>
-	class SimplifiedGeometrySink : public gmpi::IWrapper<interfaceType>
+
+	template <class interfaceType = gmpi::drawing::api::IGeometrySink>
+	class GeometrySink : public gmpi::IWrapper<interfaceType>
 	{
 	public:
 		void BeginFigure(Point startPoint, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 		{
-			gmpi::IWrapper<interfaceType>::get()->BeginFigure((gmpi::drawing::Point) startPoint, figureBegin);
+			gmpi::IWrapper<interfaceType>::get()->BeginFigure((gmpi::drawing::Point)startPoint, figureBegin);
 		}
 
 		void BeginFigure(float x, float y, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
@@ -1841,45 +1874,36 @@ namespace drawing
 		{
 			return gmpi::IWrapper<interfaceType>::get()->Close();
 		}
-	};
 
-	class GeometrySink : public SimplifiedGeometrySink<gmpi::drawing::api::IGeometrySink2>
-	{
-	public:
 		void AddLine(Point point)
 		{
-			get()->addLine(point);
+			gmpi::IWrapper<interfaceType>::get()->addLine(point);
 		}
 
 		void AddBezier(BezierSegment bezier)
 		{
-			get()->addBezier(&bezier);
+			gmpi::IWrapper<interfaceType>::get()->addBezier(&bezier);
 		}
 
 		void AddQuadraticBezier(QuadraticBezierSegment bezier)
 		{
-			get()->addQuadraticBezier(&bezier);
+			gmpi::IWrapper<interfaceType>::get()->addQuadraticBezier(&bezier);
 		}
 
 		void AddQuadraticBeziers(QuadraticBezierSegment* beziers, uint32_t beziersCount)
 		{
-			get()->addQuadraticBeziers(beziers, beziersCount);
+			gmpi::IWrapper<interfaceType>::get()->addQuadraticBeziers(beziers, beziersCount);
 		}
 
 		void AddArc(ArcSegment arc)
 		{
-			get()->addArc(&arc);
+			gmpi::IWrapper<interfaceType>::get()->addArc(&arc);
 		}
 
 		void SetFillMode(gmpi::drawing::FillMode fillMode)
 		{
-			//gmpi::drawing::api::IGeometrySink2* ext{};
-			//get()->queryInterface(gmpi::drawing::SE_IID_GEOMETRYSINK2_MPGUI, (void**) &ext);
-			//if (ext)
-			{
-				get()->setFillMode(fillMode);
-				get()->release();
-			}
+			gmpi::IWrapper<interfaceType>::get()->setFillMode(fillMode);
+			gmpi::IWrapper<interfaceType>::get()->release();
 		}
 	};
 
@@ -1890,24 +1914,24 @@ namespace drawing
 	class PathGeometry : public Resource<gmpi::drawing::api::IPathGeometry>
 	{
 	public:
-		GeometrySink Open()
+		GeometrySink< gmpi::drawing::api::IGeometrySink> Open()
 		{
 			GeometrySink temp;
-			get()->open((gmpi::drawing::api::ISimplifiedGeometrySink**) temp.put());
+			get()->open((gmpi::drawing::api::IGeometrySink**) temp.put());
 			return temp;
 		}
 
 		bool StrokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 		{
 			bool r;
-			get()->strokeContainsPoint(point, strokeWidth, strokeStyle, worldTransform, &r);
+			get()->strokeContainsPoint(&point, strokeWidth, strokeStyle, worldTransform, &r);
 			return r;
 		}
 
 		bool FillContainsPoint(gmpi::drawing::Point point, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 		{
 			bool r;
-			get()->fillContainsPoint(point, worldTransform, &r);
+			get()->fillContainsPoint(&point, worldTransform, &r);
 			return r;
 		}
 
@@ -2558,7 +2582,7 @@ namespace drawing
 		void DrawBitmap(Bitmap bitmap, Point destinationTopLeft, Rect sourceRectangle, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 		{
 			const float opacity = 1.0f;
-			Rect destinationRectangle(destinationTopLeft.x, destinationTopLeft.y, destinationTopLeft.x + sourceRectangle.getWidth(), destinationTopLeft.y + sourceRectangle.getHeight());
+			Rect destinationRectangle(destinationTopLeft.x, destinationTopLeft.y, destinationTopLeft.x + getWidth(sourceRectangle), destinationTopLeft.y + getHeight(sourceRectangle));
 			Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap.get(), &destinationRectangle, opacity, interpolationMode, &sourceRectangle);
 		}
 		// Integer co-ords.
@@ -2566,7 +2590,7 @@ namespace drawing
 		{
 			const float opacity = 1.0f;
 			Rect sourceRectangleF{ static_cast<float>(sourceRectangle.left), static_cast<float>(sourceRectangle.top), static_cast<float>(sourceRectangle.right), static_cast<float>(sourceRectangle.bottom) };
-			Rect destinationRectangle(static_cast<float>(destinationTopLeft.x), static_cast<float>(destinationTopLeft.y), static_cast<float>(destinationTopLeft.x + sourceRectangle.getWidth()), static_cast<float>(destinationTopLeft.y + sourceRectangle.getHeight()));
+			Rect destinationRectangle(static_cast<float>(destinationTopLeft.x), static_cast<float>(destinationTopLeft.y), static_cast<float>(destinationTopLeft.x + getWidth(sourceRectangle)), static_cast<float>(destinationTopLeft.y + getHeight(sourceRectangle)));
 			Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap.get(), &destinationRectangle, opacity, interpolationMode, &sourceRectangleF);
 		}
 

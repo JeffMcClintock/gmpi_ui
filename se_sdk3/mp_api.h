@@ -67,7 +67,7 @@
 
 // Handy macro to save typing.
 #define GMPI_QUERYINTERFACE1( INTERFACE_IID, CLASS_NAME ) \
-	virtual int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override \
+	virtual int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override \
 { \
 	*returnInterface = 0; \
 	if (iid == INTERFACE_IID || iid == gmpi::MP_IID_UNKNOWN ) \
@@ -105,7 +105,7 @@
 } \
 
 #define GMPI_QUERYINTERFACE2( INTERFACE_IID, CLASS_NAME, BASE_CLASS ) \
-	virtual int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override \
+	virtual int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override \
 { \
 	*returnInterface = 0; \
 	if (iid == INTERFACE_IID ) \
@@ -120,7 +120,7 @@ return BASE_CLASS::queryInterface(iid, returnInterface); \
 /*
 // Same but for stack-based object (no delete when refcount goes zero)
 #define GMPI_INTERFACE_METHODS_NODELETE( INTERFACE_IID, CLASS_NAME ) \
-	virtual int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) \
+	virtual int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) \
 { \
 	*returnInterface = 0; \
 	if (iid == INTERFACE_IID || iid == gmpi::MP_IID_UNKNOWN ) \
@@ -649,7 +649,7 @@ public:
 
 // GUID for IMpContextItemSink
 // {BC152E7E-7FB8-4921-84EE-BED7CFD9A897}
-static const gmpi::MpGuid MP_IID_CONTEXT_ITEMS_SINK =
+static const gmpi::api::Guid MP_IID_CONTEXT_ITEMS_SINK =
 { 0xbc152e7e, 0x7fb8, 0x4921, { 0x84, 0xee, 0xbe, 0xd7, 0xcf, 0xd9, 0xa8, 0x97 } };
 
 

@@ -31,7 +31,7 @@ public:
 	int32_t OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
 
 	// TODO GMPI_QUERYINTERFACE(IMpDrawingClient::guid, IMpDrawingClient);
-	int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
+	int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override
 	{
 		*returnInterface = nullptr;
 

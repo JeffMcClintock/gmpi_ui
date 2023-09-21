@@ -35,7 +35,7 @@ namespace gmpi
 
 #ifdef __cplusplus
 	inline
-	bool MpGuidEqual( const gmpi::MpGuid* a, const gmpi::MpGuid* b )
+	bool MpGuidEqual( const gmpi::api::Guid* a, const gmpi::api::Guid* b )
 	{
 		return ( MpGuidCompare(a, b) == 0 );
 	}
@@ -51,7 +51,7 @@ namespace gmpi
 }
 
 inline bool
-operator==( const gmpi::MpGuid& left, const gmpi::MpGuid& right )
+operator==( const gmpi::api::Guid& left, const gmpi::api::Guid& right )
 {
 	return ( gmpi::MpGuidEqual(&left, &right) != 0 );
 }

@@ -36,7 +36,7 @@
 
 // Handy macro to save typing.
 #define GMPI_QUERYINTERFACE1( INTERFACE_IID, CLASS_NAME ) \
-	int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override \
+	int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override \
 { \
 	*returnInterface = 0; \
 	if (iid == INTERFACE_IID || iid == gmpi::MP_IID_UNKNOWN ) \
@@ -49,7 +49,7 @@
 }
 
 #define GMPI_QUERYINTERFACE2( INTERFACE_IID, CLASS_NAME, BASE_CLASS ) \
-	int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override \
+	int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override \
 { \
 	*returnInterface = 0; \
 	if (iid == INTERFACE_IID ) \

@@ -607,8 +607,8 @@ struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
 struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
 {
     virtual gmpi::ReturnCode createBitmapBrush(IBitmap* bitmap, const BitmapBrushProperties* bitmapBrushProperties, const BrushProperties* brushProperties, IBitmapBrush** returnBitmapBrush) = 0;
-    virtual gmpi::ReturnCode createSolidColorBrush(const Color color, /*const BrushProperties* brushProperties,*/ ISolidColorBrush** returnSolidColorBrush) = 0;
-    virtual gmpi::ReturnCode createGradientStopCollection(const Gradientstop* gradientStops, uint32_t gradientStopsCount, /*Gamma colorInterpolationGamma, ExtendMode extendMode,*/ IGradientstopCollection** returnGradientstopCollection) = 0;
+    virtual gmpi::ReturnCode createSolidColorBrush(const Color* color, const BrushProperties* brushProperties, ISolidColorBrush** returnSolidColorBrush) = 0;
+    virtual gmpi::ReturnCode createGradientstopCollection(const Gradientstop* gradientstops, uint32_t gradientstopsCount, ExtendMode extendMode, IGradientstopCollection** returnGradientstopCollection) = 0;
     virtual gmpi::ReturnCode createLinearGradientBrush(const LinearGradientBrushProperties* linearGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientStopCollection, ILinearGradientBrush** returnLinearGradientBrush) = 0;
 
 	/*
@@ -635,7 +635,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
 		}
 	*/
     virtual gmpi::ReturnCode createRadialGradientBrush(const RadialGradientBrushProperties* radialGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientStopCollection, IRadialGradientBrush** returnRadialGradientBrush) = 0;
-    virtual gmpi::ReturnCode drawLine(Point point0, Point point1, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0;
+    virtual gmpi::ReturnCode drawLine(const Point* point0, const Point* point1, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
     virtual gmpi::ReturnCode drawRectangle(const Rect* rect, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0; // TODO!!! no default args in raw interfaces
     virtual gmpi::ReturnCode fillRectangle(const Rect* rect, IBrush* brush) = 0;
     virtual gmpi::ReturnCode drawRoundedRectangle(const RoundedRect* roundedRect, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0;
@@ -645,13 +645,13 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
     virtual gmpi::ReturnCode drawGeometry(IPathGeometry* geometry, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0;
     virtual gmpi::ReturnCode fillGeometry(IPathGeometry* geometry, IBrush* brush, IBrush* opacityBrush) = 0;
     virtual gmpi::ReturnCode drawBitmap(IBitmap* bitmap, const Rect* destinationRectangle, float opacity, BitmapInterpolationMode interpolationMode, const Rect* sourceRectangle) = 0;
-    virtual gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, ITextFormat* textFormat, const Rect* layoutRect, IBrush* defaultForegroundBrush, DrawTextOptions options /*, measuring mode measuringMode*/) = 0;
+    virtual gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, ITextFormat* textFormat, const Rect* layoutRect, IBrush* defaultForegroundBrush, int32_t options) = 0;
     virtual gmpi::ReturnCode setTransform(const Matrix3x2* transform) = 0;
-    virtual gmpi::ReturnCode getTransform(const Matrix3x2* transform) = 0;
+    virtual gmpi::ReturnCode getTransform(Matrix3x2* transform) = 0;
     virtual gmpi::ReturnCode pushAxisAlignedClip(const Rect* clipRect) = 0;
     virtual gmpi::ReturnCode popAxisAlignedClip() = 0;
     virtual void getAxisAlignedClip(Rect* returnClipRect) = 0;
-    virtual gmpi::ReturnCode clear(Color clearColor) = 0;
+    virtual gmpi::ReturnCode clear(const Color* clearColor) = 0;
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
     virtual gmpi::ReturnCode createCompatibleRenderTarget(const Size* desiredSize, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???

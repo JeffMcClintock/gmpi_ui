@@ -203,7 +203,7 @@ namespace GmpiGuiHosting
 
 #if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
-		int32_t queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
+		int32_t queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override
 		{
 			
 			if (iid == IDrawingHost::guid)

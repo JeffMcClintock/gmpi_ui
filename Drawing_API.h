@@ -105,6 +105,7 @@ enum class BitmapLockFlags : int32_t
 {
     Read = 1,
     Write,
+    ReadWrite,
 };
 
 enum class Gamma : int32_t

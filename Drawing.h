@@ -817,7 +817,7 @@ namespace drawing
 
 #endif
 
-    Point TransformPoint(const Matrix3x2& transform, Point point)
+    Point transformPoint(const Matrix3x2& transform, Point point)
     {
         return Point(
             point.x * transform._11 + point.y * transform._21 + transform._31,
@@ -825,6 +825,36 @@ namespace drawing
         );
     }
 
+	Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
+	{
+		return Rect(
+			rect.left * transform._11 + rect.top * transform._21 + transform._31,
+			rect.left * transform._12 + rect.top * transform._22 + transform._32,
+			rect.right * transform._11 + rect.bottom * transform._21 + transform._31,
+			rect.right * transform._12 + rect.bottom * transform._22 + transform._32
+		);
+	}
+
+	Matrix3x2 invert(const Matrix3x2& transform)
+	{
+		double det = transform._11 * (transform._22 /** 1.0f - 0.0 * transform._32*/);
+		det -= transform._12 * (transform._21 /** 1.0f - 0.0 * transform._31*/);
+		// det += 0.0 * (transform._21 *  transform._32 -  transform._22 * transform._31);
+
+		float s = 1.0f / (float)det;
+
+		Matrix3x2 result;
+
+		result._11 = s * (transform._22 * 1.0f - 0.0f * transform._32);
+		result._21 = s * (0.0f * transform._31 - transform._21 * 1.0f);
+		result._31 = s * (transform._21 * transform._32 - transform._22 * transform._31);
+
+		result._12 = s * (0.0f * transform._32 - transform._12 * 1.0f);
+		result._22 = s * (transform._11 * 1.0f - 0.0f * transform._31);
+		result._32 = s * (transform._12 * transform._31 - transform._11 * transform._32);
+
+		return result;
+	}
 #if 0
 
 	/*
@@ -1637,7 +1667,7 @@ namespace drawing
 	public:
 		void operator=(const Bitmap& other) { m_ptr = const_cast<gmpi::drawing::Bitmap*>(&other)->get(); }
 
-		SizeU GetSize()
+		SizeU getSize()
 		{
 			SizeU ret{};
 			get()->getSizeU(&ret);

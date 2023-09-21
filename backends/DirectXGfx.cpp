@@ -14,32 +14,24 @@ namespace gmpi
 	{
 		std::wstring_convert<std::codecvt_utf8<wchar_t>> Factory::stringConverter;
 
-		int32_t Geometry::Open(gmpi::drawing::api::IGeometrySink** geometrySink)
+		gmpi::ReturnCode Geometry::open(drawing::api::IGeometrySink** returnGeometrySink)
 		{
-			ID2D1GeometrySink* sink = nullptr;
+			ID2D1GeometrySink* sink{};
 
 			auto hr = geometry_->Open(&sink);
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 				b2.Attach(new gmpi::directx::GeometrySink(sink));
 
-				b2->queryInterface(gmpi::drawing::api::SE_IID_GEOMETRYSINK_MPGUI, reinterpret_cast<void**>(geometrySink));
-
-#ifdef LOG_DIRECTX_CALLS
-				_RPT1(_CRT_WARN, "ID2D1GeometrySink* sink%x = nullptr;\n", (int)* geometrySink);
-				_RPT0(_CRT_WARN, "{\n");
-				_RPT2(_CRT_WARN, "geometry%x->Open(&sink%x);\n", (int) this, (int)* geometrySink);
-				_RPT0(_CRT_WARN, "}\n");
-#endif
-
+				b2->queryInterface(&drawing::api::IGeometrySink::guid, reinterpret_cast<void**>(returnGeometrySink));
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		int32_t TextFormat::GetFontMetrics(gmpi::drawing::api::MP1_FONT_METRICS* returnFontMetrics)
+		gmpi::ReturnCode TextFormat::getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
 		{
 			IDWriteFontCollection *collection;
 			IDWriteFontFamily *family;
@@ -99,7 +91,7 @@ namespace gmpi
 			return gmpi::ReturnCode::Ok;
 		}
 
-		void TextFormat::GetTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::api::MP1_SIZE* returnSize)
+		gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
 		{
 			const auto widestring = JmUnicodeConversions::Utf8ToWstring(utf8String, stringLength);
 
@@ -107,7 +99,7 @@ namespace gmpi
 			auto hr = DWriteCreateFactory(
 				DWRITE_FACTORY_TYPE_SHARED,
 				__uuidof(writeFactory),
-				reinterpret_cast<IUnknown **>(&writeFactory)
+				reinterpret_cast<::IUnknown **>(&writeFactory)
 			);
 
 			IDWriteTextLayout* pTextLayout_ = 0;
@@ -183,7 +175,7 @@ namespace gmpi
 			auto hr = DWriteCreateFactory(
 				DWRITE_FACTORY_TYPE_SHARED, // no improvment to glitching DWRITE_FACTORY_TYPE_ISOLATED
 				__uuidof(writeFactory),
-				reinterpret_cast<IUnknown**>(&writeFactory)
+				reinterpret_cast<::IUnknown**>(&writeFactory)
 			);
 
 			pIWICFactory = nullptr;
@@ -238,7 +230,7 @@ namespace gmpi
 			for (int rot = 0; rot < 8; ++rot)
 			{
 				const float angle = (rot / 8.f) * 2.f * 3.14159274101257324219f;
-				auto test = GmpiDrawing::Matrix3x2::Rotation(angle, { 23, 7 });
+				auto test = drawing::Matrix3x2::Rotation(angle, { 23, 7 });
 				auto test2 = D2D1::Matrix3x2F::Rotation(angle * 180.f / 3.14159274101257324219f, { 23, 7 });
 
 				_RPTN(0, "\nangle=%f\n", angle);
@@ -248,7 +240,7 @@ namespace gmpi
 		}
 
 			// test matrix scaling
-			const auto test = GmpiDrawing::Matrix3x2::Scale({ 3, 5 }, { 7, 9 });
+			const auto test = drawing::Matrix3x2::Scale({ 3, 5 }, { 7, 9 });
 			const auto test2 = D2D1::Matrix3x2F::Scale({ 3, 5 }, { 7, 9 });
 			const auto breakpointer = test._11 + test2._11;
 #endif
@@ -261,7 +253,7 @@ namespace gmpi
 			SafeRelease(pIWICFactory);
 		}
 
-		int32_t Factory::CreatePathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
+		gmpi::ReturnCode Factory::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
 		{
 			*pathGeometry = nullptr;
 			//*pathGeometry = new GmpiGuiHosting::PathGeometry();
@@ -272,10 +264,10 @@ namespace gmpi
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 				b2.Attach(new gmpi::directx::Geometry(d2d_geometry));
 
-				b2->queryInterface(gmpi::drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
+				b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 
 #ifdef LOG_DIRECTX_CALLS
 				_RPT1(_CRT_WARN, "ID2D1PathGeometry* geometry%x = nullptr;\n", (int)*pathGeometry);
@@ -288,9 +280,9 @@ namespace gmpi
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		int32_t Factory::CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, gmpi::drawing::api::MP1_FONT_WEIGHT fontWeight, gmpi::drawing::api::MP1_FONT_STYLE fontStyle, gmpi::drawing::api::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, gmpi::drawing::api::ITextFormat** TextFormat)
+		gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat)
 		{
-			*TextFormat = nullptr;
+			*textFormat = nullptr;
 
 			//auto fontFamilyNameW = stringConverter.from_bytes(fontFamilyName);
 			auto fontFamilyNameW = JmUnicodeConversions::Utf8ToWstring(fontFamilyName);
@@ -317,10 +309,10 @@ namespace gmpi
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 				b2.Attach(new gmpi::directx::TextFormat(&stringConverter, dwTextFormat));
 
-				b2->queryInterface(gmpi::drawing::api::SE_IID_TEXTFORMAT_MPGUI, reinterpret_cast<void**>(TextFormat));
+				b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 
 //				_RPT2(_CRT_WARN, "factory.CreateTextFormat() -> %x %S\n", (int)dwTextFormat, fontFamilyNameW.c_str());
 #ifdef LOG_DIRECTX_CALLS
@@ -335,7 +327,7 @@ namespace gmpi
 		}
 
 		// 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
-		std::wstring Factory::fontMatch(std::wstring fontFamilyNameW, gmpi::drawing::api::MP1_FONT_WEIGHT fontWeight, float fontSize)
+		std::wstring Factory::fontMatch(std::wstring fontFamilyNameW, gmpi::drawing::FontWeight fontWeight, float fontSize)
 		{
 			auto it = GdiFontConversions.find(fontFamilyNameW);
 			if (it != GdiFontConversions.end())
@@ -389,13 +381,13 @@ namespace gmpi
 			lf.lfUnderline = 1;
 			}
 			*/
-			if (fontWeight > gmpi::drawing::api::MP1_FONT_WEIGHT_SEMI_BOLD)
+			if (fontWeight > gmpi::drawing::FontWeight::SemiBold)
 			{
 				lf.lfWeight = FW_BOLD;
 			}
 			else
 			{
-				if (fontWeight < 350)
+				if ((int) fontWeight < 350)
 				{
 					lf.lfWeight = FW_LIGHT;
 				}
@@ -436,18 +428,18 @@ namespace gmpi
 			return fontFamilyNameW;
 		}
 
-		int32_t Factory::CreateImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
+		gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
 		{
-			IWICBitmap* wicBitmap = nullptr;
+			IWICBitmap* wicBitmap{};
 			auto hr = pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
 	// nuh	auto hr = pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppBGRA, WICBitmapCacheOnLoad, &wicBitmap);
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<Bitmap> b2;
+				gmpi::shared_ptr<Bitmap> b2;
 				b2.Attach(new Bitmap(this, wicBitmap));
 
-				b2->queryInterface(gmpi::drawing::api::SE_IID_BITMAP_MPGUI, (void**)returnDiBitmap);
+				b2->queryInterface(&gmpi::drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 			}
 
 			SafeRelease(wicBitmap);
@@ -511,7 +503,7 @@ If so that'd be far more efficient so do that.)
 			// Draw pixels to wic bitmap.
 			wicRenderTarget->BeginDraw();
 
-			GmpiDrawing::Rect r(0,0, size.width, size.height);
+			Rect r(0,0, size.width, size.height);
 
 			wicRenderTarget->DrawBitmap(D2D_Bitmap, (D2D1_RECT_F*)&r, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, (D2D1_RECT_F*)&r);
 			
@@ -533,27 +525,27 @@ If so that'd be far more efficient so do that.)
 #endif
 		}
 
-		int32_t Factory::GetFontFamilyName(int32_t fontIndex, gmpi::IString* returnString)
+		gmpi::ReturnCode Factory::getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName)
 		{
 			if (fontIndex < 0 || fontIndex >= supportedFontFamilies.size())
 			{
 				return gmpi::ReturnCode::Fail;
 			}
 
-			returnString->setData(supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(supportedFontFamilies[fontIndex].size()));
+			returnName->setData(supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(supportedFontFamilies[fontIndex].size()));
 			return gmpi::ReturnCode::Ok;
 		}
 
-		int32_t Factory::LoadImageU(const char* utf8Uri, gmpi::drawing::api::IBitmap** returnDiBitmap)
+		gmpi::ReturnCode Factory::loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap)
 		{
-			*returnDiBitmap = nullptr;
+			*returnBitmap = nullptr;
 
 			HRESULT hr{};
 			IWICBitmapDecoder* pDecoder{};
 			IWICStream* pIWICStream{};
 
 			// is this an in-memory resource?
-			std::string uriString(utf8Uri);
+			std::string uriString(uri);
 			std::string binaryData;
 #if 0 // TODO
 			if (uriString.find(BundleInfo::resourceTypeScheme) == 0)
@@ -582,8 +574,7 @@ If so that'd be far more efficient so do that.)
 			else
 #endif
 			{
-				// auto uriW = stringConverter.from_bytes(utf8Uri);
-				const auto uriW = JmUnicodeConversions::Utf8ToWstring(utf8Uri);
+				const auto uriW = JmUnicodeConversions::Utf8ToWstring(uri);
 
 				// To load a bitmap from a file, first use WIC objects to load the image and to convert it to a Direct2D-compatible format.
 				hr = pIWICFactory->CreateDecoderFromFilename(
@@ -651,11 +642,11 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				{
 					auto bitmap = new Bitmap(this, wicBitmap);
 #ifdef _DEBUG
-					bitmap->debugFilename = utf8Uri;
+					bitmap->debugFilename = uri;
 #endif
-					gmpi_sdk::mp_shared_ptr<gmpi::drawing::api::IBitmap> b2;
+					gmpi::shared_ptr<gmpi::drawing::api::IBitmap> b2;
 					b2.Attach(bitmap);
-					b2->queryInterface(gmpi::drawing::api::SE_IID_BITMAP_MPGUI, (void**)returnDiBitmap);
+					b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
 				}
 			}
 
@@ -668,19 +659,19 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		void GraphicsContext::DrawGeometry(const gmpi::drawing::api::IPathGeometry* geometry, const gmpi::drawing::api::IBrush* brush, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle)
+//		void GraphicsContext::DrawGeometry(const gmpi::drawing::api::IPathGeometry* geometry, const gmpi::drawing::api::IBrush* brush, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle)
+		gmpi::ReturnCode GraphicsContext::drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle)
 		{
 #ifdef LOG_DIRECTX_CALLS
 			_RPT3(_CRT_WARN, "context_->DrawGeometry(geometry%x, brush%x, %f, 0);\n", (int)geometry, (int)brush, strokeWidth);
 #endif
 
-			auto& d2d_geometry = ((gmpi::directx::Geometry*)geometry)->geometry_;
+			auto& d2d_geometry = ((gmpi::directx::Geometry*)pathGeometry)->geometry_;
 			context_->DrawGeometry(d2d_geometry, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
 		}
 
-		void GraphicsContext::DrawTextU(const char* utf8String, int32_t stringLength, const gmpi::drawing::api::ITextFormat* textFormat, const gmpi::drawing::api::MP1_RECT* layoutRect, const gmpi::drawing::api::IBrush* brush, int32_t flags)
+		gmpi::ReturnCode GraphicsContext::drawTextU(const char* utf8String, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options)
 		{
-			// auto widestring = stringConverter->from_bytes(utf8String, utf8String + stringLength);
 			const auto widestring = JmUnicodeConversions::Utf8ToWstring(utf8String, stringLength);
 			
 			auto DxTextFormat = reinterpret_cast<const TextFormat*>(textFormat);
@@ -704,7 +695,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				adjusted.bottom += adjust;
 			}
 
-			context_->DrawText(widestring.data(), (UINT32)widestring.size(), tf, reinterpret_cast<const D2D1_RECT_F*>(&adjusted), b, (D2D1_DRAW_TEXT_OPTIONS)flags | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+			context_->DrawText(widestring.data(), (UINT32)widestring.size(), tf, reinterpret_cast<const D2D1_RECT_F*>(&adjusted), b, (D2D1_DRAW_TEXT_OPTIONS)options | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
 
 #ifdef LOG_DIRECTX_CALLS
 			{
@@ -727,21 +718,21 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				const float scale = 0.5f;
 				predictedBaseLine = floorf(-0.5 + predictedBaseLine / scale) * scale;
 
-				GmpiDrawing::Graphics g(this);
-				auto brush = g.CreateSolidColorBrush(GmpiDrawing::Color::Lime);
-				g.DrawLine(GmpiDrawing::Point(layoutRect->left, predictedBaseLine + 0.25f), GmpiDrawing::Point(layoutRect->left + 2, predictedBaseLine + 0.25f), brush, 0.5);
+				Graphics g(this);
+				auto brush = g.CreateSolidColorBrush(Color::Lime);
+				g.DrawLine(Point(layoutRect->left, predictedBaseLine + 0.25f), Point(layoutRect->left + 2, predictedBaseLine + 0.25f), brush, 0.5);
 			}
 #endif
 */
 		}
 
-		gmpi::ReturnCodeBitmap::getFactory(gmpi::drawing::api::IFactory** returnFactory)
+		gmpi::ReturnCode Bitmap::getFactory(gmpi::drawing::api::IFactory** returnFactory)
 		{
 			*returnFactory = factory;
-			return S_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 
-		int32_t Bitmap::lockPixels(gmpi::drawing::api::IBitmapPixels** returnInterface, int32_t flags)
+		gmpi::ReturnCode Bitmap::lockPixels(gmpi::drawing::api::IBitmapPixels** returnInterface, int32_t flags)
 		{
 			*returnInterface = nullptr;
 
@@ -797,13 +788,13 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 				return gmpi::ReturnCode::Fail;
 			}
 */
-			gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
-			b2.Attach(new bitmapPixels(nativeBitmap_, diBitmap_, true, flags));
+			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
+			b2.Attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));
 
-			return b2->queryInterface(gmpi::drawing::api::SE_IID_BITMAP_PIXELS_MPGUI, (void**)(returnInterface));
+			return b2->queryInterface(&drawing::api::IBitmapPixels::guid, (void**)(returnInterface));
 		}
 
-		ID2D1Bitmap* Bitmap::GetNativeBitmap(ID2D1DeviceContext* nativeContext)
+		ID2D1Bitmap* Bitmap::getNativeBitmap(ID2D1DeviceContext* nativeContext)
 		{
 			// Check for loss of surface.
 			if (nativeContext != nativeContext_ && diBitmap_ != nullptr)
@@ -875,18 +866,19 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 			// on Windows 7, leave image as-is
 			if (factory->getPlatformPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
 			{
-				ApplyPreMultiplyCorrection();
+				applyPreMultiplyCorrection();
 			}
 		}
 
 		// WIX premultiplies images automatically on load, but wrong (assumes linear not SRGB space). Fix it.
-		void Bitmap::ApplyPreMultiplyCorrection()
+		void Bitmap::applyPreMultiplyCorrection()
 		{
 #if 1
-			GmpiDrawing::Bitmap bitmap(this);
-
-			auto pixelsSource = bitmap.lockPixels(true);
-			auto imageSize = bitmap.GetSize();
+			drawing::Bitmap bitmap;
+			*bitmap.put() = this;
+			
+			auto pixelsSource = bitmap.lockPixels((int32_t) gmpi::drawing::BitmapLockFlags::ReadWrite);
+			auto imageSize = bitmap.getSize();
 			size_t totalPixels = imageSize.height * pixelsSource.getBytesPerRow() / sizeof(uint32_t);
 			uint8_t* sourcePixels = pixelsSource.getAddress();
 
@@ -935,7 +927,7 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 		{
 
 #if 1 // apply gamma correction to compensate for linear blending in SRGB space (DirectX 1.0 limitation)
-			GmpiDrawing::Bitmap bitmap(this);
+			Bitmap bitmap(this);
 
 			auto pixelsSource = bitmap.lockPixels(true);
 			auto imageSize = bitmap.GetSize();
@@ -991,19 +983,19 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 		}
 #endif
 
-		int32_t GraphicsContext::CreateSolidColorBrush(const gmpi::drawing::api::MP1_COLOR* color, gmpi::drawing::api::ISolidColorBrush **solidColorBrush)
+		gmpi::ReturnCode GraphicsContext::createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush)
 		{
-			*solidColorBrush = nullptr;
+			*returnSolidColorBrush = nullptr;
 
 			ID2D1SolidColorBrush* b = nullptr;
 			HRESULT hr = context_->CreateSolidColorBrush(*(D2D1_COLOR_F*)color, &b);
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 				b2.Attach(new SolidColorBrush(b, factory));
 
-				b2->queryInterface(gmpi::drawing::api::SE_IID_SOLIDCOLORBRUSH_MPGUI, reinterpret_cast<void **>(solidColorBrush));
+				b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 			}
 
 #ifdef LOG_DIRECTX_CALLS
@@ -1017,9 +1009,9 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		int32_t GraphicsContext::CreateGradientStopCollection(const gmpi::drawing::api::MP1_GRADIENT_STOP *gradientStops, uint32_t gradientStopsCount, gmpi::drawing::api::IGradientStopCollection** gradientStopCollection)
+		gmpi::ReturnCode GraphicsContext::createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection)
 		{
-			*gradientStopCollection = nullptr;
+			*returnGradientstopCollection = nullptr;
 
 			HRESULT hr = 0;
 
@@ -1030,8 +1022,8 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 				ID2D1GradientStopCollection1* native2 = nullptr;
 
 				hr = context_->CreateGradientStopCollection(
-					(D2D1_GRADIENT_STOP*)gradientStops,
-					gradientStopsCount,
+					(D2D1_GRADIENT_STOP*)gradientstops,
+					gradientstopsCount,
 					D2D1_COLOR_SPACE_SRGB,
 					D2D1_COLOR_SPACE_SRGB,
 					D2D1_BUFFER_PRECISION_8BPC_UNORM_SRGB, // Buffer precision. D2D1_BUFFER_PRECISION_16BPC_FLOAT seems the same
@@ -1041,10 +1033,10 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 
 				if (hr == 0)
 				{
-					gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> wrapper;
+					gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
 					wrapper.Attach(new GradientStopCollection1(native2, factory));
 
-					wrapper->queryInterface(gmpi::drawing::api::SE_IID_GRADIENTSTOPCOLLECTION_MPGUI, reinterpret_cast<void**>(gradientStopCollection));
+					wrapper->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
 				}
 			}
 #else
@@ -1061,10 +1053,10 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 					&native1);
 				if (hr == 0)
 				{
-					gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> wrapper;
+					gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
 					wrapper.Attach(new GradientStopCollection(native1, factory));
 
-					wrapper->queryInterface(gmpi::drawing::api::SE_IID_GRADIENTSTOPCOLLECTION_MPGUI, reinterpret_cast<void**>(gradientStopCollection));
+					wrapper->queryInterface(drawing::api::SE_IID_GRADIENTSTOPCOLLECTION_MPGUI, reinterpret_cast<void**>(gradientStopCollection));
 				}
 			}
 #endif
@@ -1073,15 +1065,15 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 		}
 
 
-		//int32_t GraphicsContext::CreateMesh(gmpi::drawing::api::IMesh** returnObject)
+		//gmpi::ReturnCode GraphicsContext::CreateMesh(gmpi::drawing::api::IMesh** returnObject)
 		//{
 		//	*returnObject = nullptr;
 
 		//	auto mesh = new Mesh(factory, context_);
-		//	return mesh->queryInterface(gmpi::drawing::api::SE_IID_MESH_MPGUI, reinterpret_cast<void **>(returnObject));
+		//	return mesh->queryInterface(drawing::api::SE_IID_MESH_MPGUI, reinterpret_cast<void **>(returnObject));
 		//}
 		/*
-		int32_t GraphicsContext::CreateBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap)
+		gmpi::ReturnCode GraphicsContext::CreateBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap)
 		{
 			*bitmap = nullptr;
 
@@ -1095,26 +1087,27 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 				b2.Attach(new  bitmap(context_, b));
 
-				b2->queryInterface(gmpi::drawing::api::SE_IID_BITMAP_MPGUI, reinterpret_cast<void **>(bitmap));
+				b2->queryInterface(drawing::api::SE_IID_BITMAP_MPGUI, reinterpret_cast<void **>(bitmap));
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 		*/
 
-		int32_t GraphicsContext::CreateCompatibleRenderTarget(const gmpi::drawing::api::MP1_SIZE* desiredSize, gmpi::drawing::api::IBitmapRenderTarget** returnObject)
+		// todo : interger size?
+		gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(const gmpi::drawing::Size* desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 		{
-			*returnObject = nullptr;
+			*bitmapRenderTarget = nullptr;
 
-			gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 			b2.Attach(new BitmapRenderTarget(this, desiredSize, factory));
-			return b2->queryInterface(gmpi::drawing::api::SE_IID_BITMAP_RENDERTARGET_MPGUI, reinterpret_cast<void **>(returnObject));
+			return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void **>(bitmapRenderTarget));
 		}
 
-		int32_t BitmapRenderTarget::GetBitmap(gmpi::drawing::api::IBitmap** returnBitmap)
+		gmpi::ReturnCode BitmapRenderTarget::getBitmap(gmpi::drawing::api::IBitmap** returnBitmap)
 		{
 			*returnBitmap = nullptr;
 
@@ -1123,37 +1116,30 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 
 			if (hr == 0)
 			{
-				gmpi_sdk::mp_shared_ptr<gmpi::api::IUnknown> b2;
+				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 				b2.Attach(new Bitmap(factory, context_, nativeBitmap));
 				nativeBitmap->Release();
 
-				b2->queryInterface(gmpi::drawing::api::SE_IID_BITMAP_MPGUI, reinterpret_cast<void **>(returnBitmap));
+				b2->queryInterface(&drawing::api::IBitmap::guid, reinterpret_cast<void **>(returnBitmap));
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		void GraphicsContext::PushAxisAlignedClip(const gmpi::drawing::api::MP1_RECT* clipRect/*, gmpi::drawing::api::MP1_ANTIALIAS_MODE antialiasMode*/)
+		gmpi::ReturnCode GraphicsContext::pushAxisAlignedClip(const drawing::Rect* clipRect)
 		{
-#ifdef LOG_DIRECTX_CALLS
-			_RPT0(_CRT_WARN, "{\n");
-			_RPT4(_CRT_WARN, "auto r = D2D1::RectF(%.3f, %.3f, %.3f, %.3ff);\n", clipRect->left, clipRect->top, clipRect->right, clipRect->bottom);
-			_RPT0(_CRT_WARN, "context_->PushAxisAlignedClip(&r, D2D1_ANTIALIAS_MODE_ALIASED);\n");
-			_RPT0(_CRT_WARN, "}\n");
-#endif
-
-			context_->PushAxisAlignedClip((D2D1_RECT_F*)clipRect, D2D1_ANTIALIAS_MODE_ALIASED /*, (D2D1_ANTIALIAS_MODE)antialiasMode*/);
+			context_->PushAxisAlignedClip((D2D1_RECT_F*)clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
 
 			// Transform to original position.
-			GmpiDrawing::Matrix3x2 currentTransform;
+			drawing::Matrix3x2 currentTransform;
 			context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
-			auto r2 = currentTransform.TransformRect(*clipRect);
+			auto r2 = transformRect(currentTransform , *clipRect);
 			clipRectStack.push_back(r2);
 
 //			_RPT4(_CRT_WARN, "                 PushAxisAlignedClip( %f %f %f %f)\n", r2.left, r2.top, r2.right , r2.bottom);
 		}
 
-		void GraphicsContext::GetAxisAlignedClip(gmpi::drawing::api::MP1_RECT* returnClipRect)
+		void GraphicsContext::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
 		{
 #ifdef LOG_DIRECTX_CALLS
 			_RPT0(_CRT_WARN, "{\n");
@@ -1163,10 +1149,10 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 #endif
 
 			// Transform to original position.
-			GmpiDrawing::Matrix3x2 currentTransform;
+			drawing::Matrix3x2 currentTransform;
 			context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
-			currentTransform.Invert();
-			auto r2 = currentTransform.TransformRect(clipRectStack.back());
+			currentTransform = invert(currentTransform);
+			auto r2 = transformRect(currentTransform, clipRectStack.back());
 
 			*returnClipRect = r2;
 		}

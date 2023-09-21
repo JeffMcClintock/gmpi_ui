@@ -584,7 +584,7 @@ void DrawingFrameBase::OnPaint()
 			{
 				auto r = updateRegion_native.getBoundingRect();
 
-				auto r2 = WindowToDips.TransformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+				auto r2 = WindowToDips.transformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 				// Snap to whole DIPs.
 				GmpiDrawing::Rect temp;
@@ -619,7 +619,7 @@ void DrawingFrameBase::OnPaint()
 				// clip and draw each react individually (causes some objects to redraw several times)
 				for (auto& r : dirtyRects)
 				{
-					auto r2 = WindowToDips.TransformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+					auto r2 = WindowToDips.transformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 					// Snap to whole DIPs.
 					GmpiDrawing::Rect temp;
@@ -934,7 +934,7 @@ void DrawingFrameBase::CreateDevice()
 
 	DipsToWindow = GmpiDrawing::Matrix3x2::Scale(dpiX / 96.0f, dpiY / 96.0f); // was dpiScaleInverse
 	WindowToDips = DipsToWindow;
-	WindowToDips.Invert();
+	WindowToDips = invert(WindowToDips);
 
 	// A little jagged on small fonts
 	//	mpRenderTarget->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE); // "The quality of rendering grayscale text is comparable to ClearType but is much faster."}
@@ -1058,7 +1058,7 @@ void DrawingFrameBase::invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRe
 	if (invalidRect)
 	{
 		//_RPT4(_CRT_WARN, "invalidateRect r[ %d %d %d %d]\n", (int)invalidRect->left, (int)invalidRect->top, (int)invalidRect->right, (int)invalidRect->bottom);
-		r = RectToIntegerLarger( DipsToWindow.TransformRect(*invalidRect) );
+		r = RectToIntegerLarger( DipsToWindow.transformRect(*invalidRect) );
 	}
 	else
 	{
@@ -1121,14 +1121,14 @@ int32_t DrawingFrameBase::releaseCapture()
 
 int32_t DrawingFrameBase::createPlatformMenu(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu)
 {
-	auto nativeRect = DipsToWindow.TransformRect(*rect);
+	auto nativeRect = DipsToWindow.transformRect(*rect);
 	*returnMenu = new GmpiGuiHosting::PGCC_PlatformMenu(getWindowHandle(), &nativeRect, DipsToWindow._22);
 	return gmpi::MP_OK;
 }
 
 int32_t DrawingFrameBase::createPlatformTextEdit(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformText** returnTextEdit)
 {
-	auto nativeRect = DipsToWindow.TransformRect(*rect);
+	auto nativeRect = DipsToWindow.transformRect(*rect);
 	*returnTextEdit = new GmpiGuiHosting::PGCC_PlatformTextEntry(getWindowHandle(), &nativeRect, DipsToWindow._22);
 
 	return gmpi::MP_OK;

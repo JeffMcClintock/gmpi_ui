@@ -405,7 +405,7 @@ public:
 		}
 	}
 
-	ID2D1Bitmap* GetNativeBitmap(ID2D1DeviceContext* nativeContext);
+	ID2D1Bitmap* getNativeBitmap(ID2D1DeviceContext* nativeContext);
 
     gmpi::ReturnCode getSizeU(drawing::SizeU* returnSize) override
 	{
@@ -415,7 +415,7 @@ public:
 
 	gmpi::ReturnCode lockPixels(gmpi::drawing::api::IBitmapPixels** returnInterface, int32_t flags) override;
 
-	void ApplyPreMultiplyCorrection();
+	void applyPreMultiplyCorrection();
 
 //	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override;
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** returnFactory) override;
@@ -486,7 +486,7 @@ public:
 		: Brush(nullptr, factory)
 	{
 		auto bm = ((Bitmap*)bitmap);
-		auto nativeBitmap = bm->GetNativeBitmap(context);
+		auto nativeBitmap = bm->getNativeBitmap(context);
 
 		[[maybe_unused]] const auto hr = context->CreateBitmapBrush(nativeBitmap, (D2D1_BITMAP_BRUSH_PROPERTIES*)bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)&native_);
 		assert(hr == 0);
@@ -1029,7 +1029,6 @@ public:
 		return m_pDirect2dFactory;
 	}
 	std::wstring fontMatch(std::wstring fontName, gmpi::drawing::FontWeight fontWeight, float fontSize);
-
 	gmpi::ReturnCode createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry) override;
 	gmpi::ReturnCode createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat) override;
 	gmpi::ReturnCode createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
@@ -1128,7 +1127,6 @@ public:
 		context_->DrawLine(*((D2D_POINT_2F*)point0), *((D2D_POINT_2F*)point1), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle));
 	}
 
-//	void DrawGeometry(const gmpi::drawing::api::IPathGeometry* geometry, const gmpi::drawing::api::IBrush* brush, float strokeWidth = 1.0f, const gmpi::drawing::api::IStrokeStyle* strokeStyle = 0) override;
 	gmpi::ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override;
 
 	gmpi::ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
@@ -1149,14 +1147,11 @@ public:
 	}
 
 	gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
-	//void DrawTextU(const char* utf8String, int32_t stringLength, const gmpi::drawing::api::ITextFormat* textFormat, const gmpi::drawing::Rect* layoutRect, const gmpi::drawing::api::IBrush* brush, int32_t flags) override;
 
-	//	void DrawBitmap( gmpi::drawing::api::IBitmap* mpBitmap, gmpi::drawing::Rect destinationRectangle, float opacity, int32_t interpolationMode, gmpi::drawing::Rect sourceRectangle) override
-//	void DrawBitmap(const gmpi::drawing::api::IBitmap* mpBitmap, const gmpi::drawing::Rect* destinationRectangle, float opacity, /* MP1_BITMAP_INTERPOLATION_MODE*/ int32_t interpolationMode, const gmpi::drawing::Rect* sourceRectangle) override
 	gmpi::ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)bitmap);
-		auto native = bm->GetNativeBitmap(context_);
+		auto native = bm->getNativeBitmap(context_);
 		if (native)
 		{
 			context_->DrawBitmap(
@@ -1303,7 +1298,7 @@ public:
 
 	// HACK, to be ABI compatible with IBitmapRenderTarget we need this virtual function,
 	// and it needs to be in the vtable right after all virtual functions of GraphicsContext
-	virtual int32_t GetBitmap(gmpi::drawing::api::IBitmap** returnBitmap);
+	virtual gmpi::ReturnCode getBitmap(gmpi::drawing::api::IBitmap** returnBitmap);
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
@@ -1332,7 +1327,6 @@ public:
 	{}
 
 	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush)
-//	gmpi::ReturnCode createSolidColorBrush(const gmpi::drawing::Color* color, gmpi::drawing::api::ISolidColorBrush **solidColorBrush) override
 	{
 		*returnSolidColorBrush = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b;

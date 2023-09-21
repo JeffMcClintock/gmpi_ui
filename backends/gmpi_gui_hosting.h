@@ -334,7 +334,7 @@ namespace GmpiGuiHosting
 		{
 			for (auto& r : rects_native)
 			{
-				auto r2 = WindowToDips.TransformRect(gmpi::drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+				auto r2 = WindowToDips.transformRect(gmpi::drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 				rects.push_back(
 					gmpi::drawing::Rect(
@@ -359,10 +359,10 @@ namespace GmpiGuiHosting
 		{
 			for (auto& r : parent->rects)
 			{
-				rects.push_back( transform.TransformRect(r) );
+				rects.push_back( transform.transformRect(r) );
 			}
 
-			overallRect = transform.TransformRect(parent->overallRect);
+			overallRect = transform.transformRect(parent->overallRect);
 		}
 
 		const gmpi::drawing::Rect& getOverallRect()

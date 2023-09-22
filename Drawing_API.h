@@ -409,6 +409,10 @@ struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IResource : public gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode getFactory(struct IFactory** factory) = 0;
+
+    // {617750C9-14DC-4157-BBD0-FEDF5270D8FD}
+    inline static const gmpi::api::Guid guid =
+    { 0x617750c9, 0x14dc, 0x4157, { 0xbb, 0xd0, 0xfe, 0xdf, 0x52, 0x70, 0xd8, 0xfd } };
 };
 
 // INTERFACE 'IBitmapPixels'
@@ -472,7 +476,7 @@ struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
 struct DECLSPEC_NOVTABLE ISolidColorBrush : public IBrush
 {
     virtual gmpi::ReturnCode setColor(const Color* color) = 0;
-	virtual Color getColor() = 0; // !!!ERROR !!! RETURNING A STRUCT
+//	virtual Color getColor() = 0; // !!!ERROR !!! RETURNING A STRUCT
 
     // {BB3FD251-47A0-4273-90AB-A5CDC88F57B9}
     inline static const gmpi::api::Guid guid =

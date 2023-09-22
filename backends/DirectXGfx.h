@@ -443,7 +443,7 @@ public:
 	GMPI_REFCOUNT;
 };
 
-class Brush : public gmpi::drawing::api::IBrush/*, public GmpiDXResourceWrapper<gmpi::drawing::api::IBrush, ID2D1Brush>*/ // Resource
+class Brush
 {
 protected:
 	ID2D1Brush* native_ = {};
@@ -452,19 +452,18 @@ protected:
 public:
 	Brush(ID2D1Brush* native, gmpi::drawing::api::IFactory* factory) : native_(native), factory_(factory) {}
 
-#ifdef LOG_DIRECTX_CALLS
 	~Brush()
 	{
-		_RPT1(_CRT_WARN, "brush%x->Release();\n", (int)this);
-		_RPT1(_CRT_WARN, "brush%x = nullptr;\n", (int)this);
+		if (native_)
+			native_->Release();
 	}
-#endif
 
 	ID2D1Brush* native()
 	{
 		return native_;
 	}
 
+#if 0
 	// IResource
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
@@ -473,9 +472,10 @@ public:
 	}
 
     GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IBrush);
+#endif
 };
 
-class BitmapBrush final : /* Simulated: public gmpi::drawing::api::IBitmapBrush,*/ public Brush
+class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush, public Brush
 {
 public:
 	BitmapBrush(
@@ -499,83 +499,95 @@ public:
 		return (ID2D1BitmapBrush*)native_;
 	}
 
-	// IMPORTANT: Virtual functions must 100% match simulated interface.
-	virtual void setExtendModeX(gmpi::drawing::ExtendMode extendModeX)
+	gmpi::ReturnCode setExtendModeX(gmpi::drawing::ExtendMode extendModeX) override
 	{
 		native()->SetExtendModeX((D2D1_EXTEND_MODE)extendModeX);
+		return gmpi::ReturnCode::Ok;
 	}
 
-	virtual void setExtendModeY(gmpi::drawing::ExtendMode extendModeY)
+	gmpi::ReturnCode setExtendModeY(gmpi::drawing::ExtendMode extendModeY) override
 	{
 		native()->SetExtendModeY((D2D1_EXTEND_MODE)extendModeY);
+		return gmpi::ReturnCode::Ok;
 	}
 
-	virtual void setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode)
+	gmpi::ReturnCode setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode) override
 	{
 		native()->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::IBitmapBrush::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == gmpi::drawing::api::IBitmapBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
-			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<gmpi::drawing::api::IBitmapBrush*>(this);
+			*returnInterface = this;
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
 		return gmpi::ReturnCode::NoSupport;
 	}
 
+	// IResource
+	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	{
+		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
+	}
+
 	GMPI_REFCOUNT;
 };
 
-class SolidColorBrush final : /* Simulated: public gmpi::drawing::api::ISolidColorBrush,*/ public Brush
+class SolidColorBrush final : public gmpi::drawing::api::ISolidColorBrush, public Brush
 {
 public:
 	SolidColorBrush(ID2D1SolidColorBrush* b, gmpi::drawing::api::IFactory *factory) : Brush(b, factory) {}
 
-	ID2D1SolidColorBrush* nativeSolidColorBrush()
+	ID2D1SolidColorBrush* native()
 	{
-		return (ID2D1SolidColorBrush*)native();
+		return (ID2D1SolidColorBrush*)native_;
 	}
 
-	// IMPORTANT: Virtual functions must 100% match simulated interface (gmpi::drawing::api::ISolidColorBrush)
-	virtual void setColor(const gmpi::drawing::Color* color) // simulated: override
+	gmpi::ReturnCode setColor(const gmpi::drawing::Color* color) override
 	{
-//				D2D1::ConvertColorSpace(D2D1::ColorF*) color);
-		nativeSolidColorBrush()->SetColor((D2D1::ColorF*) color);
+		native()->SetColor((D2D1::ColorF*) color);
+		return gmpi::ReturnCode::Ok;
 	}
-	virtual gmpi::drawing::Color GetColor() // simulated:  override
-	{
-		const auto b = nativeSolidColorBrush()->GetColor();
-		return 
-		{
-			b.a,
-			b.r,
-			b.g,
-			b.b
-		};
-	}
+	//gmpi::ReturnCode gmpi::drawing::Color GetColor() override
+	//{
+	//	const auto b = native()->GetColor();
+	//	return 
+	//	{
+	//		b.a,
+	//		b.r,
+	//		b.g,
+	//		b.b
+	//	};
+	//}
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::ISolidColorBrush::guid)
+		if (*iid == gmpi::drawing::api::ISolidColorBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
-			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<gmpi::drawing::api::ISolidColorBrush*>(this);
+			*returnInterface = this;
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
-		return Brush::queryInterface(iid, returnInterface);
+		return gmpi::ReturnCode::NoSupport;
 	}
 
+	// IResource
+	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	{
+		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
+	}
 	GMPI_REFCOUNT;
 };
 
-class SolidColorBrush_Win7 final : /* Simulated: ISolidColorBrush,*/ public Brush
+class SolidColorBrush_Win7 final : public gmpi::drawing::api::ISolidColorBrush, public Brush
 {
 public:
 	SolidColorBrush_Win7(ID2D1RenderTarget* context, const gmpi::drawing::Color* color, gmpi::drawing::api::IFactory* factory) : Brush(nullptr, factory)
@@ -594,11 +606,11 @@ public:
 
 	inline ID2D1SolidColorBrush* nativeSolidColorBrush()
 	{
-		return (ID2D1SolidColorBrush*)native();
+		return (ID2D1SolidColorBrush*)native_;
 	}
 
 	// IMPORTANT: Virtual functions must 100% match simulated interface (gmpi::drawing::api::ISolidColorBrush)
-	virtual void setColor(const gmpi::drawing::Color* color) // simulated: override
+	gmpi::ReturnCode setColor(const gmpi::drawing::Color* color) override
 	{
 		//				D2D1::ConvertColorSpace(D2D1::ColorF*) color);
 		gmpi::drawing::Color modified
@@ -609,36 +621,43 @@ public:
 			color->a
 		};
 		nativeSolidColorBrush()->SetColor((D2D1::ColorF*) &modified);
+		return gmpi::ReturnCode::Ok;
 	}
 
-	virtual gmpi::drawing::Color GetColor() // simulated:  override
-	{
-		auto b = nativeSolidColorBrush()->GetColor();
-		//		return gmpi::drawing::Color(b.r, b.g, b.b, b.a);
-		gmpi::drawing::Color c;
-		c.a = b.a;
-		c.r = b.r;
-		c.g = b.g;
-		c.b = b.b;
-		return c;
-	}
+	//virtual gmpi::drawing::Color GetColor()override
+	//{
+	//	auto b = nativeSolidColorBrush()->GetColor();
+	//	//		return gmpi::drawing::Color(b.r, b.g, b.b, b.a);
+	//	gmpi::drawing::Color c;
+	//	c.a = b.a;
+	//	c.r = b.r;
+	//	c.g = b.g;
+	//	c.b = b.b;
+	//	return c;
+	//}
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::ISolidColorBrush::guid)
+		if (*iid == gmpi::drawing::api::ISolidColorBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
-			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<gmpi::drawing::api::ISolidColorBrush*>(this);
+			*returnInterface = this;
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
-		return Brush::queryInterface(iid, returnInterface);
+		return gmpi::ReturnCode::NoSupport;
+	}
+
+	// IResource
+	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	{
+		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
 	}
 	GMPI_REFCOUNT;
 };
 
-class LinearGradientBrush final : /* Simulated: ILinearGradientBrush,*/ public Brush
+class LinearGradientBrush final : public gmpi::drawing::api::ILinearGradientBrush, public Brush
 {
 public:
 	LinearGradientBrush(gmpi::drawing::api::IFactory *factory, ID2D1RenderTarget* context, const gmpi::drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, const  gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
@@ -663,24 +682,28 @@ public:
 		native()->SetEndPoint(*reinterpret_cast<D2D1_POINT_2F*>(&endPoint));
 	}
 
-	//	GMPI_QUERYINTERFACE1(gmpi::drawing::api::SE_IID_LINEARGRADIENTBRUSH_MPGUI, gmpi::drawing::api::ILinearGradientBrush);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::ILinearGradientBrush::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == gmpi::drawing::api::ILinearGradientBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
-			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<gmpi::drawing::api::ILinearGradientBrush*>(this);
+			*returnInterface = this;
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
 		return gmpi::ReturnCode::NoSupport;
 	}
 
+	// IResource
+	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	{
+		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
+	}
 	GMPI_REFCOUNT;
 };
 
-class RadialGradientBrush final : /* Simulated: IRadialGradientBrush,*/ public Brush
+class RadialGradientBrush final : public gmpi::drawing::api::IRadialGradientBrush, public Brush
 {
 public:
 	RadialGradientBrush(gmpi::drawing::api::IFactory *factory, ID2D1RenderTarget* context, const gmpi::drawing::RadialGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, const gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
@@ -719,16 +742,21 @@ public:
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::IRadialGradientBrush::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == gmpi::drawing::api::IRadialGradientBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
-			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<gmpi::drawing::api::IRadialGradientBrush*>(this);
+			*returnInterface = this;
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
 		return gmpi::ReturnCode::NoSupport;
 	}
 
+	// IResource
+	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	{
+		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
+	}
 	GMPI_REFCOUNT;
 };
 
@@ -1118,7 +1146,11 @@ public:
 
 	gmpi::ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
 	{
-		context_->FillRectangle((D2D1_RECT_F*)rect, (ID2D1Brush*)((Brush*)brush)->native());
+auto test = (Brush*)brush;
+auto test3 = dynamic_cast<Brush*>(brush);
+auto test2 = test->native();
+auto test4 = *(ID2D1Brush**)brush;
+		context_->FillRectangle((D2D1_RECT_F*)rect, ((Brush*)brush)->native());
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -1230,25 +1262,25 @@ public:
 
 	gmpi::ReturnCode drawRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		context_->DrawRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, (ID2D1Brush*)((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+		context_->DrawRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
 	{
-		context_->FillRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, (ID2D1Brush*)((Brush*)brush)->native());
+		context_->FillRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, ((Brush*)brush)->native());
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		context_->DrawEllipse((D2D1_ELLIPSE*)ellipse, (ID2D1Brush*)((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+		context_->DrawEllipse((D2D1_ELLIPSE*)ellipse, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
 	{
-		context_->FillEllipse((D2D1_ELLIPSE*)ellipse, (ID2D1Brush*)((Brush*)brush)->native());
+		context_->FillEllipse((D2D1_ELLIPSE*)ellipse, ((Brush*)brush)->native());
 		return gmpi::ReturnCode::Ok;
 	}
 

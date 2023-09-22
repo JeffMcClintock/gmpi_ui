@@ -1357,150 +1357,6 @@ namespace drawing
 	*/
 #endif
 
-namespace Colors
-{
-	inline static Color AliceBlue{0xF0F8FF};
-	inline static Color AntiqueWhite{0xFAEBD7};
-	inline static Color Aqua{0x00FFFF};
-	inline static Color Aquamarine{0x7FFFD4};
-	inline static Color Azure{0xF0FFFF};
-	inline static Color Beige{0xF5F5DC};
-	inline static Color Bisque{0xFFE4C4};
-	inline static Color Black{0x000000};
-	inline static Color BlanchedAlmond{0xFFEBCD};
-	inline static Color Blue{0x0000FF};
-	inline static Color BlueViolet{0x8A2BE2};
-	inline static Color Brown{0xA52A2A};
-	inline static Color BurlyWood{0xDEB887};
-	inline static Color CadetBlue{0x5F9EA0};
-	inline static Color Chartreuse{0x7FFF00};
-	inline static Color Chocolate{0xD2691E};
-	inline static Color Coral{0xFF7F50};
-	inline static Color CornflowerBlue{0x6495ED};
-	inline static Color Cornsilk{0xFFF8DC};
-	inline static Color Crimson{0xDC143C};
-	inline static Color Cyan{0x00FFFF};
-	inline static Color DarkBlue{0x00008B};
-	inline static Color DarkCyan{0x008B8B};
-	inline static Color DarkGoldenrod{0xB8860B};
-	inline static Color DarkGray{0xA9A9A9};
-	inline static Color DarkGreen{0x006400};
-	inline static Color DarkKhaki{0xBDB76B};
-	inline static Color DarkMagenta{0x8B008B};
-	inline static Color DarkOliveGreen{0x556B2F};
-	inline static Color DarkOrange{0xFF8C00};
-	inline static Color DarkOrchid{0x9932CC};
-	inline static Color DarkRed{0x8B0000};
-	inline static Color DarkSalmon{0xE9967A};
-	inline static Color DarkSeaGreen{0x8FBC8F};
-	inline static Color DarkSlateBlue{0x483D8B};
-	inline static Color DarkSlateGray{0x2F4F4F};
-	inline static Color DarkTurquoise{0x00CED1};
-	inline static Color DarkViolet{0x9400D3};
-	inline static Color DeepPink{0xFF1493};
-	inline static Color DeepSkyBlue{0x00BFFF};
-	inline static Color DimGray{0x696969};
-	inline static Color DodgerBlue{0x1E90FF};
-	inline static Color Firebrick{0xB22222};
-	inline static Color FloralWhite{0xFFFAF0};
-	inline static Color ForestGreen{0x228B22};
-	inline static Color Fuchsia{0xFF00FF};
-	inline static Color Gainsboro{0xDCDCDC};
-	inline static Color GhostWhite{0xF8F8FF};
-	inline static Color Gold{0xFFD700};
-	inline static Color Goldenrod{0xDAA520};
-	inline static Color Gray{0x808080};
-	inline static Color Green{0x008000};
-	inline static Color GreenYellow{0xADFF2F};
-	inline static Color Honeydew{0xF0FFF0};
-	inline static Color HotPink{0xFF69B4};
-	inline static Color IndianRed{0xCD5C5C};
-	inline static Color Indigo{0x4B0082};
-	inline static Color Ivory{0xFFFFF0};
-	inline static Color Khaki{0xF0E68C};
-	inline static Color Lavender{0xE6E6FA};
-	inline static Color LavenderBlush{0xFFF0F5};
-	inline static Color LawnGreen{0x7CFC00};
-	inline static Color LemonChiffon{0xFFFACD};
-	inline static Color LightBlue{0xADD8E6};
-	inline static Color LightCoral{0xF08080};
-	inline static Color LightCyan{0xE0FFFF};
-	inline static Color LightGoldenrodYellow{0xFAFAD2};
-	inline static Color LightGreen{0x90EE90};
-	inline static Color LightGray{0xD3D3D3};
-	inline static Color LightPink{0xFFB6C1};
-	inline static Color LightSalmon{0xFFA07A};
-	inline static Color LightSeaGreen{0x20B2AA};
-	inline static Color LightSkyBlue{0x87CEFA};
-	inline static Color LightSlateGray{0x778899};
-	inline static Color LightSteelBlue{0xB0C4DE};
-	inline static Color LightYellow{0xFFFFE0};
-	inline static Color Lime{0x00FF00};
-	inline static Color LimeGreen{0x32CD32};
-	inline static Color Linen{0xFAF0E6};
-	inline static Color Magenta{0xFF00FF};
-	inline static Color Maroon{0x800000};
-	inline static Color MediumAquamarine{0x66CDAA};
-	inline static Color MediumBlue{0x0000CD};
-	inline static Color MediumOrchid{0xBA55D3};
-	inline static Color MediumPurple{0x9370DB};
-	inline static Color MediumSeaGreen{0x3CB371};
-	inline static Color MediumSlateBlue{0x7B68EE};
-	inline static Color MediumSpringGreen{0x00FA9A};
-	inline static Color MediumTurquoise{0x48D1CC};
-	inline static Color MediumVioletRed{0xC71585};
-	inline static Color MidnightBlue{0x191970};
-	inline static Color MintCream{0xF5FFFA};
-	inline static Color MistyRose{0xFFE4E1};
-	inline static Color Moccasin{0xFFE4B5};
-	inline static Color NavajoWhite{0xFFDEAD};
-	inline static Color Navy{0x000080};
-	inline static Color OldLace{0xFDF5E6};
-	inline static Color Olive{0x808000};
-	inline static Color OliveDrab{0x6B8E23};
-	inline static Color Orange{0xFFA500};
-	inline static Color OrangeRed{0xFF4500};
-	inline static Color Orchid{0xDA70D6};
-	inline static Color PaleGoldenrod{0xEEE8AA};
-	inline static Color PaleGreen{0x98FB98};
-	inline static Color PaleTurquoise{0xAFEEEE};
-	inline static Color PaleVioletRed{0xDB7093};
-	inline static Color PapayaWhip{0xFFEFD5};
-	inline static Color PeachPuff{0xFFDAB9};
-	inline static Color Peru{0xCD853F};
-	inline static Color Pink{0xFFC0CB};
-	inline static Color Plum{0xDDA0DD};
-	inline static Color PowderBlue{0xB0E0E6};
-	inline static Color Purple{0x800080};
-	inline static Color Red{0xFF0000};
-	inline static Color RosyBrown{0xBC8F8F};
-	inline static Color RoyalBlue{0x4169E1};
-	inline static Color SaddleBrown{0x8B4513};
-	inline static Color Salmon{0xFA8072};
-	inline static Color SandyBrown{0xF4A460};
-	inline static Color SeaGreen{0x2E8B57};
-	inline static Color SeaShell{0xFFF5EE};
-	inline static Color Sienna{0xA0522D};
-	inline static Color Silver{0xC0C0C0};
-	inline static Color SkyBlue{0x87CEEB};
-	inline static Color SlateBlue{0x6A5ACD};
-	inline static Color SlateGray{0x708090};
-	inline static Color Snow{0xFFFAFA};
-	inline static Color SpringGreen{0x00FF7F};
-	inline static Color SteelBlue{0x4682B4};
-	inline static Color Tan{0xD2B48C};
-	inline static Color Teal{0x008080};
-	inline static Color Thistle{0xD8BFD8};
-	inline static Color Tomato{0xFF6347};
-	inline static Color Turquoise{0x40E0D0};
-	inline static Color Violet{0xEE82EE};
-	inline static Color Wheat{0xF5DEB3};
-	inline static Color White{0xFFFFFF};
-	inline static Color WhiteSmoke{0xF5F5F5};
-	inline static Color Yellow{0xFFFF00};
-	inline static Color YellowGreen{0x9ACD32};
-};
-
 inline Color colorFromSrgba(unsigned char pRed, unsigned char pGreen, unsigned char pBlue, float pAlpha = 1.0f)
 {
 	return
@@ -1511,6 +1367,161 @@ inline Color colorFromSrgba(unsigned char pRed, unsigned char pGreen, unsigned c
 	pAlpha
 	};
 }
+
+inline Color colorFromHex(uint32_t rgb, float a = 1.0)
+{
+	return
+	{
+		se_sdk::FastGamma::sRGB_to_float(static_cast<uint8_t>(rgb >> 16)),
+		se_sdk::FastGamma::sRGB_to_float(static_cast<uint8_t>(rgb >> 8)),
+		se_sdk::FastGamma::sRGB_to_float(static_cast<uint8_t>(rgb >> 0)),
+		a
+	};
+}
+
+namespace Colors
+{
+	inline static Color AliceBlue = colorFromHex(0xF0F8FFu);
+	inline static Color AntiqueWhite = colorFromHex(0xFAEBD7u);
+	inline static Color Aqua = colorFromHex(0x00FFFFu);
+	inline static Color Aquamarine = colorFromHex(0x7FFFD4u);
+	inline static Color Azure = colorFromHex(0xF0FFFFu);
+	inline static Color Beige = colorFromHex(0xF5F5DCu);
+	inline static Color Bisque = colorFromHex(0xFFE4C4u);
+	inline static Color Black = colorFromHex(0x000000u);
+	inline static Color BlanchedAlmond = colorFromHex(0xFFEBCDu);
+	inline static Color Blue = colorFromHex(0x0000FFu);
+	inline static Color BlueViolet = colorFromHex(0x8A2BE2u);
+	inline static Color Brown = colorFromHex(0xA52A2Au);
+	inline static Color BurlyWood = colorFromHex(0xDEB887u);
+	inline static Color CadetBlue = colorFromHex(0x5F9EA0u);
+	inline static Color Chartreuse = colorFromHex(0x7FFF00u);
+	inline static Color Chocolate = colorFromHex(0xD2691Eu);
+	inline static Color Coral = colorFromHex(0xFF7F50u);
+	inline static Color CornflowerBlue = colorFromHex(0x6495EDu);
+	inline static Color Cornsilk = colorFromHex(0xFFF8DCu);
+	inline static Color Crimson = colorFromHex(0xDC143Cu);
+	inline static Color Cyan = colorFromHex(0x00FFFFu);
+	inline static Color DarkBlue = colorFromHex(0x00008Bu);
+	inline static Color DarkCyan = colorFromHex(0x008B8Bu);
+	inline static Color DarkGoldenrod = colorFromHex(0xB8860Bu);
+	inline static Color DarkGray = colorFromHex(0xA9A9A9u);
+	inline static Color DarkGreen = colorFromHex(0x006400u);
+	inline static Color DarkKhaki = colorFromHex(0xBDB76Bu);
+	inline static Color DarkMagenta = colorFromHex(0x8B008Bu);
+	inline static Color DarkOliveGreen = colorFromHex(0x556B2Fu);
+	inline static Color DarkOrange = colorFromHex(0xFF8C00u);
+	inline static Color DarkOrchid = colorFromHex(0x9932CCu);
+	inline static Color DarkRed = colorFromHex(0x8B0000u);
+	inline static Color DarkSalmon = colorFromHex(0xE9967Au);
+	inline static Color DarkSeaGreen = colorFromHex(0x8FBC8Fu);
+	inline static Color DarkSlateBlue = colorFromHex(0x483D8Bu);
+	inline static Color DarkSlateGray = colorFromHex(0x2F4F4Fu);
+	inline static Color DarkTurquoise = colorFromHex(0x00CED1u);
+	inline static Color DarkViolet = colorFromHex(0x9400D3u);
+	inline static Color DeepPink = colorFromHex(0xFF1493u);
+	inline static Color DeepSkyBlue = colorFromHex(0x00BFFFu);
+	inline static Color DimGray = colorFromHex(0x696969u);
+	inline static Color DodgerBlue = colorFromHex(0x1E90FFu);
+	inline static Color Firebrick = colorFromHex(0xB22222u);
+	inline static Color FloralWhite = colorFromHex(0xFFFAF0u);
+	inline static Color ForestGreen = colorFromHex(0x228B22u);
+	inline static Color Fuchsia = colorFromHex(0xFF00FFu);
+	inline static Color Gainsboro = colorFromHex(0xDCDCDCu);
+	inline static Color GhostWhite = colorFromHex(0xF8F8FFu);
+	inline static Color Gold = colorFromHex(0xFFD700u);
+	inline static Color Goldenrod = colorFromHex(0xDAA520u);
+	inline static Color Gray = colorFromHex(0x808080u);
+	inline static Color Green = colorFromHex(0x008000u);
+	inline static Color GreenYellow = colorFromHex(0xADFF2Fu);
+	inline static Color Honeydew = colorFromHex(0xF0FFF0u);
+	inline static Color HotPink = colorFromHex(0xFF69B4u);
+	inline static Color IndianRed = colorFromHex(0xCD5C5Cu);
+	inline static Color Indigo = colorFromHex(0x4B0082u);
+	inline static Color Ivory = colorFromHex(0xFFFFF0u);
+	inline static Color Khaki = colorFromHex(0xF0E68Cu);
+	inline static Color Lavender = colorFromHex(0xE6E6FAu);
+	inline static Color LavenderBlush = colorFromHex(0xFFF0F5u);
+	inline static Color LawnGreen = colorFromHex(0x7CFC00u);
+	inline static Color LemonChiffon = colorFromHex(0xFFFACDu);
+	inline static Color LightBlue = colorFromHex(0xADD8E6u);
+	inline static Color LightCoral = colorFromHex(0xF08080u);
+	inline static Color LightCyan = colorFromHex(0xE0FFFFu);
+	inline static Color LightGoldenrodYellow = colorFromHex(0xFAFAD2u);
+	inline static Color LightGreen = colorFromHex(0x90EE90u);
+	inline static Color LightGray = colorFromHex(0xD3D3D3u);
+	inline static Color LightPink = colorFromHex(0xFFB6C1u);
+	inline static Color LightSalmon = colorFromHex(0xFFA07Au);
+	inline static Color LightSeaGreen = colorFromHex(0x20B2AAu);
+	inline static Color LightSkyBlue = colorFromHex(0x87CEFAu);
+	inline static Color LightSlateGray = colorFromHex(0x778899u);
+	inline static Color LightSteelBlue = colorFromHex(0xB0C4DEu);
+	inline static Color LightYellow = colorFromHex(0xFFFFE0u);
+	inline static Color Lime = colorFromHex(0x00FF00u);
+	inline static Color LimeGreen = colorFromHex(0x32CD32u);
+	inline static Color Linen = colorFromHex(0xFAF0E6u);
+	inline static Color Magenta = colorFromHex(0xFF00FFu);
+	inline static Color Maroon = colorFromHex(0x800000u);
+	inline static Color MediumAquamarine = colorFromHex(0x66CDAAu);
+	inline static Color MediumBlue = colorFromHex(0x0000CDu);
+	inline static Color MediumOrchid = colorFromHex(0xBA55D3u);
+	inline static Color MediumPurple = colorFromHex(0x9370DBu);
+	inline static Color MediumSeaGreen = colorFromHex(0x3CB371u);
+	inline static Color MediumSlateBlue = colorFromHex(0x7B68EEu);
+	inline static Color MediumSpringGreen = colorFromHex(0x00FA9Au);
+	inline static Color MediumTurquoise = colorFromHex(0x48D1CCu);
+	inline static Color MediumVioletRed = colorFromHex(0xC71585u);
+	inline static Color MidnightBlue = colorFromHex(0x191970u);
+	inline static Color MintCream = colorFromHex(0xF5FFFAu);
+	inline static Color MistyRose = colorFromHex(0xFFE4E1u);
+	inline static Color Moccasin = colorFromHex(0xFFE4B5u);
+	inline static Color NavajoWhite = colorFromHex(0xFFDEADu);
+	inline static Color Navy = colorFromHex(0x000080u);
+	inline static Color OldLace = colorFromHex(0xFDF5E6u);
+	inline static Color Olive = colorFromHex(0x808000u);
+	inline static Color OliveDrab = colorFromHex(0x6B8E23u);
+	inline static Color Orange = colorFromHex(0xFFA500u);
+	inline static Color OrangeRed = colorFromHex(0xFF4500u);
+	inline static Color Orchid = colorFromHex(0xDA70D6u);
+	inline static Color PaleGoldenrod = colorFromHex(0xEEE8AAu);
+	inline static Color PaleGreen = colorFromHex(0x98FB98u);
+	inline static Color PaleTurquoise = colorFromHex(0xAFEEEEu);
+	inline static Color PaleVioletRed = colorFromHex(0xDB7093u);
+	inline static Color PapayaWhip = colorFromHex(0xFFEFD5u);
+	inline static Color PeachPuff = colorFromHex(0xFFDAB9u);
+	inline static Color Peru = colorFromHex(0xCD853Fu);
+	inline static Color Pink = colorFromHex(0xFFC0CBu);
+	inline static Color Plum = colorFromHex(0xDDA0DDu);
+	inline static Color PowderBlue = colorFromHex(0xB0E0E6u);
+	inline static Color Purple = colorFromHex(0x800080u);
+	inline static Color Red = colorFromHex(0xFF0000u);
+	inline static Color RosyBrown = colorFromHex(0xBC8F8Fu);
+	inline static Color RoyalBlue = colorFromHex(0x4169E1u);
+	inline static Color SaddleBrown = colorFromHex(0x8B4513u);
+	inline static Color Salmon = colorFromHex(0xFA8072u);
+	inline static Color SandyBrown = colorFromHex(0xF4A460u);
+	inline static Color SeaGreen = colorFromHex(0x2E8B57u);
+	inline static Color SeaShell = colorFromHex(0xFFF5EEu);
+	inline static Color Sienna = colorFromHex(0xA0522Du);
+	inline static Color Silver = colorFromHex(0xC0C0C0u);
+	inline static Color SkyBlue = colorFromHex(0x87CEEBu);
+	inline static Color SlateBlue = colorFromHex(0x6A5ACDu);
+	inline static Color SlateGray = colorFromHex(0x708090u);
+	inline static Color Snow = colorFromHex(0xFFFAFAu);
+	inline static Color SpringGreen = colorFromHex(0x00FF7Fu);
+	inline static Color SteelBlue = colorFromHex(0x4682B4u);
+	inline static Color Tan = colorFromHex(0xD2B48Cu);
+	inline static Color Teal = colorFromHex(0x008080u);
+	inline static Color Thistle = colorFromHex(0xD8BFD8u);
+	inline static Color Tomato = colorFromHex(0xFF6347u);
+	inline static Color Turquoise = colorFromHex(0x40E0D0u);
+	inline static Color Violet = colorFromHex(0xEE82EEu);
+	inline static Color Wheat = colorFromHex(0xF5DEB3u);
+	inline static Color White = colorFromHex(0xFFFFFFu);
+	inline static Color WhiteSmoke = colorFromHex(0xF5F5F5u);
+	inline static Color Yellow = colorFromHex(0xFFFF00u);
+	inline static Color YellowGreen = colorFromHex(0x9ACD32u);
+};
 
 
 	class TextFormat_readonly : public gmpi::IWrapper<gmpi::drawing::api::ITextFormat>
@@ -1780,10 +1791,10 @@ inline Color colorFromSrgba(unsigned char pRed, unsigned char pGreen, unsigned c
 			Resource<gmpi::drawing::api::ISolidColorBrush>::get()->setColor((gmpi::drawing::Color*) &color);
 		}
 
-		Color GetColor()
-		{
-			return Resource<gmpi::drawing::api::ISolidColorBrush>::get()->getColor();
-		}
+		//Color GetColor()
+		//{
+		//	return Resource<gmpi::drawing::api::ISolidColorBrush>::get()->getColor();
+		//}
 	protected:
 		gmpi::drawing::api::IBrush* getDerived() override
 		{

@@ -443,40 +443,22 @@ public:
 	GMPI_REFCOUNT;
 };
 
-class Brush
+// never instansiated, just used to simulate a common ancestor for all brushes, that can be C cast to get hold of the D2D brush.
+struct Brush : public gmpi::api::IUnknown
 {
-protected:
 	ID2D1Brush* native_ = {};
-	gmpi::drawing::api::IFactory* factory_ = {};
 
-public:
-	Brush(ID2D1Brush* native, gmpi::drawing::api::IFactory* factory) : native_(native), factory_(factory) {}
-
-	~Brush()
-	{
-		if (native_)
-			native_->Release();
-	}
-
-	ID2D1Brush* native()
+	auto native() -> ID2D1Brush* const
 	{
 		return native_;
 	}
-
-#if 0
-	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
-	{
-		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
-	}
-
-    GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IBrush);
-#endif
 };
 
-class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush, public Brush
+class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush
 {
+	ID2D1BitmapBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
+	gmpi::drawing::api::IFactory* factory_ = {};
+
 public:
 	BitmapBrush(
 		gmpi::drawing::api::IFactory* factory,
@@ -485,7 +467,7 @@ public:
 		const gmpi::drawing::BitmapBrushProperties* bitmapBrushProperties,
 		const gmpi::drawing::BrushProperties* brushProperties
 	)
-		: Brush(nullptr, factory)
+		: factory_(factory)
 	{
 		auto bm = ((Bitmap*)bitmap);
 		auto nativeBitmap = bm->getNativeBitmap(context);
@@ -494,26 +476,27 @@ public:
 		assert(hr == 0);
 	}
 
-	inline ID2D1BitmapBrush* native()
+	~BitmapBrush()
 	{
-		return (ID2D1BitmapBrush*)native_;
+		if (native_)
+			native_->Release();
 	}
 
 	gmpi::ReturnCode setExtendModeX(gmpi::drawing::ExtendMode extendModeX) override
 	{
-		native()->SetExtendModeX((D2D1_EXTEND_MODE)extendModeX);
+		native_->SetExtendModeX((D2D1_EXTEND_MODE)extendModeX);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode setExtendModeY(gmpi::drawing::ExtendMode extendModeY) override
 	{
-		native()->SetExtendModeY((D2D1_EXTEND_MODE)extendModeY);
+		native_->SetExtendModeY((D2D1_EXTEND_MODE)extendModeY);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode) override
 	{
-		native()->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
+		native_->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -539,10 +522,19 @@ public:
 	GMPI_REFCOUNT;
 };
 
-class SolidColorBrush final : public gmpi::drawing::api::ISolidColorBrush, public Brush
+class SolidColorBrush final : public gmpi::drawing::api::ISolidColorBrush
 {
+	ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
+	gmpi::drawing::api::IFactory* factory_ = {};
+
 public:
-	SolidColorBrush(ID2D1SolidColorBrush* b, gmpi::drawing::api::IFactory *factory) : Brush(b, factory) {}
+	SolidColorBrush(ID2D1SolidColorBrush* b, gmpi::drawing::api::IFactory *factory) : native_(b), factory_(factory) {}
+
+	~SolidColorBrush()
+	{
+		if (native_)
+			native_->Release();
+	}
 
 	ID2D1SolidColorBrush* native()
 	{
@@ -565,6 +557,12 @@ public:
 	//		b.b
 	//	};
 	//}
+	// IResource
+	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	{
+		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
+	}
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
@@ -578,19 +576,16 @@ public:
 		return gmpi::ReturnCode::NoSupport;
 	}
 
-	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
-	{
-		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
-	}
 	GMPI_REFCOUNT;
 };
 
-class SolidColorBrush_Win7 final : public gmpi::drawing::api::ISolidColorBrush, public Brush
+class SolidColorBrush_Win7 final : public gmpi::drawing::api::ISolidColorBrush
 {
+	ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
+	gmpi::drawing::api::IFactory* factory_ = {};
+
 public:
-	SolidColorBrush_Win7(ID2D1RenderTarget* context, const gmpi::drawing::Color* color, gmpi::drawing::api::IFactory* factory) : Brush(nullptr, factory)
+	SolidColorBrush_Win7(ID2D1RenderTarget* context, const gmpi::drawing::Color* color, gmpi::drawing::api::IFactory* factory) : factory_(factory)
 	{
 		const gmpi::drawing::Color modified
 		{
@@ -602,6 +597,12 @@ public:
 //				modified = gmpi::drawing::Color::Orange;
 
 		/*HRESULT hr =*/ context->CreateSolidColorBrush(*(D2D1_COLOR_F*)&modified, (ID2D1SolidColorBrush**) &native_);
+	}
+
+	~SolidColorBrush_Win7()
+	{
+		if (native_)
+			native_->Release();
 	}
 
 	inline ID2D1SolidColorBrush* nativeSolidColorBrush()
@@ -657,14 +658,23 @@ public:
 	GMPI_REFCOUNT;
 };
 
-class LinearGradientBrush final : public gmpi::drawing::api::ILinearGradientBrush, public Brush
+class LinearGradientBrush final : public gmpi::drawing::api::ILinearGradientBrush
 {
+	ID2D1LinearGradientBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
+	gmpi::drawing::api::IFactory* factory_ = {};
+
 public:
 	LinearGradientBrush(gmpi::drawing::api::IFactory *factory, ID2D1RenderTarget* context, const gmpi::drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, const  gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
-		: Brush(nullptr, factory)
+		: factory_(factory)
 	{
 		[[maybe_unused]] HRESULT hr = context->CreateLinearGradientBrush((D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientStopCollection*)gradientStopCollection)->native(), (ID2D1LinearGradientBrush **)&native_);
 		assert(hr == 0);
+	}
+
+	~LinearGradientBrush()
+	{
+		if (native_)
+			native_->Release();
 	}
 
 	inline ID2D1LinearGradientBrush* native()
@@ -703,14 +713,23 @@ public:
 	GMPI_REFCOUNT;
 };
 
-class RadialGradientBrush final : public gmpi::drawing::api::IRadialGradientBrush, public Brush
+class RadialGradientBrush final : public gmpi::drawing::api::IRadialGradientBrush
 {
+	ID2D1RadialGradientBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
+	gmpi::drawing::api::IFactory* factory_ = {};
+
 public:
 	RadialGradientBrush(gmpi::drawing::api::IFactory *factory, ID2D1RenderTarget* context, const gmpi::drawing::RadialGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, const gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
-		: Brush(nullptr, factory)
+		: factory_(factory)
 	{
 		[[maybe_unused]] HRESULT hr = context->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientStopCollection*)gradientStopCollection)->native(), (ID2D1RadialGradientBrush **)&native_);
 		assert(hr == 0);
+	}
+
+	~RadialGradientBrush()
+	{
+		if (native_)
+			native_->Release();
 	}
 
 	inline ID2D1RadialGradientBrush* native()
@@ -1146,10 +1165,10 @@ public:
 
 	gmpi::ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
 	{
-auto test = (Brush*)brush;
-auto test3 = dynamic_cast<Brush*>(brush);
-auto test2 = test->native();
-auto test4 = *(ID2D1Brush**)brush;
+//auto test = (Brush*)brush;
+//auto test3 = dynamic_cast<Brush*>(brush);
+//auto test2 = test->native();
+//auto test4 = *(ID2D1Brush**)brush;
 		context_->FillRectangle((D2D1_RECT_F*)rect, ((Brush*)brush)->native());
 		return gmpi::ReturnCode::Ok;
 	}
@@ -1232,11 +1251,6 @@ auto test4 = *(ID2D1Brush**)brush;
 
 	gmpi::ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
 	{
-		//*linearGradientBrush = nullptr;
-		//gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-		//b2.Attach(new LinearGradientBrush(factory, context_, linearGradientBrushProperties, brushProperties, gradientStopCollection));
-		//return b2->queryInterface(gmpi::drawing::api::SE_IID_LINEARGRADIENTBRUSH_MPGUI, reinterpret_cast<void **>(linearGradientBrush));
-
 		return make_wrapped(
 			new LinearGradientBrush(factory, context_, linearGradientBrushProperties, brushProperties, gradientstopCollection),
 			drawing::api::ILinearGradientBrush::guid,

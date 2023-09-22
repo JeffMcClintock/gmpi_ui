@@ -126,6 +126,7 @@ namespace gmpi
 
 			SafeRelease(pTextLayout_);
 			SafeRelease(writeFactory);
+			return gmpi::ReturnCode::Ok;
 		}
 
 		// Create factory myself;
@@ -215,7 +216,7 @@ namespace gmpi
 
 						supportedFontFamilies.push_back(stringConverter.to_bytes(name));
 
-						std::transform(name, name + wcslen(name), name, ::tolower);
+						std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
 						supportedFontFamiliesLowerCase.push_back(name);
 					}
 
@@ -287,7 +288,7 @@ namespace gmpi
 			//auto fontFamilyNameW = stringConverter.from_bytes(fontFamilyName);
 			auto fontFamilyNameW = JmUnicodeConversions::Utf8ToWstring(fontFamilyName);
 			std::wstring lowercaseName(fontFamilyNameW);
-			std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), ::tolower);
+			std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
 
 			if (std::find(supportedFontFamiliesLowerCase.begin(), supportedFontFamiliesLowerCase.end(), lowercaseName) == supportedFontFamiliesLowerCase.end())
 			{
@@ -411,7 +412,7 @@ namespace gmpi
 				{
 					wchar_t name[64];
 					names->GetString(nameIndex, name, sizeof(name) / sizeof(name[0]));
-					std::transform(name, name + wcslen(name), name, ::tolower);
+					std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c));});
 
 					//						supportedFontFamiliesLowerCase.push_back(name);
 					GdiFontConversions.insert(std::pair<std::wstring, std::wstring>(fontFamilyNameW, name));
@@ -659,18 +660,14 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-//		void GraphicsContext::DrawGeometry(const gmpi::drawing::api::IPathGeometry* geometry, const gmpi::drawing::api::IBrush* brush, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle)
-		gmpi::ReturnCode GraphicsContext::drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle)
+		gmpi::ReturnCode GraphicsContext_base::drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle)
 		{
-#ifdef LOG_DIRECTX_CALLS
-			_RPT3(_CRT_WARN, "context_->DrawGeometry(geometry%x, brush%x, %f, 0);\n", (int)geometry, (int)brush, strokeWidth);
-#endif
-
-			auto& d2d_geometry = ((gmpi::directx::Geometry*)pathGeometry)->geometry_;
+			auto* d2d_geometry = ((gmpi::directx::Geometry*)pathGeometry)->native();
 			context_->DrawGeometry(d2d_geometry, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+			return gmpi::ReturnCode::Ok;
 		}
 
-		gmpi::ReturnCode GraphicsContext::drawTextU(const char* utf8String, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options)
+		gmpi::ReturnCode GraphicsContext_base::drawTextU(const char* utf8String, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options)
 		{
 			const auto widestring = JmUnicodeConversions::Utf8ToWstring(utf8String, stringLength);
 			
@@ -724,6 +721,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			}
 #endif
 */
+			return gmpi::ReturnCode::Ok;
 		}
 
 		gmpi::ReturnCode Bitmap::getFactory(gmpi::drawing::api::IFactory** returnFactory)
@@ -739,14 +737,13 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			// If image was not loaded from a WicBitmap (i.e. was created from device context), then need to write it to WICBitmap first.
 			if (diBitmap_ == nullptr)
 			{
-				if(!nativeBitmap_)
+				if (!nativeBitmap_)
 				{
 					return gmpi::ReturnCode::Fail;
 				}
-
-return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fully.
-
-
+			}
+			return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fully.
+#if 0
 				const auto size = nativeBitmap_->GetPixelSize();
 				D2D1_BITMAP_PROPERTIES1 props = {};
 				props.pixelFormat = nativeBitmap_->GetPixelFormat();
@@ -784,7 +781,7 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 			if (!nativeBitmap_)
 			{
 				// need to access native bitmap already to lazy-load it. Only can be done from RenderContext.
-				assert(false && "Can't lock pixels before native bitmap created in OnRender()");
+				assert(false && "Can't lock pixels before native bitmap created in onRender()");
 				return gmpi::ReturnCode::Fail;
 			}
 */
@@ -792,6 +789,7 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 			b2.Attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));
 
 			return b2->queryInterface(&drawing::api::IBitmapPixels::guid, (void**)(returnInterface));
+#endif
 		}
 
 		ID2D1Bitmap* Bitmap::getNativeBitmap(ID2D1DeviceContext* nativeContext)
@@ -873,7 +871,6 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 		// WIX premultiplies images automatically on load, but wrong (assumes linear not SRGB space). Fix it.
 		void Bitmap::applyPreMultiplyCorrection()
 		{
-#if 1
 			drawing::Bitmap bitmap;
 			*bitmap.put() = this;
 			
@@ -913,77 +910,9 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 
 				sourcePixels += sizeof(uint32_t);
 			}
-#if 0
-			for (unsigned char i = 0; i < 256; ++i)
-			{
-				_RPT2(_CRT_WARN, "%f %f\n", FastGamma::sRGB_to_float(i), (float)FastGamma::float_to_sRGB(FastGamma::sRGB_to_float(i)));
-			}
-#endif
-#endif
 		}
 
-#if 0
-		void Bitmap::ApplyAlphaCorrection_win7()
-		{
-
-#if 1 // apply gamma correction to compensate for linear blending in SRGB space (DirectX 1.0 limitation)
-			Bitmap bitmap(this);
-
-			auto pixelsSource = bitmap.lockPixels(true);
-			auto imageSize = bitmap.GetSize();
-			int totalPixels = (int)imageSize.height * pixelsSource.getBytesPerRow() / sizeof(uint32_t);
-
-			uint8_t* sourcePixels = pixelsSource.getAddress();
-			const float gamma = 2.2f;
-			const float overTwoFiftyFive = 1.0f / 255.0f;
-			for (int i = 0; i < totalPixels; ++i)
-			{
-				int alpha = sourcePixels[3];
-
-				if (alpha != 0 && alpha != 255)
-				{
-					float bitmapAlpha = alpha * overTwoFiftyFive;
-
-					// Calc pixel lumination (linear).
-					float components[3];
-					float foreground = 0.0f;
-					for (int c = 0; c < 3; ++c)
-					{
-						float pixel = sourcePixels[c] * overTwoFiftyFive;
-						pixel /= bitmapAlpha; // un-premultiply
-						pixel = powf(pixel, gamma);
-						components[c] = pixel;
-					}
-					//					foreground = 0.2126 * components[2] + 0.7152 * components[1] + 0.0722 * components[0]; // Luminance.
-					foreground = 0.3333f * components[2] + 0.3333f * components[1] + 0.3333f * components[0]; // Average. Much the same as Luminance.
-
-					float blackAlpha = 1.0f - powf(1.0f - bitmapAlpha, 1.0 / gamma);
-					float whiteAlpha = powf(bitmapAlpha, 1.0f / gamma);
-
-					float mix = powf(foreground, 1.0f / gamma);
-
-					float bitmapAlphaCorrected = blackAlpha * (1.0f - mix) + whiteAlpha * mix;
-
-					for (int c = 0; c < 3; ++c)
-					{
-						float pixel = components[c];
-						pixel = powf(pixel, 1.0f / gamma); // linear -> sRGB space.
-						pixel *= bitmapAlphaCorrected; // premultiply
-						pixel = pixel * 255.0f + 0.5f; // back to 8-bit
-						sourcePixels[c] = (std::min)(255, FastRealToIntTruncateTowardZero(pixel));
-					}
-
-					bitmapAlphaCorrected = bitmapAlphaCorrected * 255.0f + 0.5f; // back to 8-bit
-		//			int alphaVal = (int)(bitmapAlphaCorrected * 255.0f + 0.5f);
-					sourcePixels[3] = FastRealToIntTruncateTowardZero(bitmapAlphaCorrected);
-				}
-				sourcePixels += sizeof(uint32_t);
-			}
-#endif
-		}
-#endif
-
-		gmpi::ReturnCode GraphicsContext::createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush)
+		gmpi::ReturnCode GraphicsContext_base::createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush)
 		{
 			*returnSolidColorBrush = nullptr;
 
@@ -998,74 +927,40 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 				b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 			}
 
-#ifdef LOG_DIRECTX_CALLS
-			_RPT1(_CRT_WARN, "ID2D1SolidColorBrush* brush%x = nullptr;\n", (int)* solidColorBrush);
-			_RPT0(_CRT_WARN, "{\n");
-			_RPT4(_CRT_WARN, "auto c = D2D1::ColorF(%.3ff, %.3ff, %.3ff, %.3ff);\n", color->r, color->g, color->b, color->a);
-			_RPT1(_CRT_WARN, "context_->CreateSolidColorBrush(c, &brush%x);\n", (int)* solidColorBrush);
-			_RPT0(_CRT_WARN, "}\n");
-#endif
-
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		gmpi::ReturnCode GraphicsContext::createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection)
+		gmpi::ReturnCode GraphicsContext_base::createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection)
 		{
 			*returnGradientstopCollection = nullptr;
 
 			HRESULT hr = 0;
 
-#if 1
+			ID2D1GradientStopCollection1* native2 = nullptr;
+
+			hr = context_->CreateGradientStopCollection(
+				(D2D1_GRADIENT_STOP*)gradientstops,
+				gradientstopsCount,
+				D2D1_COLOR_SPACE_SRGB,
+				D2D1_COLOR_SPACE_SRGB,
+				D2D1_BUFFER_PRECISION_8BPC_UNORM_SRGB, // Buffer precision. D2D1_BUFFER_PRECISION_16BPC_FLOAT seems the same
+				D2D1_EXTEND_MODE_CLAMP,
+				D2D1_COLOR_INTERPOLATION_MODE_STRAIGHT,
+				&native2);
+
+			if (hr == 0)
 			{
-				// New way. Gamma-correct gradients without banding. White->Black mid color seems wrong (too light).
-				// requires ID2D1DeviceContext, not merely ID2D1RenderTarget
-				ID2D1GradientStopCollection1* native2 = nullptr;
+				gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
+				wrapper.Attach(new GradientStopCollection1(native2, factory));
 
-				hr = context_->CreateGradientStopCollection(
-					(D2D1_GRADIENT_STOP*)gradientstops,
-					gradientstopsCount,
-					D2D1_COLOR_SPACE_SRGB,
-					D2D1_COLOR_SPACE_SRGB,
-					D2D1_BUFFER_PRECISION_8BPC_UNORM_SRGB, // Buffer precision. D2D1_BUFFER_PRECISION_16BPC_FLOAT seems the same
-					D2D1_EXTEND_MODE_CLAMP,
-					D2D1_COLOR_INTERPOLATION_MODE_STRAIGHT,
-					&native2);
-
-				if (hr == 0)
-				{
-					gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
-					wrapper.Attach(new GradientStopCollection1(native2, factory));
-
-					wrapper->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
-				}
+				wrapper->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
 			}
-#else
-			{
-				ID2D1GradientStopCollection* native1 = nullptr;
-
-				// for proper gradient in SRGB target, need to set gamma. hmm not sure. https://msdn.microsoft.com/en-us/library/windows/desktop/dd368113(v=vs.85).aspx
-				hr = context_->CreateGradientStopCollection(
-					(D2D1_GRADIENT_STOP*)gradientStops,
-					gradientStopsCount,
-					D2D1_GAMMA_2_2,	// gamma-correct, but not smooth.
-					//	D2D1_GAMMA_1_0, // smooth, but not gamma-correct.
-					D2D1_EXTEND_MODE_CLAMP,
-					&native1);
-				if (hr == 0)
-				{
-					gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
-					wrapper.Attach(new GradientStopCollection(native1, factory));
-
-					wrapper->queryInterface(drawing::api::SE_IID_GRADIENTSTOPCOLLECTION_MPGUI, reinterpret_cast<void**>(gradientStopCollection));
-				}
-			}
-#endif
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
 
-		//gmpi::ReturnCode GraphicsContext::CreateMesh(gmpi::drawing::api::IMesh** returnObject)
+		//gmpi::ReturnCode GraphicsContext_base::CreateMesh(gmpi::drawing::api::IMesh** returnObject)
 		//{
 		//	*returnObject = nullptr;
 
@@ -1073,7 +968,7 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 		//	return mesh->queryInterface(drawing::api::SE_IID_MESH_MPGUI, reinterpret_cast<void **>(returnObject));
 		//}
 		/*
-		gmpi::ReturnCode GraphicsContext::CreateBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap)
+		gmpi::ReturnCode GraphicsContext_base::CreateBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap)
 		{
 			*bitmap = nullptr;
 
@@ -1098,7 +993,7 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 		*/
 
 		// todo : interger size?
-		gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(const gmpi::drawing::Size* desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
+		gmpi::ReturnCode GraphicsContext_base::createCompatibleRenderTarget(const gmpi::drawing::Size* desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 		{
 			*bitmapRenderTarget = nullptr;
 
@@ -1126,7 +1021,7 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		gmpi::ReturnCode GraphicsContext::pushAxisAlignedClip(const drawing::Rect* clipRect)
+		gmpi::ReturnCode GraphicsContext_base::pushAxisAlignedClip(const drawing::Rect* clipRect)
 		{
 			context_->PushAxisAlignedClip((D2D1_RECT_F*)clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
 
@@ -1137,9 +1032,10 @@ return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fu
 			clipRectStack.push_back(r2);
 
 //			_RPT4(_CRT_WARN, "                 PushAxisAlignedClip( %f %f %f %f)\n", r2.left, r2.top, r2.right , r2.bottom);
+			return gmpi::ReturnCode::Ok;
 		}
 
-		void GraphicsContext::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
+		void GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
 		{
 #ifdef LOG_DIRECTX_CALLS
 			_RPT0(_CRT_WARN, "{\n");

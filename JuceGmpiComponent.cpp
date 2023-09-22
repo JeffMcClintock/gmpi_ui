@@ -4,7 +4,7 @@
 #include "../../../RefCountMacros.h"
 //#include <Windowsx.h>
 
-class JuceComponentProxy : public IMpDrawingClient
+class JuceComponentProxy : public IDrawingClient
 {
 	class GmpiComponent* component = {};
 	IDrawingHost* drawinghost = {};
@@ -12,9 +12,9 @@ public:
 
 	JuceComponentProxy(class GmpiComponent* pcomponent) : component(pcomponent) {}
 
-	int32_t open(gmpi::IMpUnknown* host) override
+	gmpi::ReturnCode open(gmpi::api::IUnknown* host) override
 	{
-		return host->queryInterface(IDrawingHost::guid, (void**)&drawinghost);
+		return host->queryInterface(&IDrawingHost::guid, (void**)&drawinghost);
 	}
 
 	void invalidateRect()
@@ -23,23 +23,23 @@ public:
 	}
 
 	// First pass of layout update. Return minimum size required for given available size
-	int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) override { return gmpi::MP_OK; }
+	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override { return gmpi::ReturnCode::Ok; }
 
 	// Second pass of layout.
-	int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) override { return gmpi::MP_OK; }
+	gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override { return gmpi::ReturnCode::Ok; }
 
-	int32_t OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) override;
+	gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) override;
 
-	// TODO GMPI_QUERYINTERFACE(IMpDrawingClient::guid, IMpDrawingClient);
-	int32_t MP_STDCALL queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override
+	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = nullptr;
 
-		if (iid == IMpDrawingClient::guid || iid == gmpi::MP_IID_UNKNOWN)
+		if (*iid == IDrawingClient::guid || *iid == gmpi::api::IUnknown::guid)
 		{
-			*returnInterface = static_cast<IMpDrawingClient*>(this);
+			*returnInterface = static_cast<IDrawingClient*>(this);
 			addRef();
-			return gmpi::MP_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
@@ -47,25 +47,25 @@ public:
 		{
 			*returnInterface = static_cast<IMpGraphics3*>(this);
 			addRef();
-			return gmpi::MP_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 
 		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI2)
 		{
 			*returnInterface = static_cast<IMpGraphics2*>(this);
 			addRef();
-			return gmpi::MP_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 
 		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI)
 		{
 			*returnInterface = static_cast<IMpGraphics*>(this);
 			addRef();
-			return gmpi::MP_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 #endif
 
-		return gmpi::MP_NOSUPPORT;
+		return gmpi::ReturnCode::NoSupport;
 	}
 	GMPI_REFCOUNT_NO_DELETE;
 };
@@ -105,7 +105,7 @@ public:
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONUP:
 		{
-			GmpiDrawing::Point p(static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)));
+			Point p(static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)));
 			p = WindowToDips.TransformPoint(p);
 
 			// Cubase sends spurious mouse move messages when transport running.
@@ -120,7 +120,7 @@ public:
 			}
 			else
 			{
-				cubaseBugPreviousMouseMove = GmpiDrawing::Point(-1, -1);
+				cubaseBugPreviousMouseMove = Point(-1, -1);
 			}
 
 			TooltipOnMouseActivity();
@@ -358,7 +358,7 @@ struct GmpiComponent::Pimpl
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-        JuceDrawingFrameBase.AddView(static_cast</*gmpi_gui_api::*/IMpDrawingClient*>(&proxy));
+        JuceDrawingFrameBase.AddView(static_cast</*gmpi_gui_api::*/IDrawingClient*>(&proxy));
 
         JuceDrawingFrameBase.open(
             hwnd,
@@ -433,9 +433,9 @@ void GmpiComponent::invalidateRect()
 }
 #endif
 
-int32_t JuceComponentProxy::OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext)
+gmpi::ReturnCode JuceComponentProxy::onRender(gmpi::drawing::api::IDeviceContext* drawingContext)
 {
-	GmpiDrawing::Graphics g(drawingContext);
-	component->OnRender(g);
-	return gmpi::MP_OK;
+	gmpi::drawing::Graphics g(drawingContext);
+	component->onRender(g);
+	return gmpi::ReturnCode::Ok;
 }

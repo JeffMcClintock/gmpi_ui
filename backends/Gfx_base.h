@@ -19,20 +19,20 @@ namespace gmpi
 		class Resource
 		{
 		protected:
-			GmpiDrawing_API::IMpFactory* factory;
+			gmpi::drawing::IFactory* factory;
 
 		public:
-			Resource(GmpiDrawing_API::IMpFactory* pfactory) :factory(pfactory)
+			Resource(gmpi::drawing::IFactory* pfactory) :factory(pfactory)
 			{}
 		};
 
-		class StrokeStyle : public Resource, public GmpiDrawing_API::IMpStrokeStyle
+		class StrokeStyle : public Resource, public gmpi::drawing::IStrokeStyle
 		{
 		public:
 			GmpiDrawing_API::MP1_STROKE_STYLE_PROPERTIES strokeStyleProperties;
 			std::vector<float> dashes;
 
-			StrokeStyle(GmpiDrawing_API::IMpFactory* pfactory, const GmpiDrawing_API::MP1_STROKE_STYLE_PROPERTIES* pstrokeStyleProperties, float* pdashes, int32_t dashesCount) :
+			StrokeStyle(gmpi::drawing::IFactory* pfactory, const GmpiDrawing_API::MP1_STROKE_STYLE_PROPERTIES* pstrokeStyleProperties, float* pdashes, int32_t dashesCount) :
 				Resource(pfactory)
 				, strokeStyleProperties(*pstrokeStyleProperties)
 			{
@@ -42,48 +42,48 @@ namespace gmpi
 				}
 			}
 
-			// GmpiDrawing_API::IMpStrokeStyle
-			GmpiDrawing_API::MP1_CAP_STYLE MP_STDCALL GetStartCap() override
+			// gmpi::drawing::IStrokeStyle
+			GmpiDrawing_API::MP1_CAP_STYLE GetStartCap() override
 			{
 				return strokeStyleProperties.startCap;
 			}
 
-			GmpiDrawing_API::MP1_CAP_STYLE MP_STDCALL GetEndCap() override
+			GmpiDrawing_API::MP1_CAP_STYLE GetEndCap() override
 			{
 				return strokeStyleProperties.endCap;
 			}
 
-			GmpiDrawing_API::MP1_CAP_STYLE MP_STDCALL GetDashCap() override
+			GmpiDrawing_API::MP1_CAP_STYLE GetDashCap() override
 			{
 				return strokeStyleProperties.dashCap;
 			}
 
-			float MP_STDCALL GetMiterLimit() override
+			float GetMiterLimit() override
 			{
 				return strokeStyleProperties.miterLimit;
 			}
 
-			GmpiDrawing_API::MP1_LINE_JOIN MP_STDCALL GetLineJoin() override
+			GmpiDrawing_API::MP1_LINE_JOIN GetLineJoin() override
 			{
 				return strokeStyleProperties.lineJoin;
 			}
 
-			float MP_STDCALL GetDashOffset() override
+			float GetDashOffset() override
 			{
 				return strokeStyleProperties.dashOffset;
 			}
 
-            GmpiDrawing_API::MP1_DASH_STYLE MP_STDCALL GetDashStyle() override
+            GmpiDrawing_API::MP1_DASH_STYLE GetDashStyle() override
 			{
 				return strokeStyleProperties.dashStyle;
 			}
 
-			uint32_t MP_STDCALL GetDashesCount() override
+			uint32_t GetDashesCount() override
 			{
 				return static_cast<uint32_t>(dashes.size());
 			}
 
-			void MP_STDCALL GetDashes(float* pdashes, uint32_t dashesCount) override
+			void GetDashes(float* pdashes, uint32_t dashesCount) override
 			{
 				if (dashesCount == dashes.size())
 				{
@@ -95,17 +95,17 @@ namespace gmpi
 			}
 
 			// IMpResource
-			void MP_STDCALL GetFactory(GmpiDrawing_API::IMpFactory** pfactory) override
+			void GetFactory(gmpi::drawing::IFactory** pfactory) override
 			{
 				*pfactory = factory;
 			}
 
-			GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_STROKESTYLE_MPGUI, GmpiDrawing_API::IMpStrokeStyle);
+			GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_STROKESTYLE_MPGUI, gmpi::drawing::IStrokeStyle);
 			GMPI_REFCOUNT;
 		};
 
 		// Provide fallback implementations of Arcs, Quadratic beziers, and bulk operations.
-		class GeometrySink : public GmpiDrawing_API::IMpGeometrySink2
+		class GeometrySink : public gmpi::drawing::IGeometrySink2
 		{
 		protected:
 			GmpiDrawing_API::MP1_POINT startPoint;
@@ -114,29 +114,29 @@ namespace gmpi
 		public:
             virtual ~GeometrySink(){}
             
-			void MP_STDCALL BeginFigure(GmpiDrawing_API::MP1_POINT pStartPoint, GmpiDrawing_API::MP1_FIGURE_BEGIN figureBegin) override
+			void BeginFigure(GmpiDrawing_API::MP1_POINT pStartPoint, GmpiDrawing_API::MP1_FIGURE_BEGIN figureBegin) override
 			{
 				startPoint = lastPoint = pStartPoint;
 			}
 
-			int32_t MP_STDCALL Close() override
+			int32_t Close() override
 			{
-				return gmpi::MP_OK;
+				return gmpi::ReturnCode::Ok;
 			}
 
-			void MP_STDCALL AddLines(const GmpiDrawing_API::MP1_POINT* points, uint32_t pointsCount) override
+			void AddLines(const GmpiDrawing_API::MP1_POINT* points, uint32_t pointsCount) override
 			{
 				for (uint32_t i = 0; i < pointsCount; ++i)
 					AddLine(points[i]);
 			}
 
-			void MP_STDCALL AddBeziers(const GmpiDrawing_API::MP1_BEZIER_SEGMENT* beziers, uint32_t beziersCount) override
+			void AddBeziers(const GmpiDrawing_API::MP1_BEZIER_SEGMENT* beziers, uint32_t beziersCount) override
 			{
 				for (uint32_t i = 0; i < beziersCount; ++i)
 					AddBezier(beziers + i);
 			}
 
-			void MP_STDCALL AddQuadraticBezier(const GmpiDrawing_API::MP1_QUADRATIC_BEZIER_SEGMENT* bezier) override
+			void AddQuadraticBezier(const GmpiDrawing_API::MP1_QUADRATIC_BEZIER_SEGMENT* bezier) override
 			{
 				/*
 				A cubic Bézier curve (yellow) can be made identical to a quadratic one (black) by
@@ -154,7 +154,7 @@ namespace gmpi
 				AddBezier(&cubicbezier);
 			}
 
-			void MP_STDCALL AddQuadraticBeziers(const GmpiDrawing_API::MP1_QUADRATIC_BEZIER_SEGMENT* beziers, uint32_t beziersCount) override
+			void AddQuadraticBeziers(const GmpiDrawing_API::MP1_QUADRATIC_BEZIER_SEGMENT* beziers, uint32_t beziersCount) override
 			{
 				for (uint32_t i = 0; i < beziersCount; ++i)
 					AddQuadraticBezier(beziers + i);
@@ -184,7 +184,7 @@ namespace gmpi
 				return ((ux*vy < uy*vx) ? -1.0f : 1.0f) * acosf(r);
 			}
 			
-			void MP_STDCALL AddArc(const GmpiDrawing_API::MP1_ARC_SEGMENT* arc) override
+			void AddArc(const GmpiDrawing_API::MP1_ARC_SEGMENT* arc) override
 			{
 				// Ported from canvg (https://code.google.com/p/canvg/)
 				float rx, ry, rotx;
@@ -222,7 +222,7 @@ namespace gmpi
 				if (d < 1e-6f || rx < 1e-6f || ry < 1e-6f) {
 					// The arc degenerates to a line
 					//nsvg__lineTo(p, x2, y2);
-					AddLine(GmpiDrawing::Point(x2, y2));
+					AddLine(Point(x2, y2));
 					//				*cpx = x2;
 					//				*cpy = y2;
 					return;
@@ -296,7 +296,7 @@ namespace gmpi
 					if (i > 0)
 					{
 						//nsvg__cubicBezTo(p, px + ptanx, py + ptany, x - tanx, y - tany, x, y);
-						GmpiDrawing::BezierSegment bs(GmpiDrawing::Point(px + ptanx, py + ptany), GmpiDrawing::Point(x - tanx, y - tany), GmpiDrawing::Point(x, y));
+						BezierSegment bs(Point(px + ptanx, py + ptany), Point(x - tanx, y - tany), Point(x, y));
 						AddBezier(&bs);
 					}
 					px = x;
@@ -306,7 +306,7 @@ namespace gmpi
 				}
 			}
 
-			void MP_STDCALL AddBezier(const GmpiDrawing_API::MP1_BEZIER_SEGMENT* bezier) override
+			void AddBezier(const GmpiDrawing_API::MP1_BEZIER_SEGMENT* bezier) override
 			{
 				// Convert bezier to line segments.
 				agg::curve4_div bezierToLines;
@@ -314,7 +314,7 @@ namespace gmpi
 				bezierToLines.init(lastPoint.x, lastPoint.y, bezier->point1.x, bezier->point1.y, bezier->point2.x, bezier->point2.y, bezier->point3.x, bezier->point3.y);
 			}
 
-			void MP_STDCALL EndFigure(GmpiDrawing_API::MP1_FIGURE_END figureEnd) override
+			void EndFigure(GmpiDrawing_API::MP1_FIGURE_END figureEnd) override
 			{
 				if (figureEnd == GmpiDrawing_API::MP1_FIGURE_END_CLOSED)
 				{
@@ -322,20 +322,20 @@ namespace gmpi
 				}
 			}
 
-			GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_GEOMETRYSINK_MPGUI, GmpiDrawing_API::IMpGeometrySink);
+			GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_GEOMETRYSINK_MPGUI, gmpi::drawing::IGeometrySink);
 			GMPI_REFCOUNT;
 		};
 
-		class GraphicsContext : public GmpiDrawing_API::IMpDeviceContext
+		class GraphicsContext : public gmpi::drawing::IDeviceContext
 		{
 		protected:
-			std::vector<GmpiDrawing_API::MP1_RECT> clipRectStack;
+			std::vector<gmpi::drawing::Rect> clipRectStack;
 
 		public:
 			GraphicsContext()
 			{
 				const float defaultClipBounds = 100000.0f;
-				GmpiDrawing_API::MP1_RECT r;
+				gmpi::drawing::Rect r;
 				r.top = r.left = -defaultClipBounds;
 				r.bottom = r.right = defaultClipBounds;
 				clipRectStack.push_back(r);
@@ -347,85 +347,85 @@ namespace gmpi
 			{
 			}
 
-			GmpiDrawing::PathGeometry createRectangleGeometry(const GmpiDrawing_API::MP1_RECT* rect, bool filled = false)
+			PathGeometry createRectangleGeometry(const gmpi::drawing::Rect* rect, bool filled = false)
 			{
 				// create geometry
-				GmpiDrawing::Factory factory;
+				Factory factory;
 				GetFactory(factory.GetAddressOf());
 
 				auto geometry = factory.CreatePathGeometry();
 				auto sink = geometry.Open();
 
-				sink.BeginFigure(GmpiDrawing::Point(rect->left, rect->top), filled ? GmpiDrawing::FigureBegin::Filled : GmpiDrawing::FigureBegin::Hollow);
-				sink.AddLine(GmpiDrawing::Point(rect->left, rect->bottom));
-				sink.AddLine(GmpiDrawing::Point(rect->right, rect->bottom));
-				sink.AddLine(GmpiDrawing::Point(rect->right, rect->top));
+				sink.BeginFigure(Point(rect->left, rect->top), filled ? FigureBegin::Filled : FigureBegin::Hollow);
+				sink.AddLine(Point(rect->left, rect->bottom));
+				sink.AddLine(Point(rect->right, rect->bottom));
+				sink.AddLine(Point(rect->right, rect->top));
 
-				sink.EndFigure(GmpiDrawing::FigureEnd::Closed);
+				sink.EndFigure(FigureEnd::Closed);
 				sink.Close();
 
 				return geometry;
 			}
 
-			void MP_STDCALL DrawRectangle(const GmpiDrawing_API::MP1_RECT* rect, const GmpiDrawing_API::IMpBrush* brush, float strokeWidth, const GmpiDrawing_API::IMpStrokeStyle* strokeStyle) override
+			void DrawRectangle(const gmpi::drawing::Rect* rect, const gmpi::drawing::IBrush* brush, float strokeWidth, const gmpi::drawing::IStrokeStyle* strokeStyle) override
 			{
 				auto geometry = createRectangleGeometry(rect, false);
 				DrawGeometry(geometry.Get(), brush, strokeWidth, strokeStyle);
 			}
 
-			void MP_STDCALL FillRectangle(const GmpiDrawing_API::MP1_RECT* rect, const GmpiDrawing_API::IMpBrush* brush) override
+			void FillRectangle(const gmpi::drawing::Rect* rect, const gmpi::drawing::IBrush* brush) override
 			{
 				auto geometry = createRectangleGeometry(rect);
 				FillGeometry(geometry.Get(), brush);
 			}
 
-			void MP_STDCALL Clear(const GmpiDrawing_API::MP1_COLOR* clearColor) override
+			void Clear(const GmpiDrawing_API::MP1_COLOR* clearColor) override
 			{
 				//				context_->Clear((D2D1_COLOR_F*)clearColor);
 			}
 
-			GmpiDrawing::PathGeometry createLineGeometry(GmpiDrawing_API::MP1_POINT point0, GmpiDrawing_API::MP1_POINT point1)
+			PathGeometry createLineGeometry(GmpiDrawing_API::MP1_POINT point0, GmpiDrawing_API::MP1_POINT point1)
 			{
 				// create geometry
-				GmpiDrawing::Factory factory;
+				Factory factory;
 				GetFactory(factory.GetAddressOf());
 
 				auto geometry = factory.CreatePathGeometry();
 				auto sink = geometry.Open();
 
-				sink.BeginFigure(point0, GmpiDrawing::FigureBegin::Hollow);
+				sink.BeginFigure(point0, FigureBegin::Hollow);
 				sink.AddLine(point1);
 
-				sink.EndFigure(GmpiDrawing::FigureEnd::Open);
+				sink.EndFigure(FigureEnd::Open);
 				sink.Close();
 
 				return geometry;
 			}
 
-			void MP_STDCALL DrawLine(GmpiDrawing_API::MP1_POINT point0, GmpiDrawing_API::MP1_POINT point1, const GmpiDrawing_API::IMpBrush* brush, float strokeWidth, const GmpiDrawing_API::IMpStrokeStyle* strokeStyle) override
+			void DrawLine(GmpiDrawing_API::MP1_POINT point0, GmpiDrawing_API::MP1_POINT point1, const gmpi::drawing::IBrush* brush, float strokeWidth, const gmpi::drawing::IStrokeStyle* strokeStyle) override
 			{
 				auto geometry = createLineGeometry(point0, point1);
 				DrawGeometry(geometry.Get(), brush, strokeWidth, strokeStyle);
 			}
 /*
-			void MP_STDCALL DrawRoundedRectangle(const GmpiDrawing_API::MP1_ROUNDED_RECT* roundedRect, const GmpiDrawing_API::IMpBrush* brush, float strokeWidth, const GmpiDrawing_API::IMpStrokeStyle* strokeStyle) override
+			void DrawRoundedRectangle(const GmpiDrawing_API::MP1_ROUNDED_RECT* roundedRect, const gmpi::drawing::IBrush* brush, float strokeWidth, const gmpi::drawing::IStrokeStyle* strokeStyle) override
 			{
 				auto geometry = createRoundedRectangleGeometry(roundedRect);
 				DrawGeometry(geometry.Get(), brush, strokeWidth, strokeStyle);
 			}
 
-			//			int32_t MP_STDCALL CreateMesh(GmpiDrawing_API::IMpMesh** returnObject) override;
+			//			int32_t CreateMesh(gmpi::drawing::IMesh** returnObject) override;
 
-			void MP_STDCALL FillRoundedRectangle(const GmpiDrawing_API::MP1_ROUNDED_RECT* roundedRect, const GmpiDrawing_API::IMpBrush* brush) override
+			void FillRoundedRectangle(const GmpiDrawing_API::MP1_ROUNDED_RECT* roundedRect, const gmpi::drawing::IBrush* brush) override
 			{
 				auto geometry = createRoundedRectangleGeometry(roundedRect);
 				FillGeometry(geometry.Get(), brush);
 			}
 */
-			GmpiDrawing::PathGeometry createEllipseGeometry(const GmpiDrawing_API::MP1_ELLIPSE* ellipse)
+			PathGeometry createEllipseGeometry(const GmpiDrawing_API::MP1_ELLIPSE* ellipse)
 			{
 				// create geometry
-				GmpiDrawing::Factory factory;
+				Factory factory;
 				GetFactory(factory.GetAddressOf());
 
 				auto geometry = factory.CreatePathGeometry();
@@ -451,111 +451,111 @@ namespace gmpi
 				}
 				}
 				*/
-				auto size = GmpiDrawing::Size(ellipse->radiusX, ellipse->radiusY);
+				auto size = Size(ellipse->radiusX, ellipse->radiusY);
 
-				GmpiDrawing::Point topCenter(ellipse->point.x, ellipse->point.y - size.height);
-				GmpiDrawing::Point bottomCenter(ellipse->point.x, ellipse->point.y + size.height);
+				Point topCenter(ellipse->point.x, ellipse->point.y - size.height);
+				Point bottomCenter(ellipse->point.x, ellipse->point.y + size.height);
 
-				sink.BeginFigure(topCenter, GmpiDrawing::FigureBegin::Filled);
-				GmpiDrawing::ArcSegment firstHalf(bottomCenter, size);
-				GmpiDrawing::ArcSegment secondHalf(topCenter, size);
+				sink.BeginFigure(topCenter, FigureBegin::Filled);
+				ArcSegment firstHalf(bottomCenter, size);
+				ArcSegment secondHalf(topCenter, size);
 
 				sink.AddArc(firstHalf);
 				sink.AddArc(secondHalf);
 
-				sink.EndFigure(GmpiDrawing::FigureEnd::Closed);
+				sink.EndFigure(FigureEnd::Closed);
 				sink.Close();
 
 /*
 
 				// From Single Arc. Not so accurate up close.
-				GmpiDrawing::Point p;
+				Point p;
 				p.x = ellipse->point.x;
 				p.y = ellipse->point.y + ellipse->radiusY;
-				sink.BeginFigure(p, GmpiDrawing::FigureBegin::Filled);
+				sink.BeginFigure(p, FigureBegin::Filled);
 
 				float a = 0.01f;
 				p.x = ellipse->point.x + ellipse->radiusX * sinf(a);
 				p.y = ellipse->point.y + ellipse->radiusY * cosf(a);
 
-				sink.AddArc(GmpiDrawing::ArcSegment(p, GmpiDrawing::Size(ellipse->radiusX, ellipse->radiusY), static_cast<float>(M_PI) * 1.99f, GmpiDrawing::SweepDirection::Clockwise, GmpiDrawing::ArcSize::Large));
+				sink.AddArc(ArcSegment(p, Size(ellipse->radiusX, ellipse->radiusY), static_cast<float>(M_PI) * 1.99f, SweepDirection::Clockwise, ArcSize::Large));
 
-				sink.EndFigure(GmpiDrawing::FigureEnd::Closed);
+				sink.EndFigure(FigureEnd::Closed);
 				sink.Close();
 */				
 				return geometry;
 			}
 
-			void MP_STDCALL DrawEllipse(const GmpiDrawing_API::MP1_ELLIPSE* ellipse, const GmpiDrawing_API::IMpBrush* brush, float strokeWidth, const GmpiDrawing_API::IMpStrokeStyle* strokeStyle) override
+			void DrawEllipse(const GmpiDrawing_API::MP1_ELLIPSE* ellipse, const gmpi::drawing::IBrush* brush, float strokeWidth, const gmpi::drawing::IStrokeStyle* strokeStyle) override
 			{
 				auto geometry = createEllipseGeometry(ellipse);
 				DrawGeometry(geometry.Get(), brush, strokeWidth, strokeStyle);
 			}
 
-			void MP_STDCALL FillEllipse(const GmpiDrawing_API::MP1_ELLIPSE* ellipse, const GmpiDrawing_API::IMpBrush* brush) override
+			void FillEllipse(const GmpiDrawing_API::MP1_ELLIPSE* ellipse, const gmpi::drawing::IBrush* brush) override
 			{
 				auto geometry = createEllipseGeometry(ellipse);
 				FillGeometry(geometry.Get(), brush);
 			}
 
-			void MP_STDCALL DrawTextU(const char* utf8String, int32_t stringLength, const GmpiDrawing_API::IMpTextFormat* textFormat, const GmpiDrawing_API::MP1_RECT* layoutRect, const GmpiDrawing_API::IMpBrush* brush, int32_t flags) override
+			void drawTextU(const char* utf8String, int32_t stringLength, const gmpi::drawing::ITextFormat* textFormat, const gmpi::drawing::Rect* layoutRect, const gmpi::drawing::IBrush* brush, int32_t flags) override
 			{}
 
-			//	virtual void MP_STDCALL DrawBitmap( GmpiDrawing_API::IMpBitmap* mpBitmap, GmpiDrawing::Rect destinationRectangle, float opacity, int32_t interpolationMode, GmpiDrawing::Rect sourceRectangle) override
-			void MP_STDCALL DrawBitmap(const GmpiDrawing_API::IMpBitmap* mpBitmap, const GmpiDrawing_API::MP1_RECT* destinationRectangle, float opacity, /* MP1_BITMAP_INTERPOLATION_MODE*/ int32_t interpolationMode, const GmpiDrawing_API::MP1_RECT* sourceRectangle) override
+			//	virtual void DrawBitmap( gmpi::drawing::IBitmap* mpBitmap, Rect destinationRectangle, float opacity, int32_t interpolationMode, Rect sourceRectangle) override
+			void DrawBitmap(const gmpi::drawing::IBitmap* mpBitmap, const gmpi::drawing::Rect* destinationRectangle, float opacity, /* MP1_BITMAP_INTERPOLATION_MODE*/ int32_t interpolationMode, const gmpi::drawing::Rect* sourceRectangle) override
 			{
 			}
 
-			void MP_STDCALL SetTransform(const GmpiDrawing_API::MP1_MATRIX_3X2* transform) override
+			void SetTransform(const GmpiDrawing_API::MP1_MATRIX_3X2* transform) override
 			{
 				//				context_->SetTransform(reinterpret_cast<const D2D1_MATRIX_3X2_F*>(transform));
 			}
 
-			void MP_STDCALL GetTransform(GmpiDrawing_API::MP1_MATRIX_3X2* transform) override
+			void GetTransform(GmpiDrawing_API::MP1_MATRIX_3X2* transform) override
 			{
 				//				context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(transform));
 			}
 
-			//	int32_t MP_STDCALL CreateBitmap(GmpiDrawing_API::MP1_SIZE_U size, const GmpiDrawing_API::MP1_BITMAP_PROPERTIES* bitmapProperties, GmpiDrawing_API::IMpBitmap** bitmap) override;
+			//	int32_t CreateBitmap(GmpiDrawing_API::MP1_SIZE_U size, const GmpiDrawing_API::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::IBitmap** bitmap) override;
 
-			int32_t MP_STDCALL CreateBitmapBrush(const GmpiDrawing_API::IMpBitmap* bitmap, const GmpiDrawing_API::MP1_BITMAP_BRUSH_PROPERTIES* bitmapBrushProperties, const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties, GmpiDrawing_API::IMpBitmapBrush** bitmapBrush) override
+			int32_t CreateBitmapBrush(const gmpi::drawing::IBitmap* bitmap, const GmpiDrawing_API::MP1_BITMAP_BRUSH_PROPERTIES* bitmapBrushProperties, const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties, gmpi::drawing::IBitmapBrush** bitmapBrush) override
 			{
 				//				return context_->CreateBitmapBrush((ID2D1Bitmap*)bitmap, (D2D1_BITMAP_BRUSH_PROPERTIES*)bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)bitmapBrush);
 				return gmpi::MP_FAIL;
 			}
-			int32_t MP_STDCALL CreateRadialGradientBrush(const GmpiDrawing_API::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES* radialGradientBrushProperties, const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties, const GmpiDrawing_API::IMpGradientStopCollection* gradientStopCollection, GmpiDrawing_API::IMpRadialGradientBrush** radialGradientBrush) override
+			int32_t CreateRadialGradientBrush(const GmpiDrawing_API::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES* radialGradientBrushProperties, const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties, const gmpi::drawing::IGradientStopCollection* gradientStopCollection, gmpi::drawing::IRadialGradientBrush** radialGradientBrush) override
 			{
 				//				return context_->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)radialGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1GradientStopCollection*)gradientStopCollection, (ID2D1RadialGradientBrush**)radialGradientBrush);
 				return gmpi::MP_FAIL;
 			}
 
-			int32_t MP_STDCALL CreateCompatibleRenderTarget(const GmpiDrawing_API::MP1_SIZE* desiredSize, GmpiDrawing_API::IMpBitmapRenderTarget** bitmapRenderTarget) override
+			int32_t CreateCompatibleRenderTarget(const drawing::Size* desiredSize, gmpi::drawing::IBitmapRenderTarget** bitmapRenderTarget) override
 			{
 				return gmpi::MP_FAIL;
 			}
 
-			void MP_STDCALL PushAxisAlignedClip(const GmpiDrawing_API::MP1_RECT* clipRect/*, GmpiDrawing_API::MP1_ANTIALIAS_MODE antialiasMode*/) override
+			void PushAxisAlignedClip(const gmpi::drawing::Rect* clipRect/*, GmpiDrawing_API::MP1_ANTIALIAS_MODE antialiasMode*/) override
 			{}
 
-			void MP_STDCALL PopAxisAlignedClip() override
+			void PopAxisAlignedClip() override
 			{
 				//				context_->PopAxisAlignedClip();
 				clipRectStack.pop_back();
 			}
 
-			void MP_STDCALL GetAxisAlignedClip(GmpiDrawing_API::MP1_RECT* returnClipRect) override
+			void GetAxisAlignedClip(gmpi::drawing::Rect* returnClipRect) override
 			{}
 
-			void MP_STDCALL BeginDraw() override
+			void BeginDraw() override
 			{
 				//				context_->BeginDraw();
 			}
 
-			int32_t MP_STDCALL EndDraw() override
+			int32_t EndDraw() override
 			{
-				return gmpi::MP_OK;
+				return gmpi::ReturnCode::Ok;
 			}
-			GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_DEVICECONTEXT_MPGUI, GmpiDrawing_API::IMpDeviceContext);
+			GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_DEVICECONTEXT_MPGUI, gmpi::drawing::IDeviceContext);
 			GMPI_REFCOUNT_NO_DELETE;
 		};
 

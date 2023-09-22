@@ -542,7 +542,7 @@ int32_t PGCC_PlatformTextEntry::ShowAsync(gmpi_gui::ICompletionCallback* returnC
 	returnCompletionHandler->OnComplete(dr == TRUE ? gmpi::MP_OK : gmpi::MP_CANCEL);
 
 	currentPlatformTextEntry = nullptr;
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t Gmpi_Win_FileDialog::GetSelectedFilename(IMpUnknown* returnString)
@@ -556,7 +556,7 @@ int32_t Gmpi_Win_FileDialog::GetSelectedFilename(IMpUnknown* returnString)
 
 	returnValue->setData(selectedFilename.data(), (int32_t)selectedFilename.size());
 
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 //int32_t Gmpi_Win_FileDialog::Show(IMpUnknown* returnString)
@@ -649,7 +649,7 @@ int32_t Gmpi_Win_FileDialog::ShowAsync(gmpi_gui::ICompletionCallback* returnComp
 		returnCompletionHandler->OnComplete(gmpi::MP_CANCEL);
 	}
 
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t Gmpi_Win_OkCancelDialog::ShowAsync(gmpi_gui::ICompletionCallback* returnCompletionHandler)
@@ -662,7 +662,7 @@ int32_t Gmpi_Win_OkCancelDialog::ShowAsync(gmpi_gui::ICompletionCallback* return
 
 	returnCompletionHandler->OnComplete(result);
 
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 #endif
 

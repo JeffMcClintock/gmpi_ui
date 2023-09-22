@@ -32,32 +32,32 @@ namespace GmpiGuiHosting
 		public gmpi_gui::IMpGraphicsHost,
 #endif
 		public IDrawingHost,
-		/*public gmpi::IMpUserInterfaceHost2,*/
+		/*public gmpi::api::IUserInterfaceHost2,*/
 		public TimerClient
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 		bool firstPresent = false;
 		UpdateRegionWinGdi updateRegion_native;
-		std::unique_ptr<gmpi::directx::GraphicsContext> context;
-		gmpi_sdk::mp_shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
-		gmpi_sdk::mp_shared_ptr</*gmpi_gui_api::*/IMpDrawingClient> drawingClient;
+		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
+		gmpi::shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
+		gmpi::shared_ptr<IDrawingClient> drawingClient;
 
 	protected:
-		GmpiDrawing::SizeL swapChainSize = {};
+		gmpi::drawing::SizeL swapChainSize = {};
 
 		ID2D1DeviceContext* mpRenderTarget = {};
 		IDXGISwapChain1* m_swapChain = {};
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
-		gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpGraphics3> gmpi_gui_client; // usually a ContainerView at the topmost level
-		gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpKeyClient> gmpi_key_client;
+		gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> gmpi_gui_client; // usually a ContainerView at the topmost level
+		gmpi::shared_ptr<gmpi_gui_api::IMpKeyClient> gmpi_key_client;
 #endif
 
 		// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
-		std::vector<GmpiDrawing::RectL> backBufferDirtyRects;
-		GmpiDrawing::Matrix3x2 viewTransform;
-		GmpiDrawing::Matrix3x2 DipsToWindow;
-		GmpiDrawing::Matrix3x2 WindowToDips;
+		std::vector<gmpi::drawing::RectL> backBufferDirtyRects;
+		gmpi::drawing::Matrix3x2 viewTransform;
+		gmpi::drawing::Matrix3x2 DipsToWindow;
+		gmpi::drawing::Matrix3x2 WindowToDips;
 		int toolTiptimer = 0;
 		bool toolTipShown;
 		HWND tooltipWindow;
@@ -66,7 +66,7 @@ namespace GmpiGuiHosting
 		bool reentrant;
 		bool lowDpiMode = {};
 		bool isTrackingMouse = false;
-		GmpiDrawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
+		gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 
 	public:
 		static const int viewDimensions = 7968; // DIPs (divisible by grids 60x60 + 2 24 pixel borders)
@@ -132,24 +132,24 @@ namespace GmpiGuiHosting
 		void CreateDevice();
 		void CreateDeviceSwapChainBitmap();
 
-		void AddView(gmpi::IMpUnknown* pcontainerView)
+		void AddView(gmpi::api::IUnknown* pcontainerView)
 		{
-			pcontainerView->queryInterface(/*gmpi_gui_api::*/IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(/*gmpi_gui_api::*/&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
 			if(drawingClient)
 			{
 				drawingClient->open(this);// static_cast<gmpi_gui::IMpGraphicsHost*>(this));
 			}
 
 			// legacy
-			pcontainerView->queryInterface(IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
 #ifdef GMPI_HOST_POINTER_SUPPORT
-			pcontainerView->queryInterface(gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
-			pcontainerView->queryInterface(gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.asIMpUnknownPtr());
 #endif
 
 #if 0
-			gmpi_sdk::mp_shared_ptr<gmpi::IMpUserInterface2> pinHost;
-			gmpi_gui_client->queryInterface(gmpi::MP_IID_GUI_PLUGIN2, pinHost.asIMpUnknownPtr());
+			gmpi::shared_ptr<gmpi::api::IUserInterface2> pinHost;
+			gmpi_gui_client->queryInterface(&gmpi::MP_IID_GUI_PLUGIN2, pinHost.asIMpUnknownPtr());
 
 			if(pinHost)
 				pinHost->setHost(static_cast<gmpi_gui::IMpGraphicsHost*>(this));
@@ -162,7 +162,7 @@ namespace GmpiGuiHosting
 #if 0
 		// Inherited via IMpUserInterfaceHost2
 		int32_t pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice = 0) override;
-		int32_t createPinIterator(gmpi::IMpPinIterator** returnIterator) override;
+		int32_t createPinIterator(gmpi::api::IPinIterator** returnIterator) override;
 		int32_t getHandle(int32_t & returnValue) override;
 		int32_t sendMessageToAudio(int32_t id, int32_t size, const void * messageData) override;
 		int32_t ClearResourceUris() override;
@@ -176,72 +176,70 @@ namespace GmpiGuiHosting
 		}
 #endif
 		// IMpGraphicsHost
-		virtual void invalidateRect(const GmpiDrawing_API::MP1_RECT * invalidRect) override;
+		virtual void invalidateRect(const gmpi::drawing::Rect * invalidRect) override;
 #ifdef GMPI_HOST_POINTER_SUPPORT
 		virtual void invalidateMeasure() override;
 		int32_t setCapture() override;
 		int32_t getCapture(int32_t & returnValue) override;
 		int32_t releaseCapture() override;
-		int32_t GetDrawingFactory(GmpiDrawing_API::IMpFactory** returnFactory) override
+		gmpi::ReturnCode GetDrawingFactory(gmpi::drawing::IFactory** returnFactory) override
 		{
 			*returnFactory = &DrawingFactory;
-			return gmpi::MP_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 #endif
-		int32_t getDrawingFactory(gmpi::IMpUnknown** returnFactory) override
+		gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
 		{
 			*returnFactory = &DrawingFactory;
-			return gmpi::MP_OK;
+			return gmpi::ReturnCode::Ok;
 		}
 #ifdef GMPI_HOST_POINTER_SUPPORT
 
-		int32_t createPlatformMenu(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override;
-		int32_t createPlatformTextEdit(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override;
+		int32_t createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override;
+		int32_t createPlatformTextEdit(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override;
 		int32_t createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override;
 		int32_t createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override;
 #endif
 
 #if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
-		int32_t queryInterface(const gmpi::api::Guid& iid, void** returnInterface) override
+		gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 		{
-			
-			if (iid == IDrawingHost::guid)
+			*returnInterface = {};
+
+			if (*iid == IDrawingHost::guid)
 			{
 				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
 				*returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
 				addRef();
-				return gmpi::MP_OK;
+				return gmpi::ReturnCode::Ok;
 			}
 #if 0
-			if (iid == gmpi::MP_IID_UI_HOST2)
+			if (*iid == gmpi::MP_IID_UI_HOST2)
 			{
 				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
 				*returnInterface = reinterpret_cast<void*>(static_cast<IMpUserInterfaceHost2*>(this));
 				addRef();
-				return gmpi::MP_OK;
+				return gmpi::ReturnCode::Ok;
 			}
 #endif
 #ifdef GMPI_HOST_POINTER_SUPPORT
-			if (iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
+			if (*iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
 			{
 				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
 				*returnInterface = reinterpret_cast<void*>(static_cast<IMpGraphicsHost*>(this));
 				addRef();
-				return gmpi::MP_OK;
+				return gmpi::ReturnCode::Ok;
 			}
 #else
-			if (iid == gmpi::MP_IID_UNKNOWN)
+			if (*iid == gmpi::api::IUnknown::guid)
 			{
-				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
 				*returnInterface = this;
 				addRef();
-				return gmpi::MP_OK;
+				return gmpi::ReturnCode::Ok;
 			}
 #endif
-
-			*returnInterface = 0;
-			return gmpi::MP_NOSUPPORT;
+			return gmpi::ReturnCode::NoSupport;
 		}
 
 		GMPI_REFCOUNT_NO_DELETE;
@@ -276,9 +274,9 @@ namespace GmpiGuiHosting
 			return windowHandle;
 		}
 
-		void open(void* pParentWnd, const GmpiDrawing_API::MP1_SIZE_L* overrideSize = {});
-		void ReSize(int left, int top, int right, int bottom);
-		virtual void DoClose() {}
+		void open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize = {});
+		void reSize(int left, int top, int right, int bottom);
+		virtual void doClose() {}
 	};
 } // namespace.
 

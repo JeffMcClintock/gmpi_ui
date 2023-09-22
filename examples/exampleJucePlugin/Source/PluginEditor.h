@@ -40,11 +40,11 @@ public:
 #if USE_GMPI_RENDERER
 
     // GMPI-UI rendering
-    void OnRender(GmpiDrawing::Graphics& g) override
+    void onRender(gmpi::drawing::Graphics& g) override
     {
-        g.Clear(GmpiDrawing::Color::Green);
+        g.Clear(gmpi::drawing::Colors::Green);
 
-        auto brush = g.CreateSolidColorBrush(GmpiDrawing::Color::Red);
+        auto brush = g.CreateSolidColorBrush(gmpi::drawing::Colors::Red);
 
         for (auto& r : model.rects)
         {

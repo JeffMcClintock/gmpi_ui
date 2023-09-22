@@ -14,9 +14,7 @@
 
 using namespace std;
 using namespace gmpi;
-//using namespace gmpi_gui;
-//using namespace GmpiGuiHosting;
-using namespace GmpiDrawing_API;
+using namespace gmpi::drawing;
 
 using namespace Microsoft::WRL;
 using namespace D2D1;
@@ -51,7 +49,7 @@ bool registeredWindowClass = false;
 WNDCLASS windowClass;
 wchar_t gClassName[100];
 
-void DrawingFrame::open(void* pParentWnd, const GmpiDrawing_API::MP1_SIZE_L* overrideSize)
+void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize)
 {
 	parentWnd = (HWND)pParentWnd;
 
@@ -120,12 +118,12 @@ void DrawingFrame::open(void* pParentWnd, const GmpiDrawing_API::MP1_SIZE_L* ove
 			::ReleaseDC(windowHandle, hdc);
 		}
 
-		const GmpiDrawing_API::MP1_SIZE available{
+		const drawing::Size available{
 			static_cast<float>(((r.right - r.left) * 96) / dpiX),
 			static_cast<float>(((r.bottom - r.top) * 96) / dpiY)
 		};
 
-		GmpiDrawing_API::MP1_SIZE desired{};
+		drawing::Size desired{};
 #ifdef GMPI_HOST_POINTER_SUPPORT
 		gmpi_gui_client->measure(available, &desired);
 		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
@@ -257,7 +255,7 @@ LRESULT DrawingFrameBase::WindowProc(
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONUP:
 		{
-			GmpiDrawing::Point p(static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)));
+			Point p(static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)));
 			p = WindowToDips.TransformPoint(p);
 
 			// Cubase sends spurious mouse move messages when transport running.
@@ -272,7 +270,7 @@ LRESULT DrawingFrameBase::WindowProc(
 			}
 			else
 			{
-				cubaseBugPreviousMouseMove = GmpiDrawing::Point(-1, -1);
+				cubaseBugPreviousMouseMove = Point(-1, -1);
 			}
 
 			TooltipOnMouseActivity();
@@ -369,7 +367,7 @@ LRESULT DrawingFrameBase::WindowProc(
 			POINT pos = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 			MapWindowPoints(NULL, getWindowHandle(), &pos, 1); // !!! ::ScreenToClient() might be more correct. ref MyFrameWndDirectX::OnMouseWheel
 
-			GmpiDrawing::Point p(static_cast<float>(pos.x), static_cast<float>(pos.y));
+			Point p(static_cast<float>(pos.x), static_cast<float>(pos.y));
 			p = WindowToDips.TransformPoint(p);
 
             //The wheel rotation will be a multiple of WHEEL_DELTA, which is set at 120. This is the threshold for action to be taken, and one such action (for example, scrolling one increment) should occur for each delta.
@@ -452,7 +450,7 @@ void DrawingFrameBase::OnSize(UINT width, UINT height)
 		::ReleaseDC(getWindowHandle(), hdc);
 	}
 
-	const GmpiDrawing_API::MP1_SIZE available{
+	const drawing::Size available{
 		static_cast<float>(((width) * 96) / dpiX),
 		static_cast<float>(((height) * 96) / dpiY)
 	};
@@ -462,7 +460,7 @@ void DrawingFrameBase::OnSize(UINT width, UINT height)
 #else
 	if (drawingClient)
 	{
-		const GmpiDrawing_API::MP1_RECT r{ 0, 0, available.width, available.height };
+		const gmpi::drawing::Rect r{ 0, 0, available.width, available.height };
 		drawingClient->arrange(&r);
 	}
 #endif
@@ -492,7 +490,7 @@ bool DrawingFrameBase::OnTimer()
 		{
 			ScreenToClient(hwnd, &P);
 
-			const auto point = WindowToDips.TransformPoint(GmpiDrawing::Point(static_cast<float>(P.x), static_cast<float>(P.y)));
+			const auto point = WindowToDips.TransformPoint(Point(static_cast<float>(P.x), static_cast<float>(P.y)));
 
 			gmpi_sdk::MpString text;
 			gmpi_gui_client->getToolTip(point, &text);
@@ -546,8 +544,8 @@ void DrawingFrameBase::OnPaint()
 	reentrant = true;
 
 #ifdef USE_BEGINPAINT
-	std::vector<GmpiDrawing::RectL> dirtyRects;
-	dirtyRects.push_back(GmpiDrawing::RectL(ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom));
+	std::vector<RectL> dirtyRects;
+	dirtyRects.push_back(RectL(ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom));
 
 	if (containerView)
 #else
@@ -575,7 +573,7 @@ void DrawingFrameBase::OnPaint()
 */
 
 		{
-			GmpiDrawing::Graphics graphics(context.get());
+			Graphics graphics(context.get());
 
 			graphics.BeginDraw();
 			graphics.SetTransform(viewTransform);
@@ -584,10 +582,10 @@ void DrawingFrameBase::OnPaint()
 			{
 				auto r = updateRegion_native.getBoundingRect();
 
-				auto r2 = WindowToDips.transformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+				auto r2 = transformRect(WindowToDips, drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 				// Snap to whole DIPs.
-				GmpiDrawing::Rect temp;
+				drawing::Rect temp;
 				/*
 				temp.left = static_cast<float>(FastRealToIntTruncateTowardZero(r2.left));
 				temp.top = static_cast<float>(FastRealToIntTruncateTowardZero(r2.top));
@@ -600,16 +598,16 @@ void DrawingFrameBase::OnPaint()
 				temp.right = ceilf(r2.right);
 				temp.bottom = ceilf(r2.bottom);
 
-				//_RPTW4(_CRT_WARN, L"GmpiDrawing::RectL dirtyRect{%4d,%4d,%4d,%4d};\n", (int)r.left, (int)r.top, (int)r.right, (int)r.bottom);
-				//_RPTW4(_CRT_WARN, L"GmpiDrawing::Rect dirtyRect{%4d,%4d,%4d,%4d};\n", (int)temp.left, (int)temp.top, (int)temp.right, (int)temp.bottom);
+				//_RPTW4(_CRT_WARN, L"RectL dirtyRect{%4d,%4d,%4d,%4d};\n", (int)r.left, (int)r.top, (int)r.right, (int)r.bottom);
+				//_RPTW4(_CRT_WARN, L"Rect dirtyRect{%4d,%4d,%4d,%4d};\n", (int)temp.left, (int)temp.top, (int)temp.right, (int)temp.bottom);
 				graphics.PushAxisAlignedClip(temp);
 
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
-				gmpi_gui_client->OnRender(context.get());
+				gmpi_gui_client->onRender(context.get());
 #endif
 				if(drawingClient)
-					drawingClient->OnRender(context.get());
+					drawingClient->onRender(context.get());
 
 				graphics.PopAxisAlignedClip();
 			}
@@ -619,10 +617,10 @@ void DrawingFrameBase::OnPaint()
 				// clip and draw each react individually (causes some objects to redraw several times)
 				for (auto& r : dirtyRects)
 				{
-					auto r2 = WindowToDips.transformRect(GmpiDrawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+					auto r2 = transformRect(WindowToDips, drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 					// Snap to whole DIPs.
-					GmpiDrawing::Rect temp;
+					drawing::Rect temp;
 					temp.left = floorf(r2.left);
 					temp.top = floorf(r2.top);
 					temp.right = ceilf(r2.right);
@@ -631,10 +629,10 @@ void DrawingFrameBase::OnPaint()
 					graphics.PushAxisAlignedClip(temp);
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
-					gmpi_gui_client->OnRender(context.get());
+					gmpi_gui_client->onRender(context.get());
 #endif
 					if (drawingClient)
-						drawingClient->OnRender(context.get());
+						drawingClient->onRender(context.get());
 
 					graphics.PopAxisAlignedClip();
 				}
@@ -652,8 +650,8 @@ void DrawingFrameBase::OnPaint()
 				char versionString[100];
 				sprintf(versionString, "OS Version %d.%d", (int)osvi.dwMajorVersion, (int)osvi.dwMinorVersion);
 
-				auto brsh = graphics.CreateSolidColorBrush(GmpiDrawing::Color::Black);
-				graphics.DrawTextU(versionString, graphics.GetFactory().CreateTextFormat(12), GmpiDrawing::Rect(2.0f, 2.0f, 200, 200), brsh);
+				auto brsh = graphics.CreateSolidColorBrush(Colors::Black);
+				graphics.drawTextU(versionString, graphics.GetFactory().CreateTextFormat(12), drawing::Rect(2.0f, 2.0f, 200, 200), brsh);
 			}
 #endif
 
@@ -678,13 +676,13 @@ void DrawingFrameBase::OnPaint()
 					frameCountTime = timenow;
 					frameCount = 0;
 
-					auto brush = graphics.CreateSolidColorBrush(GmpiDrawing::Color::Black);
-					auto fpsRect = GmpiDrawing::Rect(0, 0, 50, 18);
+					auto brush = graphics.CreateSolidColorBrush(Colors::Black);
+					auto fpsRect = drawing::Rect(0, 0, 50, 18);
 					graphics.FillRectangle(fpsRect, brush);
-					brush.SetColor(GmpiDrawing::Color::White);
-					graphics.DrawTextU(frameCountString, graphics.GetFactory().CreateTextFormat(12), fpsRect, brush);
+					brush.SetColor(Colors::White);
+					graphics.drawTextU(frameCountString, graphics.GetFactory().CreateTextFormat(12), fpsRect, brush);
 
-					dirtyRects.push_back(GmpiDrawing::RectL(0, 0, 100, 36));
+					dirtyRects.push_back({ 0, 0, 100, 36 });
 				}
 			}
 
@@ -932,7 +930,7 @@ void DrawingFrameBase::CreateDevice()
 
 	mpRenderTarget->SetDpi(dpiX, dpiY);
 
-	DipsToWindow = GmpiDrawing::Matrix3x2::Scale(dpiX / 96.0f, dpiY / 96.0f); // was dpiScaleInverse
+	DipsToWindow = makeScale(dpiX / 96.0f, dpiY / 96.0f); // was dpiScaleInverse
 	WindowToDips = DipsToWindow;
 	WindowToDips = invert(WindowToDips);
 
@@ -941,7 +939,7 @@ void DrawingFrameBase::CreateDevice()
 
 	CreateDeviceSwapChainBitmap();
 
-	if (DrawingFactory.getPlatformPixelFormat() == GmpiDrawing_API::IMpBitmapPixels::kBGRA_SRGB) // DX_support_sRGB)
+	if (DrawingFactory.getPlatformPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB) // DX_support_sRGB)
 	{
 		context.reset(new gmpi::directx::GraphicsContext(mpRenderTarget, &DrawingFactory));
 	}
@@ -995,7 +993,7 @@ void DrawingFrameBase::CreateRenderTarget()
 	CreateDevice();
 }
 
-void DrawingFrame::ReSize(int left, int top, int right, int bottom)
+void DrawingFrame::reSize(int left, int top, int right, int bottom)
 {
 	const auto width = right - left;
 	const auto height = bottom - top;
@@ -1041,9 +1039,9 @@ void DrawingFrame::ReSize(int left, int top, int right, int bottom)
 }
 
 // Convert to an integer rect, ensuring it surrounds all partial pixels.
-inline GmpiDrawing::RectL RectToIntegerLarger(GmpiDrawing_API::MP1_RECT f)
+inline drawing::RectL RectToIntegerLarger(gmpi::drawing::Rect f)
 {
-	GmpiDrawing::RectL r;
+	drawing::RectL r;
 	r.left = FastRealToIntTruncateTowardZero(f.left);
 	r.top = FastRealToIntTruncateTowardZero(f.top);
 	r.right = FastRealToIntTruncateTowardZero(f.right) + 1;
@@ -1052,33 +1050,33 @@ inline GmpiDrawing::RectL RectToIntegerLarger(GmpiDrawing_API::MP1_RECT f)
 	return r;
 }
 
-void DrawingFrameBase::invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRect)
+void DrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 {
-	GmpiDrawing::RectL r;
+	drawing::RectL r;
 	if (invalidRect)
 	{
 		//_RPT4(_CRT_WARN, "invalidateRect r[ %d %d %d %d]\n", (int)invalidRect->left, (int)invalidRect->top, (int)invalidRect->right, (int)invalidRect->bottom);
-		r = RectToIntegerLarger( DipsToWindow.transformRect(*invalidRect) );
+		r = RectToIntegerLarger( transformRect(DipsToWindow , *invalidRect) );
 	}
 	else
 	{
 		GetClientRect(getWindowHandle(), reinterpret_cast<RECT*>( &r ));
 	}
 
-	auto area1 = r.getWidth() * r.getHeight();
+	auto area1 = getWidth(r) * getHeight(r);
 
 	for (auto& dirtyRect : backBufferDirtyRects )
 	{
-		auto area2 = dirtyRect.getWidth() * dirtyRect.getHeight();
+		auto area2 = getWidth(dirtyRect) * getHeight(dirtyRect);
 
-		GmpiDrawing::RectL unionrect(dirtyRect);
+		drawing::RectL unionrect(dirtyRect);
 
 		unionrect.top = (std::min)(unionrect.top, r.top);
 		unionrect.bottom = (std::max)(unionrect.bottom, r.bottom);
 		unionrect.left = (std::min)(unionrect.left, r.left);
 		unionrect.right = (std::max)(unionrect.right, r.right);
 
-		auto unionarea = unionrect.getWidth() * unionrect.getHeight();
+		auto unionarea = getWidth(unionrect) * getHeight(unionrect);
 
 		if (unionarea <= area1 + area2)
 		{
@@ -1103,89 +1101,89 @@ void DrawingFrameBase::invalidateMeasure()
 int32_t DrawingFrameBase::setCapture()
 {
 	::SetCapture(getWindowHandle());
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::getCapture(int32_t & returnValue)
 {
 	returnValue = ::GetCapture() == getWindowHandle();
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::releaseCapture()
 {
 	::ReleaseCapture();
 
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
-int32_t DrawingFrameBase::createPlatformMenu(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu)
+int32_t DrawingFrameBase::createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu)
 {
 	auto nativeRect = DipsToWindow.transformRect(*rect);
 	*returnMenu = new GmpiGuiHosting::PGCC_PlatformMenu(getWindowHandle(), &nativeRect, DipsToWindow._22);
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
-int32_t DrawingFrameBase::createPlatformTextEdit(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformText** returnTextEdit)
+int32_t DrawingFrameBase::createPlatformTextEdit(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformText** returnTextEdit)
 {
 	auto nativeRect = DipsToWindow.transformRect(*rect);
 	*returnTextEdit = new GmpiGuiHosting::PGCC_PlatformTextEntry(getWindowHandle(), &nativeRect, DipsToWindow._22);
 
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog)
 {
 	*returnFileDialog = new Gmpi_Win_FileDialog(dialogType, getWindowHandle());
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog)
 {
 	*returnDialog = new Gmpi_Win_OkCancelDialog(dialogType, getWindowHandle());
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 #endif
 
 #if 0
 int32_t DrawingFrameBase::pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice)
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
-int32_t DrawingFrameBase::createPinIterator(gmpi::IMpPinIterator** returnIterator)
+int32_t DrawingFrameBase::createPinIterator(gmpi::api::IPinIterator** returnIterator)
 {
 	return gmpi::MP_FAIL;
 }
 
 int32_t DrawingFrameBase::getHandle(int32_t & returnValue)
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::sendMessageToAudio(int32_t id, int32_t size, const void * messageData)
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::ClearResourceUris()
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::RegisterResourceUri(const char * resourceName, const char * resourceType, gmpi::IString* returnString)
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::OpenUri(const char * fullUri, gmpi::IProtectedFile2** returnStream)
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 
 int32_t DrawingFrameBase::FindResourceU(const char * resourceName, const char * resourceType, gmpi::IString* returnString)
 {
-	return gmpi::MP_OK;
+	return gmpi::ReturnCode::Ok;
 }
 #endif
 

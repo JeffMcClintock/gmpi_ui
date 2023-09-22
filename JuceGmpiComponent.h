@@ -25,7 +25,7 @@ public:
 	~GmpiComponent();
 
 	// override this in your derived class to draw on your component.
-	virtual void OnRender(GmpiDrawing::Graphics& g) {}
+	virtual void onRender(gmpi::drawing::Graphics& g) {}
 
 	// call this to repaint the component.
 	void invalidateRect();
@@ -33,19 +33,17 @@ public:
 
 
 // handy conversions between JUCE and GMPI types.
-inline GmpiDrawing::RectL toGmpi(juce::Rectangle<int> r)
+inline gmpi::drawing::RectL toGmpi(juce::Rectangle<int> r)
 {
 	return { r.getX(), r.getY(), r.getRight(), r.getBottom() };
 }
 
-inline GmpiDrawing::Rect toGmpi(juce::Rectangle<float> r)
+inline gmpi::drawing::Rect toGmpi(juce::Rectangle<float> r)
 {
 	return { r.getX(), r.getY(), r.getRight(), r.getBottom() };
 }
 
-inline GmpiDrawing::Color toGmpi(juce::Colour r)
+inline gmpi::drawing::Color toGmpi(juce::Colour r)
 {
-	GmpiDrawing::Color ret;
-	ret.InitFromSrgba(r.getRed(), r.getGreen(), r.getBlue(), r.getFloatAlpha());
-	return ret;
+	return gmpi::drawing::colorFromSrgba(r.getRed(), r.getGreen(), r.getBlue(), r.getFloatAlpha());
 }

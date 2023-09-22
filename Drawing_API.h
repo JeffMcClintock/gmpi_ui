@@ -25,7 +25,7 @@ using namespace GmpiDrawing_API;
 /* FUTURE ideas
 	// Obtain information about physical pixels. Translates DIPs to pixels. Alternatly GetPixelDpi, but might need offset also.
 	// Alternatly might want to do like dpi in terms of integer 96ths to aliviate rounding errors.
-	virtual void MP_STDCALL IMpDeviceContext::GetPixelTranslation(MP1_MATRIX_3X2* returnTransform) = 0;
+	virtual void IMpDeviceContext::GetPixelTranslation(MP1_MATRIX_3X2* returnTransform) = 0;
 
 	* Support drawing extended-color bitmaps (e.g. 10 bits per pixel)
 */
@@ -127,11 +127,14 @@ enum class BitmapInterpolationMode : int32_t
     Linear          = 1,
 };
 
-enum class DrawTextOptions : int32_t
+// todo xml 'flags' type for combinable bit flags, as opposed to exclusive options like ExtendMode
+namespace DrawTextOptions
 {
-    NoSnap = 1,
-    Clip   = 2,
-    None   = 0,
+    enum {
+        None = 0,
+        NoSnap = 1,
+        Clip = 2,
+    };
 };
 
 enum class ArcSize : int32_t
@@ -392,7 +395,7 @@ struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
 
 	// For the default method use lineSpacing=-1 (spacing depends solely on the content). For uniform spacing, the specified line height overrides the content.
 	// Can also be used to enable legacy-mode for cross-platform vertical font snapping by
-	// passing lineSpacing = GmpiDrawing_API::IMpTextFormat::LegacyVerticalBaselineSnapping
+	// passing lineSpacing = gmpi::drawing::ITextFormat::LegacyVerticalBaselineSnapping
     virtual gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) = 0;
 
 	enum {ImprovedVerticalBaselineSnapping = -512};
@@ -504,23 +507,23 @@ struct DECLSPEC_NOVTABLE IRadialGradientBrush : public IBrush
 struct DECLSPEC_NOVTABLE IStrokeStyle : public IResource
 {
 #if 0 // better to omit these.
-	virtual MP1_CAP_STYLE MP_STDCALL GetStartCap() = 0;
+	virtual MP1_CAP_STYLE GetStartCap() = 0;
 
-	virtual MP1_CAP_STYLE MP_STDCALL GetEndCap() = 0;
+	virtual MP1_CAP_STYLE GetEndCap() = 0;
 
-	virtual MP1_CAP_STYLE MP_STDCALL GetDashCap() = 0;
+	virtual MP1_CAP_STYLE GetDashCap() = 0;
 
-	virtual float MP_STDCALL GetMiterLimit() = 0;
+	virtual float GetMiterLimit() = 0;
 
-	virtual MP1_LINE_JOIN MP_STDCALL GetLineJoin() = 0;
+	virtual MP1_LINE_JOIN GetLineJoin() = 0;
 
-	virtual float MP_STDCALL GetDashOffset() = 0;
+	virtual float GetDashOffset() = 0;
 
-	virtual MP1_DASH_STYLE MP_STDCALL GetDashStyle() = 0;
+	virtual MP1_DASH_STYLE GetDashStyle() = 0;
 
-	virtual uint32_t MP_STDCALL GetDashesCount() = 0;
+	virtual uint32_t GetDashesCount() = 0;
 
-	virtual void MP_STDCALL GetDashes(float* dashes, uint32_t dashesCount) = 0;
+	virtual void GetDashes(float* dashes, uint32_t dashesCount) = 0;
 #endif
 
     // {27D19BF3-9DB2-49CC-A8EE-28E0716EA8B6}

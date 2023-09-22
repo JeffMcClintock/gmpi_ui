@@ -8,11 +8,11 @@
 #ifndef GraphicsRedrawClient_h
 #define GraphicsRedrawClient_h
 
-#include "../se_sdk3/Drawing_API.h"
+#include "Drawing_API.h"
 
 // notify a plugin when it's time to display a new frame.
 // Supports the client optimizing how often it checks the DSP queue
-class DECLSPEC_NOVTABLE IGraphicsRedrawClient : public gmpi::IMpUnknown
+class DECLSPEC_NOVTABLE IGraphicsRedrawClient : public gmpi::api::IUnknown
 {
 public:
 	virtual void PreGraphicsRedraw() = 0;
@@ -25,18 +25,18 @@ public:
 //TODO COMbine?
 
 // TODO: all rects be passed as pointers (for speed and consistency w D2D and C ABI compatibility). !!!
-class IMpDrawingClient : public gmpi::IMpUnknown
+class IDrawingClient : public gmpi::api::IUnknown
 {
 public:
-	virtual int32_t open(gmpi::IMpUnknown* host) = 0;
+	virtual gmpi::ReturnCode open(gmpi::api::IUnknown* host) = 0;
 
 	// First pass of layout update. Return minimum size required for given available size
-	virtual int32_t MP_STDCALL measure(const GmpiDrawing_API::MP1_SIZE* availableSize, GmpiDrawing_API::MP1_SIZE* returnDesiredSize) = 0;
+	virtual gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) = 0;
 
 	// Second pass of layout.
-	virtual int32_t MP_STDCALL arrange(const GmpiDrawing_API::MP1_RECT* finalRect) = 0;
+	virtual gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) = 0;
 
-	virtual int32_t MP_STDCALL OnRender(GmpiDrawing_API::IMpDeviceContext* drawingContext) = 0;
+	virtual gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
 
 	// {E922D16F-447B-4E82-B0B1-FD995CA4210E}
 	inline static const gmpi::api::Guid guid =
@@ -44,25 +44,25 @@ public:
 };
 
 
-class IDrawingHost : public gmpi::IMpUnknown
+class IDrawingHost : public gmpi::api::IUnknown
 {
 public:
-	virtual int32_t MP_STDCALL getDrawingFactory(gmpi::IMpUnknown** returnFactory) = 0;
+	virtual gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) = 0;
 
 	// TODO: sort out methd name case.
 	// Get host's current skin's font information.
-	virtual void MP_STDCALL invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRect) = 0;
+	virtual void invalidateRect(const gmpi::drawing::Rect* invalidRect) = 0;
 #if 0
-	virtual void MP_STDCALL invalidateMeasure() = 0;
+	virtual void invalidateMeasure() = 0;
 
-	virtual int32_t MP_STDCALL setCapture() = 0;
-	virtual int32_t MP_STDCALL getCapture(int32_t& returnValue) = 0;
-	virtual int32_t MP_STDCALL releaseCapture() = 0;
+	virtual int32_t setCapture() = 0;
+	virtual int32_t getCapture(int32_t& returnValue) = 0;
+	virtual int32_t releaseCapture() = 0;
 
-	virtual int32_t MP_STDCALL createPlatformMenu(/* shouldbe const */ GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu) = 0;
-	virtual int32_t MP_STDCALL createPlatformTextEdit(/* shouldbe const */ GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformText** returnTextEdit) = 0;
+	virtual int32_t createPlatformMenu(/* shouldbe const */ gmpi::drawing::Rect* rect, gmpi_gui::IPlatformMenu** returnMenu) = 0;
+	virtual int32_t createPlatformTextEdit(/* shouldbe const */ gmpi::drawing::Rect* rect, gmpi_gui::IPlatformText** returnTextEdit) = 0;
 	// Ideally this would be in IMpGraphicsHostBase, but doing so would break ABI for existing modules.
-	virtual int32_t MP_STDCALL createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) = 0;
+	virtual int32_t createOkCancelDialog(int32_t dialogType, gmpi_gui::IOkCancelDialog** returnDialog) = 0;
 
 	static gmpi::api::Guid IID() { return SE_IID_GRAPHICS_HOST; };
 #endif

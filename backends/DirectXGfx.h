@@ -67,6 +67,7 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
 	}
 };
 
@@ -468,6 +469,7 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
+		return gmpi::ReturnCode::Ok;
 	}
 
     GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IBrush);
@@ -958,7 +960,9 @@ public:
 
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
+		assert(false); // not implemented.
 		//		native_->GetFactory((ID2D1Factory**)factory);
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode strokeContainsPoint(const drawing::Point* point, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
@@ -1060,7 +1064,7 @@ public:
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
-class GraphicsContext : public gmpi::drawing::api::IDeviceContext
+class GraphicsContext_base : public gmpi::drawing::api::IDeviceContext
 {
 protected:
 	ID2D1DeviceContext* context_;
@@ -1074,8 +1078,7 @@ protected:
 		stringConverter = &(factory->stringConverter);
 	}
 
-public:
-	GraphicsContext(ID2D1DeviceContext* deviceContext, Factory* pfactory) :
+	GraphicsContext_base(ID2D1DeviceContext* deviceContext, Factory* pfactory) :
 		context_(deviceContext)
 		, factory(pfactory)
 	{
@@ -1083,14 +1086,15 @@ public:
 		Init();
 	}
 
-	GraphicsContext(Factory* pfactory) :
+	GraphicsContext_base(Factory* pfactory) :
 		context_(nullptr)
 		, factory(pfactory)
 	{
 		Init();
 	}
 
-	~GraphicsContext()
+public:
+	virtual ~GraphicsContext_base()
 	{
 		context_->Release();
 	}
@@ -1103,16 +1107,19 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override
 	{
 		*pfactory = factory;
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawRectangle(D2D1::RectF(rect->left, rect->top, rect->right, rect->bottom), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle) );
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
 	{
 		context_->FillRectangle((D2D1_RECT_F*)rect, (ID2D1Brush*)((Brush*)brush)->native());
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode clear(const drawing::Color* clearColor) override
@@ -1125,17 +1132,17 @@ public:
 	gmpi::ReturnCode drawLine(const drawing::Point* point0, const drawing::Point* point1, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawLine(*((D2D_POINT_2F*)point0), *((D2D_POINT_2F*)point1), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle));
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override;
 
 	gmpi::ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
-	//void FillGeometry(const gmpi::drawing::api::IPathGeometry* geometry, const gmpi::drawing::api::IBrush* brush, const gmpi::drawing::api::IBrush* opacityBrush) override
 	{
 #ifdef LOG_DIRECTX_CALLS
 		_RPT3(_CRT_WARN, "context_->FillGeometry(geometry%x, brush%x, nullptr);\n", (int)geometry, (int)brush);
 #endif
-		auto d2d_geometry = ((Geometry*)pathGeometry)->geometry_;
+		auto d2d_geometry = ((Geometry*)pathGeometry)->native();
 
 		ID2D1Brush* opacityBrushNative{};
 		if (opacityBrush)
@@ -1144,6 +1151,7 @@ public:
 		}
 
 		context_->FillGeometry(d2d_geometry, ((Brush*)brush)->native(), opacityBrushNative);
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
@@ -1162,6 +1170,7 @@ public:
 				(D2D1_RECT_F*)sourceRectangle
 			);
 		}
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode setTransform(const drawing::Matrix3x2* transform) override
@@ -1176,7 +1185,7 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) = 0;
+	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override;
 
 	gmpi::ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override;
 
@@ -1186,7 +1195,7 @@ public:
 		*returnObject = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 		b2.Attach(object);
-		return b2->queryInterface(iid, reinterpret_cast<void**>(returnObject));
+		return b2->queryInterface(&iid, reinterpret_cast<void**>(returnObject));
 	};
 
 	gmpi::ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
@@ -1222,21 +1231,25 @@ public:
 	gmpi::ReturnCode drawRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, (ID2D1Brush*)((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
 	{
 		context_->FillRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, (ID2D1Brush*)((Brush*)brush)->native());
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawEllipse((D2D1_ELLIPSE*)ellipse, (ID2D1Brush*)((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
 	{
 		context_->FillEllipse((D2D1_ELLIPSE*)ellipse, (ID2D1Brush*)((Brush*)brush)->native());
+		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override;
@@ -1249,6 +1262,7 @@ public:
 #endif
 		context_->PopAxisAlignedClip();
 		clipRectStack.pop_back();
+		return gmpi::ReturnCode::Ok;
 	}
 
 	void getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect) override;
@@ -1271,16 +1285,23 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IDeviceContext);
+};
+
+class GraphicsContext final : public GraphicsContext_base
+{
+public:
+	GraphicsContext(ID2D1DeviceContext* deviceContext, Factory* pfactory) : GraphicsContext_base(deviceContext, pfactory) {}
+
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
-class BitmapRenderTarget : public GraphicsContext
+class BitmapRenderTarget final : public GraphicsContext_base // emulated by carefull layout: public IBitmapRenderTarget
 {
 	ID2D1BitmapRenderTarget* nativeBitmapRenderTarget = {};
 
 public:
-	BitmapRenderTarget(GraphicsContext* g, const gmpi::drawing::Size* desiredSize, Factory* pfactory) :
-		GraphicsContext(pfactory)
+	BitmapRenderTarget(GraphicsContext_base* g, const gmpi::drawing::Size* desiredSize, Factory* pfactory) :
+		GraphicsContext_base(pfactory)
 	{
 		/* auto hr = */ g->native()->CreateCompatibleRenderTarget(*(D2D1_SIZE_F*)desiredSize, &nativeBitmapRenderTarget);
 		nativeBitmapRenderTarget->QueryInterface(IID_ID2D1DeviceContext, (void**)&context_);
@@ -1311,22 +1332,21 @@ public:
 			return gmpi::ReturnCode::Ok;
 		}
 
-		return GraphicsContext::queryInterface(iid, returnInterface);
+		return GraphicsContext_base::queryInterface(iid, returnInterface);
 	}
 
 	GMPI_REFCOUNT;
 };
 
 // Direct2D context tailored to devices without sRGB high-color support. i.e. Windows 7.
-class GraphicsContext_Win7 : public GraphicsContext
+class GraphicsContext_Win7 : public GraphicsContext_base
 {
 public:
-
 	GraphicsContext_Win7(ID2D1DeviceContext* context, Factory* pfactory) :
-		GraphicsContext(context, pfactory)
+		GraphicsContext_base(context, pfactory)
 	{}
 
-	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush)
+	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override
 	{
 		*returnSolidColorBrush = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b;
@@ -1352,7 +1372,7 @@ public:
 			dest.color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.b));
 		}
 
-		return GraphicsContext::createGradientstopCollection(stops.data(), gradientstopsCount, extendMode, returnGradientstopCollection);
+		return GraphicsContext_base::createGradientstopCollection(stops.data(), gradientstopsCount, extendMode, returnGradientstopCollection);
 	}
 
 	gmpi::ReturnCode clear(const drawing::Color* clearColor) override
@@ -1362,7 +1382,10 @@ public:
 		color.g = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.g));
 		color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.b));
 		context_->Clear((D2D1_COLOR_F*)&color);
+
+		return gmpi::ReturnCode::Ok;
 	}
+	GMPI_REFCOUNT;
 };
 } // Namespace
 } // Namespace

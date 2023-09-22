@@ -54,8 +54,8 @@ using namespace GmpiDrawing;
 #include <codecvt>
 #include <locale>
 #include "GmpiSdkCommon.h"
-#include "../shared/unicode_conversion2.h"
-#include "../shared/fast_gamma.h"
+#include "./shared/unicode_conversion2.h"
+#include "./shared/fast_gamma.h"
 
 namespace gmpi
 {
@@ -577,86 +577,9 @@ namespace drawing
 			return identity;
 		}
 
-		static Matrix3x2 Translation(
-			Size size
-		)
-		{
-			Matrix3x2 translation;
-
-			translation._11 = 1.0; translation._12 = 0.0;
-			translation._21 = 0.0; translation._22 = 1.0;
-			translation._31 = size.width; translation._32 = size.height;
-
-			return translation;
-		}
-
-		static Matrix3x2 Translation(
-			float x,
-			float y
-		)
-		{
-			return Translation(Size(x, y));
-		}
 
 
-		static Matrix3x2 Scale(
-			Size size,
-			Point center = Point()
-		)
-		{
-			Matrix3x2 scale;
 
-			scale._11 = size.width; scale._12 = 0.0;
-			scale._21 = 0.0; scale._22 = size.height;
-			scale._31 = center.x - size.width * center.x;
-			scale._32 = center.y - size.height * center.y;
-
-			return scale;
-		}
-
-		static Matrix3x2 Scale(
-			float x,
-			float y,
-			Point center = Point()
-		)
-		{
-			return Scale(Size(x, y), center);
-		}
-
-		static Matrix3x2 Rotation(
-			float angleRadians,
-			Point center = {}
-		)
-		{
-			// https://www.ques10.com/p/11014/derive-the-matrix-for-2d-rotation-about-an-arbitra/
-			const auto cosR = cosf(angleRadians);
-			const auto sinR = sinf(angleRadians);
-			const auto& Xm = center.x;
-			const auto& Ym = center.y;
-
-			return
-			{
-				cosR,
-				sinR,
-				-sinR,
-				cosR,
-				-Xm * cosR + Ym * sinR + Xm,
-				-Xm * sinR - Ym * cosR + Ym
-			};
-		}
-
-		static Matrix3x2 Skew(
-			float angleX,
-			float angleY,
-			Point center = Point()
-		)
-		{
-			Matrix3x2 skew;
-
-			assert(false); // TODO
-						   //			MP1MakeSkewMatrix(angleX, angleY, center, &skew);
-			return skew;
-		}
 		float Determinant() const
 		{
 			return (_11 * _22) - (_12 * _21);
@@ -817,7 +740,7 @@ namespace drawing
 
 #endif
 
-    Point transformPoint(const Matrix3x2& transform, Point point)
+	inline Point transformPoint(const Matrix3x2& transform, Point point)
     {
         return Point(
             point.x * transform._11 + point.y * transform._21 + transform._31,
@@ -825,7 +748,7 @@ namespace drawing
         );
     }
 
-	Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
+	inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
 	{
 		return Rect(
 			rect.left * transform._11 + rect.top * transform._21 + transform._31,
@@ -835,7 +758,7 @@ namespace drawing
 		);
 	}
 
-	Matrix3x2 invert(const Matrix3x2& transform)
+	inline Matrix3x2 invert(const Matrix3x2& transform)
 	{
 		double det = transform._11 * (transform._22 /** 1.0f - 0.0 * transform._32*/);
 		det -= transform._12 * (transform._21 /** 1.0f - 0.0 * transform._31*/);
@@ -854,6 +777,87 @@ namespace drawing
 		result._32 = s * (transform._12 * transform._31 - transform._11 * transform._32);
 
 		return result;
+	}
+
+	inline Matrix3x2 makeTranslation(
+		Size size
+	)
+	{
+		Matrix3x2 translation;
+
+		translation._11 = 1.0; translation._12 = 0.0;
+		translation._21 = 0.0; translation._22 = 1.0;
+		translation._31 = size.width; translation._32 = size.height;
+
+		return translation;
+	}
+
+	inline Matrix3x2 makeTranslation(
+		float x,
+		float y
+	)
+	{
+		return makeTranslation(Size(x, y));
+	}
+
+
+	inline Matrix3x2 makeScale(
+		Size size,
+		Point center = Point()
+	)
+	{
+		Matrix3x2 scale;
+
+		scale._11 = size.width; scale._12 = 0.0;
+		scale._21 = 0.0; scale._22 = size.height;
+		scale._31 = center.x - size.width * center.x;
+		scale._32 = center.y - size.height * center.y;
+
+		return scale;
+	}
+
+	inline Matrix3x2 makeScale(
+		float x,
+		float y,
+		Point center = Point()
+	)
+	{
+		return makeScale(Size(x, y), center);
+	}
+
+	inline Matrix3x2 makeRotation(
+		float angleRadians,
+		Point center = {}
+	)
+	{
+		// https://www.ques10.com/p/11014/derive-the-matrix-for-2d-rotation-about-an-arbitra/
+		const auto cosR = cosf(angleRadians);
+		const auto sinR = sinf(angleRadians);
+		const auto& Xm = center.x;
+		const auto& Ym = center.y;
+
+		return
+		{
+			cosR,
+			sinR,
+			-sinR,
+			cosR,
+			-Xm * cosR + Ym * sinR + Xm,
+			-Xm * sinR - Ym * cosR + Ym
+		};
+	}
+
+	inline Matrix3x2 makeSkew(
+		float angleX,
+		float angleY,
+		Point center = Point()
+	)
+	{
+		Matrix3x2 skew;
+
+		assert(false); // TODO
+		//			MP1MakeSkewMatrix(angleX, angleY, center, &skew);
+		return skew;
 	}
 #if 0
 
@@ -897,149 +901,7 @@ namespace drawing
 		static const uint32_t sc_alphaMask = 0xffu << sc_alphaShift;
 	public:
 
-		enum Enum
-		{
-			AliceBlue = 0xF0F8FF,
-			AntiqueWhite = 0xFAEBD7,
-			Aqua = 0x00FFFF,
-			Aquamarine = 0x7FFFD4,
-			Azure = 0xF0FFFF,
-			Beige = 0xF5F5DC,
-			Bisque = 0xFFE4C4,
-			Black = 0x000000,
-			BlanchedAlmond = 0xFFEBCD,
-			Blue = 0x0000FF,
-			BlueViolet = 0x8A2BE2,
-			Brown = 0xA52A2A,
-			BurlyWood = 0xDEB887,
-			CadetBlue = 0x5F9EA0,
-			Chartreuse = 0x7FFF00,
-			Chocolate = 0xD2691E,
-			Coral = 0xFF7F50,
-			CornflowerBlue = 0x6495ED,
-			Cornsilk = 0xFFF8DC,
-			Crimson = 0xDC143C,
-			Cyan = 0x00FFFF,
-			DarkBlue = 0x00008B,
-			DarkCyan = 0x008B8B,
-			DarkGoldenrod = 0xB8860B,
-			DarkGray = 0xA9A9A9,
-			DarkGreen = 0x006400,
-			DarkKhaki = 0xBDB76B,
-			DarkMagenta = 0x8B008B,
-			DarkOliveGreen = 0x556B2F,
-			DarkOrange = 0xFF8C00,
-			DarkOrchid = 0x9932CC,
-			DarkRed = 0x8B0000,
-			DarkSalmon = 0xE9967A,
-			DarkSeaGreen = 0x8FBC8F,
-			DarkSlateBlue = 0x483D8B,
-			DarkSlateGray = 0x2F4F4F,
-			DarkTurquoise = 0x00CED1,
-			DarkViolet = 0x9400D3,
-			DeepPink = 0xFF1493,
-			DeepSkyBlue = 0x00BFFF,
-			DimGray = 0x696969,
-			DodgerBlue = 0x1E90FF,
-			Firebrick = 0xB22222,
-			FloralWhite = 0xFFFAF0,
-			ForestGreen = 0x228B22,
-			Fuchsia = 0xFF00FF,
-			Gainsboro = 0xDCDCDC,
-			GhostWhite = 0xF8F8FF,
-			Gold = 0xFFD700,
-			Goldenrod = 0xDAA520,
-			Gray = 0x808080,
-			Green = 0x008000,
-			GreenYellow = 0xADFF2F,
-			Honeydew = 0xF0FFF0,
-			HotPink = 0xFF69B4,
-			IndianRed = 0xCD5C5C,
-			Indigo = 0x4B0082,
-			Ivory = 0xFFFFF0,
-			Khaki = 0xF0E68C,
-			Lavender = 0xE6E6FA,
-			LavenderBlush = 0xFFF0F5,
-			LawnGreen = 0x7CFC00,
-			LemonChiffon = 0xFFFACD,
-			LightBlue = 0xADD8E6,
-			LightCoral = 0xF08080,
-			LightCyan = 0xE0FFFF,
-			LightGoldenrodYellow = 0xFAFAD2,
-			LightGreen = 0x90EE90,
-			LightGray = 0xD3D3D3,
-			LightPink = 0xFFB6C1,
-			LightSalmon = 0xFFA07A,
-			LightSeaGreen = 0x20B2AA,
-			LightSkyBlue = 0x87CEFA,
-			LightSlateGray = 0x778899,
-			LightSteelBlue = 0xB0C4DE,
-			LightYellow = 0xFFFFE0,
-			Lime = 0x00FF00,
-			LimeGreen = 0x32CD32,
-			Linen = 0xFAF0E6,
-			Magenta = 0xFF00FF,
-			Maroon = 0x800000,
-			MediumAquamarine = 0x66CDAA,
-			MediumBlue = 0x0000CD,
-			MediumOrchid = 0xBA55D3,
-			MediumPurple = 0x9370DB,
-			MediumSeaGreen = 0x3CB371,
-			MediumSlateBlue = 0x7B68EE,
-			MediumSpringGreen = 0x00FA9A,
-			MediumTurquoise = 0x48D1CC,
-			MediumVioletRed = 0xC71585,
-			MidnightBlue = 0x191970,
-			MintCream = 0xF5FFFA,
-			MistyRose = 0xFFE4E1,
-			Moccasin = 0xFFE4B5,
-			NavajoWhite = 0xFFDEAD,
-			Navy = 0x000080,
-			OldLace = 0xFDF5E6,
-			Olive = 0x808000,
-			OliveDrab = 0x6B8E23,
-			Orange = 0xFFA500,
-			OrangeRed = 0xFF4500,
-			Orchid = 0xDA70D6,
-			PaleGoldenrod = 0xEEE8AA,
-			PaleGreen = 0x98FB98,
-			PaleTurquoise = 0xAFEEEE,
-			PaleVioletRed = 0xDB7093,
-			PapayaWhip = 0xFFEFD5,
-			PeachPuff = 0xFFDAB9,
-			Peru = 0xCD853F,
-			Pink = 0xFFC0CB,
-			Plum = 0xDDA0DD,
-			PowderBlue = 0xB0E0E6,
-			Purple = 0x800080,
-			Red = 0xFF0000,
-			RosyBrown = 0xBC8F8F,
-			RoyalBlue = 0x4169E1,
-			SaddleBrown = 0x8B4513,
-			Salmon = 0xFA8072,
-			SandyBrown = 0xF4A460,
-			SeaGreen = 0x2E8B57,
-			SeaShell = 0xFFF5EE,
-			Sienna = 0xA0522D,
-			Silver = 0xC0C0C0,
-			SkyBlue = 0x87CEEB,
-			SlateBlue = 0x6A5ACD,
-			SlateGray = 0x708090,
-			Snow = 0xFFFAFA,
-			SpringGreen = 0x00FF7F,
-			SteelBlue = 0x4682B4,
-			Tan = 0xD2B48C,
-			Teal = 0x008080,
-			Thistle = 0xD8BFD8,
-			Tomato = 0xFF6347,
-			Turquoise = 0x40E0D0,
-			Violet = 0xEE82EE,
-			Wheat = 0xF5DEB3,
-			White = 0xFFFFFF,
-			WhiteSmoke = 0xF5F5F5,
-			Yellow = 0xFFFF00,
-			YellowGreen = 0x9ACD32,
-		};
+
 
 		constexpr Color(gmpi::drawing::Color native) :
 			gmpi::drawing::Color(native)
@@ -1058,15 +920,6 @@ namespace drawing
 		bool operator!=(const Color& other) const
 		{
 			return !(*this == other);
-		}
-
-		void InitFromSrgba(unsigned char pRed, unsigned char pGreen, unsigned char pBlue, float pAlpha = 1.0f)
-		{
-			r = se_sdk::FastGamma::sRGB_to_float(pRed);
-			g = se_sdk::FastGamma::sRGB_to_float(pGreen);
-			b = se_sdk::FastGamma::sRGB_to_float(pBlue);
-
-			a = pAlpha;
 		}
 
 		Color(float pRed = 1.0f, float pGreen = 1.0f, float pBlue = 1.0f, float pAlpha = 1.0f)
@@ -1503,6 +1356,163 @@ namespace drawing
 	};
 	*/
 #endif
+
+namespace Colors
+{
+	inline static Color AliceBlue{0xF0F8FF};
+	inline static Color AntiqueWhite{0xFAEBD7};
+	inline static Color Aqua{0x00FFFF};
+	inline static Color Aquamarine{0x7FFFD4};
+	inline static Color Azure{0xF0FFFF};
+	inline static Color Beige{0xF5F5DC};
+	inline static Color Bisque{0xFFE4C4};
+	inline static Color Black{0x000000};
+	inline static Color BlanchedAlmond{0xFFEBCD};
+	inline static Color Blue{0x0000FF};
+	inline static Color BlueViolet{0x8A2BE2};
+	inline static Color Brown{0xA52A2A};
+	inline static Color BurlyWood{0xDEB887};
+	inline static Color CadetBlue{0x5F9EA0};
+	inline static Color Chartreuse{0x7FFF00};
+	inline static Color Chocolate{0xD2691E};
+	inline static Color Coral{0xFF7F50};
+	inline static Color CornflowerBlue{0x6495ED};
+	inline static Color Cornsilk{0xFFF8DC};
+	inline static Color Crimson{0xDC143C};
+	inline static Color Cyan{0x00FFFF};
+	inline static Color DarkBlue{0x00008B};
+	inline static Color DarkCyan{0x008B8B};
+	inline static Color DarkGoldenrod{0xB8860B};
+	inline static Color DarkGray{0xA9A9A9};
+	inline static Color DarkGreen{0x006400};
+	inline static Color DarkKhaki{0xBDB76B};
+	inline static Color DarkMagenta{0x8B008B};
+	inline static Color DarkOliveGreen{0x556B2F};
+	inline static Color DarkOrange{0xFF8C00};
+	inline static Color DarkOrchid{0x9932CC};
+	inline static Color DarkRed{0x8B0000};
+	inline static Color DarkSalmon{0xE9967A};
+	inline static Color DarkSeaGreen{0x8FBC8F};
+	inline static Color DarkSlateBlue{0x483D8B};
+	inline static Color DarkSlateGray{0x2F4F4F};
+	inline static Color DarkTurquoise{0x00CED1};
+	inline static Color DarkViolet{0x9400D3};
+	inline static Color DeepPink{0xFF1493};
+	inline static Color DeepSkyBlue{0x00BFFF};
+	inline static Color DimGray{0x696969};
+	inline static Color DodgerBlue{0x1E90FF};
+	inline static Color Firebrick{0xB22222};
+	inline static Color FloralWhite{0xFFFAF0};
+	inline static Color ForestGreen{0x228B22};
+	inline static Color Fuchsia{0xFF00FF};
+	inline static Color Gainsboro{0xDCDCDC};
+	inline static Color GhostWhite{0xF8F8FF};
+	inline static Color Gold{0xFFD700};
+	inline static Color Goldenrod{0xDAA520};
+	inline static Color Gray{0x808080};
+	inline static Color Green{0x008000};
+	inline static Color GreenYellow{0xADFF2F};
+	inline static Color Honeydew{0xF0FFF0};
+	inline static Color HotPink{0xFF69B4};
+	inline static Color IndianRed{0xCD5C5C};
+	inline static Color Indigo{0x4B0082};
+	inline static Color Ivory{0xFFFFF0};
+	inline static Color Khaki{0xF0E68C};
+	inline static Color Lavender{0xE6E6FA};
+	inline static Color LavenderBlush{0xFFF0F5};
+	inline static Color LawnGreen{0x7CFC00};
+	inline static Color LemonChiffon{0xFFFACD};
+	inline static Color LightBlue{0xADD8E6};
+	inline static Color LightCoral{0xF08080};
+	inline static Color LightCyan{0xE0FFFF};
+	inline static Color LightGoldenrodYellow{0xFAFAD2};
+	inline static Color LightGreen{0x90EE90};
+	inline static Color LightGray{0xD3D3D3};
+	inline static Color LightPink{0xFFB6C1};
+	inline static Color LightSalmon{0xFFA07A};
+	inline static Color LightSeaGreen{0x20B2AA};
+	inline static Color LightSkyBlue{0x87CEFA};
+	inline static Color LightSlateGray{0x778899};
+	inline static Color LightSteelBlue{0xB0C4DE};
+	inline static Color LightYellow{0xFFFFE0};
+	inline static Color Lime{0x00FF00};
+	inline static Color LimeGreen{0x32CD32};
+	inline static Color Linen{0xFAF0E6};
+	inline static Color Magenta{0xFF00FF};
+	inline static Color Maroon{0x800000};
+	inline static Color MediumAquamarine{0x66CDAA};
+	inline static Color MediumBlue{0x0000CD};
+	inline static Color MediumOrchid{0xBA55D3};
+	inline static Color MediumPurple{0x9370DB};
+	inline static Color MediumSeaGreen{0x3CB371};
+	inline static Color MediumSlateBlue{0x7B68EE};
+	inline static Color MediumSpringGreen{0x00FA9A};
+	inline static Color MediumTurquoise{0x48D1CC};
+	inline static Color MediumVioletRed{0xC71585};
+	inline static Color MidnightBlue{0x191970};
+	inline static Color MintCream{0xF5FFFA};
+	inline static Color MistyRose{0xFFE4E1};
+	inline static Color Moccasin{0xFFE4B5};
+	inline static Color NavajoWhite{0xFFDEAD};
+	inline static Color Navy{0x000080};
+	inline static Color OldLace{0xFDF5E6};
+	inline static Color Olive{0x808000};
+	inline static Color OliveDrab{0x6B8E23};
+	inline static Color Orange{0xFFA500};
+	inline static Color OrangeRed{0xFF4500};
+	inline static Color Orchid{0xDA70D6};
+	inline static Color PaleGoldenrod{0xEEE8AA};
+	inline static Color PaleGreen{0x98FB98};
+	inline static Color PaleTurquoise{0xAFEEEE};
+	inline static Color PaleVioletRed{0xDB7093};
+	inline static Color PapayaWhip{0xFFEFD5};
+	inline static Color PeachPuff{0xFFDAB9};
+	inline static Color Peru{0xCD853F};
+	inline static Color Pink{0xFFC0CB};
+	inline static Color Plum{0xDDA0DD};
+	inline static Color PowderBlue{0xB0E0E6};
+	inline static Color Purple{0x800080};
+	inline static Color Red{0xFF0000};
+	inline static Color RosyBrown{0xBC8F8F};
+	inline static Color RoyalBlue{0x4169E1};
+	inline static Color SaddleBrown{0x8B4513};
+	inline static Color Salmon{0xFA8072};
+	inline static Color SandyBrown{0xF4A460};
+	inline static Color SeaGreen{0x2E8B57};
+	inline static Color SeaShell{0xFFF5EE};
+	inline static Color Sienna{0xA0522D};
+	inline static Color Silver{0xC0C0C0};
+	inline static Color SkyBlue{0x87CEEB};
+	inline static Color SlateBlue{0x6A5ACD};
+	inline static Color SlateGray{0x708090};
+	inline static Color Snow{0xFFFAFA};
+	inline static Color SpringGreen{0x00FF7F};
+	inline static Color SteelBlue{0x4682B4};
+	inline static Color Tan{0xD2B48C};
+	inline static Color Teal{0x008080};
+	inline static Color Thistle{0xD8BFD8};
+	inline static Color Tomato{0xFF6347};
+	inline static Color Turquoise{0x40E0D0};
+	inline static Color Violet{0xEE82EE};
+	inline static Color Wheat{0xF5DEB3};
+	inline static Color White{0xFFFFFF};
+	inline static Color WhiteSmoke{0xF5F5F5};
+	inline static Color Yellow{0xFFFF00};
+	inline static Color YellowGreen{0x9ACD32};
+};
+
+inline Color colorFromSrgba(unsigned char pRed, unsigned char pGreen, unsigned char pBlue, float pAlpha = 1.0f)
+{
+	return
+	{
+	se_sdk::FastGamma::sRGB_to_float(pRed),
+	se_sdk::FastGamma::sRGB_to_float(pGreen),
+	se_sdk::FastGamma::sRGB_to_float(pBlue),
+	pAlpha
+	};
+}
+
+
 	class TextFormat_readonly : public gmpi::IWrapper<gmpi::drawing::api::ITextFormat>
 	{
 	public:
@@ -2268,7 +2278,7 @@ namespace drawing
 		SolidColorBrush CreateSolidColorBrush(Color color /*, BrushProperties& brushProperties*/)
 		{
 			SolidColorBrush temp;
-			Resource<BASE_INTERFACE>::get()->createSolidColorBrush(color, /*&brushProperties, */ temp.put() );
+			Resource<BASE_INTERFACE>::get()->createSolidColorBrush(&color, {}, temp.put());
 			return temp;
 		}
 
@@ -2625,16 +2635,16 @@ namespace drawing
 		}
 
 		// todo should options be int to allow bitwise combining??? !!!
-		void DrawTextU(const char* utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, gmpi::drawing::DrawTextOptions options = gmpi::drawing::DrawTextOptions::None)
+		void drawTextU(const char* utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 		{
 			int32_t stringLength = (int32_t) strlen(utf8String);
 			Resource<BASE_INTERFACE>::get()->drawTextU(utf8String, stringLength, textFormat.get(), &layoutRect, brush.get(), options/*, measuringMode*/);
 		}
-		void DrawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, gmpi::drawing::DrawTextOptions options = gmpi::drawing::DrawTextOptions::None)
+		void drawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 		{
 			Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), options);
 		}
-		//void DrawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t flags)
+		//void drawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t flags)
 		//{
 		//	Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), flags);
 		//}
@@ -2643,20 +2653,20 @@ namespace drawing
 		{
 			static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 			const auto utf8String = stringConverter.to_bytes(wString);
-			this->DrawTextU(utf8String, textFormat, rect, brush, flags);
+			this->drawTextU(utf8String, textFormat, rect, brush, flags);
 		}
 #endif
-		void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, gmpi::drawing::DrawTextOptions options = gmpi::drawing::DrawTextOptions::None)
+		void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 		{
 			static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 			const auto utf8String = stringConverter.to_bytes(wString);
-			this->DrawTextU(utf8String, textFormat, rect, brush, options);
+			this->drawTextU(utf8String, textFormat, rect, brush, options);
 		}
 		// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
-		void DrawTextU(std::string utf8String, TextFormat_readonly textFormat, float x, float y, Brush& brush, gmpi::drawing::DrawTextOptions options = gmpi::drawing::DrawTextOptions::None)
+		void drawTextU(std::string utf8String, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 		{
 #ifdef _RPT0
-			_RPT0(_CRT_WARN, "DrawTextU(std::string, TextFormat, float, float ...) DEPRECATED, works only when text is left-aligned.\n");
+			_RPT0(_CRT_WARN, "drawTextU(std::string, TextFormat, float, float ...) DEPRECATED, works only when text is left-aligned.\n");
 #endif
 		//	const int32_t flags = static_cast<int32_t>(options);
 			Rect rect(x, y, x + 10000, y + 10000);
@@ -2664,12 +2674,12 @@ namespace drawing
 		}
 
 		// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
-		void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, float x, float y, Brush& brush, gmpi::drawing::DrawTextOptions options = gmpi::drawing::DrawTextOptions::None)
+		void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 		{
 			static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 			auto utf8String = stringConverter.to_bytes(wString);
 
-			this->DrawTextU(utf8String, textFormat, x, y, brush, options);
+			this->drawTextU(utf8String, textFormat, x, y, brush, options);
 		}
 
 		void SetTransform(const Matrix3x2& transform)
@@ -2703,7 +2713,7 @@ namespace drawing
 
 		void Clear(Color clearColor)
 		{
-			Resource<BASE_INTERFACE>::get()->clear(clearColor);
+			Resource<BASE_INTERFACE>::get()->clear(&clearColor);
 		}
 
 		Factory GetFactory()

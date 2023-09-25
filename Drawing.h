@@ -668,7 +668,7 @@ public:
 			&& _31 == 0.f && _32 == 0.f;
 	}
 
-	void SetProduct(
+	void setProduct(
 		const Matrix3x2 &a,
 		const Matrix3x2 &b
 	)
@@ -702,7 +702,7 @@ public:
 	Matrix3x2 operator*(	const Matrix3x2 &matrix	) const
 	{
 		Matrix3x2 result;
-		result.SetProduct(*this, matrix);
+		result.setProduct(*this, matrix);
 		return result;
 	}
 /*
@@ -723,7 +723,7 @@ public:
 	Matrix3x2 operator*=(const Matrix3x2 other) const
 	{
 		Matrix3x2 result;
-		result.SetProduct(*this, other);
+		result.setProduct(*this, other);
 
 		*((gmpi::drawing::Matrix3x2*)this) = result;
 		return *this;
@@ -1014,7 +1014,7 @@ Color interpolateColor(Color a, Color b, float fraction)
 		);
 }
 
-Color AddColorComponents(Color const& lhs, Color const& rhs)
+Color addColorComponents(Color const& lhs, Color const& rhs)
 {
 	return Color{
 		lhs.r + rhs.r,
@@ -1520,27 +1520,27 @@ inline static Color YellowGreen = colorFromHex(0x9ACD32u);
 class TextFormat_readonly : public gmpi::IWrapper<gmpi::drawing::api::ITextFormat>
 {
 public:
-	Size GetTextExtentU(const char* utf8String)
+	Size getTextExtentU(const char* utf8String)
 	{
 		Size s;
 		get()->getTextExtentU(utf8String, (int32_t)strlen(utf8String), &s);
 		return s;
 	}
 
-	Size GetTextExtentU(const char* utf8String, int size)
+	Size getTextExtentU(const char* utf8String, int size)
 	{
 		Size s;
 		get()->getTextExtentU(utf8String, (int32_t)size, &s);
 		return s;
 	}
 
-	Size GetTextExtentU(std::string utf8String)
+	Size getTextExtentU(std::string utf8String)
 	{
 		Size s;
 		get()->getTextExtentU(utf8String.c_str(), (int32_t)utf8String.size(), &s);
 		return s;
 	}
-	Size GetTextExtentU(std::wstring wString)
+	Size getTextExtentU(std::wstring wString)
 	{
 		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 		auto utf8String = stringConverter.to_bytes(wString);
@@ -1551,11 +1551,11 @@ public:
 		return s;
 	}
 
-	void GetFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
+	void getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
 	{
 		get()->getFontMetrics(returnFontMetrics);
 	}
-	gmpi::drawing::FontMetrics GetFontMetrics()
+	gmpi::drawing::FontMetrics getFontMetrics()
 	{
 		gmpi::drawing::FontMetrics returnFontMetrics;
 		get()->getFontMetrics(&returnFontMetrics);
@@ -1566,36 +1566,36 @@ public:
 class TextFormat : public TextFormat_readonly
 {
 public:
-	gmpi::ReturnCode SetTextAlignment(gmpi::drawing::TextAlignment textAlignment)
+	gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment textAlignment)
 	{
 		return get()->setTextAlignment(textAlignment);
 	}
 
-	//gmpi::ReturnCode SetTextAlignment(gmpi::drawing::TextAlignment textAlignment)
+	//gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment textAlignment)
 	//{
 	//	return get()->setTextAlignment(textAlignment);
 	//}
 
-	gmpi::ReturnCode SetParagraphAlignment(gmpi::drawing::ParagraphAlignment paragraphAlignment)
+	gmpi::ReturnCode setParagraphAlignment(gmpi::drawing::ParagraphAlignment paragraphAlignment)
 	{
 		return get()->setParagraphAlignment((gmpi::drawing::ParagraphAlignment) paragraphAlignment);
 	}
 
-	gmpi::ReturnCode SetWordWrapping(gmpi::drawing::WordWrapping wordWrapping)
+	gmpi::ReturnCode setWordWrapping(gmpi::drawing::WordWrapping wordWrapping)
 	{
 		return get()->setWordWrapping((gmpi::drawing::WordWrapping) wordWrapping);
 	}
 
-	// Sets the line spacing.
+	// sets the line spacing.
 	// negative values of lineSpacing use 'default' spacing - Line spacing depends solely on the content, adjusting to accommodate the size of fonts and objects.
 	// positive values use 'absolute' spacing.
 	// A reasonable ratio of baseline to lineSpacing is 80 percent.
-	gmpi::ReturnCode SetLineSpacing(float lineSpacing, float baseline)
+	gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline)
 	{
 		return get()->setLineSpacing(lineSpacing, baseline);
 	}
 
-	gmpi::ReturnCode SetImprovedVerticalBaselineSnapping()
+	gmpi::ReturnCode setImprovedVerticalBaselineSnapping()
 	{
 		return get()->setLineSpacing(gmpi::drawing::api::ITextFormat::ImprovedVerticalBaselineSnapping, 0.0f);
 	}
@@ -1634,7 +1634,7 @@ public:
 		data[x + y * getBytesPerRow() / ((int) sizeof(uint32_t))] = pixel;
 	}
 
-	void Blit(BitmapPixels& source, gmpi::drawing::PointL destinationTopLeft, gmpi::drawing::RectL sourceRectangle, int32_t unused = 0)
+	void blit(BitmapPixels& source, gmpi::drawing::PointL destinationTopLeft, gmpi::drawing::RectL sourceRectangle, int32_t unused = 0)
 	{
 		gmpi::drawing::SizeU sourceSize;
 		sourceSize.width = sourceRectangle.right - sourceRectangle.left;
@@ -1653,14 +1653,14 @@ public:
 		}
 	}
 
-	void Blit(BitmapPixels& source, gmpi::drawing::RectL destination, gmpi::drawing::RectL sourceRectangle, int32_t unused = 0)
+	void blit(BitmapPixels& source, gmpi::drawing::RectL destination, gmpi::drawing::RectL sourceRectangle, int32_t unused = 0)
 	{
 		// Source and dest rectangles must be same size (no stretching suported)
 		assert(destination.right - destination.left == sourceRectangle.right - sourceRectangle.left);
 		assert(destination.bottom - destination.top == sourceRectangle.bottom - sourceRectangle.top);
 		gmpi::drawing::PointL destinationTopLeft{ destination.left , destination.top };
 
-		Blit(source, destinationTopLeft, sourceRectangle, unused);
+		blit(source, destinationTopLeft, sourceRectangle, unused);
 	}
 };
 
@@ -1668,7 +1668,7 @@ template <class interfaceType>
 class Resource : public gmpi::IWrapper<interfaceType>
 {
 public:
-	gmpi::drawing::api::IFactory* GetFactory()
+	gmpi::drawing::api::IFactory* getFactory()
 	{
 		gmpi::drawing::api::IFactory* l_factory{};
 		gmpi::IWrapper<interfaceType>::get()->getFactory(&l_factory);
@@ -1754,17 +1754,17 @@ public:
 class BitmapBrush : public Brush, public Resource<gmpi::drawing::api::IBitmapBrush>
 {
 public:
-	void SetExtendModeX(gmpi::drawing::ExtendMode extendModeX)
+	void setExtendModeX(gmpi::drawing::ExtendMode extendModeX)
 	{
 		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeX(extendModeX);
 	}
 
-	void SetExtendModeY(gmpi::drawing::ExtendMode extendModeY)
+	void setExtendModeY(gmpi::drawing::ExtendMode extendModeY)
 	{
 		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeY(extendModeY);
 	}
 
-	void SetInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode)
+	void setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode)
 	{
 		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setInterpolationMode(interpolationMode);
 	}
@@ -1779,12 +1779,12 @@ protected:
 class SolidColorBrush : public Brush, public Resource<gmpi::drawing::api::ISolidColorBrush>
 {
 public:
-	void SetColor(Color color)
+	void setColor(Color color)
 	{
 		Resource<gmpi::drawing::api::ISolidColorBrush>::get()->setColor((gmpi::drawing::Color*) &color);
 	}
 
-	//Color GetColor()
+	//Color getColor()
 	//{
 	//	return Resource<gmpi::drawing::api::ISolidColorBrush>::get()->getColor();
 	//}
@@ -1798,12 +1798,12 @@ protected:
 class LinearGradientBrush : public Brush, public Resource<gmpi::drawing::api::ILinearGradientBrush>
 {
 public:
-	void SetStartPoint(Point startPoint)
+	void setStartPoint(Point startPoint)
 	{
 		Resource<gmpi::drawing::api::ILinearGradientBrush>::get()->setStartPoint((gmpi::drawing::Point) startPoint);
 	}
 
-	void SetEndPoint(Point endPoint)
+	void setEndPoint(Point endPoint)
 	{
 		Resource<gmpi::drawing::api::ILinearGradientBrush>::get()->setEndPoint((gmpi::drawing::Point) endPoint);
 	}
@@ -1817,22 +1817,22 @@ protected:
 class RadialGradientBrush : public Brush, public Resource<gmpi::drawing::api::IRadialGradientBrush>
 {
 public:
-	void SetCenter(Point center)
+	void setCenter(Point center)
 	{
 		Resource<gmpi::drawing::api::IRadialGradientBrush>::get()->setCenter((gmpi::drawing::Point) center);
 	}
 
-	void SetGradientOriginOffset(Point gradientOriginOffset)
+	void setGradientOriginOffset(Point gradientOriginOffset)
 	{
 		Resource<gmpi::drawing::api::IRadialGradientBrush>::get()->setGradientOriginOffset((gmpi::drawing::Point) gradientOriginOffset);
 	}
 
-	void SetRadiusX(float radiusX)
+	void setRadiusX(float radiusX)
 	{
 		Resource<gmpi::drawing::api::IRadialGradientBrush>::get()->setRadiusX(radiusX);
 	}
 
-	void SetRadiusY(float radiusY)
+	void setRadiusY(float radiusY)
 	{
 		Resource<gmpi::drawing::api::IRadialGradientBrush>::get()->setRadiusY(radiusY);
 	}
@@ -1855,7 +1855,7 @@ class RectangleGeometry : public Geometry
 public:
 	GMPIGUISDK_DEFINE_CLASS(RectangleGeometry, Geometry, gmpi::drawing::api::IRectangleGeometry);
 
-	void GetRect(Rect& rect)
+	void getRect(Rect& rect)
 	{
 		get()->getRect(&rect);
 	}
@@ -1866,7 +1866,7 @@ class RoundedRectangleGeometry : public Geometry
 public:
 	GMPIGUISDK_DEFINE_CLASS(RoundedRectangleGeometry, Geometry, gmpi::drawing::api::IRoundedRectangleGeometry);
 
-	void GetRoundedRect(RoundedRect& roundedRect)
+	void getRoundedRect(RoundedRect& roundedRect)
 	{
 		get()->getRoundedRect(&roundedRect);
 	}
@@ -1877,7 +1877,7 @@ class EllipseGeometry : public Geometry
 public:
 	GMPIGUISDK_DEFINE_CLASS(EllipseGeometry, Geometry, gmpi::drawing::api::IEllipseGeometry);
 
-	void GetEllipse(Ellipse& ellipse)
+	void getEllipse(Ellipse& ellipse)
 	{
 		get()->getEllipse(&ellipse);
 	}
@@ -1889,62 +1889,62 @@ template <class interfaceType = gmpi::drawing::api::IGeometrySink>
 class GeometrySink : public gmpi::IWrapper<interfaceType>
 {
 public:
-	void BeginFigure(Point startPoint, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
+	void beginFigure(Point startPoint, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
-		gmpi::IWrapper<interfaceType>::get()->BeginFigure((gmpi::drawing::Point)startPoint, figureBegin);
+		gmpi::IWrapper<interfaceType>::get()->beginFigure((gmpi::drawing::Point)startPoint, figureBegin);
 	}
 
-	void BeginFigure(float x, float y, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
+	void beginFigure(float x, float y, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
-        gmpi::IWrapper<interfaceType>::get()->BeginFigure({x, y}, figureBegin);
+        gmpi::IWrapper<interfaceType>::get()->beginFigure({x, y}, figureBegin);
 	}
 
-	void AddLines(Point* points, uint32_t pointsCount)
+	void addLines(Point* points, uint32_t pointsCount)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addLines(points, pointsCount);
 	}
 
-	void AddBeziers(BezierSegment* beziers, uint32_t beziersCount)
+	void addBeziers(BezierSegment* beziers, uint32_t beziersCount)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addBeziers(beziers, beziersCount);
 	}
 
-	void EndFigure(gmpi::drawing::FigureEnd figureEnd = gmpi::drawing::FigureEnd::Closed)
+	void endFigure(gmpi::drawing::FigureEnd figureEnd = gmpi::drawing::FigureEnd::Closed)
 	{
-		gmpi::IWrapper<interfaceType>::get()->EndFigure(figureEnd);
+		gmpi::IWrapper<interfaceType>::get()->endFigure(figureEnd);
 	}
 
-	gmpi::ReturnCode Close()
+	gmpi::ReturnCode close()
 	{
-		return gmpi::IWrapper<interfaceType>::get()->Close();
+		return gmpi::IWrapper<interfaceType>::get()->close();
 	}
 
-	void AddLine(Point point)
+	void addLine(Point point)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addLine(point);
 	}
 
-	void AddBezier(BezierSegment bezier)
+	void addBezier(BezierSegment bezier)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addBezier(&bezier);
 	}
 
-	void AddQuadraticBezier(QuadraticBezierSegment bezier)
+	void addQuadraticBezier(QuadraticBezierSegment bezier)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addQuadraticBezier(&bezier);
 	}
 
-	void AddQuadraticBeziers(QuadraticBezierSegment* beziers, uint32_t beziersCount)
+	void addQuadraticBeziers(QuadraticBezierSegment* beziers, uint32_t beziersCount)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addQuadraticBeziers(beziers, beziersCount);
 	}
 
-	void AddArc(ArcSegment arc)
+	void addArc(ArcSegment arc)
 	{
 		gmpi::IWrapper<interfaceType>::get()->addArc(&arc);
 	}
 
-	void SetFillMode(gmpi::drawing::FillMode fillMode)
+	void setFillMode(gmpi::drawing::FillMode fillMode)
 	{
 		gmpi::IWrapper<interfaceType>::get()->setFillMode(fillMode);
 		gmpi::IWrapper<interfaceType>::get()->release();
@@ -1958,35 +1958,35 @@ class StrokeStyle : public Resource<gmpi::drawing::api::IStrokeStyle>
 class PathGeometry : public Resource<gmpi::drawing::api::IPathGeometry>
 {
 public:
-	GeometrySink< gmpi::drawing::api::IGeometrySink> Open()
+	GeometrySink< gmpi::drawing::api::IGeometrySink> open()
 	{
 		GeometrySink temp;
 		get()->open((gmpi::drawing::api::IGeometrySink**) temp.put());
 		return temp;
 	}
 
-	bool StrokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
+	bool strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 	{
 		bool r;
 		get()->strokeContainsPoint(point, strokeWidth, strokeStyle, worldTransform, &r);
 		return r;
 	}
 
-	bool FillContainsPoint(gmpi::drawing::Point point, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
+	bool fillContainsPoint(gmpi::drawing::Point point, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 	{
 		bool r;
 		get()->fillContainsPoint(point, worldTransform, &r);
 		return r;
 	}
 
-	gmpi::drawing::Rect GetWidenedBounds(float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
+	gmpi::drawing::Rect getWidenedBounds(float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 	{
 		gmpi::drawing::Rect r;
 		get()->getWidenedBounds(strokeWidth, strokeStyle, worldTransform, &r);
 		return r;
 	}
 
-	gmpi::drawing::Rect GetWidenedBounds(float strokeWidth, gmpi::drawing::StrokeStyle strokeStyle)
+	gmpi::drawing::Rect getWidenedBounds(float strokeWidth, gmpi::drawing::StrokeStyle strokeStyle)
 	{
 		gmpi::drawing::Rect r;
 		get()->getWidenedBounds(strokeWidth, strokeStyle.get(), nullptr, &r);
@@ -1997,30 +1997,30 @@ public:
 class TessellationSink : public gmpi::IWrapper<gmpi::drawing::api::ITessellationSink>
 {
 public:
-	void AddTriangles(const gmpi::drawing::Triangle* triangles, uint32_t trianglesCount)
+	void addTriangles(const gmpi::drawing::Triangle* triangles, uint32_t trianglesCount)
 	{
 		get()->addTriangles(triangles, trianglesCount);
 	}
 
 	template <int N>
-	void AddTriangles(gmpi::drawing::Triangle(&triangles)[N])
+	void addTriangles(gmpi::drawing::Triangle(&triangles)[N])
 	{
 		get()->addTriangles(triangles, N);
 	}
 
-	void Close()
+	void close()
 	{
-		get()->Close();
+		get()->close();
 	}
 };
 
 class Mesh : public Resource<gmpi::drawing::api::IMesh>
 {
 public:
-	TessellationSink Open()
+	TessellationSink open()
 	{
 		TessellationSink temp;
-		get()->Open(temp.put());
+		get()->open(temp.put());
 		return temp;
 	}
 };
@@ -2032,27 +2032,27 @@ class Factory : public gmpi::IWrapper<gmpi::drawing::api::IFactory>
 	gmpi::shared_ptr<gmpi::drawing::api::IFactory2> factory2;
 
 public:
-	PathGeometry CreatePathGeometry()
+	PathGeometry createPathGeometry()
 	{
 		PathGeometry temp;
 		get()->createPathGeometry(temp.put());
 		return temp;
 	}
 
-	// CreateTextformat creates fonts of the size you specify (according to the font file).
-	// Note that this will result in different fonts having different bounding boxes and vertical alignment. See CreateTextformat2 for a solution to this.
-	// Dont forget to call TextFormat::SetImprovedVerticalBaselineSnapping() to get consistant results on macOS
+	// createTextformat creates fonts of the size you specify (according to the font file).
+	// Note that this will result in different fonts having different bounding boxes and vertical alignment. See createTextformat2 for a solution to this.
+	// Dont forget to call TextFormat::setImprovedVerticalBaselineSnapping() to get consistant results on macOS
 
-	TextFormat CreateTextFormat(float fontSize = 12, const char* TextFormatfontFamilyName = "Arial", gmpi::drawing::FontWeight fontWeight = gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal)
+	TextFormat createTextFormat(float fontSize = 12, const char* TextFormatfontFamilyName = "Arial", gmpi::drawing::FontWeight fontWeight = gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal)
 	{
 		TextFormat temp;
 		get()->createTextFormat(TextFormatfontFamilyName/* , nullptr fontCollection */, fontWeight, fontStyle, fontStretch, fontSize/* , nullptr localeName */, temp.put());
 		return temp;
 	}
 
-	// Dont forget to call TextFormat::SetImprovedVerticalBaselineSnapping() to get consistant results on macOS
+	// Dont forget to call TextFormat::setImprovedVerticalBaselineSnapping() to get consistant results on macOS
 #if 0
-	TextFormat CreateTextFormat(float fontSize, const char* TextFormatfontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal)
+	TextFormat createTextFormat(float fontSize, const char* TextFormatfontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal)
 	{
 		TextFormat temp;
 		get()->createTextFormat(TextFormatfontFamilyName/* , nullptr fontCollection */, fontWeight, fontStyle, fontStretch, fontSize/* , nullptr localeName */, temp.put());
@@ -2083,10 +2083,10 @@ public:
 		}
 	};
 
-	// CreateTextFormat2 scales the bounding box of the font, so that it is always the same height as Arial.
+	// createTextFormat2 scales the bounding box of the font, so that it is always the same height as Arial.
 	// This is useful if you’re drawing text in a box(e.g.a Text - Entry’ module). The text will always have nice vertical alignment,
 	// even when the font 'falls back' to a font with different metrics.
-	TextFormat CreateTextFormat2(
+	TextFormat createTextFormat2(
 		float bodyHeight = 12.0f,
 		FontStack fontStack = {},
 		gmpi::drawing::FontWeight fontWeight = gmpi::drawing::FontWeight::Regular,
@@ -2160,7 +2160,7 @@ public:
 				);
 
 				gmpi::drawing::FontMetrics referenceMetrics;
-				referenceTextFormat.GetFontMetrics(&referenceMetrics);
+				referenceTextFormat.getFontMetrics(&referenceMetrics);
 
 				family_it->second.first = referenceFontSize / referenceMetrics.bodyHeight();
 				family_it->second.second = referenceFontSize / referenceMetrics.capHeight;
@@ -2172,7 +2172,7 @@ public:
 			// Scale cell height according to meterics
 			const float fontSize = bodyHeight * (digitsOnly ? capHeightScale : bodyHeightScale);
 
-			// Create actual textformat.
+			// create actual textformat.
 			assert(fontSize > 0.0f);
 			get()->createTextFormat(
 				fontFamilyName,
@@ -2196,21 +2196,21 @@ public:
 		// Failure for any reason results in fallback.
 		if (!temp)
 		{
-			return CreateTextFormat2(bodyHeight, fallBackFontFamilyName, fontWeight, fontStyle, fontStretch, digitsOnly);
+			return createTextFormat2(bodyHeight, fallBackFontFamilyName, fontWeight, fontStyle, fontStretch, digitsOnly);
 		}
 
-		temp.SetImprovedVerticalBaselineSnapping();
+		temp.setImprovedVerticalBaselineSnapping();
 		return temp;
 	}
 
-	Bitmap CreateImage(int32_t width = 32, int32_t height = 32)
+	Bitmap createImage(int32_t width = 32, int32_t height = 32)
 	{
 		Bitmap temp;
 		get()->createImage(width, height, temp.put());
 		return temp;
 	}
 
-	Bitmap CreateImage(gmpi::drawing::SizeU size)
+	Bitmap createImage(gmpi::drawing::SizeU size)
 	{
 		Bitmap temp;
 		get()->createImage(size.width, size.height, temp.put());
@@ -2218,19 +2218,19 @@ public:
 	}
 
 	// test for winrt. perhaps uri could indicate if image is in resources, and could use stream internally if nesc (i.e. VST2 only.) or just write it to disk temp.
-	Bitmap LoadImageU(const char* utf8Uri)
+	Bitmap loadImageU(const char* utf8Uri)
 	{
 		Bitmap temp;
 		get()->loadImageU(utf8Uri, temp.put());
 		return temp;
 	}
 
-	Bitmap LoadImageU(const std::string utf8Uri)
+	Bitmap loadImageU(const std::string utf8Uri)
 	{
-		return LoadImageU(utf8Uri.c_str());
+		return loadImageU(utf8Uri.c_str());
 	}
 
-	StrokeStyle CreateStrokeStyle(const gmpi::drawing::StrokeStyleProperties strokeStyleProperties, const float* dashes = nullptr, int32_t dashesCount = 0)
+	StrokeStyle createStrokeStyle(const gmpi::drawing::StrokeStyleProperties strokeStyleProperties, const float* dashes = nullptr, int32_t dashesCount = 0)
 	{
 		StrokeStyle temp;
 		get()->createStrokeStyle(&strokeStyleProperties, const_cast<float*>(dashes), dashesCount, temp.put());
@@ -2238,7 +2238,7 @@ public:
 	}
 
 	// Simplified version just for setting end-caps.
-	StrokeStyle CreateStrokeStyle(gmpi::drawing::CapStyle allCapsStyle)
+	StrokeStyle createStrokeStyle(gmpi::drawing::CapStyle allCapsStyle)
 	{
 		gmpi::drawing::StrokeStyleProperties strokeStyleProperties;
 		strokeStyleProperties.startCap = strokeStyleProperties.endCap = static_cast<gmpi::drawing::CapStyle>(allCapsStyle);
@@ -2254,13 +2254,13 @@ class Graphics_base : public Resource<BASE_INTERFACE>
 {
 public:
 /*
-	Bitmap CreateBitmap(SizeU size, BitmapProperties& bitmapProperties)
+	Bitmap createBitmap(SizeU size, BitmapProperties& bitmapProperties)
 	{
 		gmpi::drawing::api::IBitmap* l_bitmap = nullptr;
 		get()->createBitmap((gmpi::drawing::SizeU) size, &bitmapProperties, &l_bitmap);
 		return Bitmap(l_bitmap);
 	}
-	Bitmap CreateBitmap(SizeU size)
+	Bitmap createBitmap(SizeU size)
 	{
 		gmpi::drawing::api::IBitmap* l_bitmap = nullptr;
 		BitmapProperties bitmapProperties;
@@ -2269,7 +2269,7 @@ public:
 	}
 */
 
-	BitmapBrush CreateBitmapBrush(Bitmap& bitmap) // N/A on macOS: BitmapBrushProperties& bitmapBrushProperties, BrushProperties& brushProperties)
+	BitmapBrush createBitmapBrush(Bitmap& bitmap) // N/A on macOS: BitmapBrushProperties& bitmapBrushProperties, BrushProperties& brushProperties)
 	{
         const BitmapBrushProperties bitmapBrushProperties{};
         const BrushProperties brushProperties{};
@@ -2279,21 +2279,21 @@ public:
 		return temp;
 	}
 
-	SolidColorBrush CreateSolidColorBrush(Color color /*, BrushProperties& brushProperties*/)
+	SolidColorBrush createSolidColorBrush(Color color /*, BrushProperties& brushProperties*/)
 	{
 		SolidColorBrush temp;
 		Resource<BASE_INTERFACE>::get()->createSolidColorBrush(&color, {}, temp.put());
 		return temp;
 	}
 
-	GradientStopCollection CreateGradientStopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
+	GradientStopCollection createGradientStopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
 	{
 		GradientStopCollection temp;
 		Resource<BASE_INTERFACE>::get()->createGradientStopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, temp.put());
 		return temp;
 	}
 
-	GradientStopCollection CreateGradientStopCollection(std::vector<gmpi::drawing::Gradientstop>& gradientStops)
+	GradientStopCollection createGradientStopCollection(std::vector<gmpi::drawing::Gradientstop>& gradientStops)
 	{
 		GradientStopCollection temp;
 		Resource<BASE_INTERFACE>::get()->createGradientStopCollection((gmpi::drawing::Gradientstop *) gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), temp.put());
@@ -2302,21 +2302,21 @@ public:
 
 	// Pass POD array, infer size.
 	template <int N>
-	GradientStopCollection CreateGradientStopCollection(gmpi::drawing::Gradientstop(&gradientStops)[N])
+	GradientStopCollection createGradientStopCollection(gmpi::drawing::Gradientstop(&gradientStops)[N])
 	{
 		GradientStopCollection temp;
 		Resource<BASE_INTERFACE>::get()->createGradientStopCollection((gmpi::drawing::Gradientstop *) &gradientStops, N, temp.put());
 		return temp;
 	}
 
-	LinearGradientBrush CreateLinearGradientBrush(LinearGradientBrushProperties linearGradientBrushProperties, BrushProperties brushProperties, GradientStopCollection gradientStopCollection)
+	LinearGradientBrush createLinearGradientBrush(LinearGradientBrushProperties linearGradientBrushProperties, BrushProperties brushProperties, GradientStopCollection gradientStopCollection)
 	{
 		LinearGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
 /*
-	LinearGradientBrush CreateLinearGradientBrush(GradientStopCollection gradientStopCollection, LinearGradientBrushProperties linearGradientBrushProperties)
+	LinearGradientBrush createLinearGradientBrush(GradientStopCollection gradientStopCollection, LinearGradientBrushProperties linearGradientBrushProperties)
 	{
 		BrushProperties brushProperties;
 
@@ -2326,7 +2326,7 @@ public:
 	}
 */
 
-	LinearGradientBrush CreateLinearGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
+	LinearGradientBrush createLinearGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
 	{
 		BrushProperties brushProperties;
         LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
@@ -2337,11 +2337,11 @@ public:
 	}
 
 	template <int N>
-	LinearGradientBrush CreateLinearGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
+	LinearGradientBrush createLinearGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
     {
         BrushProperties brushProperties;
         LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
-		auto gradientStopCollection = CreateGradientStopCollection(gradientStops);
+		auto gradientStopCollection = createGradientStopCollection(gradientStops);
 
 		LinearGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
@@ -2349,7 +2349,7 @@ public:
 	}
 
 	// Simple 2-color gradient.
-	LinearGradientBrush CreateLinearGradientBrush(gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
+	LinearGradientBrush createLinearGradientBrush(gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
 	{
 		Gradientstop gradientStops[2];
 		gradientStops[0].color = startColor;
@@ -2357,14 +2357,14 @@ public:
 		gradientStops[1].color = endColor;
 		gradientStops[1].position = 1.0f;
 
-		auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+		auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
         LinearGradientBrushProperties lp{startPoint, endPoint};
 		BrushProperties bp;
-		return CreateLinearGradientBrush(lp, bp, gradientStopCollection);
+		return createLinearGradientBrush(lp, bp, gradientStopCollection);
 	}
 
 	// Simple 2-color gradient.
-	LinearGradientBrush CreateLinearGradientBrush(Color color1, Color color2, Point point1, Point point2)
+	LinearGradientBrush createLinearGradientBrush(Color color1, Color color2, Point point1, Point point2)
     {
         Gradientstop gradientStops[2];
         gradientStops[0].color = color1;
@@ -2372,7 +2372,7 @@ public:
         gradientStops[1].color = color2;
         gradientStops[1].position = 1.0f;
         
-        auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+        auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
         
         LinearGradientBrushProperties linearGradientBrushProperties{point1, point2};
 		BrushProperties brushproperties;
@@ -2384,14 +2384,14 @@ public:
 
 //		Graphics createCompatibleRenderTarget(Size& desiredSize);
 
-	RadialGradientBrush CreateRadialGradientBrush(RadialGradientBrushProperties radialGradientBrushProperties, BrushProperties brushProperties, GradientStopCollection gradientStopCollection)
+	RadialGradientBrush createRadialGradientBrush(RadialGradientBrushProperties radialGradientBrushProperties, BrushProperties brushProperties, GradientStopCollection gradientStopCollection)
 	{
 		RadialGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*)&radialGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
 
-	RadialGradientBrush CreateRadialGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point center, float radius)
+	RadialGradientBrush createRadialGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point center, float radius)
     {
         BrushProperties brushProperties;
         RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
@@ -2402,11 +2402,11 @@ public:
 	}
 
 	template <int N>
-	RadialGradientBrush CreateRadialGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point center, float radius)
+	RadialGradientBrush createRadialGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point center, float radius)
     {
         BrushProperties brushProperties;
         RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
-		auto gradientStopCollection = CreateGradientStopCollection(gradientStops);
+		auto gradientStopCollection = createGradientStopCollection(gradientStops);
 
 		RadialGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
@@ -2414,7 +2414,7 @@ public:
 	}
 
 	// Simple 2-color gradient.
-	RadialGradientBrush CreateRadialGradientBrush(gmpi::drawing::Point center, float radius, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
+	RadialGradientBrush createRadialGradientBrush(gmpi::drawing::Point center, float radius, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
     {
         Gradientstop gradientStops[2];
         gradientStops[0].color = startColor;
@@ -2422,14 +2422,14 @@ public:
         gradientStops[1].color = endColor;
         gradientStops[1].position = 1.0f;
         
-        auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+        auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
         RadialGradientBrushProperties rp{center, radius};
 		BrushProperties bp;
-		return CreateRadialGradientBrush(rp, bp, gradientStopCollection);
+		return createRadialGradientBrush(rp, bp, gradientStopCollection);
 	}
 
 	// Simple 2-color gradient.
-	RadialGradientBrush CreateRadialGradientBrush(Color color1, Color color2, Point center, float radius)
+	RadialGradientBrush createRadialGradientBrush(Color color1, Color color2, Point center, float radius)
     {
         Gradientstop gradientStops[2];
         gradientStops[0].color = color1;
@@ -2437,7 +2437,7 @@ public:
         gradientStops[1].color = color2;
         gradientStops[1].position = 1.0f;
         
-        auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+        auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
         
         RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
 		BrushProperties brushproperties;
@@ -2446,7 +2446,7 @@ public:
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushproperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
-	//Mesh CreateMesh()
+	//Mesh createMesh()
 	//{
 	//	Mesh temp;
 	//	Resource<BASE_INTERFACE>::get()->createMesh(temp.put());
@@ -2552,52 +2552,52 @@ public:
 
 	void FillPolygon(std::vector<Point>& points, Brush& brush)
 	{
-		auto geometry = GetFactory().CreatePathGeometry();
-		auto sink = geometry.Open();
+		auto geometry = getFactory().createPathGeometry();
+		auto sink = geometry.open();
 
 		auto it = points.begin();
-		sink.BeginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
+		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
 		for ( ; it != points.end(); ++it)
 		{
-			sink.AddLine(*it);
+			sink.addLine(*it);
 		}
 
-		sink.EndFigure();
-		sink.Close();
+		sink.endFigure();
+		sink.close();
 		FillGeometry(geometry, brush);
 	}
 
 	void DrawPolygon(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
-		auto geometry = GetFactory().CreatePathGeometry();
-		auto sink = geometry.Open();
+		auto geometry = getFactory().createPathGeometry();
+		auto sink = geometry.open();
 
 		auto it = points.begin();
-		sink.BeginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
+		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
 		for (; it != points.end(); ++it)
 		{
-			sink.AddLine(*it);
+			sink.addLine(*it);
 		}
 
-		sink.EndFigure();
-		sink.Close();
+		sink.endFigure();
+		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
 	void DrawPolyline(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
-		auto geometry = GetFactory().CreatePathGeometry();
-		auto sink = geometry.Open();
+		auto geometry = getFactory().createPathGeometry();
+		auto sink = geometry.open();
 
 		auto it = points.begin();
-		sink.BeginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
+		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
 		for (; it != points.end(); ++it)
 		{
-			sink.AddLine(*it);
+			sink.addLine(*it);
 		}
 
-		sink.EndFigure(gmpi::drawing::FigureEnd::Open);
-		sink.Close();
+		sink.endFigure(gmpi::drawing::FigureEnd::open);
+		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 	//void FillMesh(Mesh& mesh, Brush& brush)
@@ -2686,12 +2686,12 @@ public:
 		this->drawTextU(utf8String, textFormat, x, y, brush, options);
 	}
 
-	void SetTransform(const Matrix3x2& transform)
+	void setTransform(const Matrix3x2& transform)
 	{
 		Resource<BASE_INTERFACE>::get()->setTransform(&transform);
 	}
 
-	Matrix3x2 GetTransform()
+	Matrix3x2 getTransform()
 	{
 		Matrix3x2 temp;
 		Resource<BASE_INTERFACE>::get()->getTransform(&temp);
@@ -2708,7 +2708,7 @@ public:
 		Resource<BASE_INTERFACE>::get()->popAxisAlignedClip();
 	}
 
-	gmpi::drawing::Rect GetAxisAlignedClip()
+	gmpi::drawing::Rect getAxisAlignedClip()
 	{
 		gmpi::drawing::Rect temp;
 		Resource<BASE_INTERFACE>::get()->getAxisAlignedClip(&temp);
@@ -2720,24 +2720,24 @@ public:
 		Resource<BASE_INTERFACE>::get()->clear(&clearColor);
 	}
 
-	Factory GetFactory()
+	Factory getFactory()
 	{
 		Factory temp;
 		Resource<BASE_INTERFACE>::get()->getFactory(temp.put());
 		return temp;
 	}
 
-	void BeginDraw()
+	void beginDraw()
 	{
 		Resource<BASE_INTERFACE>::get()->beginDraw();
 	}
 
-	gmpi::ReturnCode EndDraw()
+	gmpi::ReturnCode endDraw()
 	{
 		return Resource<BASE_INTERFACE>::get()->endDraw();
 	}
 	/*
-	UpdateRegion GetUpdateRegion()
+	UpdateRegion getUpdateRegion()
 	{
 		UpdateRegion temp;
 		auto r = Resource<BASE_INTERFACE>::get()->getUpdateRegion(temp.put());
@@ -2753,12 +2753,12 @@ public:
 	{
 		assert(pointCount > 0 && points != nullptr);
 
-		auto geometry = GetFactory().CreatePathGeometry();
-		auto sink = geometry.Open();
-		sink.BeginFigure(points[0], gmpi::drawing::FigureBegin::Filled);
-		sink.AddLines(points, pointCount);
-		sink.EndFigure();
-		sink.Close();
+		auto geometry = getFactory().createPathGeometry();
+		auto sink = geometry.open();
+		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Filled);
+		sink.addLines(points, pointCount);
+		sink.endFigure();
+		sink.close();
 		FillGeometry(geometry, brush);
 	}
 
@@ -2772,12 +2772,12 @@ public:
 	{
 		assert(pointCount > 0 && points != nullptr);
 
-		auto geometry = GetFactory().CreatePathGeometry();
-		auto sink = geometry.Open();
-		sink.BeginFigure(points[0], gmpi::drawing::FigureBegin::Hollow);
-		sink.AddLines(points, pointCount);
-		sink.EndFigure();
-		sink.Close();
+		auto geometry = getFactory().createPathGeometry();
+		auto sink = geometry.open();
+		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Hollow);
+		sink.addLines(points, pointCount);
+		sink.endFigure();
+		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth);
 	}
 
@@ -2785,12 +2785,12 @@ public:
 	{
 		assert(pointCount > 1 && points != nullptr);
 
-		auto geometry = GetFactory().CreatePathGeometry();
-		auto sink = geometry.Open();
-		sink.BeginFigure(points[0], gmpi::drawing::FigureBegin::Hollow);
-		sink.AddLines(points + 1, pointCount - 1);
-		sink.EndFigure(gmpi::drawing::FigureEnd::Open);
-		sink.Close();
+		auto geometry = getFactory().createPathGeometry();
+		auto sink = geometry.open();
+		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Hollow);
+		sink.addLines(points + 1, pointCount - 1);
+		sink.endFigure(gmpi::drawing::FigureEnd::Open);
+		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth);
 	}
 };
@@ -2800,14 +2800,14 @@ class TessellationSink : public gmpi::IWrapper<>
 public:
 	GMPIGUISDK_DEFINE_CLASS(TessellationSink, gmpi::IWrapper<>, gmpi::drawing::api::ITessellationSink);
 
-	void AddTriangles(Triangle& triangles, uint32_t trianglesCount)
+	void addTriangles(Triangle& triangles, uint32_t trianglesCount)
 	{
 		Resource<BASE_INTERFACE>::get()->addTriangles(&triangles, trianglesCount);
 	}
 
-	int32_t Close()
+	int32_t close()
 	{
-		return get()->Close();
+		return get()->close();
 	}
 };
 */
@@ -2815,7 +2815,7 @@ public:
 class BitmapRenderTarget : public Graphics_base<gmpi::drawing::api::IBitmapRenderTarget>
 {
 public:
-	Bitmap GetBitmap()
+	Bitmap getBitmap()
 	{
 		Bitmap temp;
 		get()->getBitmap(temp.put());

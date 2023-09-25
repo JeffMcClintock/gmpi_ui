@@ -106,45 +106,45 @@ public:
 };
 
 // Provide fallback implementations of Arcs, Quadratic beziers, and bulk operations.
-class GeometrySink : public gmpi::drawing::api::IGeometrySink2
+class GeometrySink : public gmpi::drawing::api::IGeometrySink
 {
 protected:
-	gmpi::drawing::api::MP1_POINT startPoint;
-	gmpi::drawing::api::MP1_POINT lastPoint;
+	gmpi::drawing::Point startPoint;
+	gmpi::drawing::Point lastPoint;
 
 public:
 	virtual ~GeometrySink() {}
 
-	void beginFigure(gmpi::drawing::api::MP1_POINT pStartPoint, gmpi::drawing::api::MP1_FIGURE_BEGIN figureBegin) override
+	void beginFigure(gmpi::drawing::Point pStartPoint, gmpi::drawing::FigureBegin figureBegin) override
 	{
 		startPoint = lastPoint = pStartPoint;
 	}
 
-	int32_t close() override
+	gmpi::ReturnCode close() override
 	{
 		return gmpi::ReturnCode::Ok;
 	}
 
-	void addLines(const gmpi::drawing::api::MP1_POINT* points, uint32_t pointsCount) override
+	void addLines(const gmpi::drawing::Point* points, uint32_t pointsCount) override
 	{
 		for (uint32_t i = 0; i < pointsCount; ++i)
-			AddLine(points[i]);
+			addLine(points[i]);
 	}
 
-	void addBeziers(const gmpi::drawing::api::MP1_BEZIER_SEGMENT* beziers, uint32_t beziersCount) override
+	void addBeziers(const gmpi::drawing::BezierSegment* beziers, uint32_t beziersCount) override
 	{
 		for (uint32_t i = 0; i < beziersCount; ++i)
-			AddBezier(beziers + i);
+			addBezier(beziers + i);
 	}
 
-	void addQuadraticBezier(const gmpi::drawing::api::MP1_QUADRATIC_BEZIER_SEGMENT* bezier) override
+	void addQuadraticBezier(const gmpi::drawing::QuadraticBezierSegment* bezier) override
 	{
 		/*
 		A cubic Bézier curve (yellow) can be made identical to a quadratic one (black) by
 1. Copying the end points, and
 2. Placing its 2 middle control points (yellow circles) 2/3 along line segments from the end points to the quadratic curve's middle control point (black rectangle)
 		*/
-		gmpi::drawing::api::MP1_BEZIER_SEGMENT cubicbezier;
+		gmpi::drawing::BezierSegment cubicbezier;
 		//				auto startPoint = pathGeometry_->getLastPoint();
 		cubicbezier.point3 = bezier->point2; // end point.
 		cubicbezier.point1.x = lastPoint.x + 0.66666f * (bezier->point1.x - lastPoint.x);
@@ -152,13 +152,13 @@ public:
 		cubicbezier.point2.x = bezier->point2.x + 0.66666f * (bezier->point1.x - bezier->point2.x);
 		cubicbezier.point2.y = bezier->point2.y + 0.66666f * (bezier->point1.y - bezier->point2.y);
 
-		AddBezier(&cubicbezier);
+		addBezier(&cubicbezier);
 	}
 
-	void addQuadraticBeziers(const gmpi::drawing::api::MP1_QUADRATIC_BEZIER_SEGMENT* beziers, uint32_t beziersCount) override
+	void addQuadraticBeziers(const gmpi::drawing::QuadraticBezierSegment* beziers, uint32_t beziersCount) override
 	{
 		for (uint32_t i = 0; i < beziersCount; ++i)
-			AddQuadraticBezier(beziers + i);
+			addQuadraticBezier(beziers + i);
 	}
 
 	static void nsvg__xformPoint(float* dx, float* dy, float x, float y, float* t)
@@ -185,7 +185,7 @@ public:
 		return ((ux * vy < uy * vx) ? -1.0f : 1.0f) * acosf(r);
 	}
 
-	void addArc(const gmpi::drawing::api::MP1_ARC_SEGMENT* arc) override
+	void addArc(const gmpi::drawing::ArcSegment* arc) override
 	{
 		// Ported from canvg (https://code.google.com/p/canvg/)
 		float rx, ry, rotx;
@@ -223,7 +223,7 @@ public:
 		if (d < 1e-6f || rx < 1e-6f || ry < 1e-6f) {
 			// The arc degenerates to a line
 			//nsvg__lineTo(p, x2, y2);
-			AddLine(Point(x2, y2));
+            addLine({x2, y2});
 			//				*cpx = x2;
 			//				*cpy = y2;
 			return;
@@ -297,8 +297,8 @@ public:
 			if (i > 0)
 			{
 				//nsvg__cubicBezTo(p, px + ptanx, py + ptany, x - tanx, y - tany, x, y);
-				BezierSegment bs(Point(px + ptanx, py + ptany), Point(x - tanx, y - tany), Point(x, y));
-				AddBezier(&bs);
+                drawing::BezierSegment bs{{px + ptanx, py + ptany}, {x - tanx, y - tany}, {x, y}};
+				addBezier(&bs);
 			}
 			px = x;
 			py = y;
@@ -307,7 +307,7 @@ public:
 		}
 	}
 
-	void addBezier(const gmpi::drawing::api::MP1_BEZIER_SEGMENT* bezier) override
+	void addBezier(const gmpi::drawing::BezierSegment* bezier) override
 	{
 		// Convert bezier to line segments.
 		agg::curve4_div bezierToLines;
@@ -315,11 +315,11 @@ public:
 		bezierToLines.init(lastPoint.x, lastPoint.y, bezier->point1.x, bezier->point1.y, bezier->point2.x, bezier->point2.y, bezier->point3.x, bezier->point3.y);
 	}
 
-	void endFigure(gmpi::drawing::api::MP1_FIGURE_END figureEnd) override
+	void endFigure(gmpi::drawing::FigureEnd figureEnd) override
 	{
-		if (figureEnd == gmpi::drawing::api::MP1_FIGURE_END_CLOSED)
+		if (figureEnd == gmpi::drawing::FigureEnd::Closed)
 		{
-			AddLine(startPoint);
+			addLine(startPoint);
 		}
 	}
 
@@ -348,37 +348,39 @@ public:
 	{
 	}
 
-	PathGeometry createRectangleGeometry(const gmpi::drawing::Rect* rect, bool filled = false)
-	{
-		// create geometry
-		Factory factory;
-		getFactory(factory.getAddressOf());
+    drawing::PathGeometry createRectangleGeometry(const gmpi::drawing::Rect* rect, bool filled = false)
+    {
+        // create geometry
+        drawing::Factory factory;
+        getFactory(factory.put());
+        
+        auto geometry = factory.createPathGeometry();
+        auto sink = geometry.open();
+        
+        sink.beginFigure({rect->left, rect->top}, filled ? drawing::FigureBegin::Filled : drawing::FigureBegin::Hollow);
+        sink.addLine({rect->left, rect->bottom});
+        sink.addLine({rect->right, rect->bottom});
+        sink.addLine({rect->right, rect->top});
 
-		auto geometry = factory.CreatePathGeometry();
-		auto sink = geometry.Open();
-
-		sink.BeginFigure(Point(rect->left, rect->top), filled ? FigureBegin::Filled : FigureBegin::Hollow);
-		sink.AddLine(Point(rect->left, rect->bottom));
-		sink.AddLine(Point(rect->right, rect->bottom));
-		sink.AddLine(Point(rect->right, rect->top));
-
-		sink.EndFigure(FigureEnd::Closed);
-		sink.Close();
+		sink.endFigure(drawing::FigureEnd::Closed);
+		sink.close();
 
 		return geometry;
 	}
 
-	void DrawRectangle(const gmpi::drawing::Rect* rect, const gmpi::drawing::api::IBrush* brush, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle) override
+    ReturnCode drawRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createRectangleGeometry(rect, false);
-		DrawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
-	}
+		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
+        return ReturnCode::Ok;
+    }
 
-	void FillRectangle(const gmpi::drawing::Rect* rect, const gmpi::drawing::api::IBrush* brush) override
+    ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createRectangleGeometry(rect);
-		FillGeometry(geometry.get(), brush);
-	}
+		fillGeometry(geometry.get(), brush, nullptr);
+        return ReturnCode::Ok;
+    }
 
 	ReturnCode clear(const drawing::Color* clearColor) override
 	{
@@ -388,73 +390,71 @@ public:
 	ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createLineGeometry(point0, point1);
-		DrawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
+		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
 		return ReturnCode::Ok;
 	}
-	
 
-	PathGeometry createLineGeometry(gmpi::drawing::api::MP1_POINT point0, gmpi::drawing::api::MP1_POINT point1)
+    drawing::PathGeometry createLineGeometry(gmpi::drawing::Point point0, gmpi::drawing::Point point1)
 	{
 		// create geometry
-		Factory factory;
-		getFactory(factory.getAddressOf());
+        drawing::Factory factory;
+		getFactory(factory.put());
 
-		auto geometry = factory.CreatePathGeometry();
-		auto sink = geometry.Open();
+		auto geometry = factory.createPathGeometry();
+		auto sink = geometry.open();
 
-		sink.BeginFigure(point0, FigureBegin::Hollow);
-		sink.AddLine(point1);
+		sink.beginFigure(point0, drawing::FigureBegin::Hollow);
+		sink.addLine(point1);
 
-		sink.EndFigure(FigureEnd::Open);
-		sink.Close();
+		sink.endFigure(drawing::FigureEnd::Open);
+		sink.close();
 
 		return geometry;
 	}
 
+    drawing::PathGeometry createEllipseGeometry(const gmpi::drawing::Ellipse* ellipse)
+    {
+        // create geometry
+        drawing::Factory factory;
+        getFactory(factory.put());
+        
+        auto geometry = factory.createPathGeometry();
+        auto sink = geometry.open();
+        
+        /* from lines
+         const double step = 0.1;
+         Point p;
+         bool first = true;
+         for (double a = 0.0; a < M_PI * 2.0; a += step)
+         {
+         p.x = ellipse->point.x + ellipse->radiusX * sin(a);
+         p.y = ellipse->point.y + ellipse->radiusY * cos(a);
+         
+         if (first)
+         {
+         sink.BeginFigure(p, FigureBegin::Filled);
+         first = false;
+         }
+         else
+         {
+         sink.addLine(p);
+         }
+         }
+         */
+        drawing::Size size{ellipse->radiusX, ellipse->radiusY};
+        
+        drawing::Point topCenter{ellipse->point.x, ellipse->point.y - size.height};
+        drawing::Point bottomCenter{ellipse->point.x, ellipse->point.y + size.height};
+        
+        sink.beginFigure(topCenter, drawing::FigureBegin::Filled);
+        drawing::ArcSegment firstHalf{bottomCenter, size};
+        drawing::ArcSegment secondHalf{topCenter, size};
 
-	PathGeometry createEllipseGeometry(const gmpi::drawing::api::MP1_ELLIPSE* ellipse)
-	{
-		// create geometry
-		Factory factory;
-		getFactory(factory.getAddressOf());
+		sink.addArc(firstHalf);
+		sink.addArc(secondHalf);
 
-		auto geometry = factory.CreatePathGeometry();
-		auto sink = geometry.Open();
-
-		/* from lines
-		const double step = 0.1;
-		Point p;
-		bool first = true;
-		for (double a = 0.0; a < M_PI * 2.0; a += step)
-		{
-		p.x = ellipse->point.x + ellipse->radiusX * sin(a);
-		p.y = ellipse->point.y + ellipse->radiusY * cos(a);
-
-		if (first)
-		{
-		sink.BeginFigure(p, FigureBegin::Filled);
-		first = false;
-		}
-		else
-		{
-		sink.AddLine(p);
-		}
-		}
-		*/
-		auto size = Size(ellipse->radiusX, ellipse->radiusY);
-
-		Point topCenter(ellipse->point.x, ellipse->point.y - size.height);
-		Point bottomCenter(ellipse->point.x, ellipse->point.y + size.height);
-
-		sink.BeginFigure(topCenter, FigureBegin::Filled);
-		ArcSegment firstHalf(bottomCenter, size);
-		ArcSegment secondHalf(topCenter, size);
-
-		sink.AddArc(firstHalf);
-		sink.AddArc(secondHalf);
-
-		sink.EndFigure(FigureEnd::Closed);
-		sink.Close();
+		sink.endFigure(drawing::FigureEnd::Closed);
+		sink.close();
 
 		/*
 
@@ -470,8 +470,8 @@ public:
 
 					sink.AddArc(ArcSegment(p, Size(ellipse->radiusX, ellipse->radiusY), static_cast<float>(M_PI) * 1.99f, SweepDirection::Clockwise, ArcSize::Large));
 
-					sink.EndFigure(FigureEnd::Closed);
-					sink.Close();
+					sink.endFigure(FigureEnd::Closed);
+					sink.close();
 		*/
 		return geometry;
 	}
@@ -496,20 +496,20 @@ public:
 		return ReturnCode::Fail;
 	}
 
-	//	int32_t CreateBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap) override;
+	//	gmpi::ReturnCode createBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap) override;
 
 	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
-		//				return context_->CreateBitmapBrush((ID2D1Bitmap*)bitmap, (D2D1_BITMAP_BRUSH_PROPERTIES*)bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)bitmapBrush);
+		//				return context_->createBitmapBrush((ID2D1Bitmap*)bitmap, (D2D1_BITMAP_BRUSH_PROPERTIES*)bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)bitmapBrush);
 		return ReturnCode::Fail;
 	}
 	ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
 	{
-		//				return context_->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)radialGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1GradientStopCollection*)gradientStopCollection, (ID2D1RadialGradientBrush**)radialGradientBrush);
+		//				return context_->createRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)radialGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1GradientStopCollection*)gradientStopCollection, (ID2D1RadialGradientBrush**)radialGradientBrush);
 		return ReturnCode::Fail;
 	}
 
-	ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
+	ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override
 	{
 		return ReturnCode::Fail;
 	}
@@ -517,18 +517,18 @@ public:
 	ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
-		DrawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
+		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
 		return ReturnCode::Ok;
 	}
 
 	ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
-		FillGeometry(geometry.get(), brush);
+		fillGeometry(geometry.get(), brush, nullptr);
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override;
+	ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
 	{
 		return ReturnCode::Fail;
 	}
@@ -540,19 +540,19 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	void getAxisAlignedClip(drawing::Rect* returnClipRect) override
+    ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
 	{
 		return ReturnCode::Fail;
 	}
 
 	ReturnCode beginDraw() override
 	{
-		return ReturnCode::NotImplemented;
+		return ReturnCode::NoSupport;
 	}
 
 	ReturnCode endDraw() override
 	{
-		return ReturnCode::NotImplemented;
+		return ReturnCode::NoSupport;
 	}
 
 	GMPI_QUERYINTERFACE_NEW(drawing::api::IDeviceContext);

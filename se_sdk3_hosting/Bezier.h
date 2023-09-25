@@ -35,7 +35,7 @@ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
 
 #define _USE_MATH_DEFINES
 #include <math.h>
-//#include "../se_sdk3/mp_api.h"
+#include "Drawing_API.h"
 
 namespace agg
 {

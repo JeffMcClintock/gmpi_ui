@@ -42,14 +42,14 @@ public:
     // GMPI-UI rendering
     void onRender(gmpi::drawing::Graphics& g) override
     {
-        g.Clear(gmpi::drawing::Colors::Green);
+        g.clear(gmpi::drawing::Colors::Green);
 
-        auto brush = g.CreateSolidColorBrush(gmpi::drawing::Colors::Red);
+        auto brush = g.createSolidColorBrush(gmpi::drawing::Colors::Red);
 
         for (auto& r : model.rects)
         {
-            brush.SetColor( toGmpi(r.colour) );
-            g.FillRectangle( toGmpi(r.pos), brush );
+            brush.setColor( toGmpi(r.colour) );
+            g.fillRectangle( toGmpi(r.pos), brush );
         }
     }
 #else

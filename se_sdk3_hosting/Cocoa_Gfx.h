@@ -37,15 +37,19 @@ class DrawingFactory;
     
 // Conversion utilities.
     
-inline NSPoint toNative(GmpiDrawing_API::MP1_POINT p)
+inline NSPoint toNative(drawing::Point p)
 {
     return NSMakePoint(p.x, p.y);
 }
     
-inline Rect RectFromNSRect(NSRect nsr)
+inline drawing::Rect RectFromNSRect(NSRect nsr)
 {
-	Rect r(nsr.origin.x, nsr.origin.y, nsr.origin.x + nsr.size.width, nsr.origin.y + nsr.size.height);
-	return r;
+    return{
+        static_cast<float>(nsr.origin.x),
+        static_cast<float>(nsr.origin.y),
+        static_cast<float>(nsr.origin.x + nsr.size.width),
+        static_cast<float>(nsr.origin.y + nsr.size.height)
+    };
 }
 
 inline NSRect NSRectFromRect(drawing::Rect rect)
@@ -87,21 +91,21 @@ CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some c
 // helper
 void SetNativePenStrokeStyle(NSBezierPath * path, drawing::api::IStrokeStyle* strokeStyle)
 {
-    GmpiDrawing_API::MP1_CAP_STYLE capstyle = strokeStyle == nullptr ? GmpiDrawing_API::MP1_CAP_STYLE_FLAT : strokeStyle->GetStartCap();
+    drawing::MP1_CAP_STYLE capstyle = strokeStyle == nullptr ? drawing::MP1_CAP_STYLE_FLAT : strokeStyle->GetStartCap();
             
     switch(capstyle)
     {
         default:
-        case GmpiDrawing_API::MP1_CAP_STYLE_FLAT:
+        case drawing::MP1_CAP_STYLE_FLAT:
             [ path setLineCapStyle:NSLineCapStyleButt ];
             break;
                     
-        case GmpiDrawing_API::MP1_CAP_STYLE_SQUARE:
+        case drawing::MP1_CAP_STYLE_SQUARE:
             [ path setLineCapStyle:NSLineCapStyleSquare ];
             break;
                     
-        case GmpiDrawing_API::MP1_CAP_STYLE_TRIANGLE:
-        case GmpiDrawing_API::MP1_CAP_STYLE_ROUND:
+        case drawing::MP1_CAP_STYLE_TRIANGLE:
+        case drawing::MP1_CAP_STYLE_ROUND:
             [ path setLineCapStyle:NSLineCapStyleRound ];
             break;
     }
@@ -111,17 +115,17 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
 {
     auto strokeStyle = const_cast<drawing::api::IStrokeStyle*>(strokeStyleIm); // work arround const-correctness issues.
 
-    const auto dashStyle = strokeStyle ? strokeStyle->GetDashStyle() : GmpiDrawing_API::MP1_DASH_STYLE_SOLID;
+    const auto dashStyle = strokeStyle ? strokeStyle->GetDashStyle() : drawing::MP1_DASH_STYLE_SOLID;
     const auto phase = strokeStyle ? strokeStyle->GetDashOffset() : 0.0f;
             
     std::vector<CGFloat> dashes;
             
     switch(dashStyle)
     {
-        case GmpiDrawing_API::MP1_DASH_STYLE_SOLID:
+        case drawing::MP1_DASH_STYLE_SOLID:
             break;
                     
-        case GmpiDrawing_API::MP1_DASH_STYLE_CUSTOM:
+        case drawing::MP1_DASH_STYLE_CUSTOM:
         {
             std::vector<float> dashesf;
             dashesf.resize(strokeStyle->GetDashesCount());
@@ -134,19 +138,19 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
         }
         break;
                     
-        case GmpiDrawing_API::MP1_DASH_STYLE_DOT:
+        case drawing::MP1_DASH_STYLE_DOT:
             dashes.push_back(0.0f);
             dashes.push_back(strokeWidth * 2.f);
             break;
                     
-        case GmpiDrawing_API::MP1_DASH_STYLE_DASH_DOT:
+        case drawing::MP1_DASH_STYLE_DASH_DOT:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(0.f);
             dashes.push_back(strokeWidth * 2.f);
             break;
                     
-        case GmpiDrawing_API::MP1_DASH_STYLE_DASH_DOT_DOT:
+        case drawing::MP1_DASH_STYLE_DASH_DOT_DOT:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(0.f);
@@ -155,7 +159,7 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
             dashes.push_back(strokeWidth * 2.f);
             break;
                     
-        case GmpiDrawing_API::MP1_DASH_STYLE_DASH:
+        case drawing::MP1_DASH_STYLE_DASH:
         default:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
@@ -228,12 +232,12 @@ class TextFormat final : public drawing::api::ITextFormat // : public CocoaWrapp
 {
 public:
     std::string fontFamilyName;
-    GmpiDrawing_API::MP1_FONT_WEIGHT fontWeight;
-    GmpiDrawing_API::MP1_FONT_STYLE fontStyle;
-    GmpiDrawing_API::MP1_FONT_STRETCH fontStretch;
-    GmpiDrawing_API::MP1_TEXT_ALIGNMENT textAlignment;
-    GmpiDrawing_API::MP1_PARAGRAPH_ALIGNMENT paragraphAlignment;
-    GmpiDrawing_API::MP1_WORD_WRAPPING wordWrapping = GmpiDrawing_API::MP1_WORD_WRAPPING_WRAP;
+    drawing::MP1_FONT_WEIGHT fontWeight;
+    drawing::MP1_FONT_STYLE fontStyle;
+    drawing::MP1_FONT_STRETCH fontStretch;
+    drawing::MP1_TEXT_ALIGNMENT textAlignment;
+    drawing::MP1_PARAGRAPH_ALIGNMENT paragraphAlignment;
+    drawing::MP1_WORD_WRAPPING wordWrapping = drawing::MP1_WORD_WRAPPING_WRAP;
     float fontSize;
     bool useLegacyBaseLineSnapping = true;
 
@@ -269,7 +273,7 @@ public:
         return windowsFont;
     }
 
-    TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, const char* pfontFamilyName, GmpiDrawing_API::MP1_FONT_WEIGHT pfontWeight, GmpiDrawing_API::MP1_FONT_STYLE pfontStyle, GmpiDrawing_API::MP1_FONT_STRETCH pfontStretch, float pfontSize) :
+    TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, const char* pfontFamilyName, drawing::MP1_FONT_WEIGHT pfontWeight, drawing::MP1_FONT_STYLE pfontStyle, drawing::MP1_FONT_STRETCH pfontStretch, float pfontSize) :
         //				CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>(nullptr)
         fontWeight(pfontWeight)
         , fontStyle(pfontStyle)
@@ -281,10 +285,10 @@ public:
         fontFamilyName = fontSubstitute(pfontFamilyName);
 
         NSFontTraitMask fontTraits = 0;
-        if (pfontWeight >= GmpiDrawing_API::MP1_FONT_WEIGHT_DEMI_BOLD)
+        if (pfontWeight >= drawing::MP1_FONT_WEIGHT_DEMI_BOLD)
             fontTraits |= NSBoldFontMask;
 
-        if (pfontStyle == GmpiDrawing_API::MP1_FONT_STYLE_ITALIC)
+        if (pfontStyle == drawing::MP1_FONT_STYLE_ITALIC)
             fontTraits |= NSItalicFontMask;
 
         auto nsFontName = [NSString stringWithCString : fontFamilyName.c_str() encoding : NSUTF8StringEncoding];
@@ -387,7 +391,7 @@ public:
         // On Direct2D boudning rect height is typicaly much less than Cocoa.
         // I don't know any algorithm for converting the extra height.
         // Fix is to disregard extra height on both platforms.
-        GmpiDrawing_API::MP1_FONT_METRICS fontMetrics{};
+        drawing::MP1_FONT_METRICS fontMetrics{};
         GetFontMetrics(&fontMetrics);
 
         auto boundingBoxSize = [@"A" sizeWithAttributes : native2];
@@ -667,9 +671,9 @@ public:
         return MP_FAIL;
         /* TODO!!!
                     gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
-                    b2.Attach(new bitmapPixels(&nativeBitmap_, alphaPremultiplied, GmpiDrawing_API::MP1_BITMAP_LOCK_READ | GmpiDrawing_API::MP1_BITMAP_LOCK_WRITE));
+                    b2.Attach(new bitmapPixels(&nativeBitmap_, alphaPremultiplied, drawing::MP1_BITMAP_LOCK_READ | drawing::MP1_BITMAP_LOCK_WRITE));
 
-                    return b2->queryInterface(GmpiDrawing_API::SE_IID_BITMAP_PIXELS_MPGUI, (void**)(returnInterface));
+                    return b2->queryInterface(drawing::SE_IID_BITMAP_PIXELS_MPGUI, (void**)(returnInterface));
         */
     }
 #endif
@@ -702,9 +706,9 @@ public:
 class GradientstopCollection : public CocoaWrapperWithFactory<drawing::api::IGradientstopCollection, nothing>
 {
 public:
-    std::vector<GmpiDrawing_API::MP1_GRADIENT_STOP> gradientstops;
+    std::vector<drawing::MP1_GRADIENT_STOP> gradientstops;
 
-    GradientstopCollection(drawing::api::IFactory* factory, const GmpiDrawing_API::MP1_GRADIENT_STOP* gradientStops, uint32_t gradientStopsCount) : CocoaWrapperWithFactory(nullptr, factory)
+    GradientstopCollection(drawing::api::IFactory* factory, const drawing::MP1_GRADIENT_STOP* gradientStops, uint32_t gradientStopsCount) : CocoaWrapperWithFactory(nullptr, factory)
     {
         for (uint32_t i = 0; i < gradientStopsCount; ++i)
         {
@@ -717,15 +721,15 @@ public:
 class BitmapBrush final : public drawing::api::IBitmapBrush, public CocoaBrushBase
 {
     Bitmap bitmap_;
-    GmpiDrawing_API::MP1_BITMAP_BRUSH_PROPERTIES bitmapBrushProperties_;
-    GmpiDrawing_API::MP1_BRUSH_PROPERTIES brushProperties_;
+    drawing::MP1_BITMAP_BRUSH_PROPERTIES bitmapBrushProperties_;
+    drawing::MP1_BRUSH_PROPERTIES brushProperties_;
 
 public:
     BitmapBrush(
         cocoa::DrawingFactory* factory,
         const drawing::api::IBitmap* bitmap,
-        const GmpiDrawing_API::MP1_BITMAP_BRUSH_PROPERTIES* bitmapBrushProperties,
-        const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties
+        const drawing::MP1_BITMAP_BRUSH_PROPERTIES* bitmapBrushProperties,
+        const drawing::MP1_BRUSH_PROPERTIES* brushProperties
     )
         : CocoaBrushBase(factory),
         bitmap_(factory, ((Bitmap*)bitmap)->nativeBitmap_),
@@ -808,7 +812,7 @@ public:
 
 class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrushBase
 {
-    GmpiDrawing_API::MP1_COLOR color;
+    drawing::MP1_COLOR color;
     NSColor* nativec_ = nullptr;
 
     inline void setNativeColor()
@@ -818,7 +822,7 @@ class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrush
     }
 
 public:
-    SolidColorBrush(const GmpiDrawing_API::MP1_COLOR* pcolor, cocoa::DrawingFactory* factory) : CocoaBrushBase(factory)
+    SolidColorBrush(const drawing::MP1_COLOR* pcolor, cocoa::DrawingFactory* factory) : CocoaBrushBase(factory)
         , color(*pcolor)
     {
         setNativeColor();
@@ -857,7 +861,7 @@ public:
 		return ReturnCode::Ok;
     }
 
-    GmpiDrawing_API::MP1_COLOR GetColor() override
+    drawing::MP1_COLOR GetColor() override
     {
         return color;
     }
@@ -884,13 +888,13 @@ public:
 };
 class LinearGradientBrush final : public drawing::api::ILinearGradientBrush, public CocoaBrushBase, public Gradient
 {
-    GmpiDrawing_API::MP1_LINEAR_GRADIENT_BRUSH_PROPERTIES brushProperties;
+    drawing::MP1_LINEAR_GRADIENT_BRUSH_PROPERTIES brushProperties;
 
 public:
     LinearGradientBrush(
         cocoa::DrawingFactory* factory,
-        const GmpiDrawing_API::MP1_LINEAR_GRADIENT_BRUSH_PROPERTIES* linearGradientBrushProperties,
-        const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties,
+        const drawing::MP1_LINEAR_GRADIENT_BRUSH_PROPERTIES* linearGradientBrushProperties,
+        const drawing::MP1_BRUSH_PROPERTIES* brushProperties,
         const drawing::api::IGradientstopCollection* gradientStopCollection) :
         CocoaBrushBase(factory)
         , Gradient(factory, gradientStopCollection)
@@ -972,15 +976,15 @@ public:
     }
 
     GMPI_REFCOUNT;
-    GMPI_QUERYINTERFACE1(GmpiDrawing_API::SE_IID_LINEARGRADIENTBRUSH_MPGUI, drawing::api::ILinearGradientBrush);
+    GMPI_QUERYINTERFACE1(drawing::SE_IID_LINEARGRADIENTBRUSH_MPGUI, drawing::api::ILinearGradientBrush);
 };
 
 class RadialGradientBrush : public drawing::api::IRadialGradientBrush, public CocoaBrushBase, public Gradient
 {
-    GmpiDrawing_API::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES gradientProperties;
+    drawing::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES gradientProperties;
 
 public:
-    RadialGradientBrush(cocoa::DrawingFactory* factory, const GmpiDrawing_API::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES* radialGradientBrushProperties, const GmpiDrawing_API::MP1_BRUSH_PROPERTIES* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection) :
+    RadialGradientBrush(cocoa::DrawingFactory* factory, const drawing::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES* radialGradientBrushProperties, const drawing::MP1_BRUSH_PROPERTIES* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection) :
         CocoaBrushBase(factory)
         , Gradient(factory, gradientStopCollection)
         , gradientProperties(*radialGradientBrushProperties)
@@ -1273,7 +1277,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     }
         
     // utility
-    inline NSColor* toNative(const GmpiDrawing_API::MP1_COLOR& color)
+    inline NSColor* toNative(const drawing::MP1_COLOR& color)
     {
 /*
         // This should be equivalent to sRGB, except it allows extended color components beyond 0.0 - 1.0
@@ -1310,20 +1314,20 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 
     int32_t CreatePathGeometry(drawing::api::IPathGeometry** pathGeometry) override;
 
-    int32_t CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, GmpiDrawing_API::MP1_FONT_WEIGHT fontWeight, GmpiDrawing_API::MP1_FONT_STYLE fontStyle, GmpiDrawing_API::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat) override;
+    int32_t CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, drawing::MP1_FONT_WEIGHT fontWeight, drawing::MP1_FONT_STYLE fontStyle, drawing::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat) override;
 
     int32_t CreateImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap) override;
 
     int32_t LoadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap) override;
 
-    int32_t CreateStrokeStyle(const GmpiDrawing_API::MP1_STROKE_STYLE_PROPERTIES* strokeStyleProperties, float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnValue) override
+    int32_t CreateStrokeStyle(const drawing::MP1_STROKE_STYLE_PROPERTIES* strokeStyleProperties, float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnValue) override
     {
         *returnValue = nullptr;
 
         gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
         b2.Attach(new generic_graphics::StrokeStyle(this, strokeStyleProperties, dashes, dashesCount));
 
-        return b2->queryInterface(GmpiDrawing_API::SE_IID_STROKESTYLE_MPGUI, reinterpret_cast<void **>(returnValue));
+        return b2->queryInterface(drawing::SE_IID_STROKESTYLE_MPGUI, reinterpret_cast<void **>(returnValue));
     }
 
     // IMpFactory2
@@ -1364,7 +1368,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     int32_t queryInterface(const MpGuid& iid, void** returnInterface) override
     {
         *returnInterface = 0;
-        if ( iid == GmpiDrawing_API::SE_IID_FACTORY2_MPGUI || iid == GmpiDrawing_API::SE_IID_FACTORY_MPGUI || iid == MP_IID_UNKNOWN)
+        if ( iid == drawing::SE_IID_FACTORY2_MPGUI || iid == GmpiDrawing_API::SE_IID_FACTORY_MPGUI || iid == MP_IID_UNKNOWN)
         {
             *returnInterface = reinterpret_cast<drawing::api::IFactory2*>(this);
             addRef();
@@ -1422,22 +1426,22 @@ public:
 	GeometrySink(NSBezierPath* geometry) : geometry_(geometry)
 	{}
 
-	void SetFillMode(GmpiDrawing_API::MP1_FILL_MODE fillMode) override
+	void SetFillMode(drawing::MP1_FILL_MODE fillMode) override
 	{
 		switch (fillMode)
 		{
-		case GmpiDrawing_API::MP1_FILL_MODE_ALTERNATE:
-		case GmpiDrawing_API::MP1_FILL_MODE_FORCE_DWORD:
+		case drawing::MP1_FILL_MODE_ALTERNATE:
+		case drawing::MP1_FILL_MODE_FORCE_DWORD:
 			[geometry_ setWindingRule : NSEvenOddWindingRule] ;
 			break;
 
-		case GmpiDrawing_API::MP1_FILL_MODE_WINDING:
+		case drawing::MP1_FILL_MODE_WINDING:
 			[geometry_ setWindingRule : NSNonZeroWindingRule] ;
 			break;
 		}
 	}
 #if 0
-	void SetSegmentFlags(GmpiDrawing_API::MP1_PATH_SEGMENT vertexFlags)
+	void SetSegmentFlags(drawing::MP1_PATH_SEGMENT vertexFlags)
 	{
 		//		geometrysink_->SetSegmentFlags((D2D1_PATH_SEGMENT)vertexFlags);
 	}
@@ -1451,7 +1455,7 @@ public:
 
 	void endFigure(drawing::FigureEnd figureEnd) override
 	{
-		if (figureEnd == GmpiDrawing_API::MP1_FIGURE_END_CLOSED)
+		if (figureEnd == drawing::MP1_FIGURE_END_CLOSED)
 		{
 			[geometry_ closePath] ;
 		}
@@ -1483,7 +1487,7 @@ class PathGeometry final : public drawing::api::IPathGeometry
 {
 	NSBezierPath* geometry_ = {};
 
-	GmpiDrawing_API::MP1_DASH_STYLE currentDashStyle = GmpiDrawing_API::MP1_DASH_STYLE_SOLID;
+	drawing::MP1_DASH_STYLE currentDashStyle = drawing::MP1_DASH_STYLE_SOLID;
 	std::vector<float> currentCustomDashStyle;
 	float currentDashPhase = {};
 
@@ -1569,13 +1573,13 @@ public:
 	{
 		auto strokeStyle = const_cast<drawing::api::IStrokeStyle*>(strokeStyleIm); // work arround const-correctness issues.
 
-		const auto dashStyle = strokeStyle ? strokeStyle->GetDashStyle() : GmpiDrawing_API::MP1_DASH_STYLE_SOLID;
+		const auto dashStyle = strokeStyle ? strokeStyle->GetDashStyle() : drawing::MP1_DASH_STYLE_SOLID;
 		const auto phase = strokeStyle ? strokeStyle->GetDashOffset() : 0.0f;
 
 		bool changed = currentDashStyle != dashStyle;
 		currentDashStyle = dashStyle;
 
-		if (currentDashStyle == GmpiDrawing_API::MP1_DASH_STYLE_CUSTOM)
+		if (currentDashStyle == drawing::MP1_DASH_STYLE_CUSTOM)
 		{
 			const auto customDashesCount = strokeStyle->GetDashesCount();
 			std::vector<float> dashesf;
@@ -1592,7 +1596,7 @@ public:
 			}
 		}
 
-		if (currentDashStyle != GmpiDrawing_API::MP1_DASH_STYLE_SOLID) // i.e. 'none'
+		if (currentDashStyle != drawing::MP1_DASH_STYLE_SOLID) // i.e. 'none'
 		{
 			changed |= phase != currentDashPhase;
 			currentDashPhase = phase;
@@ -1747,7 +1751,7 @@ public:
 		*/
 		Size textSize{};
 		if (textformat->paragraphAlignment != (int)TextAlignment::Leading
-			|| flags != GmpiDrawing_API::MP1_DRAW_TEXT_OPTIONS_CLIP)
+			|| flags != drawing::MP1_DRAW_TEXT_OPTIONS_CLIP)
 		{
 			const_cast<drawing::api::ITextFormat*>(textFormat)->GetTextExtentU(utf8String, (int32_t)strlen(utf8String), &textSize);
 		}
@@ -1776,9 +1780,9 @@ public:
 
 		[textformat->native2 setObject : scb->nativeColor() forKey : NSForegroundColorAttributeName] ;
 
-		const bool clipToRect = flags & GmpiDrawing_API::MP1_DRAW_TEXT_OPTIONS_CLIP;
+		const bool clipToRect = flags & drawing::MP1_DRAW_TEXT_OPTIONS_CLIP;
 
-		if (textformat->wordWrapping == GmpiDrawing_API::MP1_WORD_WRAPPING_NO_WRAP)
+		if (textformat->wordWrapping == drawing::MP1_WORD_WRAPPING_NO_WRAP)
 		{
 			// Mac will always clip to rect, so we turn 'off' clipping by extending rect to the right.
 			if (!clipToRect)
@@ -1791,12 +1795,12 @@ public:
 					// fake no-clip by extending text box.
 					switch (textformat->textAlignment)
 					{
-					case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_CENTER:
+					case drawing::MP1_TEXT_ALIGNMENT_CENTER:
 						bounds.origin.x -= 0.5 * extendWidth;
 						break;
-					case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_TRAILING: // Right
+					case drawing::MP1_TEXT_ALIGNMENT_TRAILING: // Right
 						bounds.origin.x -= extendWidth;
-					case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_LEADING: // Left
+					case drawing::MP1_TEXT_ALIGNMENT_LEADING: // Left
 					default:
 						break;
 					}
@@ -1811,7 +1815,7 @@ public:
 			[textformat->native2[NSParagraphStyleAttributeName] setLineBreakMode:NSLineBreakByWordWrapping] ;
 		}
 
-		//                GmpiDrawing_API::MP1_FONT_METRICS fontMetrics;
+		//                drawing::MP1_FONT_METRICS fontMetrics;
 		//               ((drawing::api::ITextFormat*) textFormat)->GetFontMetrics(&fontMetrics);
 
 		//                float testLineHeightMultiplier = 0.5f;
@@ -1896,7 +1900,7 @@ public:
 #if 0
 		{
 			Graphics g(this);
-			GmpiDrawing_API::MP1_FONT_METRICS fontMetrics;
+			drawing::MP1_FONT_METRICS fontMetrics;
 			((drawing::api::ITextFormat*)textFormat)->GetFontMetrics(&fontMetrics);
 			float pixelScale = 2.0; // DPI ish
 
@@ -1984,7 +1988,7 @@ public:
 		auto bm = ((Bitmap*)mpBitmap);
 		auto bitmap = bm->GetNativeBitmap();
 
-		GmpiDrawing_API::MP1_SIZE_U imageSize;
+		drawing::MP1_SIZE_U imageSize;
 		bm->GetSize(&imageSize);
 
 		Rect sourceRectangleFlipped(*sourceRectangle);
@@ -2317,7 +2321,7 @@ int32_t GraphicsContext::createCompatibleRenderTarget(const drawing::Size* desir
 }
 
 
-inline int32_t DrawingFactory::CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, GmpiDrawing_API::MP1_FONT_WEIGHT fontWeight, GmpiDrawing_API::MP1_FONT_STYLE fontStyle, GmpiDrawing_API::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat)
+inline int32_t DrawingFactory::CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, drawing::MP1_FONT_WEIGHT fontWeight, drawing::MP1_FONT_STYLE fontStyle, drawing::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat)
 {
 	gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
 	b2.Attach(new TextFormat(&stringConverter, fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
@@ -2417,7 +2421,7 @@ inline bitmapPixels::bitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
 	[bitmap2 retain] ;
 
 	// Copy the image to the new imageRep (effectivly converts it to correct pixel format/brightness etc)
-	if (0 != (flags & GmpiDrawing_API::MP1_BITMAP_LOCK_READ))
+	if (0 != (flags & drawing::MP1_BITMAP_LOCK_READ))
 	{
 		NSGraphicsContext* context;
 		context = [NSGraphicsContext graphicsContextWithBitmapImageRep : bitmap2];
@@ -2431,12 +2435,12 @@ inline bitmapPixels::bitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
 
 inline bitmapPixels::~bitmapPixels()
 {
-	if (0 != (flags & GmpiDrawing_API::MP1_BITMAP_LOCK_WRITE))
+	if (0 != (flags & drawing::MP1_BITMAP_LOCK_WRITE))
 	{
 		// scan for overbright pixels
 		bool hasOverbright = false;
 		{
-			GmpiDrawing_API::MP1_SIZE_U imageSize{};
+			drawing::MP1_SIZE_U imageSize{};
 			seBitmap->GetSize(&imageSize);
 			const int totalPixels = imageSize.height * getBytesPerRow() / sizeof(uint32_t);
 

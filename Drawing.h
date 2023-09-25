@@ -2596,7 +2596,7 @@ public:
 			sink.addLine(*it);
 		}
 
-		sink.endFigure(gmpi::drawing::FigureEnd::open);
+		sink.endFigure(gmpi::drawing::FigureEnd::Open);
 		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}

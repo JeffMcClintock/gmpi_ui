@@ -35,7 +35,7 @@ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
 
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include "../se_sdk3/mp_api.h"
+//#include "../se_sdk3/mp_api.h"
 
 namespace agg
 {
@@ -351,7 +351,7 @@ namespace agg
 				return (m_count == 1) ? path_cmd_move_to : path_cmd_line_to;
 			}
 */
-			GmpiDrawing_API::IMpGeometrySink* geometrySink;
+            gmpi::drawing::api::IGeometrySink* geometrySink;
 		private:
 			void bezier(double x1, double y1,
 				double x2, double y2,
@@ -466,7 +466,7 @@ namespace agg
 			{
 				if (d2 < m_distance_tolerance_square)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x2), static_cast<float>(y2)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x2), static_cast<float>(y2)});
 					return;
 				}
 			}
@@ -474,7 +474,7 @@ namespace agg
 			{
 				if (d3 < m_distance_tolerance_square)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x3), static_cast<float>(y3)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x3), static_cast<float>(y3)});
 					return;
 				}
 			}
@@ -487,7 +487,7 @@ namespace agg
 			{
 				if (m_angle_tolerance < curve_angle_tolerance_epsilon)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x23), static_cast<float>(y23)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x23), static_cast<float>(y23)});
 					return;
 				}
 
@@ -498,8 +498,8 @@ namespace agg
 
 				if (da1 < m_angle_tolerance)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x2), static_cast<float>(y2)));
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x3), static_cast<float>(y3)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x2), static_cast<float>(y2)});
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x3), static_cast<float>(y3)});
 					return;
 				}
 
@@ -507,7 +507,7 @@ namespace agg
 				{
 					if (da1 > m_cusp_limit)
 					{
-						geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x3), static_cast<float>(y3)));
+                        geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x3), static_cast<float>(y3)});
 						return;
 					}
 				}
@@ -521,7 +521,7 @@ namespace agg
 			{
 				if (m_angle_tolerance < curve_angle_tolerance_epsilon)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x23), static_cast<float>(y23)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x23), static_cast<float>(y23)});
 					return;
 				}
 
@@ -532,8 +532,8 @@ namespace agg
 
 				if (da1 < m_angle_tolerance)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x2), static_cast<float>(y2)));
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x3), static_cast<float>(y3)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x2), static_cast<float>(y2)});
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x3), static_cast<float>(y3)});
 					return;
 				}
 
@@ -541,7 +541,7 @@ namespace agg
 				{
 					if (da1 > m_cusp_limit)
 					{
-						geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x2), static_cast<float>(y2)));
+                        geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x2), static_cast<float>(y2)});
 						return;
 					}
 				}
@@ -558,7 +558,7 @@ namespace agg
 				//----------------------
 				if (m_angle_tolerance < curve_angle_tolerance_epsilon)
 				{
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x23), static_cast<float>(y23)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x23), static_cast<float>(y23)});
 					return;
 				}
 
@@ -574,7 +574,7 @@ namespace agg
 				{
 					// Finally we can stop the recursion
 					//----------------------
-					geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x23), static_cast<float>(y23)));
+                    geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x23), static_cast<float>(y23)});
 					return;
 				}
 
@@ -582,13 +582,13 @@ namespace agg
 				{
 					if (da1 > m_cusp_limit)
 					{
-						geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x2), static_cast<float>(y2)));
+                        geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x2), static_cast<float>(y2)});
 						return;
 					}
 
 					if (da2 > m_cusp_limit)
 					{
-						geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x3), static_cast<float>(y3)));
+                        geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x3), static_cast<float>(y3)});
 						return;
 					}
 				}
@@ -608,9 +608,9 @@ namespace agg
 		double x3, double y3,
 		double x4, double y4)
 	{
-// no, handled by previous primative.		geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x1), static_cast<float>(y1)));
+// no, handled by previous primative.		geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x1), static_cast<float>(y1)));
 		recursive_bezier(x1, y1, x2, y2, x3, y3, x4, y4, 0);
-		geometrySink->AddLine(GmpiDrawing::Point(static_cast<float>(x4), static_cast<float>(y4)));
+                        geometrySink->addLine(gmpi::drawing::Point{static_cast<float>(x4), static_cast<float>(y4)});
 	}
 
 }

@@ -735,20 +735,20 @@ public:
 
 inline Point transformPoint(const Matrix3x2& transform, Point point)
 {
-    return Point(
+    return {
         point.x * transform._11 + point.y * transform._21 + transform._31,
         point.x * transform._12 + point.y * transform._22 + transform._32
-    );
+    };
 }
 
 inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
 {
-	return Rect(
-		rect.left * transform._11 + rect.top * transform._21 + transform._31,
-		rect.left * transform._12 + rect.top * transform._22 + transform._32,
-		rect.right * transform._11 + rect.bottom * transform._21 + transform._31,
-		rect.right * transform._12 + rect.bottom * transform._22 + transform._32
-	);
+    return {
+        rect.left * transform._11 + rect.top * transform._21 + transform._31,
+        rect.left * transform._12 + rect.top * transform._22 + transform._32,
+        rect.right * transform._11 + rect.bottom * transform._21 + transform._31,
+        rect.right * transform._12 + rect.bottom * transform._22 + transform._32
+    };
 }
 
 inline Matrix3x2 invert(const Matrix3x2& transform)
@@ -790,7 +790,7 @@ inline Matrix3x2 makeTranslation(
 	float y
 )
 {
-	return makeTranslation(Size(x, y));
+    return makeTranslation(Size{x, y});
 }
 
 
@@ -815,7 +815,7 @@ inline Matrix3x2 makeScale(
 	Point center = Point()
 )
 {
-	return makeScale(Size(x, y), center);
+    return makeScale(Size{x, y}, center);
 }
 
 inline Matrix3x2 makeRotation(
@@ -1896,7 +1896,7 @@ public:
 
 	void BeginFigure(float x, float y, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
-		gmpi::IWrapper<interfaceType>::get()->BeginFigure(Point(x, y), figureBegin);
+        gmpi::IWrapper<interfaceType>::get()->BeginFigure({x, y}, figureBegin);
 	}
 
 	void AddLines(Point* points, uint32_t pointsCount)
@@ -2271,8 +2271,8 @@ public:
 
 	BitmapBrush CreateBitmapBrush(Bitmap& bitmap) // N/A on macOS: BitmapBrushProperties& bitmapBrushProperties, BrushProperties& brushProperties)
 	{
-		const BitmapBrushProperties bitmapBrushProperties;
-		const BrushProperties brushProperties;
+        const BitmapBrushProperties bitmapBrushProperties{};
+        const BrushProperties brushProperties{};
 
 		BitmapBrush temp;
 		Resource<BASE_INTERFACE>::get()->createBitmapBrush(bitmap.get(), &bitmapBrushProperties, &brushProperties, temp.put());
@@ -2329,7 +2329,7 @@ public:
 	LinearGradientBrush CreateLinearGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
 	{
 		BrushProperties brushProperties;
-		LinearGradientBrushProperties linearGradientBrushProperties(startPoint, endPoint);
+        LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
 
 		LinearGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
@@ -2338,9 +2338,9 @@ public:
 
 	template <int N>
 	LinearGradientBrush CreateLinearGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
-	{
-		BrushProperties brushProperties;
-		LinearGradientBrushProperties linearGradientBrushProperties(startPoint, endPoint);
+    {
+        BrushProperties brushProperties;
+        LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
 		auto gradientStopCollection = CreateGradientStopCollection(gradientStops);
 
 		LinearGradientBrush temp;
@@ -2358,23 +2358,23 @@ public:
 		gradientStops[1].position = 1.0f;
 
 		auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
-		LinearGradientBrushProperties lp(startPoint, endPoint);
+        LinearGradientBrushProperties lp{startPoint, endPoint};
 		BrushProperties bp;
 		return CreateLinearGradientBrush(lp, bp, gradientStopCollection);
 	}
 
 	// Simple 2-color gradient.
 	LinearGradientBrush CreateLinearGradientBrush(Color color1, Color color2, Point point1, Point point2)
-	{
-		Gradientstop gradientStops[2];
-		gradientStops[0].color = color1;
-		gradientStops[0].position = 0.0f;
-		gradientStops[1].color = color2;
-		gradientStops[1].position = 1.0f;
-
-		auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
-
-		LinearGradientBrushProperties linearGradientBrushProperties(point1, point2);
+    {
+        Gradientstop gradientStops[2];
+        gradientStops[0].color = color1;
+        gradientStops[0].position = 0.0f;
+        gradientStops[1].color = color2;
+        gradientStops[1].position = 1.0f;
+        
+        auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+        
+        LinearGradientBrushProperties linearGradientBrushProperties{point1, point2};
 		BrushProperties brushproperties;
 
 		LinearGradientBrush temp;
@@ -2392,9 +2392,9 @@ public:
 	}
 
 	RadialGradientBrush CreateRadialGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point center, float radius)
-	{
-		BrushProperties brushProperties;
-		RadialGradientBrushProperties radialGradientBrushProperties(center, radius);
+    {
+        BrushProperties brushProperties;
+        RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
 
 		RadialGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
@@ -2403,9 +2403,9 @@ public:
 
 	template <int N>
 	RadialGradientBrush CreateRadialGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point center, float radius)
-	{
-		BrushProperties brushProperties;
-		RadialGradientBrushProperties radialGradientBrushProperties(center, radius);
+    {
+        BrushProperties brushProperties;
+        RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
 		auto gradientStopCollection = CreateGradientStopCollection(gradientStops);
 
 		RadialGradientBrush temp;
@@ -2415,31 +2415,31 @@ public:
 
 	// Simple 2-color gradient.
 	RadialGradientBrush CreateRadialGradientBrush(gmpi::drawing::Point center, float radius, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
-	{
-		Gradientstop gradientStops[2];
-		gradientStops[0].color = startColor;
-		gradientStops[0].position = 0.0f;
-		gradientStops[1].color = endColor;
-		gradientStops[1].position = 1.0f;
-
-		auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
-		RadialGradientBrushProperties rp(center, radius);
+    {
+        Gradientstop gradientStops[2];
+        gradientStops[0].color = startColor;
+        gradientStops[0].position = 0.0f;
+        gradientStops[1].color = endColor;
+        gradientStops[1].position = 1.0f;
+        
+        auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+        RadialGradientBrushProperties rp{center, radius};
 		BrushProperties bp;
 		return CreateRadialGradientBrush(rp, bp, gradientStopCollection);
 	}
 
 	// Simple 2-color gradient.
 	RadialGradientBrush CreateRadialGradientBrush(Color color1, Color color2, Point center, float radius)
-	{
-		Gradientstop gradientStops[2];
-		gradientStops[0].color = color1;
-		gradientStops[0].position = 0.0f;
-		gradientStops[1].color = color2;
-		gradientStops[1].position = 1.0f;
-
-		auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
-
-		RadialGradientBrushProperties radialGradientBrushProperties(center, radius);
+    {
+        Gradientstop gradientStops[2];
+        gradientStops[0].color = color1;
+        gradientStops[0].position = 0.0f;
+        gradientStops[1].color = color2;
+        gradientStops[1].position = 1.0f;
+        
+        auto gradientStopCollection = CreateGradientStopCollection(gradientStops, 2);
+        
+        RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
 		BrushProperties brushproperties;
 
 		RadialGradientBrush temp;
@@ -2464,8 +2464,8 @@ public:
 	}
 
 	void DrawLine(float x1, float y1, float x2, float y2, Brush& brush, float strokeWidth = 1.0f)
-	{
-		Resource<BASE_INTERFACE>::get()->drawLine(Point(x1, y1), Point(x2, y2), brush.get(), strokeWidth, nullptr);
+    {
+        Resource<BASE_INTERFACE>::get()->drawLine({x1, y1}, {x2, y2}, brush.get(), strokeWidth, nullptr);
 	}
 
 	void DrawRectangle(Rect rect, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
@@ -2485,7 +2485,7 @@ public:
 
 	void FillRectangle(float top, float left, float right, float bottom, Brush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
 	{
-		Rect rect(top, left, right, bottom);
+        Rect rect{top, left, right, bottom};
 		Resource<BASE_INTERFACE>::get()->fillRectangle(&rect, brush.get());
 	}
 	void DrawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth, StrokeStyle& strokeStyle)
@@ -2514,8 +2514,8 @@ public:
 	}
 
 	void DrawCircle(gmpi::drawing::Point point, float radius, Brush& brush, float strokeWidth = 1.0f)
-	{
-		Ellipse ellipse(point, radius, radius);
+    {
+        Ellipse ellipse{point, radius, radius};
 		Resource<BASE_INTERFACE>::get()->drawEllipse(&ellipse, brush.get(), strokeWidth, nullptr);
 	}
 
@@ -2525,8 +2525,8 @@ public:
 	}
 
 	void FillCircle(gmpi::drawing::Point point, float radius, Brush& brush)
-	{
-		Ellipse ellipse(point, radius, radius);
+    {
+        Ellipse ellipse{point, radius, radius};
 		Resource<BASE_INTERFACE>::get()->fillEllipse(&ellipse, brush.get());
 	}
 
@@ -2626,7 +2626,7 @@ public:
 	void DrawBitmap(Bitmap bitmap, Point destinationTopLeft, Rect sourceRectangle, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 	{
 		const float opacity = 1.0f;
-		Rect destinationRectangle(destinationTopLeft.x, destinationTopLeft.y, destinationTopLeft.x + getWidth(sourceRectangle), destinationTopLeft.y + getHeight(sourceRectangle));
+        Rect destinationRectangle{destinationTopLeft.x, destinationTopLeft.y, destinationTopLeft.x + getWidth(sourceRectangle), destinationTopLeft.y + getHeight(sourceRectangle)};
 		Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap.get(), &destinationRectangle, opacity, interpolationMode, &sourceRectangle);
 	}
 	// Integer co-ords.
@@ -2634,7 +2634,7 @@ public:
 	{
 		const float opacity = 1.0f;
 		Rect sourceRectangleF{ static_cast<float>(sourceRectangle.left), static_cast<float>(sourceRectangle.top), static_cast<float>(sourceRectangle.right), static_cast<float>(sourceRectangle.bottom) };
-		Rect destinationRectangle(static_cast<float>(destinationTopLeft.x), static_cast<float>(destinationTopLeft.y), static_cast<float>(destinationTopLeft.x + getWidth(sourceRectangle)), static_cast<float>(destinationTopLeft.y + getHeight(sourceRectangle)));
+        Rect destinationRectangle{static_cast<float>(destinationTopLeft.x), static_cast<float>(destinationTopLeft.y), static_cast<float>(destinationTopLeft.x + getWidth(sourceRectangle)), static_cast<float>(destinationTopLeft.y + getHeight(sourceRectangle))};
 		Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap.get(), &destinationRectangle, opacity, interpolationMode, &sourceRectangleF);
 	}
 
@@ -2673,7 +2673,7 @@ public:
 		_RPT0(_CRT_WARN, "drawTextU(std::string, TextFormat, float, float ...) DEPRECATED, works only when text is left-aligned.\n");
 #endif
 	//	const int32_t flags = static_cast<int32_t>(options);
-		Rect rect(x, y, x + 10000, y + 10000);
+        Rect rect{x, y, x + 10000, y + 10000};
 		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), (int32_t)utf8String.size(), textFormat.get(), &rect, brush.get(), options);
 	}
 

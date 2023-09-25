@@ -21,7 +21,7 @@
 */
 #include <codecvt>
 #include <map>
-#include "../se_sdk3/Drawing.h"
+#include "../Drawing.h"
 #include "../shared/xp_simd.h"
 #include "../backends/Gfx_base.h"
 

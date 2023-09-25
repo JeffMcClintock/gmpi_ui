@@ -575,8 +575,8 @@ void DrawingFrameBase::OnPaint()
 		{
 			Graphics graphics(context.get());
 
-			graphics.BeginDraw();
-			graphics.SetTransform(viewTransform);
+			graphics.beginDraw();
+			graphics.setTransform(viewTransform);
 
 			if (false) // Draw entire update area as one big rect. didn't help
 			{
@@ -600,7 +600,7 @@ void DrawingFrameBase::OnPaint()
 
 				//_RPTW4(_CRT_WARN, L"RectL dirtyRect{%4d,%4d,%4d,%4d};\n", (int)r.left, (int)r.top, (int)r.right, (int)r.bottom);
 				//_RPTW4(_CRT_WARN, L"Rect dirtyRect{%4d,%4d,%4d,%4d};\n", (int)temp.left, (int)temp.top, (int)temp.right, (int)temp.bottom);
-				graphics.PushAxisAlignedClip(temp);
+				graphics.pushAxisAlignedClip(temp);
 
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
@@ -609,7 +609,7 @@ void DrawingFrameBase::OnPaint()
 				if(drawingClient)
 					drawingClient->onRender(context.get());
 
-				graphics.PopAxisAlignedClip();
+				graphics.popAxisAlignedClip();
 			}
 			else
 			{
@@ -626,7 +626,7 @@ void DrawingFrameBase::OnPaint()
 					temp.right = ceilf(r2.right);
 					temp.bottom = ceilf(r2.bottom);
 
-					graphics.PushAxisAlignedClip(temp);
+					graphics.pushAxisAlignedClip(temp);
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
 					gmpi_gui_client->onRender(context.get());
@@ -634,7 +634,7 @@ void DrawingFrameBase::OnPaint()
 					if (drawingClient)
 						drawingClient->onRender(context.get());
 
-					graphics.PopAxisAlignedClip();
+					graphics.popAxisAlignedClip();
 				}
 			}
 
@@ -676,17 +676,17 @@ void DrawingFrameBase::OnPaint()
 					frameCountTime = timenow;
 					frameCount = 0;
 
-					auto brush = graphics.CreateSolidColorBrush(Colors::Black);
+					auto brush = graphics.createSolidColorBrush(Colors::Black);
 					auto fpsRect = drawing::Rect(0, 0, 50, 18);
-					graphics.FillRectangle(fpsRect, brush);
-					brush.SetColor(Colors::White);
-					graphics.drawTextU(frameCountString, graphics.GetFactory().CreateTextFormat(12), fpsRect, brush);
+					graphics.fillRectangle(fpsRect, brush);
+					brush.setColor(Colors::White);
+					graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);
 
 					dirtyRects.push_back({ 0, 0, 100, 36 });
 				}
 			}
 
-			/*const auto r =*/ graphics.EndDraw();
+			/*const auto r =*/ graphics.endDraw();
 
 		}
 

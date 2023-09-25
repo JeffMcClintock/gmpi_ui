@@ -2453,110 +2453,110 @@ public:
 	//	return temp;
 	//}
 
-	void DrawLine(Point point0, Point point1, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawLine(Point point0, Point point1, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		Resource<BASE_INTERFACE>::get()->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.get(), strokeWidth, strokeStyle.get());
 	}
 
-	void DrawLine(Point point0, Point point1, Brush& brush, float strokeWidth = 1.0f)
+	void drawLine(Point point0, Point point1, Brush& brush, float strokeWidth = 1.0f)
 	{
 		Resource<BASE_INTERFACE>::get()->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.get(), strokeWidth, nullptr);
 	}
 
-	void DrawLine(float x1, float y1, float x2, float y2, Brush& brush, float strokeWidth = 1.0f)
+	void drawLine(float x1, float y1, float x2, float y2, Brush& brush, float strokeWidth = 1.0f)
     {
         Resource<BASE_INTERFACE>::get()->drawLine({x1, y1}, {x2, y2}, brush.get(), strokeWidth, nullptr);
 	}
 
-	void DrawRectangle(Rect rect, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawRectangle(Rect rect, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		Resource<BASE_INTERFACE>::get()->drawRectangle(&rect, brush.get(), strokeWidth, strokeStyle.get());
 	}
 
-	void DrawRectangle(Rect rect, Brush& brush, float strokeWidth = 1.0f)
+	void drawRectangle(Rect rect, Brush& brush, float strokeWidth = 1.0f)
 	{
 		Resource<BASE_INTERFACE>::get()->drawRectangle(&rect, brush.get(), strokeWidth, nullptr);
 	}
 
-	void FillRectangle(Rect rect, Brush& brush)
+	void fillRectangle(Rect rect, Brush& brush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillRectangle(&rect, brush.get());
 	}
 
-	void FillRectangle(float top, float left, float right, float bottom, Brush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
+	void fillRectangle(float top, float left, float right, float bottom, Brush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
 	{
         Rect rect{top, left, right, bottom};
 		Resource<BASE_INTERFACE>::get()->fillRectangle(&rect, brush.get());
 	}
-	void DrawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth, StrokeStyle& strokeStyle)
+	void drawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth, StrokeStyle& strokeStyle)
 	{
 		Resource<BASE_INTERFACE>::get()->drawRoundedRectangle(&roundedRect, brush.get(), strokeWidth, strokeStyle.get());
 	}
 
-	void DrawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth = 1.0f)
+	void drawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth = 1.0f)
 	{
 		Resource<BASE_INTERFACE>::get()->drawRoundedRectangle(&roundedRect, brush.get(), strokeWidth, nullptr);
 	}
 
-	void FillRoundedRectangle(RoundedRect roundedRect, Brush& brush)
+	void fillRoundedRectangle(RoundedRect roundedRect, Brush& brush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillRoundedRectangle(&roundedRect, brush.get());
 	}
 
-	void DrawEllipse(Ellipse ellipse, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawEllipse(Ellipse ellipse, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		Resource<BASE_INTERFACE>::get()->drawEllipse(&ellipse, brush.get(), strokeWidth, strokeStyle.get());
 	}
 
-	void DrawEllipse(Ellipse ellipse, Brush& brush, float strokeWidth = 1.0f)
+	void drawEllipse(Ellipse ellipse, Brush& brush, float strokeWidth = 1.0f)
 	{
 		Resource<BASE_INTERFACE>::get()->drawEllipse(&ellipse, brush.get(), strokeWidth, nullptr);
 	}
 
-	void DrawCircle(gmpi::drawing::Point point, float radius, Brush& brush, float strokeWidth = 1.0f)
+	void drawCircle(gmpi::drawing::Point point, float radius, Brush& brush, float strokeWidth = 1.0f)
     {
         Ellipse ellipse{point, radius, radius};
 		Resource<BASE_INTERFACE>::get()->drawEllipse(&ellipse, brush.get(), strokeWidth, nullptr);
 	}
 
-	void FillEllipse(Ellipse ellipse, Brush& brush)
+	void fillEllipse(Ellipse ellipse, Brush& brush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillEllipse(&ellipse, brush.get());
 	}
 
-	void FillCircle(gmpi::drawing::Point point, float radius, Brush& brush)
+	void fillCircle(gmpi::drawing::Point point, float radius, Brush& brush)
     {
         Ellipse ellipse{point, radius, radius};
 		Resource<BASE_INTERFACE>::get()->fillEllipse(&ellipse, brush.get());
 	}
 
-	void DrawGeometry(PathGeometry& geometry, Brush& brush, float strokeWidth = 1.0f)
+	void drawGeometry(PathGeometry& geometry, Brush& brush, float strokeWidth = 1.0f)
 	{
 		Resource<BASE_INTERFACE>::get()->drawGeometry(geometry.get(), brush.get(), strokeWidth, nullptr);
 	}
 
-	void DrawGeometry(PathGeometry geometry, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawGeometry(PathGeometry geometry, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		Resource<BASE_INTERFACE>::get()->drawGeometry(geometry.get(), brush.get(), strokeWidth, strokeStyle.get());
 	}
 
-	void FillGeometry(PathGeometry geometry, Brush& brush, Brush& opacityBrush)
+	void fillGeometry(PathGeometry geometry, Brush& brush, Brush& opacityBrush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillGeometry(geometry.get(), brush.get(), opacityBrush.get());
 	}
 
-	void FillGeometry(PathGeometry geometry, Brush& brush)
+	void fillGeometry(PathGeometry geometry, Brush& brush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillGeometry(geometry.get(), brush.get(), nullptr);
 	}
 
-	void FillPolygon(std::vector<Point>& points, Brush& brush)
+	void fillPolygon(std::vector<Point>& points, Brush& brush)
 	{
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
 
 		auto it = points.begin();
-		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
+		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::filled);
 		for ( ; it != points.end(); ++it)
 		{
 			sink.addLine(*it);
@@ -2564,10 +2564,10 @@ public:
 
 		sink.endFigure();
 		sink.close();
-		FillGeometry(geometry, brush);
+		fillGeometry(geometry, brush);
 	}
 
-	void DrawPolygon(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolygon(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
@@ -2584,7 +2584,7 @@ public:
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
-	void DrawPolyline(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolyline(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
@@ -2600,37 +2600,37 @@ public:
 		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
-	//void FillMesh(Mesh& mesh, Brush& brush)
+	//void fillMesh(Mesh& mesh, Brush& brush)
 	//{
 	//	Resource<BASE_INTERFACE>::get()->fillMesh(mesh.get(), brush.get());
 	//}
 
 	/*
 
-	void FillOpacityMask(Bitmap& opacityMask, Brush& brush, OpacityMaskContent content, Rect& destinationRectangle, Rect& sourceRectangle)
+	void fillOpacityMask(Bitmap& opacityMask, Brush& brush, OpacityMaskContent content, Rect& destinationRectangle, Rect& sourceRectangle)
 	{
 	Resource<BASE_INTERFACE>::get()->fillOpacityMask(opacityMask.get(), brush.get(), (gmpi::drawing::MP1_OPACITY_MASK_CONTENT) content, &destinationRectangle, &sourceRectangle);
 	}
 	*/
 
-	void DrawBitmap(gmpi::drawing::api::IBitmap* bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
+	void drawBitmap(gmpi::drawing::api::IBitmap* bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 	{
 		Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap, &destinationRectangle, opacity, interpolationMode, &sourceRectangle);
 	}
 
-	void DrawBitmap(Bitmap bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
+	void drawBitmap(Bitmap bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 	{
 		Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap.get(), &destinationRectangle, opacity, interpolationMode, &sourceRectangle);
 	}
 
-	void DrawBitmap(Bitmap bitmap, Point destinationTopLeft, Rect sourceRectangle, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
+	void drawBitmap(Bitmap bitmap, Point destinationTopLeft, Rect sourceRectangle, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 	{
 		const float opacity = 1.0f;
         Rect destinationRectangle{destinationTopLeft.x, destinationTopLeft.y, destinationTopLeft.x + getWidth(sourceRectangle), destinationTopLeft.y + getHeight(sourceRectangle)};
 		Resource<BASE_INTERFACE>::get()->drawBitmap(bitmap.get(), &destinationRectangle, opacity, interpolationMode, &sourceRectangle);
 	}
 	// Integer co-ords.
-	void DrawBitmap(Bitmap bitmap, PointL destinationTopLeft, RectL sourceRectangle, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
+	void drawBitmap(Bitmap bitmap, PointL destinationTopLeft, RectL sourceRectangle, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 	{
 		const float opacity = 1.0f;
 		Rect sourceRectangleF{ static_cast<float>(sourceRectangle.left), static_cast<float>(sourceRectangle.top), static_cast<float>(sourceRectangle.right), static_cast<float>(sourceRectangle.bottom) };
@@ -2653,14 +2653,14 @@ public:
 	//	Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), flags);
 	//}
 #if 0
-	void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, gmpi::drawing::DrawTextOptions flags)
+	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, gmpi::drawing::DrawTextOptions flags)
 	{
 		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 		const auto utf8String = stringConverter.to_bytes(wString);
 		this->drawTextU(utf8String, textFormat, rect, brush, flags);
 	}
 #endif
-	void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
+	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
 		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 		const auto utf8String = stringConverter.to_bytes(wString);
@@ -2678,7 +2678,7 @@ public:
 	}
 
 	// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
-	void DrawTextW(std::wstring wString, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
+	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
 		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 		auto utf8String = stringConverter.to_bytes(wString);
@@ -2698,12 +2698,12 @@ public:
 		return temp;
 	}
 
-	void PushAxisAlignedClip(Rect clipRect /* , MP1_ANTIALIAS_MODE antialiasMode */)
+	void pushAxisAlignedClip(Rect clipRect /* , MP1_ANTIALIAS_MODE antialiasMode */)
 	{
 		Resource<BASE_INTERFACE>::get()->pushAxisAlignedClip(&clipRect/*, antialiasMode*/);
 	}
 
-	void PopAxisAlignedClip()
+	void popAxisAlignedClip()
 	{
 		Resource<BASE_INTERFACE>::get()->popAxisAlignedClip();
 	}
@@ -2715,7 +2715,7 @@ public:
 		return temp;
 	}
 
-	void Clear(Color clearColor)
+	void clear(Color clearColor)
 	{
 		Resource<BASE_INTERFACE>::get()->clear(&clearColor);
 	}
@@ -2749,7 +2749,7 @@ public:
 
 
 	// Composit convenience methods.
-	void FillPolygon(Point *points, uint32_t pointCount, Brush& brush)
+	void fillPolygon(Point *points, uint32_t pointCount, Brush& brush)
 	{
 		assert(pointCount > 0 && points != nullptr);
 
@@ -2759,16 +2759,16 @@ public:
 		sink.addLines(points, pointCount);
 		sink.endFigure();
 		sink.close();
-		FillGeometry(geometry, brush);
+		fillGeometry(geometry, brush);
 	}
 
 	template <int N>
-	void FillPolygon(Point(&points)[N], Brush& brush)
+	void fillPolygon(Point(&points)[N], Brush& brush)
 	{
-		return FillPolygon(points, N, brush);
+		return fillPolygon(points, N, brush);
 	}
 
-	void DrawPolygon(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
+	void drawPolygon(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
 	{
 		assert(pointCount > 0 && points != nullptr);
 
@@ -2781,7 +2781,7 @@ public:
 		DrawGeometry(geometry, brush, strokeWidth);
 	}
 
-	void DrawLines(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
+	void drawLines(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
 	{
 		assert(pointCount > 1 && points != nullptr);
 
@@ -2872,12 +2872,12 @@ public:
 	ClipDrawingToBounds(Graphics& g, gmpi::drawing::Rect clipRect) :
 		graphics(g)
 	{
-		graphics.PushAxisAlignedClip(clipRect);
+		graphics.pushAxisAlignedClip(clipRect);
 	}
 
 	~ClipDrawingToBounds()
 	{
-		graphics.PopAxisAlignedClip();
+		graphics.popAxisAlignedClip();
 	}
 };
 

@@ -1311,7 +1311,7 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	void getAxisAlignedClip(drawing::Rect* returnClipRect) override;
+	gmpi::ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override;
 
 	ReturnCode beginDraw() override
 	{

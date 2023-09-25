@@ -1002,7 +1002,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			return gmpi::ReturnCode::Ok;
 		}
 
-		void GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
+		gmpi::ReturnCode GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
 		{
 #ifdef LOG_DIRECTX_CALLS
 			_RPT0(_CRT_WARN, "{\n");
@@ -1018,6 +1018,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			auto r2 = transformRect(currentTransform, clipRectStack.back());
 
 			*returnClipRect = r2;
+			return gmpi::ReturnCode::Ok;
 		}
 	} // namespace
 } // namespace

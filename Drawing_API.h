@@ -612,7 +612,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
     virtual gmpi::ReturnCode getTransform(Matrix3x2* returnTransform) = 0;
     virtual gmpi::ReturnCode pushAxisAlignedClip(const Rect* clipRect) = 0;
     virtual gmpi::ReturnCode popAxisAlignedClip() = 0;
-    virtual void getAxisAlignedClip(Rect* returnClipRect) = 0;
+    virtual gmpi::ReturnCode getAxisAlignedClip(Rect* returnClipRect) = 0;
     virtual gmpi::ReturnCode clear(const Color* clearColor) = 0;
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;

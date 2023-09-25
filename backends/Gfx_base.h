@@ -349,14 +349,14 @@ public:
 	}
 
     drawing::PathGeometry createRectangleGeometry(const gmpi::drawing::Rect* rect, bool filled = false)
-    {
-        // create geometry
+	{
+		// create geometry
         drawing::Factory factory;
         getFactory(factory.put());
-        
+
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
-        
+
         sink.beginFigure({rect->left, rect->top}, filled ? drawing::FigureBegin::Filled : drawing::FigureBegin::Hollow);
         sink.addLine({rect->left, rect->bottom});
         sink.addLine({rect->right, rect->bottom});
@@ -373,14 +373,14 @@ public:
 		auto geometry = createRectangleGeometry(rect, false);
 		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
         return ReturnCode::Ok;
-    }
+	}
 
     ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createRectangleGeometry(rect);
 		fillGeometry(geometry.get(), brush, nullptr);
         return ReturnCode::Ok;
-    }
+	}
 
 	ReturnCode clear(const drawing::Color* clearColor) override
 	{
@@ -393,7 +393,7 @@ public:
 		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
 		return ReturnCode::Ok;
 	}
-
+	
     drawing::PathGeometry createLineGeometry(gmpi::drawing::Point point0, gmpi::drawing::Point point1)
 	{
 		// create geometry
@@ -413,39 +413,39 @@ public:
 	}
 
     drawing::PathGeometry createEllipseGeometry(const gmpi::drawing::Ellipse* ellipse)
-    {
-        // create geometry
+	{
+		// create geometry
         drawing::Factory factory;
         getFactory(factory.put());
-        
+
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
-        
-        /* from lines
-         const double step = 0.1;
-         Point p;
-         bool first = true;
-         for (double a = 0.0; a < M_PI * 2.0; a += step)
-         {
-         p.x = ellipse->point.x + ellipse->radiusX * sin(a);
-         p.y = ellipse->point.y + ellipse->radiusY * cos(a);
-         
-         if (first)
-         {
-         sink.BeginFigure(p, FigureBegin::Filled);
-         first = false;
-         }
-         else
-         {
+
+		/* from lines
+		const double step = 0.1;
+		Point p;
+		bool first = true;
+		for (double a = 0.0; a < M_PI * 2.0; a += step)
+		{
+		p.x = ellipse->point.x + ellipse->radiusX * sin(a);
+		p.y = ellipse->point.y + ellipse->radiusY * cos(a);
+
+		if (first)
+		{
+		sink.BeginFigure(p, FigureBegin::Filled);
+		first = false;
+		}
+		else
+		{
          sink.addLine(p);
-         }
-         }
-         */
+		}
+		}
+		*/
         drawing::Size size{ellipse->radiusX, ellipse->radiusY};
-        
+
         drawing::Point topCenter{ellipse->point.x, ellipse->point.y - size.height};
         drawing::Point bottomCenter{ellipse->point.x, ellipse->point.y + size.height};
-        
+
         sink.beginFigure(topCenter, drawing::FigureBegin::Filled);
         drawing::ArcSegment firstHalf{bottomCenter, size};
         drawing::ArcSegment secondHalf{topCenter, size};
@@ -540,7 +540,7 @@ public:
 		return ReturnCode::Ok;
 	}
 
-    ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
+	ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
 	{
 		return ReturnCode::Fail;
 	}

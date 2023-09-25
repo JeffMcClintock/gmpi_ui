@@ -3,14 +3,30 @@
 /*
 #include "DirectXGfx.h"
 */
+/*
+  GMPI - Generalized Music Plugin Interface specification.
+  Copyright 2023 Jeff McClintock.
 
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+
+  THIS SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+*/
+
+#include <codecvt>
 #include <map>
 #include <d2d1_2.h>
 #include <dwrite.h>
-#include <codecvt>
 #include <Wincodec.h>
+
 #include "../Drawing.h"
-//#include "./gmpi_gui_hosting.h"
 #include "RefCountMacros.h"
 
 // MODIFICATION FOR GMPI_UI !!!
@@ -58,16 +74,16 @@ class GmpiDXResourceWrapper : public GmpiDXWrapper<MpInterface, DxType>
 {
 protected:
 	virtual ~GmpiDXResourceWrapper() {}
-	gmpi::drawing::api::IFactory* factory_;
+	drawing::api::IFactory* factory_;
 
 public:
-	GmpiDXResourceWrapper(DxType* native, gmpi::drawing::api::IFactory* factory) : GmpiDXWrapper<MpInterface, DxType>(native), factory_(factory) {}
-	GmpiDXResourceWrapper(gmpi::drawing::api::IFactory* factory) : factory_(factory) {}
+	GmpiDXResourceWrapper(DxType* native, drawing::api::IFactory* factory) : GmpiDXWrapper<MpInterface, DxType>(native), factory_(factory) {}
+	GmpiDXResourceWrapper(drawing::api::IFactory* factory) : factory_(factory) {}
 
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 };
 
@@ -115,7 +131,7 @@ public:
 
 
 
-class TextFormat final : public GmpiDXWrapper<gmpi::drawing::api::ITextFormat, IDWriteTextFormat>
+class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>
 {
 	std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter = {}; // constructed once is much faster.
 	bool useLegacyBaseLineSnapping = true;
@@ -126,10 +142,10 @@ class TextFormat final : public GmpiDXWrapper<gmpi::drawing::api::ITextFormat, I
 	{
 		assert(topAdjustment == 0.0f); // else boundingBoxSize calculation will be affected, and won't be actual native size.
 
-		gmpi::drawing::FontMetrics fontMetrics;
+		drawing::FontMetrics fontMetrics;
 		getFontMetrics(&fontMetrics);
 
-		gmpi::drawing::Size boundingBoxSize;
+		drawing::Size boundingBoxSize;
 		getTextExtentU("A", 1, &boundingBoxSize);
 
 		topAdjustment = boundingBoxSize.height - (fontMetrics.ascent + fontMetrics.descent);
@@ -138,7 +154,7 @@ class TextFormat final : public GmpiDXWrapper<gmpi::drawing::api::ITextFormat, I
 
 public:
 	TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, IDWriteTextFormat* native) :
-		GmpiDXWrapper<gmpi::drawing::api::ITextFormat, IDWriteTextFormat>(native)
+		GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>(native)
 		, stringConverter(pstringConverter)
 	{
 		CalculateTopAdjustment();
@@ -151,42 +167,42 @@ public:
 	}
 #endif
 
-	gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment textAlignment) override
+	ReturnCode setTextAlignment(drawing::TextAlignment textAlignment) override
 	{
         const auto r = native()->SetTextAlignment((DWRITE_TEXT_ALIGNMENT) textAlignment);
-        return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
-	gmpi::ReturnCode setParagraphAlignment(gmpi::drawing::ParagraphAlignment paragraphAlignment) override
+	ReturnCode setParagraphAlignment(drawing::ParagraphAlignment paragraphAlignment) override
 	{
         const auto r = native()->SetParagraphAlignment((DWRITE_PARAGRAPH_ALIGNMENT) paragraphAlignment);
-        return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
-	gmpi::ReturnCode setWordWrapping(gmpi::drawing::WordWrapping wordWrapping) override
+	ReturnCode setWordWrapping(drawing::WordWrapping wordWrapping) override
 	{
         const auto r = native()->SetWordWrapping((DWRITE_WORD_WRAPPING) wordWrapping);
-        return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
 	// TODO!!!: Probably needs to accept constraint rect like DirectWrite. !!!
-	gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize) override;
+	ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, drawing::Size* returnSize) override;
 
-	gmpi::ReturnCode getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics) override;
+	ReturnCode getFontMetrics(drawing::FontMetrics* returnFontMetrics) override;
 
-	gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) override
+	ReturnCode setLineSpacing(float lineSpacing, float baseline) override
 	{
 		// Hack, reuse this method to enable legacy-mode.
 		if (static_cast<float>(ITextFormat::ImprovedVerticalBaselineSnapping) == lineSpacing)
 		{
 			useLegacyBaseLineSnapping = false;
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
 
 		// For the default method, spacing depends solely on the content. For uniform spacing, the specified line height overrides the content.
 		DWRITE_LINE_SPACING_METHOD method = lineSpacing < 0.0f ? DWRITE_LINE_SPACING_METHOD_DEFAULT : DWRITE_LINE_SPACING_METHOD_UNIFORM;
 		const auto r = native()->SetLineSpacing(method, fabsf(lineSpacing), baseline);
-        return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
 	float getTopAdjustment() const
@@ -204,24 +220,24 @@ public:
 		return useLegacyBaseLineSnapping;
 	}
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::ITextFormat);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::ITextFormat);
 	GMPI_REFCOUNT;
 };
 #if 0
-class Resource final : public GmpiDXWrapper<gmpi::drawing::api::IResource, ID2D1Resource>
+class Resource final : public GmpiDXWrapper<drawing::api::IResource, ID2D1Resource>
 {
 public:
-	gmpi::ReturnCode getFactory(IFactory** returnGetFactory) override
+	ReturnCode getFactory(drawing::api::IFactory** returnGetFactory) override
 	{
         const auto r = native()->getFactory((D2D1_GET_FACTORY) returnGetFactory);
-		return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IResource);
+    GMPI_QUERYINTERFACE_NEW(drawing::api::IResource);
 	GMPI_REFCOUNT;
 };
 #endif
-class BitmapPixels final : public gmpi::drawing::api::IBitmapPixels
+class BitmapPixels final : public drawing::api::IBitmapPixels
 {
 	bool alphaPremultiplied;
 	IWICBitmap* bitmap;
@@ -280,7 +296,7 @@ public:
 		if (nativeBitmap_)
 		{
 #if 1
-			if (0 != (flags & (int32_t) gmpi::drawing::BitmapLockFlags::Write))
+			if (0 != (flags & (int32_t) drawing::BitmapLockFlags::Write))
 			{
 				D2D1_RECT_U r;
 				r.left = r.top = 0;
@@ -298,22 +314,22 @@ public:
 		SafeRelease(bitmap);
 	}
 
-	gmpi::ReturnCode getAddress(uint8_t** returnGetAddress) override
+    ReturnCode getAddress(uint8_t** returnAddress) override
 	{
-		*returnGetAddress = ptr;
-		return gmpi::ReturnCode::Ok;
+		*returnAddress = ptr;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode getBytesPerRow(int32_t* returnGetBytesPerRow) override
+    ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) override
 	{
-		*returnGetBytesPerRow = bytesPerRow;
-		return gmpi::ReturnCode::Ok;
+		*returnBytesPerRow = bytesPerRow;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode getPixelFormat(int32_t* returnGetPixelFormat) override
+    ReturnCode getPixelFormat(int32_t* returnPixelFormat) override
 	{
-		*returnGetPixelFormat = pixelFormat;
-		return gmpi::ReturnCode::Ok;
+		*returnPixelFormat = pixelFormat;
+		return ReturnCode::Ok;
 	}
 
 	inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
@@ -370,11 +386,11 @@ public:
 		}
 	}
 
-    GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IBitmapPixels);
+    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapPixels);
 	GMPI_REFCOUNT;
 };
 
-class Bitmap final : public gmpi::drawing::api::IBitmap
+class Bitmap final : public drawing::api::IBitmap
 {
 public:
 	ID2D1Bitmap* nativeBitmap_;
@@ -408,42 +424,33 @@ public:
 
 	ID2D1Bitmap* getNativeBitmap(ID2D1DeviceContext* nativeContext);
 
-    gmpi::ReturnCode getSizeU(drawing::SizeU* returnSize) override
+    ReturnCode getSizeU(drawing::SizeU* returnSize) override
 	{
 		const auto r = diBitmap_->GetSize(&returnSize->width, &returnSize->height);
-        return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
-	gmpi::ReturnCode lockPixels(gmpi::drawing::api::IBitmapPixels** returnInterface, int32_t flags) override;
+	ReturnCode lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t flags) override;
 
 	void applyPreMultiplyCorrection();
 
-//	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override;
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** returnFactory) override;
+//	ReturnCode getFactory(drawing::api::IFactory** pfactory) override;
+	ReturnCode getFactory(drawing::api::IFactory** returnFactory) override;
 
-    GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IBitmap);
+    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmap);
 	GMPI_REFCOUNT;
 };
 
-class GradientStopCollection final : public GmpiDXResourceWrapper<gmpi::drawing::api::IGradientstopCollection, ID2D1GradientStopCollection>
+class GradientstopCollection final : public GmpiDXResourceWrapper<drawing::api::IGradientstopCollection, ID2D1GradientStopCollection>
 {
 public:
-	GradientStopCollection(ID2D1GradientStopCollection* native, gmpi::drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
+	GradientstopCollection(ID2D1GradientStopCollection* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IGradientstopCollection);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::IGradientstopCollection);
 	GMPI_REFCOUNT;
 };
 
-class GradientStopCollection1 final : public GmpiDXResourceWrapper<gmpi::drawing::api::IGradientstopCollection, ID2D1GradientStopCollection1>
-{
-public:
-	GradientStopCollection1(ID2D1GradientStopCollection1* native, gmpi::drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
-
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IGradientstopCollection);
-	GMPI_REFCOUNT;
-};
-
-// never instansiated, just used to simulate a common ancestor for all brushes, that can be C cast to get hold of the D2D brush.
+// never instansiated or inherited, just used to simulate a common ancestor for all brushes, that can quickly C cast to get hold of the D2D brush.
 struct Brush : public gmpi::api::IUnknown
 {
 	ID2D1Brush* native_ = {};
@@ -454,18 +461,18 @@ struct Brush : public gmpi::api::IUnknown
 	}
 };
 
-class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush
+class BitmapBrush final : public drawing::api::IBitmapBrush
 {
 	ID2D1BitmapBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-	gmpi::drawing::api::IFactory* factory_ = {};
+	drawing::api::IFactory* factory_ = {};
 
 public:
 	BitmapBrush(
-		gmpi::drawing::api::IFactory* factory,
+		drawing::api::IFactory* factory,
 		ID2D1DeviceContext* context,
-		const gmpi::drawing::api::IBitmap* bitmap,
-		const gmpi::drawing::BitmapBrushProperties* bitmapBrushProperties,
-		const gmpi::drawing::BrushProperties* brushProperties
+		const drawing::api::IBitmap* bitmap,
+		const drawing::BitmapBrushProperties* bitmapBrushProperties,
+		const drawing::BrushProperties* brushProperties
 	)
 		: factory_(factory)
 	{
@@ -482,53 +489,53 @@ public:
 			native_->Release();
 	}
 
-	gmpi::ReturnCode setExtendModeX(gmpi::drawing::ExtendMode extendModeX) override
+	ReturnCode setExtendModeX(drawing::ExtendMode extendModeX) override
 	{
 		native_->SetExtendModeX((D2D1_EXTEND_MODE)extendModeX);
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode setExtendModeY(gmpi::drawing::ExtendMode extendModeY) override
+	ReturnCode setExtendModeY(drawing::ExtendMode extendModeY) override
 	{
 		native_->SetExtendModeY((D2D1_EXTEND_MODE)extendModeY);
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode) override
+    ReturnCode setInterpolationMode(drawing::BitmapInterpolationMode bitmapInterpolationMode) override
 	{
-		native_->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
-		return gmpi::ReturnCode::Ok;
+		native_->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)bitmapInterpolationMode);
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::IBitmapBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == drawing::api::IBitmapBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
 			*returnInterface = this;
 			addRef();
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
-		return gmpi::ReturnCode::NoSupport;
+		return ReturnCode::NoSupport;
 	}
 
 	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
 	GMPI_REFCOUNT;
 };
 
-class SolidColorBrush final : public gmpi::drawing::api::ISolidColorBrush
+class SolidColorBrush final : public drawing::api::ISolidColorBrush
 {
 	ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-	gmpi::drawing::api::IFactory* factory_ = {};
+	drawing::api::IFactory* factory_ = {};
 
 public:
-	SolidColorBrush(ID2D1SolidColorBrush* b, gmpi::drawing::api::IFactory *factory) : native_(b), factory_(factory) {}
+	SolidColorBrush(ID2D1SolidColorBrush* b, drawing::api::IFactory *factory) : native_(b), factory_(factory) {}
 
 	~SolidColorBrush()
 	{
@@ -541,12 +548,12 @@ public:
 		return (ID2D1SolidColorBrush*)native_;
 	}
 
-	gmpi::ReturnCode setColor(const gmpi::drawing::Color* color) override
+	ReturnCode setColor(const drawing::Color* color) override
 	{
 		native()->SetColor((D2D1::ColorF*) color);
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
-	//gmpi::ReturnCode gmpi::drawing::Color GetColor() override
+	//ReturnCode drawing::Color GetColor() override
 	//{
 	//	const auto b = native()->GetColor();
 	//	return 
@@ -558,43 +565,43 @@ public:
 	//	};
 	//}
 	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::ISolidColorBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
 			*returnInterface = this;
 			addRef();
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
-		return gmpi::ReturnCode::NoSupport;
+		return ReturnCode::NoSupport;
 	}
 
 	GMPI_REFCOUNT;
 };
 
-class SolidColorBrush_Win7 final : public gmpi::drawing::api::ISolidColorBrush
+class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
 {
 	ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-	gmpi::drawing::api::IFactory* factory_ = {};
+	drawing::api::IFactory* factory_ = {};
 
 public:
-	SolidColorBrush_Win7(ID2D1RenderTarget* context, const gmpi::drawing::Color* color, gmpi::drawing::api::IFactory* factory) : factory_(factory)
+	SolidColorBrush_Win7(ID2D1RenderTarget* context, const drawing::Color* color, drawing::api::IFactory* factory) : factory_(factory)
 	{
-		const gmpi::drawing::Color modified
+		const drawing::Color modified
 		{
 			se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->r)),
 			se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->g)),
 			se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->b)),
 			color->a
 		};
-//				modified = gmpi::drawing::Color::Orange;
+//				modified = drawing::Color::Orange;
 
 		/*HRESULT hr =*/ context->CreateSolidColorBrush(*(D2D1_COLOR_F*)&modified, (ID2D1SolidColorBrush**) &native_);
 	}
@@ -610,11 +617,11 @@ public:
 		return (ID2D1SolidColorBrush*)native_;
 	}
 
-	// IMPORTANT: Virtual functions must 100% match simulated interface (gmpi::drawing::api::ISolidColorBrush)
-	gmpi::ReturnCode setColor(const gmpi::drawing::Color* color) override
+	// IMPORTANT: Virtual functions must 100% match simulated interface (drawing::api::ISolidColorBrush)
+	ReturnCode setColor(const drawing::Color* color) override
 	{
 		//				D2D1::ConvertColorSpace(D2D1::ColorF*) color);
-		gmpi::drawing::Color modified
+		drawing::Color modified
 		{
 			se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->r)),
 			se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->g)),
@@ -622,14 +629,14 @@ public:
 			color->a
 		};
 		nativeSolidColorBrush()->SetColor((D2D1::ColorF*) &modified);
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	//virtual gmpi::drawing::Color GetColor()override
+	//virtual drawing::Color GetColor()override
 	//{
 	//	auto b = nativeSolidColorBrush()->GetColor();
-	//	//		return gmpi::drawing::Color(b.r, b.g, b.b, b.a);
-	//	gmpi::drawing::Color c;
+	//	//		return drawing::Color(b.r, b.g, b.b, b.a);
+	//	drawing::Color c;
 	//	c.a = b.a;
 	//	c.r = b.r;
 	//	c.g = b.g;
@@ -637,37 +644,37 @@ public:
 	//	return c;
 	//}
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::ISolidColorBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
 			*returnInterface = this;
 			addRef();
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
-		return gmpi::ReturnCode::NoSupport;
+		return ReturnCode::NoSupport;
 	}
 
 	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 	GMPI_REFCOUNT;
 };
 
-class LinearGradientBrush final : public gmpi::drawing::api::ILinearGradientBrush
+class LinearGradientBrush final : public drawing::api::ILinearGradientBrush
 {
 	ID2D1LinearGradientBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-	gmpi::drawing::api::IFactory* factory_ = {};
+	drawing::api::IFactory* factory_ = {};
 
 public:
-	LinearGradientBrush(gmpi::drawing::api::IFactory *factory, ID2D1RenderTarget* context, const gmpi::drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, const  gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
+	LinearGradientBrush(drawing::api::IFactory *factory, ID2D1RenderTarget* context, const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection)
 		: factory_(factory)
 	{
-		[[maybe_unused]] HRESULT hr = context->CreateLinearGradientBrush((D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientStopCollection*)gradientStopCollection)->native(), (ID2D1LinearGradientBrush **)&native_);
+		[[maybe_unused]] HRESULT hr = context->CreateLinearGradientBrush((D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientstopCollection*)gradientStopCollection)->native(), (ID2D1LinearGradientBrush **)&native_);
 		assert(hr == 0);
 	}
 
@@ -682,47 +689,46 @@ public:
 		return (ID2D1LinearGradientBrush*)native_;
 	}
 
-	// IMPORTANT: Virtual functions must 100% match simulated interface (gmpi::drawing::api::ILinearGradientBrush)
-	virtual void setStartPoint(gmpi::drawing::Point startPoint) // simulated: override
+	void setStartPoint(drawing::Point startPoint) override
 	{
 		native()->SetStartPoint(*reinterpret_cast<D2D1_POINT_2F*>(&startPoint));
 	}
-	virtual void setEndPoint(gmpi::drawing::Point endPoint) // simulated: override
+    void setEndPoint(drawing::Point endPoint) override
 	{
 		native()->SetEndPoint(*reinterpret_cast<D2D1_POINT_2F*>(&endPoint));
 	}
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::ILinearGradientBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == drawing::api::ILinearGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
 			*returnInterface = this;
 			addRef();
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
-		return gmpi::ReturnCode::NoSupport;
+		return ReturnCode::NoSupport;
 	}
 
 	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 	GMPI_REFCOUNT;
 };
 
-class RadialGradientBrush final : public gmpi::drawing::api::IRadialGradientBrush
+class RadialGradientBrush final : public drawing::api::IRadialGradientBrush
 {
 	ID2D1RadialGradientBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-	gmpi::drawing::api::IFactory* factory_ = {};
+	drawing::api::IFactory* factory_ = {};
 
 public:
-	RadialGradientBrush(gmpi::drawing::api::IFactory *factory, ID2D1RenderTarget* context, const gmpi::drawing::RadialGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, const gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
+	RadialGradientBrush(drawing::api::IFactory *factory, ID2D1RenderTarget* context, const drawing::RadialGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, const drawing::api::IGradientstopCollection* gradientStopCollection)
 		: factory_(factory)
 	{
-		[[maybe_unused]] HRESULT hr = context->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientStopCollection*)gradientStopCollection)->native(), (ID2D1RadialGradientBrush **)&native_);
+		[[maybe_unused]] HRESULT hr = context->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientstopCollection*)gradientStopCollection)->native(), (ID2D1RadialGradientBrush **)&native_);
 		assert(hr == 0);
 	}
 
@@ -737,67 +743,66 @@ public:
 		return (ID2D1RadialGradientBrush*)native_;
 	}
 
-	// IMPORTANT: Virtual functions must 100% match simulated interface.
-	virtual void setCenter(gmpi::drawing::Point center)  // simulated: override
+    void setCenter(drawing::Point center) override
 	{
 		native()->SetCenter(*reinterpret_cast<D2D1_POINT_2F*>(&center));
 	}
 
-	virtual void setGradientOriginOffset(gmpi::drawing::Point gradientOriginOffset) // simulated: override
+    void setGradientOriginOffset(drawing::Point gradientOriginOffset) override
 	{
 		native()->SetGradientOriginOffset(*reinterpret_cast<D2D1_POINT_2F*>(&gradientOriginOffset));
 	}
 
-	virtual void setRadiusX(float radiusX) // simulated: override
+    void setRadiusX(float radiusX) override
 	{
 		native()->SetRadiusX(radiusX);
 	}
 
-	virtual void setRadiusY(float radiusY) // simulated: override
+    void setRadiusY(float radiusY) override
 	{
 		native()->SetRadiusY(radiusY);
 	}
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::IRadialGradientBrush::guid || *iid == gmpi::drawing::api::IBrush::guid || *iid == gmpi::drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		if (*iid == drawing::api::IRadialGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
 		{
 			*returnInterface = this;
 			addRef();
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
-		return gmpi::ReturnCode::NoSupport;
+		return ReturnCode::NoSupport;
 	}
 
 	// IResource
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		*factory = factory_;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 	GMPI_REFCOUNT;
 };
 
-class StrokeStyle final : public GmpiDXResourceWrapper<gmpi::drawing::api::IStrokeStyle, ID2D1StrokeStyle>
+class StrokeStyle final : public GmpiDXResourceWrapper<drawing::api::IStrokeStyle, ID2D1StrokeStyle>
 {
 public:
-	StrokeStyle(ID2D1StrokeStyle* native, gmpi::drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
+	StrokeStyle(ID2D1StrokeStyle* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
 #if 0
-	gmpi::drawing::CapStyle GetStartCap() override
+	drawing::CapStyle GetStartCap() override
 	{
-		return (gmpi::drawing::CapStyle) native()->getStartCap();
+		return (drawing::CapStyle) native()->getStartCap();
 	}
 
-	gmpi::drawing::CapStyle GetEndCap() override
+	drawing::CapStyle GetEndCap() override
 	{
-		return (gmpi::drawing::CapStyle) native()->getEndCap();
+		return (drawing::CapStyle) native()->getEndCap();
 	}
 
-	gmpi::drawing::CapStyle GetDashCap() override
+	drawing::CapStyle GetDashCap() override
 	{
-		return (gmpi::drawing::CapStyle) native()->getDashCap();
+		return (drawing::CapStyle) native()->getDashCap();
 	}
 
 	float GetMiterLimit() override
@@ -805,9 +810,9 @@ public:
 		return native()->getMiterLimit();
 	}
 
-	gmpi::drawing::api::MP1_LINE_JOIN GetLineJoin() override
+	drawing::api::MP1_LINE_JOIN GetLineJoin() override
 	{
-		return (gmpi::drawing::api::MP1_LINE_JOIN) native()->getLineJoin();
+		return (drawing::api::MP1_LINE_JOIN) native()->getLineJoin();
 	}
 
 	float GetDashOffset() override
@@ -815,9 +820,9 @@ public:
 		return native()->getDashOffset();
 	}
 
-	gmpi::drawing::api::MP1_DASH_STYLE GetDashStyle() override
+	drawing::api::MP1_DASH_STYLE GetDashStyle() override
 	{
-		return (gmpi::drawing::api::MP1_DASH_STYLE) native()->getDashStyle();
+		return (drawing::api::MP1_DASH_STYLE) native()->getDashStyle();
 	}
 
 	uint32_t GetDashesCount() override
@@ -831,11 +836,11 @@ public:
 	}
 #endif
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IStrokeStyle);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::IStrokeStyle);
 	GMPI_REFCOUNT;
 };
 
-inline ID2D1StrokeStyle* toNative(const gmpi::drawing::api::IStrokeStyle* strokeStyle)
+inline ID2D1StrokeStyle* toNative(const drawing::api::IStrokeStyle* strokeStyle)
 {
 	if (strokeStyle)
 	{
@@ -845,7 +850,7 @@ inline ID2D1StrokeStyle* toNative(const gmpi::drawing::api::IStrokeStyle* stroke
 }
 
 #if 0
-class TessellationSink final : public GmpiDXWrapper<gmpi::drawing::api::ITessellationSink, ID2D1TessellationSink>
+class TessellationSink final : public GmpiDXWrapper<drawing::api::ITessellationSink, ID2D1TessellationSink>
 {
 public:
 	TessellationSink(ID2D1Mesh* mesh)
@@ -854,7 +859,7 @@ public:
 		assert(hr == S_OK);
 	}
 
-	void AddTriangles(const gmpi::drawing::api::MP1_TRIANGLE* triangles, uint32_t trianglesCount) override
+	void AddTriangles(const drawing::api::MP1_TRIANGLE* triangles, uint32_t trianglesCount) override
 	{
 		native_->AddTriangles((const D2D1_TRIANGLE*) triangles, trianglesCount);
 	}
@@ -865,14 +870,14 @@ public:
 		return MP_OK;
 	}
 
-	GMPI_QUERYINTERFACE1(gmpi::drawing::api::SE_IID_TESSELLATIONSINK_MPGUI, gmpi::drawing::api::ITessellationSink);
+	GMPI_QUERYINTERFACE1(drawing::api::SE_IID_TESSELLATIONSINK_MPGUI, drawing::api::ITessellationSink);
 	GMPI_REFCOUNT;
 };
 		
-class Mesh final : public GmpiDXResourceWrapper<gmpi::drawing::api::IMesh, ID2D1Mesh>
+class Mesh final : public GmpiDXResourceWrapper<drawing::api::IMesh, ID2D1Mesh>
 {
 public:
-	Mesh(gmpi::drawing::api::IFactory* factory, ID2D1RenderTarget* context) :
+	Mesh(drawing::api::IFactory* factory, ID2D1RenderTarget* context) :
 		GmpiDXResourceWrapper(factory)
 	{
 		[[maybe_unused]] HRESULT hr = context->CreateMesh(&native_);
@@ -880,20 +885,20 @@ public:
 	}
 
 	// IMesh
-	int32_t Open(gmpi::drawing::api::ITessellationSink** returnObject) override
+	int32_t Open(drawing::api::ITessellationSink** returnObject) override
 	{
 		*returnObject = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
 		wrapper.Attach(new TessellationSink(native_));
-		return wrapper->queryInterface(gmpi::drawing::api::SE_IID_TESSELLATIONSINK_MPGUI, reinterpret_cast<void **>(returnObject));
+		return wrapper->queryInterface(drawing::api::SE_IID_TESSELLATIONSINK_MPGUI, reinterpret_cast<void **>(returnObject));
 	}
 
-	GMPI_QUERYINTERFACE1(gmpi::drawing::api::SE_IID_MESH_MPGUI, gmpi::drawing::api::IMesh);
+	GMPI_QUERYINTERFACE1(drawing::api::SE_IID_MESH_MPGUI, drawing::api::IMesh);
 	GMPI_REFCOUNT;
 };
 #endif
 
-class GeometrySink : public gmpi::drawing::api::IGeometrySink
+class GeometrySink final : public drawing::api::IGeometrySink
 {
 	ID2D1GeometrySink* geometrysink_;
 
@@ -916,68 +921,68 @@ public:
 #endif
 		}
 	}
-	void setFillMode(gmpi::drawing::FillMode fillMode) override
-	{
-		native()->SetFillMode((D2D1_FILL_MODE)fillMode);
-	}
-
-	void beginFigure(const gmpi::drawing::Point startPoint, gmpi::drawing::FigureBegin figureBegin) override
+    void beginFigure(drawing::Point startPoint, drawing::FigureBegin figureBegin) override
 	{
 		native()->BeginFigure(*reinterpret_cast<const D2D1_POINT_2F*>(&startPoint), (D2D1_FIGURE_BEGIN)figureBegin);
 	}
 
-	void addLines(const gmpi::drawing::Point* points, uint32_t pointsCount) override
-	{
-		native()->AddLines(reinterpret_cast<const D2D1_POINT_2F*>(points), pointsCount);
-	}
-
-	void addBeziers(const gmpi::drawing::BezierSegment* beziers, uint32_t beziersCount) override
-	{
-		native()->AddBeziers(reinterpret_cast<const D2D1_BEZIER_SEGMENT*>(beziers), beziersCount);
-	}
-
-	void endFigure(gmpi::drawing::FigureEnd figureEnd) override
+	void endFigure(drawing::FigureEnd figureEnd) override
 	{
 		native()->EndFigure((D2D1_FIGURE_END)figureEnd);
 	}
 
-	gmpi::ReturnCode close() override
+	void setFillMode(drawing::FillMode fillMode) override
 	{
-		const auto r = native()->Close();
-		return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+		native()->SetFillMode((D2D1_FILL_MODE)fillMode);
 	}
 
-	void addLine(gmpi::drawing::Point point) override //TODO ref? forwarding ref? pointer?
+	ReturnCode close() override
+	{
+		const auto r = native()->Close();
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
+	}
+
+	void addLine(drawing::Point point) override
 	{
 		native()->AddLine(*reinterpret_cast<const D2D1_POINT_2F*>(&point));
 	}
 
-	void addBezier(const gmpi::drawing::BezierSegment* bezier) override
+	void addLines(const drawing::Point* points, uint32_t pointsCount) override
+	{
+		native()->AddLines(reinterpret_cast<const D2D1_POINT_2F*>(points), pointsCount);
+	}
+
+	void addBezier(const drawing::BezierSegment* bezier) override
 	{
 		native()->AddBezier(reinterpret_cast<const D2D1_BEZIER_SEGMENT*>(bezier));
 	}
 
-	void addQuadraticBezier(const gmpi::drawing::QuadraticBezierSegment* bezier) override
+	void addBeziers(const drawing::BezierSegment* beziers, uint32_t beziersCount) override
+	{
+		native()->AddBeziers(reinterpret_cast<const D2D1_BEZIER_SEGMENT*>(beziers), beziersCount);
+	}
+
+	void addQuadraticBezier(const drawing::QuadraticBezierSegment* bezier) override
 	{
 		native()->AddQuadraticBezier(reinterpret_cast<const D2D1_QUADRATIC_BEZIER_SEGMENT*>(bezier));
 	}
 
-	void addQuadraticBeziers(const gmpi::drawing::QuadraticBezierSegment* beziers, uint32_t beziersCount) override
+	void addQuadraticBeziers(const drawing::QuadraticBezierSegment* beziers, uint32_t beziersCount) override
 	{
 		native()->AddQuadraticBeziers(reinterpret_cast<const D2D1_QUADRATIC_BEZIER_SEGMENT*>(beziers), beziersCount);
 	}
 
-	void addArc(const gmpi::drawing::ArcSegment* arc) override
+	void addArc(const drawing::ArcSegment* arc) override
 	{
 		native()->AddArc(reinterpret_cast<const D2D1_ARC_SEGMENT*>(arc));
 	}
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IGeometrySink);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::IGeometrySink);
 	GMPI_REFCOUNT;
 };
 
 
-class Geometry : public gmpi::drawing::api::IPathGeometry
+class Geometry final : public drawing::api::IPathGeometry
 {
 	friend class GraphicsContext;
 
@@ -1003,42 +1008,42 @@ public:
 		return geometry_;
 	}
 
-	gmpi::ReturnCode open(drawing::api::IGeometrySink** returnGeometrySink) override;
+	ReturnCode open(drawing::api::IGeometrySink** returnGeometrySink) override;
 
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
 		assert(false); // not implemented.
 		//		native_->GetFactory((ID2D1Factory**)factory);
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode strokeContainsPoint(const drawing::Point* point, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
+	ReturnCode strokeContainsPoint(drawing::Point point, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
 	{
 		BOOL result = FALSE;
-		const auto r = native()->StrokeContainsPoint(*(D2D1_POINT_2F*)point, strokeWidth, toNative(strokeStyle), (const D2D1_MATRIX_3X2_F*)worldTransform, &result);
+		const auto r = native()->StrokeContainsPoint(*(D2D1_POINT_2F*)&point, strokeWidth, toNative(strokeStyle), (const D2D1_MATRIX_3X2_F*)worldTransform, &result);
 		*returnContains = result == TRUE;
-		return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
-	gmpi::ReturnCode fillContainsPoint(const drawing::Point* point, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
+	ReturnCode fillContainsPoint(drawing::Point point, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
 	{
 		BOOL result = FALSE;
 		const auto r = native()->FillContainsPoint(*(D2D1_POINT_2F*)&point, (const D2D1_MATRIX_3X2_F*)worldTransform, &result);
 		*returnContains = result == TRUE;
-		return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
-	gmpi::ReturnCode getWidenedBounds(float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, const drawing::Rect* bounds) override
+	ReturnCode getWidenedBounds(float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, drawing::Rect* returnBounds) override
 	{
-		const auto r = native()->GetWidenedBounds(strokeWidth, toNative(strokeStyle), (const D2D1_MATRIX_3X2_F*)worldTransform, (D2D_RECT_F*)bounds);
-		return r == S_OK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+		const auto r = native()->GetWidenedBounds(strokeWidth, toNative(strokeStyle), (const D2D1_MATRIX_3X2_F*)worldTransform, (D2D_RECT_F*)returnBounds);
+		return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IPathGeometry);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::IPathGeometry);
 	GMPI_REFCOUNT;
 };
 
 
-class Factory : public gmpi::drawing::api::IFactory2
+class Factory : public drawing::api::IFactory2
 {
 	ID2D1Factory1* m_pDirect2dFactory = {};
 	IDWriteFactory* writeFactory = {};
@@ -1066,9 +1071,9 @@ public:
 		DX_support_sRGB = s;
 	}
 			
-	gmpi::drawing::api::IBitmapPixels::PixelFormat getPlatformPixelFormat()
+	drawing::api::IBitmapPixels::PixelFormat getPlatformPixelFormat()
 	{
-		return DX_support_sRGB ? gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB : gmpi::drawing::api::IBitmapPixels::kBGRA;
+		return DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
 	}
 
 	Factory();
@@ -1079,12 +1084,12 @@ public:
 	{
 		return m_pDirect2dFactory;
 	}
-	std::wstring fontMatch(std::wstring fontName, gmpi::drawing::FontWeight fontWeight, float fontSize);
-	gmpi::ReturnCode createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry) override;
-	gmpi::ReturnCode createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat) override;
-	gmpi::ReturnCode createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
-	gmpi::ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
-	gmpi::ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override
+	std::wstring fontMatch(std::wstring fontName, drawing::FontWeight fontWeight, float fontSize);
+    ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
+    ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, drawing::api::ITextFormat** returnTextFormat) override;
+    ReturnCode createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnBitmap) override;
+	ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
+	ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override
 	{
 		*returnStrokeStyle = nullptr;
 
@@ -1100,24 +1105,24 @@ public:
 			return wrapper->queryInterface(&drawing::api::IStrokeStyle::guid, reinterpret_cast<void**>(returnStrokeStyle));
 		}
 
-		return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+        return hr == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
 	}
 
 	IWICBitmap* CreateDiBitmapFromNative(ID2D1Bitmap* D2D_Bitmap);
 
-	gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
+	ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IFactory);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::IFactory);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
-class GraphicsContext_base : public gmpi::drawing::api::IDeviceContext
+class GraphicsContext_base : public drawing::api::IDeviceContext
 {
 protected:
 	ID2D1DeviceContext* context_;
 
 	Factory* factory;
-	std::vector<gmpi::drawing::Rect> clipRectStack;
+	std::vector<drawing::Rect> clipRectStack;
 	std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
 
 	void Init()
@@ -1151,44 +1156,39 @@ public:
 		return context_;
 	}
 
-	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override
+	ReturnCode getFactory(drawing::api::IFactory** pfactory) override
 	{
 		*pfactory = factory;
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+	ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawRectangle(D2D1::RectF(rect->left, rect->top, rect->right, rect->bottom), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle) );
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
+	ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
 	{
-//auto test = (Brush*)brush;
-//auto test3 = dynamic_cast<Brush*>(brush);
-//auto test2 = test->native();
-//auto test4 = *(ID2D1Brush**)brush;
 		context_->FillRectangle((D2D1_RECT_F*)rect, ((Brush*)brush)->native());
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode clear(const drawing::Color* clearColor) override
+	ReturnCode clear(const drawing::Color* clearColor) override
 	{
 		native()->Clear(*(D2D1_COLOR_F*)clearColor);
 		return ReturnCode::Ok;
 	}
 
-	//void DrawLine(gmpi::drawing::Point point0, gmpi::drawing::Point point1, const gmpi::drawing::api::IBrush* brush, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle) override
-	gmpi::ReturnCode drawLine(const drawing::Point* point0, const drawing::Point* point1, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+	ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		context_->DrawLine(*((D2D_POINT_2F*)point0), *((D2D_POINT_2F*)point1), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle));
-		return gmpi::ReturnCode::Ok;
+		context_->DrawLine(*((D2D_POINT_2F*)&point0), *((D2D_POINT_2F*)&point1), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle));
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override;
+	ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override;
 
-	gmpi::ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
+	ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
 	{
 #ifdef LOG_DIRECTX_CALLS
 		_RPT3(_CRT_WARN, "context_->FillGeometry(geometry%x, brush%x, nullptr);\n", (int)geometry, (int)brush);
@@ -1202,12 +1202,12 @@ public:
 		}
 
 		context_->FillGeometry(d2d_geometry, ((Brush*)brush)->native(), opacityBrushNative);
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
+	ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
 
-	gmpi::ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
+	ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)bitmap);
 		auto native = bm->getNativeBitmap(context_);
@@ -1221,27 +1221,27 @@ public:
 				(D2D1_RECT_F*)sourceRectangle
 			);
 		}
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode setTransform(const drawing::Matrix3x2* transform) override
+	ReturnCode setTransform(const drawing::Matrix3x2* transform) override
 	{
 		context_->SetTransform(reinterpret_cast<const D2D1_MATRIX_3X2_F*>(transform));
 		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode getTransform(drawing::Matrix3x2* transform) override
+	ReturnCode getTransform(drawing::Matrix3x2* transform) override
 	{
 		context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(transform));
 		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override;
+	ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override;
 
-	gmpi::ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override;
+	ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override;
 
 	template <typename T>
-	gmpi::ReturnCode make_wrapped(gmpi::api::IUnknown* object, const gmpi::api::Guid& iid, T** returnObject)
+	ReturnCode make_wrapped(gmpi::api::IUnknown* object, const gmpi::api::Guid& iid, T** returnObject)
 	{
 		*returnObject = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
@@ -1249,7 +1249,7 @@ public:
 		return b2->queryInterface(&iid, reinterpret_cast<void**>(returnObject));
 	};
 
-	gmpi::ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
+	ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
 	{
 		return make_wrapped(
 			new LinearGradientBrush(factory, context_, linearGradientBrushProperties, brushProperties, gradientstopCollection),
@@ -1257,14 +1257,14 @@ public:
 			returnLinearGradientBrush);
 	}
 
-	gmpi::ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
 		*returnBitmapBrush = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 		b2.Attach(new BitmapBrush(factory, context_, bitmap, bitmapBrushProperties, brushProperties));
 		return b2->queryInterface(&drawing::api::IBitmapBrush::guid, reinterpret_cast<void **>(returnBitmapBrush));
 	}
-	gmpi::ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
+	ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
 	{
 		*returnRadialGradientBrush = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
@@ -1272,35 +1272,35 @@ public:
 		return b2->queryInterface(&drawing::api::IRadialGradientBrush::guid, reinterpret_cast<void **>(returnRadialGradientBrush));
 	}
 
-	gmpi::ReturnCode createCompatibleRenderTarget(const gmpi::drawing::Size* desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
+	ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
 
-	gmpi::ReturnCode drawRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+	ReturnCode drawRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
+	ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
 	{
 		context_->FillRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, ((Brush*)brush)->native());
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+	ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		context_->DrawEllipse((D2D1_ELLIPSE*)ellipse, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
+	ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
 	{
 		context_->FillEllipse((D2D1_ELLIPSE*)ellipse, ((Brush*)brush)->native());
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override;
+	ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override;
 
-	gmpi::ReturnCode popAxisAlignedClip() override
+	ReturnCode popAxisAlignedClip() override
 	{
 //				_RPT0(_CRT_WARN, "                 PopAxisAlignedClip()\n");
 #ifdef LOG_DIRECTX_CALLS
@@ -1308,29 +1308,29 @@ public:
 #endif
 		context_->PopAxisAlignedClip();
 		clipRectStack.pop_back();
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	void getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect) override;
+	void getAxisAlignedClip(drawing::Rect* returnClipRect) override;
 
-	gmpi::ReturnCode beginDraw() override
+	ReturnCode beginDraw() override
 	{
 		native()->BeginDraw();
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode endDraw() override
+	ReturnCode endDraw() override
 	{
 		native()->EndDraw();
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
 	bool SupportSRGB()
 	{
-		return factory->getPlatformPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB;
+		return factory->getPlatformPixelFormat() == drawing::api::IBitmapPixels::kBGRA_SRGB;
 	}
 
-	GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::IDeviceContext);
+	GMPI_QUERYINTERFACE_NEW(drawing::api::IDeviceContext);
 };
 
 class GraphicsContext final : public GraphicsContext_base
@@ -1346,7 +1346,7 @@ class BitmapRenderTarget final : public GraphicsContext_base // emulated by care
 	ID2D1BitmapRenderTarget* nativeBitmapRenderTarget = {};
 
 public:
-	BitmapRenderTarget(GraphicsContext_base* g, const gmpi::drawing::Size* desiredSize, Factory* pfactory) :
+	BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, Factory* pfactory) :
 		GraphicsContext_base(pfactory)
 	{
 		/* auto hr = */ g->native()->CreateCompatibleRenderTarget(*(D2D1_SIZE_F*)desiredSize, &nativeBitmapRenderTarget);
@@ -1365,17 +1365,17 @@ public:
 
 	// HACK, to be ABI compatible with IBitmapRenderTarget we need this virtual function,
 	// and it needs to be in the vtable right after all virtual functions of GraphicsContext
-	virtual gmpi::ReturnCode getBitmap(gmpi::drawing::api::IBitmap** returnBitmap);
+	virtual ReturnCode getBitmap(drawing::api::IBitmap** returnBitmap);
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == gmpi::drawing::api::IBitmapRenderTarget::guid)
+		if (*iid == drawing::api::IBitmapRenderTarget::guid)
 		{
 			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<gmpi::drawing::api::IBitmapRenderTarget*>(this);
+			*returnInterface = reinterpret_cast<drawing::api::IBitmapRenderTarget*>(this);
 			addRef();
-			return gmpi::ReturnCode::Ok;
+			return ReturnCode::Ok;
 		}
 
 		return GraphicsContext_base::queryInterface(iid, returnInterface);
@@ -1392,7 +1392,7 @@ public:
 		GraphicsContext_base(context, pfactory)
 	{}
 
-	gmpi::ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override
+	ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override
 	{
 		*returnSolidColorBrush = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b;
@@ -1400,8 +1400,8 @@ public:
 		return b->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 	}
 
-	//gmpi::ReturnCode createGradientStopCollection(const gmpi::drawing::api::MP1_GRADIENT_STOP* gradientStops, uint32_t gradientStopsCount, /* gmpi::drawing::api::MP1_GAMMA colorInterpolationGamma, gmpi::drawing::api::MP1_EXTEND_MODE extendMode,*/ gmpi::drawing::api::IGradientstopCollection** gradientStopCollection) override
-	gmpi::ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override
+	//ReturnCode createGradientStopCollection(const drawing::api::MP1_GRADIENT_STOP* gradientStops, uint32_t gradientStopsCount, /* drawing::api::MP1_GAMMA colorInterpolationGamma, drawing::api::MP1_EXTEND_MODE extendMode,*/ drawing::api::IGradientstopCollection** gradientStopCollection) override
+	ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override
 	{
 		// Adjust gradient gamma.
 		std::vector<drawing::Gradientstop> stops;
@@ -1421,15 +1421,15 @@ public:
 		return GraphicsContext_base::createGradientstopCollection(stops.data(), gradientstopsCount, extendMode, returnGradientstopCollection);
 	}
 
-	gmpi::ReturnCode clear(const drawing::Color* clearColor) override
+	ReturnCode clear(const drawing::Color* clearColor) override
 	{
-		gmpi::drawing::Color color(*clearColor);
+		drawing::Color color(*clearColor);
 		color.r = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.r));
 		color.g = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.g));
 		color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.b));
 		context_->Clear((D2D1_COLOR_F*)&color);
 
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 	GMPI_REFCOUNT;
 };

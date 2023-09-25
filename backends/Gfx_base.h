@@ -529,7 +529,7 @@ namespace gmpi
 				return gmpi::MP_FAIL;
 			}
 
-			int32_t CreateCompatibleRenderTarget(const drawing::Size* desiredSize, gmpi::drawing::IBitmapRenderTarget** bitmapRenderTarget) override
+			int32_t createCompatibleRenderTarget(const drawing::Size* desiredSize, gmpi::drawing::IBitmapRenderTarget** bitmapRenderTarget) override
 			{
 				return gmpi::MP_FAIL;
 			}

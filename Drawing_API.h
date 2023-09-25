@@ -163,7 +163,7 @@ enum class DashStyle : int32_t
 
 enum class LineJoin : int32_t
 {
-    Miter        = 0, //TODO spelling? Mitre?
+    Miter        = 0,
     Bevel        = 1,
     Round        = 2,
     MiterOrBevel = 3,
@@ -202,83 +202,83 @@ enum class FillMode : int32_t
 
 struct Color
 {
-    float r;
-    float g;
-    float b;
-    float a;
+    float r{};
+    float g{};
+    float b{};
+    float a{};
 };
 
 struct Point
 {
-    float x;
-    float y;
+    float x{};
+    float y{};
 };
 
 struct PointL
 {
-    int32_t x;
-    int32_t y;
+    int32_t x{};
+    int32_t y{};
 };
 
 struct Rect
 {
-    float left;
-    float top;
-    float right;
-    float bottom;
+    float left{};
+    float top{};
+    float right{};
+    float bottom{};
 };
 
 struct RectL
 {
-	int32_t    left;
-	int32_t    top;
-	int32_t    right;
-	int32_t    bottom;
+    int32_t left{};
+    int32_t top{};
+    int32_t right{};
+    int32_t bottom{};
 };
 
 struct Size
 {
-    float width;
-    float height;
+    float width{};
+    float height{};
 };
 
 struct SizeU
 {
-    uint32_t width;
-    uint32_t height;
+    uint32_t width{};
+    uint32_t height{};
 };
 
 struct SizeL
 {
-	int32_t width;
-	int32_t height;
+    int32_t width{};
+    int32_t height{};
 };
 
 struct Matrix3x2
 {
-    float _11;
-    float _12;
-    float _21;
-    float _22;
-    float _31;
-    float _32;
+    float _11{ 1.f };
+    float _12{};
+    float _21{};
+    float _22{ 1.f };
+    float _31{};
+    float _32{};
 };
 
 struct BitmapProperties
 {
-    float dpiX;
-    float dpiY;
+    float dpix{};
+    float dpiy{};
 };
 
 struct Gradientstop
 {
-    float position;
+    float position{};
     Color color;
 };
 
 struct BrushProperties
 {
-    float opacity;
+    float opacity{};
     Matrix3x2 transform;
 };
 
@@ -299,8 +299,8 @@ struct RadialGradientBrushProperties
 {
     Point center;
     Point gradientOriginOffset;
-    float radiusX;
-    float radiusY;
+    float radiusX{};
+    float radiusY{};
 };
 
 struct BezierSegment
@@ -321,7 +321,7 @@ struct ArcSegment
 {
     Point point;
     Size size;
-    float rotationAngle;
+    float rotationAngle{};
     SweepDirection sweepDirection;
     ArcSize arcSize;
 };
@@ -335,15 +335,15 @@ struct QuadraticBezierSegment
 struct Ellipse
 {
     Point point;
-    float radiusX;
-    float radiusY;
+    float radiusX{};
+    float radiusY{};
 };
 
 struct RoundedRect
 {
     Rect rect;
-    float radiusX;
-    float radiusY;
+    float radiusX{};
+    float radiusY{};
 };
 
 // Notes:
@@ -356,24 +356,24 @@ struct StrokeStyleProperties
     CapStyle endCap;
     CapStyle dashCap;
     LineJoin lineJoin;
-    float miterLimit;
+    float miterLimit{};
     DashStyle dashStyle;
-    float dashOffset;
-    int32_t transformTypeUnused;
+    float dashOffset{};
+    int32_t transformTypeUnused{};
 };
 
 // mimicks DWRITE_FONT_METRICS, except measurements are in DIPs not design units.
 struct FontMetrics
 {
-    float ascent;                // Ascent is the distance from the top of font character alignment box to the English baseline.
-    float descent;               // Descent is the distance from the bottom of font character alignment box to the English baseline.
-    float lineGap;               // Recommended additional white space to add between lines to improve legibility. The recommended line spacing (baseline-to-baseline distance) is the sum of ascent, descent, and lineGap. The line gap is usually positive or zero but can be negative, in which case the recommended line spacing is less than the height of the character alignment box.
-    float capHeight;             // Cap height is the distance from the English baseline to the top of a typical English capital. Capital H is often used as a reference character for the purpose of calculating the cap height value.
-    float xHeight;               // x-height is the distance from the English baseline to the top of lowercase letter x, or a similar lowercase character.
-    float underlinePosition;     // Underline position is the position of underline relative to the English baseline. The value is usually made negative in order to place the underline below the baseline.
-    float underlineThickness;
-    float strikethroughPosition; // Strikethrough position is the position of strikethrough relative to the English baseline. The value is usually made positive in order to place the strikethrough above the baseline.
-    float strikethroughThickness;
+    float ascent{};                // Ascent is the distance from the top of font character alignment box to the English baseline.
+    float descent{};               // Descent is the distance from the bottom of font character alignment box to the English baseline.
+    float lineGap{};               // Recommended additional white space to add between lines to improve legibility. The recommended line spacing (baseline-to-baseline distance) is the sum of ascent, descent, and lineGap. The line gap is usually positive or zero but can be negative, in which case the recommended line spacing is less than the height of the character alignment box.
+    float capHeight{};             // Cap height is the distance from the English baseline to the top of a typical English capital. Capital H is often used as a reference character for the purpose of calculating the cap height value.
+    float xHeight{};               // x-height is the distance from the English baseline to the top of lowercase letter x, or a similar lowercase character.
+    float underlinePosition{};     // Underline position is the position of underline relative to the English baseline. The value is usually made negative in order to place the underline below the baseline.
+    float underlineThickness{};
+    float strikethroughPosition{}; // Strikethrough position is the position of strikethrough relative to the English baseline. The value is usually made positive in order to place the strikethrough above the baseline.
+    float strikethroughThickness{};
 
 	inline float bodyHeight() const
 	{
@@ -412,7 +412,7 @@ struct DECLSPEC_NOVTABLE IResource : public gmpi::api::IUnknown
 
     // {617750C9-14DC-4157-BBD0-FEDF5270D8FD}
     inline static const gmpi::api::Guid guid =
-    { 0x617750c9, 0x14dc, 0x4157, { 0xbb, 0xd0, 0xfe, 0xdf, 0x52, 0x70, 0xd8, 0xfd } };
+    { 0x617750C9, 0x14DC, 0x4157, { 0xBB, 0xD0, 0xFE, 0xDF, 0x52, 0x70, 0xD8, 0xFD} };
 };
 
 // INTERFACE 'IBitmapPixels'
@@ -426,9 +426,9 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
 		kBGRA,
 		kBGRA_SRGB
 	};
-    virtual gmpi::ReturnCode getAddress(uint8_t** returnGetAddress) = 0;
-    virtual gmpi::ReturnCode getBytesPerRow(int32_t* returnGetBytesPerRow) = 0;
-    virtual gmpi::ReturnCode getPixelFormat(int32_t* returnGetPixelFormat) = 0;
+    virtual gmpi::ReturnCode getAddress(uint8_t** returnAddress) = 0;
+    virtual gmpi::ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) = 0;
+    virtual gmpi::ReturnCode getPixelFormat(int32_t* returnPixelFormat) = 0;
 
     // {CCE4F628-289E-4EAB-9837-1755D9E5F793}
     inline static const gmpi::api::Guid guid =
@@ -439,7 +439,7 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IBitmap : public IResource
 {
     virtual gmpi::ReturnCode getSizeU(SizeU* returnSizeU) = 0;
-    // Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
+    // Note: Not supported when Bitmap was created by IMpDeviceContext::createCompatibleRenderTarget()
     virtual gmpi::ReturnCode lockPixels(IBitmapPixels** returnPixels, int32_t flags) = 0;
 
     // {EDF250B7-29FE-4FEC-8C6A-FBCB1F0A301A}
@@ -465,7 +465,7 @@ struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
 {
     virtual gmpi::ReturnCode setExtendModeX(ExtendMode extendModeX) = 0;
     virtual gmpi::ReturnCode setExtendModeY(ExtendMode extendModeY) = 0;
-    virtual gmpi::ReturnCode setInterpolationMode(BitmapInterpolationMode interpolationMode) = 0;
+    virtual gmpi::ReturnCode setInterpolationMode(BitmapInterpolationMode bitmapInterpolationMode) = 0;
 
     // {10E6068D-75D7-4C36-89AD-1C8878E70988}
     inline static const gmpi::api::Guid guid =
@@ -486,7 +486,7 @@ struct DECLSPEC_NOVTABLE ISolidColorBrush : public IBrush
 // INTERFACE 'ILinearGradientBrush'
 struct DECLSPEC_NOVTABLE ILinearGradientBrush : public IBrush
 {
-    virtual void setStartPoint(Point startPoint) = 0; // !!! pass all points as pointers?
+    virtual void setStartPoint(Point startPoint) = 0;
     virtual void setEndPoint(Point endPoint) = 0;
 
     // {986C3B9A-9D0A-4BF5-B721-0B9611B2798D}
@@ -510,25 +510,6 @@ struct DECLSPEC_NOVTABLE IRadialGradientBrush : public IBrush
 // INTERFACE 'IStrokeStyle'
 struct DECLSPEC_NOVTABLE IStrokeStyle : public IResource
 {
-#if 0 // better to omit these.
-	virtual MP1_CAP_STYLE GetStartCap() = 0;
-
-	virtual MP1_CAP_STYLE GetEndCap() = 0;
-
-	virtual MP1_CAP_STYLE GetDashCap() = 0;
-
-	virtual float GetMiterLimit() = 0;
-
-	virtual MP1_LINE_JOIN GetLineJoin() = 0;
-
-	virtual float GetDashOffset() = 0;
-
-	virtual MP1_DASH_STYLE GetDashStyle() = 0;
-
-	virtual uint32_t GetDashesCount() = 0;
-
-	virtual void GetDashes(float* dashes, uint32_t dashesCount) = 0;
-#endif
 
     // {27D19BF3-9DB2-49CC-A8EE-28E0716EA8B6}
     inline static const gmpi::api::Guid guid =
@@ -577,11 +558,11 @@ struct DECLSPEC_NOVTABLE IGeometrySink2 : public ISimplifiedGeometrySink
 // INTERFACE 'IGeometrySink'
 struct DECLSPEC_NOVTABLE IGeometrySink : public gmpi::api::IUnknown
 {
-    virtual void beginFigure(const Point startPoint, FigureBegin figureBegin) = 0;
+    virtual void beginFigure(Point startPoint, FigureBegin figureBegin) = 0;
     virtual void endFigure(FigureEnd figureEnd) = 0;
     virtual void setFillMode(FillMode fillMode) = 0;
     virtual gmpi::ReturnCode close() = 0;
-    virtual void addLine(const Point point) = 0;
+    virtual void addLine(Point point) = 0;
     virtual void addLines(const Point* points, uint32_t pointsCount) = 0;
     virtual void addBezier(const BezierSegment* bezier) = 0;
     virtual void addBeziers(const BezierSegment* beziers, uint32_t beziersCount) = 0;
@@ -599,12 +580,9 @@ struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
 {
     virtual gmpi::ReturnCode open(IGeometrySink** returnGeometrySink) = 0;
 	// in DX, these are part of IMpGeometry. But were added later here, and so added last. not a big deal since we support only one type of geometry, not many like DX.
-    //virtual gmpi::ReturnCode strokeContainsPoint(const Point point, float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, bool contains) = 0;
-    //virtual gmpi::ReturnCode fillContainsPoint(const Point point, const Matrix3x2* worldTransform, bool contains) = 0;
-    //virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, const Rect* bounds) = 0;
-    virtual gmpi::ReturnCode strokeContainsPoint(const Point* point, float strokeWidth, IStrokeStyle* method, const Matrix3x2* worldTransform, bool* contains) = 0;
-    virtual gmpi::ReturnCode fillContainsPoint(const Point* point, const Matrix3x2* worldTransform, bool* contains) = 0;
-    virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* method, const Matrix3x2* worldTransform, const Rect* bounds) = 0;
+    virtual gmpi::ReturnCode strokeContainsPoint(Point point, float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, bool* returnContains) = 0;
+    virtual gmpi::ReturnCode fillContainsPoint(Point point, const Matrix3x2* worldTransform, bool* returnContains) = 0;
+    virtual gmpi::ReturnCode getWidenedBounds(float strokeWidth, IStrokeStyle* strokeStyle, const Matrix3x2* worldTransform, Rect* returnBounds) = 0;
 
     // {89C6E868-B8A5-49BF-B771-02FB1EEF38AD}
     inline static const gmpi::api::Guid guid =
@@ -617,52 +595,28 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
     virtual gmpi::ReturnCode createBitmapBrush(IBitmap* bitmap, const BitmapBrushProperties* bitmapBrushProperties, const BrushProperties* brushProperties, IBitmapBrush** returnBitmapBrush) = 0;
     virtual gmpi::ReturnCode createSolidColorBrush(const Color* color, const BrushProperties* brushProperties, ISolidColorBrush** returnSolidColorBrush) = 0;
     virtual gmpi::ReturnCode createGradientstopCollection(const Gradientstop* gradientstops, uint32_t gradientstopsCount, ExtendMode extendMode, IGradientstopCollection** returnGradientstopCollection) = 0;
-    virtual gmpi::ReturnCode createLinearGradientBrush(const LinearGradientBrushProperties* linearGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientStopCollection, ILinearGradientBrush** returnLinearGradientBrush) = 0;
-
-	/*
-		Radial Gradient Brush example.
-
-		RadialGradientBrushProperties props{
-			{100.0, 100.0}, // center
-			{0.0, 0.0},		// gradientOriginOffset
-			200.0f,			// radiusX
-			200.0f			// radiusY
-		};
-
-		Gradientstop gradientStops[] = {
-			{0.0f, Color::Red   },
-			{1.0f, Color::Green }
-		};
-
-		auto gradientStopCollection = g.CreateGradientStopCollection(gradientStops);
-
-		auto brushFill = g.CreateRadialGradientBrush({ props }, {}, gradientStopCollection);
-		if(!brushFill.isNull())
-		{
-			g.FillRectangle(getRect(), brushFill);
-		}
-	*/
-    virtual gmpi::ReturnCode createRadialGradientBrush(const RadialGradientBrushProperties* radialGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientStopCollection, IRadialGradientBrush** returnRadialGradientBrush) = 0;
-    virtual gmpi::ReturnCode drawLine(const Point* point0, const Point* point1, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
-    virtual gmpi::ReturnCode drawRectangle(const Rect* rect, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0; // TODO!!! no default args in raw interfaces
+    virtual gmpi::ReturnCode createLinearGradientBrush(const LinearGradientBrushProperties* linearGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientstopCollection, ILinearGradientBrush** returnLinearGradientBrush) = 0;
+    virtual gmpi::ReturnCode createRadialGradientBrush(const RadialGradientBrushProperties* radialGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientstopCollection, IRadialGradientBrush** returnRadialGradientBrush) = 0;
+    virtual gmpi::ReturnCode drawLine(Point point0, Point point1, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
+    virtual gmpi::ReturnCode drawRectangle(const Rect* rect, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
     virtual gmpi::ReturnCode fillRectangle(const Rect* rect, IBrush* brush) = 0;
-    virtual gmpi::ReturnCode drawRoundedRectangle(const RoundedRect* roundedRect, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0;
+    virtual gmpi::ReturnCode drawRoundedRectangle(const RoundedRect* roundedRect, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
     virtual gmpi::ReturnCode fillRoundedRectangle(const RoundedRect* roundedRect, IBrush* brush) = 0;
-    virtual gmpi::ReturnCode drawEllipse(const Ellipse* ellipse, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0;
+    virtual gmpi::ReturnCode drawEllipse(const Ellipse* ellipse, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
     virtual gmpi::ReturnCode fillEllipse(const Ellipse* ellipse, IBrush* brush) = 0;
-    virtual gmpi::ReturnCode drawGeometry(IPathGeometry* geometry, IBrush* brush, float strokeWidth = 1.0f, IStrokeStyle* strokeStyle = nullptr) = 0;
-    virtual gmpi::ReturnCode fillGeometry(IPathGeometry* geometry, IBrush* brush, IBrush* opacityBrush) = 0;
+    virtual gmpi::ReturnCode drawGeometry(IPathGeometry* pathGeometry, IBrush* brush, float strokeWidth, IStrokeStyle* strokeStyle) = 0;
+    virtual gmpi::ReturnCode fillGeometry(IPathGeometry* pathGeometry, IBrush* brush, IBrush* opacityBrush) = 0;
     virtual gmpi::ReturnCode drawBitmap(IBitmap* bitmap, const Rect* destinationRectangle, float opacity, BitmapInterpolationMode interpolationMode, const Rect* sourceRectangle) = 0;
     virtual gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, ITextFormat* textFormat, const Rect* layoutRect, IBrush* defaultForegroundBrush, int32_t options) = 0;
     virtual gmpi::ReturnCode setTransform(const Matrix3x2* transform) = 0;
-    virtual gmpi::ReturnCode getTransform(Matrix3x2* transform) = 0;
+    virtual gmpi::ReturnCode getTransform(Matrix3x2* returnTransform) = 0;
     virtual gmpi::ReturnCode pushAxisAlignedClip(const Rect* clipRect) = 0;
     virtual gmpi::ReturnCode popAxisAlignedClip() = 0;
     virtual void getAxisAlignedClip(Rect* returnClipRect) = 0;
     virtual gmpi::ReturnCode clear(const Color* clearColor) = 0;
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
-    virtual gmpi::ReturnCode createCompatibleRenderTarget(const Size* desiredSize, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
+    virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
 
     // {A1D9751D-0C43-4F57-8958-E0BCE359B2FD}
     inline static const gmpi::api::Guid guid =
@@ -684,7 +638,7 @@ struct DECLSPEC_NOVTABLE IBitmapRenderTarget : public IDeviceContext
 struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode createPathGeometry(IPathGeometry** returnPathGeometry) = 0;
-    virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, /*const void* unusedFontCollection,*/ FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, ITextFormat** returnTextFormat) = 0;
+    virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, ITextFormat** returnTextFormat) = 0;
     virtual gmpi::ReturnCode createImage(int32_t width, int32_t height, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode loadImageU(const char* uri, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;

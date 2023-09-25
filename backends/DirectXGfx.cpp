@@ -951,7 +951,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
-				wrapper.Attach(new GradientStopCollection1(native2, factory));
+				wrapper.Attach(new GradientstopCollection(native2, factory));
 
 				wrapper->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
 			}
@@ -959,46 +959,13 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-
-		//gmpi::ReturnCode GraphicsContext_base::CreateMesh(gmpi::drawing::api::IMesh** returnObject)
-		//{
-		//	*returnObject = nullptr;
-
-		//	auto mesh = new Mesh(factory, context_);
-		//	return mesh->queryInterface(drawing::api::SE_IID_MESH_MPGUI, reinterpret_cast<void **>(returnObject));
-		//}
-		/*
-		gmpi::ReturnCode GraphicsContext_base::CreateBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap)
-		{
-			*bitmap = nullptr;
-
-			D2D1_BITMAP_PROPERTIES nativeBitmapProperties;
-			nativeBitmapProperties.dpiX = 0.0f;
-			nativeBitmapProperties.dpiY = 0.0f;
-			nativeBitmapProperties.pixelFormat = context_->GetPixelFormat();
-
-			ID2D1Bitmap* b = nullptr;
-			auto hr = context_->CreateBitmap(*(D2D1_SIZE_U*) &size, nativeBitmapProperties, &b);
-
-			if (hr == 0)
-			{
-				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new  bitmap(context_, b));
-
-				b2->queryInterface(drawing::api::SE_IID_BITMAP_MPGUI, reinterpret_cast<void **>(bitmap));
-			}
-
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
-		}
-		*/
-
-		// todo : interger size?
-		gmpi::ReturnCode GraphicsContext_base::createCompatibleRenderTarget(const gmpi::drawing::Size* desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
+		// todo : integer size?
+		gmpi::ReturnCode GraphicsContext_base::createCompatibleRenderTarget(drawing::Size desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 		{
 			*bitmapRenderTarget = nullptr;
 
 			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-			b2.Attach(new BitmapRenderTarget(this, desiredSize, factory));
+			b2.Attach(new BitmapRenderTarget(this, &desiredSize, factory));
 			return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void **>(bitmapRenderTarget));
 		}
 

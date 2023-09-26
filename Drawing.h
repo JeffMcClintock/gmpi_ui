@@ -2029,7 +2029,7 @@ public:
 class Factory : public gmpi::IWrapper<gmpi::drawing::api::IFactory>
 {
 	std::unordered_map<std::string, std::pair<float, float>> availableFonts; // font family name, body-size, cap-height.
-	gmpi::shared_ptr<gmpi::drawing::api::IFactory2> factory2;
+	gmpi::shared_ptr<gmpi::drawing::api::IFactory> factory2;
 
 public:
 	PathGeometry createPathGeometry()
@@ -2100,7 +2100,7 @@ public:
 
 		if (!factory2)
 		{
-			if (gmpi::ReturnCode::Ok == get()->queryInterface(&gmpi::drawing::api::IFactory2::guid, (void**) factory2.put())) //TODO should queryInterface take void**? or better to pass IUnknown** ??
+			if (gmpi::ReturnCode::Ok == get()->queryInterface(&gmpi::drawing::api::IFactory::guid, (void**) factory2.put())) //TODO should queryInterface take void**? or better to pass IUnknown** ??
 			{
 				assert(availableFonts.empty());
 
@@ -2556,7 +2556,7 @@ public:
 		auto sink = geometry.open();
 
 		auto it = points.begin();
-		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::filled);
+		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
 		for ( ; it != points.end(); ++it)
 		{
 			sink.addLine(*it);

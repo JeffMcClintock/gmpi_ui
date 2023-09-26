@@ -89,23 +89,23 @@ CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some c
 }
         
 // helper
-void SetNativePenStrokeStyle(NSBezierPath * path, drawing::api::IStrokeStyle* strokeStyle)
+void setNativePenStrokeStyle(NSBezierPath * path, drawing::api::IStrokeStyle* strokeStyle)
 {
-    drawing::MP1_CAP_STYLE capstyle = strokeStyle == nullptr ? drawing::MP1_CAP_STYLE_FLAT : strokeStyle->GetStartCap();
+    drawing::CapStyle capstyle = strokeStyle == nullptr ? drawing::CapStyle::Flat : strokeStyle->getStartCap();
             
     switch(capstyle)
     {
         default:
-        case drawing::MP1_CAP_STYLE_FLAT:
+        case drawing::CapStyle::Flat:
             [ path setLineCapStyle:NSLineCapStyleButt ];
             break;
                     
-        case drawing::MP1_CAP_STYLE_SQUARE:
+        case drawing::CapStyle::Square:
             [ path setLineCapStyle:NSLineCapStyleSquare ];
             break;
                     
-        case drawing::MP1_CAP_STYLE_TRIANGLE:
-        case drawing::MP1_CAP_STYLE_ROUND:
+        case drawing::CapStyle::Triangle:
+        case drawing::CapStyle::Round:
             [ path setLineCapStyle:NSLineCapStyleRound ];
             break;
     }
@@ -115,21 +115,21 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
 {
     auto strokeStyle = const_cast<drawing::api::IStrokeStyle*>(strokeStyleIm); // work arround const-correctness issues.
 
-    const auto dashStyle = strokeStyle ? strokeStyle->GetDashStyle() : drawing::MP1_DASH_STYLE_SOLID;
-    const auto phase = strokeStyle ? strokeStyle->GetDashOffset() : 0.0f;
+    const auto dashStyle = strokeStyle ? strokeStyle->getDashStyle() : drawing::DashStyle::Solid;
+    const auto phase = strokeStyle ? strokeStyle->getDashOffset() : 0.0f;
             
     std::vector<CGFloat> dashes;
             
     switch(dashStyle)
     {
-        case drawing::MP1_DASH_STYLE_SOLID:
+        case drawing::DashStyle::Solid:
             break;
                     
-        case drawing::MP1_DASH_STYLE_CUSTOM:
+        case drawing::DashStyle::Custom:
         {
             std::vector<float> dashesf;
-            dashesf.resize(strokeStyle->GetDashesCount());
-            strokeStyle->GetDashes(dashesf.data(), static_cast<uint32_t>(dashesf.size()));
+            dashesf.resize(strokeStyle->getDashesCount());
+            strokeStyle->getDashes(dashesf.data(), static_cast<uint32_t>(dashesf.size()));
                     
             for(auto d : dashesf)
             {
@@ -138,19 +138,19 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
         }
         break;
                     
-        case drawing::MP1_DASH_STYLE_DOT:
+        case drawing::DashStyle::Dot:
             dashes.push_back(0.0f);
             dashes.push_back(strokeWidth * 2.f);
             break;
                     
-        case drawing::MP1_DASH_STYLE_DASH_DOT:
+        case drawing::DashStyle::DashDot:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(0.f);
             dashes.push_back(strokeWidth * 2.f);
             break;
                     
-        case drawing::MP1_DASH_STYLE_DASH_DOT_DOT:
+        case drawing::DashStyle::DashDotDot:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(0.f);
@@ -159,7 +159,7 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
             dashes.push_back(strokeWidth * 2.f);
             break;
                     
-        case drawing::MP1_DASH_STYLE_DASH:
+        case drawing::DashStyle::Dash:
         default:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
@@ -169,7 +169,7 @@ void applyDashStyleToPath(NSBezierPath* path, const drawing::api::IStrokeStyle* 
     [path setLineDash: dashes.data() count: dashes.size() phase: phase];
 }
 
-// Classes without GetFactory()
+// Classes without getFactory()
 template<class MpInterface, class CocoaType>
 class CocoaWrapper : public MpInterface
 {
@@ -197,7 +197,7 @@ public:
 	GMPI_REFCOUNT;
 };
 
-// Classes with GetFactory()
+// Classes with getFactory()
 template<class MpInterface, class CocoaType>
 class CocoaWrapperWithFactory : public CocoaWrapper<MpInterface, CocoaType>
 {
@@ -232,12 +232,12 @@ class TextFormat final : public drawing::api::ITextFormat // : public CocoaWrapp
 {
 public:
     std::string fontFamilyName;
-    drawing::MP1_FONT_WEIGHT fontWeight;
-    drawing::MP1_FONT_STYLE fontStyle;
-    drawing::MP1_FONT_STRETCH fontStretch;
-    drawing::MP1_TEXT_ALIGNMENT textAlignment;
-    drawing::MP1_PARAGRAPH_ALIGNMENT paragraphAlignment;
-    drawing::MP1_WORD_WRAPPING wordWrapping = drawing::MP1_WORD_WRAPPING_WRAP;
+    drawing::FontWeight fontWeight;
+    drawing::FontStyle fontStyle;
+    drawing::FontStretch fontStretch;
+    drawing::TextAlignment textAlignment;
+    drawing::ParagraphAlignment paragraphAlignment;
+    drawing::WordWrapping wordWrapping = drawing::WordWrapping::Wrap;
     float fontSize;
     bool useLegacyBaseLineSnapping = true;
 
@@ -273,7 +273,7 @@ public:
         return windowsFont;
     }
 
-    TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, const char* pfontFamilyName, drawing::MP1_FONT_WEIGHT pfontWeight, drawing::MP1_FONT_STYLE pfontStyle, drawing::MP1_FONT_STRETCH pfontStretch, float pfontSize) :
+    TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, const char* pfontFamilyName, drawing::FontWeight pfontWeight, drawing::FontStyle pfontStyle, drawing::FontStretch pfontStretch, float pfontSize) :
         //				CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>(nullptr)
         fontWeight(pfontWeight)
         , fontStyle(pfontStyle)
@@ -285,10 +285,10 @@ public:
         fontFamilyName = fontSubstitute(pfontFamilyName);
 
         NSFontTraitMask fontTraits = 0;
-        if (pfontWeight >= drawing::MP1_FONT_WEIGHT_DEMI_BOLD)
+        if (pfontWeight >= drawing::FontWeight::DemiBold)
             fontTraits |= NSBoldFontMask;
 
-        if (pfontStyle == drawing::MP1_FONT_STYLE_ITALIC)
+        if (pfontStyle == drawing::FontStyle::Italic)
             fontTraits |= NSItalicFontMask;
 
         auto nsFontName = [NSString stringWithCString : fontFamilyName.c_str() encoding : NSUTF8StringEncoding];
@@ -329,7 +329,7 @@ public:
                 */
 
             const int roundNearest = 50;
-            const int nativeFontWeight = 1 + (pfontWeight + roundNearest) / 100;
+            const int nativeFontWeight = 1 + ((int) pfontWeight + roundNearest) / 100;
 
             nativefont = [[NSFontManager sharedFontManager]fontWithFamily:nsFontName traits : fontTraits weight : nativeFontWeight size : fontSize];
         }
@@ -342,21 +342,21 @@ public:
         if (!nativefont)
         {
             static const CGFloat weightConversion[] = {
-                NSFontWeightUltraLight, // MP1_FONT_WEIGHT_THIN = 100
-                NSFontWeightThin,       // MP1_FONT_WEIGHT_ULTRA_LIGHT = 200
-                NSFontWeightLight,      // MP1_FONT_WEIGHT_LIGHT = 300
-                NSFontWeightRegular,    // MP1_FONT_WEIGHT_NORMAL = 400
-                NSFontWeightMedium,     // MP1_FONT_WEIGHT_MEDIUM = 500
-                NSFontWeightSemibold,   // MP1_FONT_WEIGHT_SEMI_BOLD = 600
-                NSFontWeightBold,       // MP1_FONT_WEIGHT_BOLD = 700
-                NSFontWeightHeavy,      // MP1_FONT_WEIGHT_BLACK = 900
-                NSFontWeightBlack       // MP1_FONT_WEIGHT_ULTRA_BLACK = 950
+                NSFontWeightUltraLight, // FontWeight_THIN = 100
+                NSFontWeightThin,       // FontWeight_ULTRA_LIGHT = 200
+                NSFontWeightLight,      // FontWeight_LIGHT = 300
+                NSFontWeightRegular,    // FontWeight_NORMAL = 400
+                NSFontWeightMedium,     // FontWeight_MEDIUM = 500
+                NSFontWeightSemibold,   // FontWeight_SEMI_BOLD = 600
+                NSFontWeightBold,       // FontWeight_BOLD = 700
+                NSFontWeightHeavy,      // FontWeight_BLACK = 900
+                NSFontWeightBlack       // FontWeight_ULTRA_BLACK = 950
             };
 
             const int arrMax = std::size(weightConversion) - 1;
             const int roundNearest = 50;
             const int nativeFontWeightIndex
-                = std::max(0, std::min(arrMax, -1 + (pfontWeight + roundNearest) / 100));
+                = std::max(0, std::min(arrMax, -1 + ((int) pfontWeight + roundNearest) / 100));
             const auto nativeFontWeight = weightConversion[nativeFontWeightIndex];
 
             // final fallback. system font.
@@ -391,8 +391,8 @@ public:
         // On Direct2D boudning rect height is typicaly much less than Cocoa.
         // I don't know any algorithm for converting the extra height.
         // Fix is to disregard extra height on both platforms.
-        drawing::MP1_FONT_METRICS fontMetrics{};
-        GetFontMetrics(&fontMetrics);
+        drawing::FontMetrics fontMetrics{};
+        getFontMetrics(&fontMetrics);
 
         auto boundingBoxSize = [@"A" sizeWithAttributes : native2];
 
@@ -406,19 +406,19 @@ public:
         }
     }
 
-	ReturnCode setTextAlignment(drawing::TextAlignment textAlignment) override
+	ReturnCode setTextAlignment(drawing::TextAlignment ptextAlignment) override
     {
         textAlignment = ptextAlignment;
 
         switch (textAlignment)
         {
-        case (int)TextAlignment::Leading: // Left.
+            case drawing::TextAlignment::Leading: // Left.
             [native2[NSParagraphStyleAttributeName] setAlignment:NSTextAlignmentLeft] ;
             break;
-        case (int)TextAlignment::Trailing: // Right
+            case drawing::TextAlignment::Trailing: // Right
             [native2[NSParagraphStyleAttributeName] setAlignment:NSTextAlignmentRight] ;
             break;
-        case (int)TextAlignment::Center:
+            case drawing::TextAlignment::Center:
             [native2[NSParagraphStyleAttributeName] setAlignment:NSTextAlignmentCenter] ;
             break;
         }
@@ -426,13 +426,13 @@ public:
         return ReturnCode::Ok;
     }
 
-	ReturnCode setParagraphAlignment(drawing::ParagraphAlignment paragraphAlignment) override
+	ReturnCode setParagraphAlignment(drawing::ParagraphAlignment pparagraphAlignment) override
     {
         paragraphAlignment = pparagraphAlignment;
         return ReturnCode::Ok;
     }
 
-	ReturnCode setWordWrapping(drawing::WordWrapping wordWrapping) override
+	ReturnCode setWordWrapping(drawing::WordWrapping pwordWrapping) override
     {
         wordWrapping = pwordWrapping;
         return ReturnCode::Ok;
@@ -441,7 +441,7 @@ public:
 
     ReturnCode getFontMetrics(drawing::FontMetrics* returnFontMetrics) override
     {
-        NSFont* font = native2[NSFontAttributeName];  // Get font from dictionary.
+        NSFont* font = native2[NSFontAttributeName];  // get font from dictionary.
         returnFontMetrics->xHeight = [font xHeight];
         returnFontMetrics->ascent = [font ascender];
         returnFontMetrics->descent = -[font descender]; // Descent is negative on OSX (positive on Windows)
@@ -507,8 +507,8 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
     int32_t flags;
 
 public:
-    bitmapPixels(Bitmap* bitmap /*NSImage** inBitmap*/, bool _alphaPremultiplied, int32_t pflags);
-    ~bitmapPixels();
+    BitmapPixels(Bitmap* bitmap /*NSImage** inBitmap*/, bool _alphaPremultiplied, int32_t pflags);
+    ~BitmapPixels();
 
     ReturnCode getAddress(uint8_t** returnAddress) override
     {
@@ -632,12 +632,12 @@ public:
         }
     }
 
-    inline NSImage* GetNativeBitmap()
+    inline NSImage* getNativeBitmap()
     {
         return nativeBitmap_;
     }
 /*
-    drawing::Size GetSizeF() override
+    drawing::Size getSizeF() override
     {
         NSSize s = [nativeBitmap_ size];
         return Size(s.width, s.height);
@@ -665,12 +665,12 @@ public:
         return ReturnCode::Ok;
     }
 #if 0
-    int32_t lockPixelsOld(drawing::api::IBitmapPixels** returnInterface, bool alphaPremultiplied) override
+    ReturnCode lockPixelsOld(drawing::api::IBitmapPixels** returnInterface, bool alphaPremultiplied) override
     {
         *returnInterface = 0;
         return MP_FAIL;
         /* TODO!!!
-                    gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+                    gmpi::shared_ptr<api::IUnknown> b2;
                     b2.Attach(new bitmapPixels(&nativeBitmap_, alphaPremultiplied, drawing::MP1_BITMAP_LOCK_READ | drawing::MP1_BITMAP_LOCK_WRITE));
 
                     return b2->queryInterface(drawing::SE_IID_BITMAP_PIXELS_MPGUI, (void**)(returnInterface));
@@ -678,18 +678,18 @@ public:
     }
 #endif
 
-	ReturnCode lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t flags) override;
+    ReturnCode lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t flags) override
     {
         //               _RPT1(0, "Bitmap() lockPixels: %d\n", this);
         *returnPixels = 0;
 
-        gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
-        b2.Attach(new bitmapPixels(this /*&nativeBitmap_*/, true, flags));
+        gmpi::shared_ptr<api::IUnknown> b2;
+        b2.Attach(new BitmapPixels(this /*&nativeBitmap_*/, true, flags));
 
-        return b2->queryInterface(drawing::api::IBitmapPixels::guid, (void**)(returnPixels));
+        return b2->queryInterface(&drawing::api::IBitmapPixels::guid, (void**)(returnPixels));
     }
 
-    void ApplyAlphaCorrection() override {}
+//    void ApplyAlphaCorrection() override {}
 
     void ApplyAlphaCorrection2() {}
 
@@ -706,9 +706,9 @@ public:
 class GradientstopCollection : public CocoaWrapperWithFactory<drawing::api::IGradientstopCollection, nothing>
 {
 public:
-    std::vector<drawing::MP1_GRADIENT_STOP> gradientstops;
+    std::vector<drawing::Gradientstop> gradientstops;
 
-    GradientstopCollection(drawing::api::IFactory* factory, const drawing::MP1_GRADIENT_STOP* gradientStops, uint32_t gradientStopsCount) : CocoaWrapperWithFactory(nullptr, factory)
+    GradientstopCollection(drawing::api::IFactory* factory, const drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount) : CocoaWrapperWithFactory(nullptr, factory)
     {
         for (uint32_t i = 0; i < gradientStopsCount; ++i)
         {
@@ -718,402 +718,7 @@ public:
     GMPI_QUERYINTERFACE_NEW(drawing::api::IGradientstopCollection);
 };
 
-class BitmapBrush final : public drawing::api::IBitmapBrush, public CocoaBrushBase
-{
-    Bitmap bitmap_;
-    drawing::MP1_BITMAP_BRUSH_PROPERTIES bitmapBrushProperties_;
-    drawing::MP1_BRUSH_PROPERTIES brushProperties_;
-
-public:
-    BitmapBrush(
-        cocoa::DrawingFactory* factory,
-        const drawing::api::IBitmap* bitmap,
-        const drawing::MP1_BITMAP_BRUSH_PROPERTIES* bitmapBrushProperties,
-        const drawing::MP1_BRUSH_PROPERTIES* brushProperties
-    )
-        : CocoaBrushBase(factory),
-        bitmap_(factory, ((Bitmap*)bitmap)->nativeBitmap_),
-        bitmapBrushProperties_(*bitmapBrushProperties),
-        brushProperties_(*brushProperties)
-    {
-    }
-
-    void StrokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        [[NSColor colorWithPatternImage : bitmap_.nativeBitmap_]set];
-
-        [nsPath setLineWidth : strokeWidth] ;
-        SetNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
-
-        [nsPath stroke] ;
-    }
-    void FillPath(GraphicsContext* context, NSBezierPath* nsPath) const override;
-
-	ReturnCode setExtendModeX(drawing::ExtendMode extendModeX) override
-    {
-        //                native()->SetExtendModeX((D2D1_EXTEND_MODE)extendModeX);
-		return ReturnCode::Ok;
-    }
-
-	ReturnCode setExtendModeY(drawing::ExtendMode extendModeY) override
-    {
-        //               native()->SetExtendModeY((D2D1_EXTEND_MODE)extendModeY);
-		return ReturnCode::Ok;
-    }
-
-    ReturnCode setInterpolationMode(drawing::BitmapInterpolationMode bitmapInterpolationMode) override
-    {
-        //              native()->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
-		return ReturnCode::Ok;
-    }
-
-    void GetFactory(drawing::api::IFactory** factory) override
-    {
-        *factory = factory_;
-    }
-
-    GMPI_REFCOUNT;
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapBrush);
-};
-
-/*
-class Brush : / * public drawing::api::IBrush,* / public CocoaWrapperWithFactory<drawing::api::IBrush, nothing> // Resource
-{
-public:
-    Brush(drawing::api::IFactory* factory) : CocoaWrapperWithFactory(nullptr, factory) {}
-};
-*/
-
-class CocoaBrushBase
-{
-protected:
-    cocoa::DrawingFactory* factory_;
-
-public:
-    CocoaBrushBase(cocoa::DrawingFactory* pfactory) :
-        factory_(pfactory)
-    {}
-
-    virtual ~CocoaBrushBase() {}
-
-    virtual void FillPath(class GraphicsContext* context, NSBezierPath* nsPath) const = 0;
-
-    // Default to black fill for fancy brushes that don't implement line drawing yet.
-    virtual void StrokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const
-    {
-        [[NSColor blackColor]set]; /// !!!TODO!!!, color set to black always.
-
-        [nsPath setLineWidth : strokeWidth] ;
-        SetNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
-
-        [nsPath stroke] ;
-    }
-};
-
-class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrushBase
-{
-    drawing::MP1_COLOR color;
-    NSColor* nativec_ = nullptr;
-
-    inline void setNativeColor()
-    {
-        nativec_ = factory_->toNative(color);
-        [nativec_ retain] ;
-    }
-
-public:
-    SolidColorBrush(const drawing::MP1_COLOR* pcolor, cocoa::DrawingFactory* factory) : CocoaBrushBase(factory)
-        , color(*pcolor)
-    {
-        setNativeColor();
-    }
-
-    inline NSColor* nativeColor() const
-    {
-        return nativec_;
-    }
-
-    void FillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
-    {
-        [nativec_ set] ;
-        [nsPath fill] ;
-    }
-
-    void StrokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        [nativec_ set] ;
-        [nsPath setLineWidth : strokeWidth] ;
-        SetNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
-
-        [nsPath stroke] ;
-    }
-
-    ~SolidColorBrush()
-    {
-        [nativec_ release] ;
-    }
-
-    // IMPORTANT: Virtual functions much 100% match drawing::api::ISolidColorBrush to simulate inheritance.
-	ReturnCode setColor(const drawing::Color* color) override
-    {
-        color = *pcolor;
-        setNativeColor();
-		return ReturnCode::Ok;
-    }
-
-    drawing::MP1_COLOR GetColor() override
-    {
-        return color;
-    }
-
-	ReturnCode getFactory(drawing::api::IFactory** factory) override
-    {
-        *factory = factory_;
-		return ReturnCode::Ok;
-    }
-
-	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-	{
-		*returnInterface = {};
-		if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = this;
-			addRef();
-			return ReturnCode::Ok;
-		}
-		return ReturnCode::NoSupport;
-	}
-
-	GMPI_REFCOUNT;
-};
-class LinearGradientBrush final : public drawing::api::ILinearGradientBrush, public CocoaBrushBase, public Gradient
-{
-    drawing::MP1_LINEAR_GRADIENT_BRUSH_PROPERTIES brushProperties;
-
-public:
-    LinearGradientBrush(
-        cocoa::DrawingFactory* factory,
-        const drawing::MP1_LINEAR_GRADIENT_BRUSH_PROPERTIES* linearGradientBrushProperties,
-        const drawing::MP1_BRUSH_PROPERTIES* brushProperties,
-        const drawing::api::IGradientstopCollection* gradientStopCollection) :
-        CocoaBrushBase(factory)
-        , Gradient(factory, gradientStopCollection)
-        , brushProperties(*linearGradientBrushProperties)
-    {
-    }
-
-public:
-
-    float getAngle() const
-    {
-        // TODO cache. e.g. nan = not calculated yet.
-        return (180.0f / M_PI) * atan2(brushProperties.endPoint.y - brushProperties.startPoint.y, brushProperties.endPoint.x - brushProperties.startPoint.x);
-    }
-
-	void setStartPoint(drawing::Point startPoint) override
-    {
-        brushProperties.startPoint = startPoint;
-    }
-    void setEndPoint(drawing::Point endPoint) override
-    {
-        brushProperties.endPoint = endPoint;
-    }
-
-    void FillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
-    {
-        //				[native2 drawInBezierPath:nsPath angle : getAngle()];
-
-                    // If you plan to do more drawing later, it's a good idea
-                    // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        [nsPath addClip] ;
-
-        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-    }
-
-    void StrokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        SetNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
-
-        // convert NSPath to CGPath
-        CGPathRef strokePath;
-        {
-            CGMutablePathRef cgPath = NsToCGPath(nsPath);
-
-            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
-                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
-            CGPathRelease(cgPath);
-        }
-
-
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
-
-        CGContextAddPath(ctx, strokePath);
-        CGContextClip(ctx);
-
-        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-
-        CGPathRelease(strokePath);
-    }
-
-	ReturnCode getFactory(drawing::api::IFactory** factory) override
-    {
-        *factory = factory_;
-		return ReturnCode::Ok;
-    }
-
-    GMPI_REFCOUNT;
-    GMPI_QUERYINTERFACE1(drawing::SE_IID_LINEARGRADIENTBRUSH_MPGUI, drawing::api::ILinearGradientBrush);
-};
-
-class RadialGradientBrush : public drawing::api::IRadialGradientBrush, public CocoaBrushBase, public Gradient
-{
-    drawing::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES gradientProperties;
-
-public:
-    RadialGradientBrush(cocoa::DrawingFactory* factory, const drawing::MP1_RADIAL_GRADIENT_BRUSH_PROPERTIES* radialGradientBrushProperties, const drawing::MP1_BRUSH_PROPERTIES* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection) :
-        CocoaBrushBase(factory)
-        , Gradient(factory, gradientStopCollection)
-        , gradientProperties(*radialGradientBrushProperties)
-    {
-    }
-
-    void FillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
-    {
-        const auto bounds = [nsPath bounds];
-
-        const auto centerX = bounds.origin.x + 0.5 * std::max(0.1, bounds.size.width);
-        const auto centerY = bounds.origin.y + 0.5 * std::max(0.1, bounds.size.height);
-
-        auto relativeX = (gradientProperties.center.x - centerX) / (0.5 * bounds.size.width);
-        auto relativeY = (gradientProperties.center.y - centerY) / (0.5 * bounds.size.height);
-
-        relativeX = std::max(-1.0, std::min(1.0, relativeX));
-        relativeY = std::max(-1.0, std::min(1.0, relativeY));
-
-        const auto origin = NSMakePoint(
-            gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
-            gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
-
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        [nsPath addClip] ;
-        /*
-                    [native2 drawFromCenter:origin
-                        radius:0.0
-                        toCenter:toNative(gradientProperties.center)
-                        radius:gradientProperties.radiusX
-                        options:NSGradientDrawsAfterEndingLocation];
-        */
-
-        [native2 drawFromCenter : toNative(gradientProperties.center)
-            radius : gradientProperties.radiusX
-            toCenter : origin
-            radius : 0.0
-            options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation];
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-    }
-
-    void StrokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        SetNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
-
-        // convert NSPath to CGPath
-        CGPathRef strokePath;
-        {
-            CGMutablePathRef cgPath = NsToCGPath(nsPath);
-
-            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
-                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
-            CGPathRelease(cgPath);
-        }
-
-        const auto origin = NSMakePoint(
-            gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
-            gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
-
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
-
-        CGContextAddPath(ctx, strokePath);
-        CGContextClip(ctx);
-
-        [native2 drawFromCenter : toNative(gradientProperties.center)
-            radius : gradientProperties.radiusX
-            toCenter : origin
-            radius : 0.0
-            options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-
-        CGPathRelease(strokePath);
-    }
-
-    void setCenter(drawing::Point center) override
-    {
-        gradientProperties.center = center;
-    }
-
-    void setGradientOriginOffset(drawing::Point gradientOriginOffset) override
-    {
-    }
-
-    void setRadiusX(float radiusX) override
-    {
-        gradientProperties.radiusX = radiusX;
-    }
-
-    void setRadiusY(float radiusY) override
-    {
-        gradientProperties.radiusY = radiusY;
-    }
-
-	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-	{
-		*returnInterface = {};
-		if (*iid == drawing::api::IRadialGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = this;
-			addRef();
-			return ReturnCode::Ok;
-		}
-		return ReturnCode::NoSupport;
-	}
-
-	// IResource
-	ReturnCode getFactory(drawing::api::IFactory** factory) override
-    {
-        *factory = factory_;
-    }
-
-    GMPI_REFCOUNT;
-};
-
-
-class DrawingFactory : public drawing::api::IFactory2
+class DrawingFactory : public drawing::api::IFactory
 {
     std::vector<std::string> supportedFontFamilies;
         
@@ -1277,7 +882,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     }
         
     // utility
-    inline NSColor* toNative(const drawing::MP1_COLOR& color)
+    inline NSColor* toNative(const drawing::Color& color)
     {
 /*
         // This should be equivalent to sRGB, except it allows extended color components beyond 0.0 - 1.0
@@ -1312,26 +917,26 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 //            return [NSColor colorWithColorSpace:nsColorSpace components:components count:4]; // washed-out on big Sur (with extended linier) good with genericlinier
     }
 
-    int32_t CreatePathGeometry(drawing::api::IPathGeometry** pathGeometry) override;
+    ReturnCode createPathGeometry(drawing::api::IPathGeometry** pathGeometry) override;
 
-    int32_t CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, drawing::MP1_FONT_WEIGHT fontWeight, drawing::MP1_FONT_STYLE fontStyle, drawing::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat) override;
+    ReturnCode createTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat) override;
 
-    int32_t CreateImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap) override;
+    ReturnCode createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap) override;
 
-    int32_t LoadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap) override;
+    ReturnCode loadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap) override;
 
-    int32_t CreateStrokeStyle(const drawing::MP1_STROKE_STYLE_PROPERTIES* strokeStyleProperties, float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnValue) override
+    ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnValue) override
     {
         *returnValue = nullptr;
 
-        gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+        gmpi::shared_ptr<api::IUnknown> b2;
         b2.Attach(new generic_graphics::StrokeStyle(this, strokeStyleProperties, dashes, dashesCount));
 
-        return b2->queryInterface(drawing::SE_IID_STROKESTYLE_MPGUI, reinterpret_cast<void **>(returnValue));
+        return b2->queryInterface(&drawing::api::IStrokeStyle::guid, reinterpret_cast<void **>(returnValue));
     }
 
     // IMpFactory2
-    int32_t GetFontFamilyName(int32_t fontIndex, IString* returnString) override
+    ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnString) override
     {
         if(supportedFontFamilies.empty())
         {
@@ -1358,27 +963,424 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
             
         if (fontIndex < 0 || fontIndex >= supportedFontFamilies.size())
         {
-            return MP_FAIL;
+            return ReturnCode::Fail;
         }
 
         returnString->setData(supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(supportedFontFamilies[fontIndex].size()));
         return ReturnCode::Ok;
     }
 
-    int32_t queryInterface(const MpGuid& iid, void** returnInterface) override
+    ReturnCode queryInterface(const MpGuid& iid, void** returnInterface) override
     {
         *returnInterface = 0;
-        if ( iid == drawing::SE_IID_FACTORY2_MPGUI || iid == GmpiDrawing_API::SE_IID_FACTORY_MPGUI || iid == MP_IID_UNKNOWN)
+        if ( iid == drawing::api::IFactory::guid || iid == gmpi::api::IUnknown::guid)
         {
-            *returnInterface = reinterpret_cast<drawing::api::IFactory2*>(this);
+            *returnInterface = reinterpret_cast<drawing::api::IFactory*>(this);
             addRef();
             return ReturnCode::Ok;
         }
-        return MP_NOSUPPORT;
+        return ReturnCode::NoSupport;
     }
 
     GMPI_REFCOUNT_NO_DELETE;
 };
+
+class CocoaBrushBase
+{
+protected:
+    cocoa::DrawingFactory* factory_;
+
+public:
+    CocoaBrushBase(cocoa::DrawingFactory* pfactory) :
+        factory_(pfactory)
+    {}
+
+    virtual ~CocoaBrushBase() {}
+
+    virtual void fillPath(class GraphicsContext* context, NSBezierPath* nsPath) const = 0;
+
+    // Default to black fill for fancy brushes that don't implement line drawing yet.
+    virtual void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const
+    {
+        [[NSColor blackColor]set]; /// !!!TODO!!!, color set to black always.
+
+        [nsPath setLineWidth : strokeWidth] ;
+        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
+
+        [nsPath stroke] ;
+    }
+};
+
+
+class BitmapBrush final : public drawing::api::IBitmapBrush, public CocoaBrushBase
+{
+    Bitmap bitmap_;
+    drawing::BitmapBrushProperties bitmapBrushProperties_;
+    drawing::BrushProperties brushProperties_;
+
+public:
+    BitmapBrush(
+        cocoa::DrawingFactory* factory,
+        const drawing::api::IBitmap* bitmap,
+        const drawing::BitmapBrushProperties* bitmapBrushProperties,
+        const drawing::BrushProperties* brushProperties
+    )
+        : CocoaBrushBase(factory),
+        bitmap_(factory, ((Bitmap*)bitmap)->nativeBitmap_),
+        bitmapBrushProperties_(*bitmapBrushProperties),
+        brushProperties_(*brushProperties)
+    {
+    }
+
+    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    {
+        [[NSColor colorWithPatternImage : bitmap_.nativeBitmap_]set];
+
+        [nsPath setLineWidth : strokeWidth] ;
+        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
+
+        [nsPath stroke] ;
+    }
+    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override;
+
+	ReturnCode setExtendModeX(drawing::ExtendMode extendModeX) override
+    {
+        //                native()->setExtendModeX((D2D1_EXTEND_MODE)extendModeX);
+		return ReturnCode::Ok;
+    }
+
+	ReturnCode setExtendModeY(drawing::ExtendMode extendModeY) override
+    {
+        //               native()->setExtendModeY((D2D1_EXTEND_MODE)extendModeY);
+		return ReturnCode::Ok;
+    }
+
+    ReturnCode setInterpolationMode(drawing::BitmapInterpolationMode bitmapInterpolationMode) override
+    {
+        //              native()->setInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
+		return ReturnCode::Ok;
+    }
+
+    ReturnCode getFactory(drawing::api::IFactory** factory) override
+    {
+        *factory = factory_;
+        return ReturnCode::Ok;
+    }
+
+    GMPI_REFCOUNT;
+    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapBrush);
+};
+
+/*
+class Brush : / * public drawing::api::IBrush,* / public CocoaWrapperWithFactory<drawing::api::IBrush, nothing> // Resource
+{
+public:
+    Brush(drawing::api::IFactory* factory) : CocoaWrapperWithFactory(nullptr, factory) {}
+};
+*/
+
+class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrushBase
+{
+    drawing::Color color;
+    NSColor* nativec_ = nullptr;
+
+    inline void setNativeColor()
+    {
+        nativec_ = factory_->toNative(color);
+        [nativec_ retain] ;
+    }
+
+public:
+    SolidColorBrush(const drawing::Color* pcolor, cocoa::DrawingFactory* factory) : CocoaBrushBase(factory)
+        , color(*pcolor)
+    {
+        setNativeColor();
+    }
+
+    inline NSColor* nativeColor() const
+    {
+        return nativec_;
+    }
+
+    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
+    {
+        [nativec_ set] ;
+        [nsPath fill] ;
+    }
+
+    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    {
+        [nativec_ set] ;
+        [nsPath setLineWidth : strokeWidth] ;
+        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
+
+        [nsPath stroke] ;
+    }
+
+    ~SolidColorBrush()
+    {
+        [nativec_ release] ;
+    }
+
+    // IMPORTANT: Virtual functions much 100% match drawing::api::ISolidColorBrush to simulate inheritance.
+	ReturnCode setColor(const drawing::Color* pcolor) override
+    {
+        color = *pcolor;
+        setNativeColor();
+		return ReturnCode::Ok;
+    }
+
+    drawing::Color getColor() override
+    {
+        return color;
+    }
+
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
+    {
+        *factory = factory_;
+		return ReturnCode::Ok;
+    }
+
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+		if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		{
+			*returnInterface = this;
+			addRef();
+			return ReturnCode::Ok;
+		}
+		return ReturnCode::NoSupport;
+	}
+
+	GMPI_REFCOUNT;
+};
+class LinearGradientBrush final : public drawing::api::ILinearGradientBrush, public CocoaBrushBase, public Gradient
+{
+    drawing::LinearGradientBrushProperties brushProperties;
+
+public:
+    LinearGradientBrush(
+        cocoa::DrawingFactory* factory,
+        const drawing::LinearGradientBrushProperties* linearGradientBrushProperties,
+        const drawing::BrushProperties* brushProperties,
+        const drawing::api::IGradientstopCollection* gradientStopCollection) :
+        CocoaBrushBase(factory)
+        , Gradient(factory, gradientStopCollection)
+        , brushProperties(*linearGradientBrushProperties)
+    {
+    }
+
+public:
+
+    float getAngle() const
+    {
+        // TODO cache. e.g. nan = not calculated yet.
+        return (180.0f / M_PI) * atan2(brushProperties.endPoint.y - brushProperties.startPoint.y, brushProperties.endPoint.x - brushProperties.startPoint.x);
+    }
+
+	void setStartPoint(drawing::Point startPoint) override
+    {
+        brushProperties.startPoint = startPoint;
+    }
+    void setEndPoint(drawing::Point endPoint) override
+    {
+        brushProperties.endPoint = endPoint;
+    }
+
+    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
+    {
+        //				[native2 drawInBezierPath:nsPath angle : getAngle()];
+
+                    // If you plan to do more drawing later, it's a good idea
+                    // to save the graphics state before clipping.
+        [NSGraphicsContext saveGraphicsState];
+
+        // clip following output to the path
+        [nsPath addClip] ;
+
+        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
+
+        // restore clip region
+        [NSGraphicsContext restoreGraphicsState] ;
+    }
+
+    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    {
+        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
+
+        // convert NSPath to CGPath
+        CGPathRef strokePath;
+        {
+            CGMutablePathRef cgPath = NsToCGPath(nsPath);
+
+            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
+                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
+            CGPathRelease(cgPath);
+        }
+
+
+        // If you plan to do more drawing later, it's a good idea
+        // to save the graphics state before clipping.
+        [NSGraphicsContext saveGraphicsState];
+
+        // clip following output to the path
+        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
+
+        CGContextAddPath(ctx, strokePath);
+        CGContextClip(ctx);
+
+        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
+
+        // restore clip region
+        [NSGraphicsContext restoreGraphicsState] ;
+
+        CGPathRelease(strokePath);
+    }
+
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
+    {
+        *factory = factory_;
+		return ReturnCode::Ok;
+    }
+
+    GMPI_REFCOUNT;
+    GMPI_QUERYINTERFACE1(drawing::api::ILinearGradientBrush::guid, drawing::api::ILinearGradientBrush);
+};
+
+class RadialGradientBrush : public drawing::api::IRadialGradientBrush, public CocoaBrushBase, public Gradient
+{
+    drawing::RadialGradientBrushProperties gradientProperties;
+
+public:
+    RadialGradientBrush(cocoa::DrawingFactory* factory, const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection) :
+        CocoaBrushBase(factory)
+        , Gradient(factory, gradientStopCollection)
+        , gradientProperties(*radialGradientBrushProperties)
+    {
+    }
+
+    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
+    {
+        const auto bounds = [nsPath bounds];
+
+        const auto centerX = bounds.origin.x + 0.5 * std::max(0.1, bounds.size.width);
+        const auto centerY = bounds.origin.y + 0.5 * std::max(0.1, bounds.size.height);
+
+        auto relativeX = (gradientProperties.center.x - centerX) / (0.5 * bounds.size.width);
+        auto relativeY = (gradientProperties.center.y - centerY) / (0.5 * bounds.size.height);
+
+        relativeX = std::max(-1.0, std::min(1.0, relativeX));
+        relativeY = std::max(-1.0, std::min(1.0, relativeY));
+
+        const auto origin = NSMakePoint(
+            gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
+            gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
+
+        // If you plan to do more drawing later, it's a good idea
+        // to save the graphics state before clipping.
+        [NSGraphicsContext saveGraphicsState];
+
+        // clip following output to the path
+        [nsPath addClip] ;
+        /*
+                    [native2 drawFromCenter:origin
+                        radius:0.0
+                        toCenter:toNative(gradientProperties.center)
+                        radius:gradientProperties.radiusX
+                        options:NSGradientDrawsAfterEndingLocation];
+        */
+
+        [native2 drawFromCenter : toNative(gradientProperties.center)
+            radius : gradientProperties.radiusX
+            toCenter : origin
+            radius : 0.0
+            options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation];
+
+        // restore clip region
+        [NSGraphicsContext restoreGraphicsState] ;
+    }
+
+    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    {
+        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
+
+        // convert NSPath to CGPath
+        CGPathRef strokePath;
+        {
+            CGMutablePathRef cgPath = NsToCGPath(nsPath);
+
+            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
+                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
+            CGPathRelease(cgPath);
+        }
+
+        const auto origin = NSMakePoint(
+            gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
+            gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
+
+        // If you plan to do more drawing later, it's a good idea
+        // to save the graphics state before clipping.
+        [NSGraphicsContext saveGraphicsState];
+
+        // clip following output to the path
+        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
+
+        CGContextAddPath(ctx, strokePath);
+        CGContextClip(ctx);
+
+        [native2 drawFromCenter : toNative(gradientProperties.center)
+            radius : gradientProperties.radiusX
+            toCenter : origin
+            radius : 0.0
+            options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
+
+        // restore clip region
+        [NSGraphicsContext restoreGraphicsState] ;
+
+        CGPathRelease(strokePath);
+    }
+
+    void setCenter(drawing::Point center) override
+    {
+        gradientProperties.center = center;
+    }
+
+    void setGradientOriginOffset(drawing::Point gradientOriginOffset) override
+    {
+    }
+
+    void setRadiusX(float radiusX) override
+    {
+        gradientProperties.radiusX = radiusX;
+    }
+
+    void setRadiusY(float radiusY) override
+    {
+        gradientProperties.radiusY = radiusY;
+    }
+
+	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+		if (*iid == drawing::api::IRadialGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+		{
+			*returnInterface = this;
+			addRef();
+			return ReturnCode::Ok;
+		}
+		return ReturnCode::NoSupport;
+	}
+
+	// IResource
+	ReturnCode getFactory(drawing::api::IFactory** factory) override
+    {
+        *factory = factory_;
+    }
+
+    GMPI_REFCOUNT;
+};
+
 class Gradient
 {
 protected:
@@ -1426,7 +1428,7 @@ public:
 	GeometrySink(NSBezierPath* geometry) : geometry_(geometry)
 	{}
 
-	void SetFillMode(drawing::MP1_FILL_MODE fillMode) override
+	void setFillMode(drawing::MP1_FILL_MODE fillMode) override
 	{
 		switch (fillMode)
 		{
@@ -1441,9 +1443,9 @@ public:
 		}
 	}
 #if 0
-	void SetSegmentFlags(drawing::MP1_PATH_SEGMENT vertexFlags)
+	void setSegmentFlags(drawing::MP1_PATH_SEGMENT vertexFlags)
 	{
-		//		geometrysink_->SetSegmentFlags((D2D1_PATH_SEGMENT)vertexFlags);
+		//		geometrysink_->setSegmentFlags((D2D1_PATH_SEGMENT)vertexFlags);
 	}
 #endif
 	void beginFigure(drawing::Point startPoint, drawing::FigureBegin figureBegin) override
@@ -1487,7 +1489,7 @@ class PathGeometry final : public drawing::api::IPathGeometry
 {
 	NSBezierPath* geometry_ = {};
 
-	drawing::MP1_DASH_STYLE currentDashStyle = drawing::MP1_DASH_STYLE_SOLID;
+	drawing::MP1_DASH_STYLE currentDashStyle = drawing::DashStyle::Solid;
 	std::vector<float> currentCustomDashStyle;
 	float currentDashPhase = {};
 
@@ -1525,7 +1527,7 @@ public:
 		geometry_ = [NSBezierPath bezierPath];
 		[geometry_ retain] ;
 
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+		gmpi::shared_ptr<api::IUnknown> b2;
 		b2.Attach(new GeometrySink(geometry_));
 
 		return b2->queryInterface(GmpiDrawing_API::SE_IID_GEOMETRYSINK_MPGUI, reinterpret_cast<void**>(geometrySink));
@@ -1533,7 +1535,7 @@ public:
 
 	ReturnCode getFactory(drawing::api::IFactory** factory) override
 	{
-		//		native_->GetFactory((ID2D1Factory**)factory);
+		//		native_->getFactory((ID2D1Factory**)factory);
 	}
 
 	ReturnCode strokeContainsPoint(drawing::Point point, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
@@ -1573,18 +1575,18 @@ public:
 	{
 		auto strokeStyle = const_cast<drawing::api::IStrokeStyle*>(strokeStyleIm); // work arround const-correctness issues.
 
-		const auto dashStyle = strokeStyle ? strokeStyle->GetDashStyle() : drawing::MP1_DASH_STYLE_SOLID;
-		const auto phase = strokeStyle ? strokeStyle->GetDashOffset() : 0.0f;
+		const auto dashStyle = strokeStyle ? strokeStyle->getDashStyle() : drawing::DashStyle::Solid;
+		const auto phase = strokeStyle ? strokeStyle->getDashOffset() : 0.0f;
 
 		bool changed = currentDashStyle != dashStyle;
 		currentDashStyle = dashStyle;
 
-		if (currentDashStyle == drawing::MP1_DASH_STYLE_CUSTOM)
+		if (currentDashStyle == drawing::DashStyle::Custom)
 		{
-			const auto customDashesCount = strokeStyle->GetDashesCount();
+			const auto customDashesCount = strokeStyle->getDashesCount();
 			std::vector<float> dashesf;
 			dashesf.resize(customDashesCount);
-			strokeStyle->GetDashes(dashesf.data(), static_cast<int>(dashesf.size()));
+			strokeStyle->getDashes(dashesf.data(), static_cast<int>(dashesf.size()));
 
 			changed |= customDashesCount != currentCustomDashStyle.size();
 			currentCustomDashStyle.resize(customDashesCount);
@@ -1596,7 +1598,7 @@ public:
 			}
 		}
 
-		if (currentDashStyle != drawing::MP1_DASH_STYLE_SOLID) // i.e. 'none'
+		if (currentDashStyle != drawing::DashStyle::Solid) // i.e. 'none'
 		{
 			changed |= phase != currentDashPhase;
 			currentDashPhase = phase;
@@ -1658,7 +1660,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->StrokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
 		}
 		return ReturnCode::Ok;
 	}
@@ -1670,7 +1672,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->FillPath(this, rectPath);
+			cocoabrush->fillPath(this, rectPath);
 		}
 		return ReturnCode::Ok;
 	}
@@ -1679,9 +1681,9 @@ public:
 	{
 		SolidColorBrush brush(clearColor, factory);
 		Rect r;
-		GetAxisAlignedClip(&r);
+		getAxisAlignedClip(&r);
 		NSBezierPath* rectPath = [NSBezierPath bezierPathWithRect : NSRectFromRect(r)];
-		brush.FillPath(this, rectPath);
+		brush.fillPath(this, rectPath);
 		return ReturnCode::Ok;
 	}
 
@@ -1695,7 +1697,7 @@ public:
 		if (cocoabrush)
 		{
 			applyDashStyleToPath(path, const_cast<drawing::api::IStrokeStyle*>(strokeStyle), strokeWidth);
-			cocoabrush->StrokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
 		}
 		return ReturnCode::Ok;
 	}
@@ -1708,7 +1710,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->StrokePath(pg->native(), strokeWidth, strokeStyle);
+			cocoabrush->strokePath(pg->native(), strokeWidth, strokeStyle);
 		}
 		return ReturnCode::Ok;
 	}
@@ -1720,7 +1722,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->FillPath(this, nsPath);
+			cocoabrush->fillPath(this, nsPath);
 		}
 		return ReturnCode::Ok;
 	}
@@ -1753,7 +1755,7 @@ public:
 		if (textformat->paragraphAlignment != (int)TextAlignment::Leading
 			|| flags != drawing::MP1_DRAW_TEXT_OPTIONS_CLIP)
 		{
-			const_cast<drawing::api::ITextFormat*>(textFormat)->GetTextExtentU(utf8String, (int32_t)strlen(utf8String), &textSize);
+			const_cast<drawing::api::ITextFormat*>(textFormat)->getTextExtentU(utf8String, (int32_t)strlen(utf8String), &textSize);
 		}
 
 		if (textformat->paragraphAlignment != (int)TextAlignment::Leading)
@@ -1815,8 +1817,8 @@ public:
 			[textformat->native2[NSParagraphStyleAttributeName] setLineBreakMode:NSLineBreakByWordWrapping] ;
 		}
 
-		//                drawing::MP1_FONT_METRICS fontMetrics;
-		//               ((drawing::api::ITextFormat*) textFormat)->GetFontMetrics(&fontMetrics);
+		//                drawing::FontMETRICS fontMetrics;
+		//               ((drawing::api::ITextFormat*) textFormat)->getFontMetrics(&fontMetrics);
 
 		//                float testLineHeightMultiplier = 0.5f;
 		//                float shiftUp = testLineHeightMultiplier * fontMetrics.bodyHeight();
@@ -1900,8 +1902,8 @@ public:
 #if 0
 		{
 			Graphics g(this);
-			drawing::MP1_FONT_METRICS fontMetrics;
-			((drawing::api::ITextFormat*)textFormat)->GetFontMetrics(&fontMetrics);
+			drawing::FontMETRICS fontMetrics;
+			((drawing::api::ITextFormat*)textFormat)->getFontMetrics(&fontMetrics);
 			float pixelScale = 2.0; // DPI ish
 
 			if (true)
@@ -1986,10 +1988,10 @@ public:
 	ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)mpBitmap);
-		auto bitmap = bm->GetNativeBitmap();
+		auto bitmap = bm->getNativeBitmap();
 
 		drawing::MP1_SIZE_U imageSize;
-		bm->GetSize(&imageSize);
+		bm->getSize(&imageSize);
 
 		Rect sourceRectangleFlipped(*sourceRectangle);
 		sourceRectangleFlipped.bottom = imageSize.height - sourceRectangle->top;
@@ -2072,7 +2074,7 @@ public:
 
 	ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override;
 	{
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+		gmpi::shared_ptr<api::IUnknown> b2;
 		b2.Attach(new SolidColorBrush(color, factory));
 
 		return b2->queryInterface(GmpiDrawing_API::SE_IID_SOLIDCOLORBRUSH_MPGUI, reinterpret_cast<void**>(solidColorBrush));
@@ -2081,7 +2083,7 @@ public:
 
 	ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override;
 	{
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+		gmpi::shared_ptr<api::IUnknown> b2;
 		b2.Attach(new GradientstopCollection(factory, gradientStops, gradientStopsCount));
 
 		return b2->queryInterface(GmpiDrawing_API::SE_IID_GRADIENTSTOPCOLLECTION_MPGUI, reinterpret_cast<void**>(gradientStopCollection));
@@ -2090,7 +2092,7 @@ public:
 
 	ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
 	{
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+		gmpi::shared_ptr<api::IUnknown> b2;
 		b2.Attach(new LinearGradientBrush(factory, linearGradientBrushProperties, brushProperties, gradientStopCollection));
 
 		return b2->queryInterface(GmpiDrawing_API::SE_IID_LINEARGRADIENTBRUSH_MPGUI, reinterpret_cast<void**>(linearGradientBrush));
@@ -2100,7 +2102,7 @@ public:
 	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
 		*returnBrush = nullptr;
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+		gmpi::shared_ptr<api::IUnknown> b2;
 		b2.Attach(new BitmapBrush(factory, bitmap, bitmapBrushProperties, brushProperties));
 		return b2->queryInterface(GmpiDrawing_API::SE_IID_BITMAPBRUSH_MPGUI, reinterpret_cast<void**>(returnBrush));
 		return ReturnCode::Ok;
@@ -2108,7 +2110,7 @@ public:
 
 	ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
 	{
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+		gmpi::shared_ptr<api::IUnknown> b2;
 		b2.Attach(new RadialGradientBrush(factory, radialGradientBrushProperties, brushProperties, gradientStopCollection));
 
 		return b2->queryInterface(GmpiDrawing_API::SE_IID_RADIALGRADIENTBRUSH_MPGUI, reinterpret_cast<void**>(radialGradientBrush));
@@ -2126,7 +2128,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->StrokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
 		}
 		return ReturnCode::Ok;
 	}
@@ -2139,7 +2141,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->FillPath(this, rectPath);
+			cocoabrush->fillPath(this, rectPath);
 		}
 		return ReturnCode::Ok;
 	}
@@ -2154,7 +2156,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->StrokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
 		}
 		return ReturnCode::Ok;
 	}
@@ -2168,7 +2170,7 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->FillPath(this, rectPath);
+			cocoabrush->fillPath(this, rectPath);
 		}
 		return ReturnCode::Ok;
 	}
@@ -2176,7 +2178,7 @@ public:
 	ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
 	{
 		Matrix3x2 currentTransform;
-		GetTransform(&currentTransform);
+		getTransform(&currentTransform);
 		auto absClipRect = currentTransform.TransformRect(*clipRect);
 
 		if (!clipRectStack.empty())
@@ -2203,7 +2205,7 @@ public:
 	void getAxisAlignedClip(drawing::Rect* returnClipRect) override
 	{
 		Matrix3x2 currentTransform;
-		GetTransform(&currentTransform);
+		getTransform(&currentTransform);
 		currentTransform.Invert();
 		*returnClipRect = currentTransform.TransformRect(clipRectStack.back());
 	}
@@ -2233,13 +2235,13 @@ public:
 			return frameSize.size.height;
 		}
 
-		int32_t CreateMesh(drawing::api::IMesh** returnObject) override
+		ReturnCode CreateMesh(drawing::api::IMesh** returnObject) override
 		{
 			*returnObject = nullptr;
 			return MP_FAIL;
 		}
 
-		void FillMesh(const drawing::api::IMesh* mesh, const drawing::api::IBrush* brush) override
+		void fillMesh(const drawing::api::IMesh* mesh, const drawing::api::IBrush* brush) override
 		{
 
 		}
@@ -2274,7 +2276,7 @@ public:
 		GraphicsContext::BeginDraw();
 	}
 
-	int32_t EndDraw() override
+	ReturnCode EndDraw() override
 	{
 		auto r = GraphicsContext::EndDraw();
 		[image unlockFocus] ;
@@ -2290,7 +2292,7 @@ public:
 	// MUST BE FIRST VIRTUAL FUNCTION!
 	virtual ReturnCode getBitmap(drawing::api::IBitmap** returnBitmap)
 	{
-		gmpi_sdk::mp_shared_ptr<api::IUnknown> b;
+		gmpi::shared_ptr<api::IUnknown> b;
 		b.Attach(new Bitmap(factory, image));
 		return b->queryInterface(GmpiDrawing_API::SE_IID_BITMAP_MPGUI, reinterpret_cast<void**>(returnBitmap));
 	}
@@ -2312,46 +2314,46 @@ public:
 	GMPI_REFCOUNT;
 };
 
-int32_t GraphicsContext::createCompatibleRenderTarget(const drawing::Size* desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
+ReturnCode GraphicsContext::createCompatibleRenderTarget(const drawing::Size* desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
-	gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.Attach(new class bitmapRenderTarget(factory, desiredSize));
 
 	return b2->queryInterface(GmpiDrawing_API::SE_IID_BITMAP_RENDERTARGET_MPGUI, reinterpret_cast<void**>(bitmapRenderTarget));
 }
 
 
-inline int32_t DrawingFactory::CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, drawing::MP1_FONT_WEIGHT fontWeight, drawing::MP1_FONT_STYLE fontStyle, drawing::MP1_FONT_STRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat)
+inline ReturnCode DrawingFactory::CreateTextFormat(const char* fontFamilyName, void* unused /* fontCollection */, drawing::FontWeight fontWeight, drawing::FontSTYLE fontStyle, drawing::FontSTRETCH fontStretch, float fontSize, void* unused2 /* localeName */, drawing::api::ITextFormat** textFormat)
 {
-	gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.Attach(new TextFormat(&stringConverter, fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
 
 	return b2->queryInterface(GmpiDrawing_API::SE_IID_TEXTFORMAT_MPGUI, reinterpret_cast<void**>(textFormat));
 }
 
-inline int32_t DrawingFactory::CreatePathGeometry(drawing::api::IPathGeometry** pathGeometry)
+inline ReturnCode DrawingFactory::CreatePathGeometry(drawing::api::IPathGeometry** pathGeometry)
 {
-	gmpi_sdk::mp_shared_ptr<api::IUnknown> b2;
+	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.Attach(new PathGeometry());
 
 	return b2->queryInterface(GmpiDrawing_API::SE_IID_PATHGEOMETRY_MPGUI, reinterpret_cast<void**>(pathGeometry));
 }
 
-inline int32_t DrawingFactory::CreateImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap)
+inline ReturnCode DrawingFactory::CreateImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 
-	gmpi_sdk::mp_shared_ptr<api::IUnknown> bm;
+	gmpi::shared_ptr<api::IUnknown> bm;
 	bm.Attach(new Bitmap(this, width, height));
 
 	return bm->queryInterface(GmpiDrawing_API::SE_IID_BITMAP_MPGUI, (void**)returnDiBitmap);
 }
 
-inline int32_t DrawingFactory::LoadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap)
+inline ReturnCode DrawingFactory::LoadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 
-	gmpi_sdk::mp_shared_ptr<api::IUnknown> bm;
+	gmpi::shared_ptr<api::IUnknown> bm;
 	auto temp = new Bitmap(this, utf8Uri);
 	bm.Attach(temp);
 
@@ -2363,13 +2365,13 @@ inline int32_t DrawingFactory::LoadImageU(const char* utf8Uri, drawing::api::IBi
 	return MP_FAIL;
 }
 
-void BitmapBrush::FillPath(GraphicsContext* context, NSBezierPath* nsPath) const
+void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath) const
 {
 	[NSGraphicsContext saveGraphicsState] ;
 
 #if 0 // nope in Reaper
 	// calc image offset considering that Quartz origin is at bottom of View
-	const auto correction = context->getQuartzYorigin() - const_cast<Bitmap&>(bitmap_).GetSizeF().height;
+	const auto correction = context->getQuartzYorigin() - const_cast<Bitmap&>(bitmap_).getSizeF().height;
 
 	// we handle only translation on mac
 	const auto offset = TransformPoint(brushProperties_.transform, {});
@@ -2441,7 +2443,7 @@ inline bitmapPixels::~bitmapPixels()
 		bool hasOverbright = false;
 		{
 			drawing::MP1_SIZE_U imageSize{};
-			seBitmap->GetSize(&imageSize);
+			seBitmap->getSize(&imageSize);
 			const int totalPixels = imageSize.height * getBytesPerRow() / sizeof(uint32_t);
 
 			uint32_t* destPixels = (uint32_t*)getAddress();

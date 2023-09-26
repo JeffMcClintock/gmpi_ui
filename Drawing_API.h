@@ -647,13 +647,13 @@ struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
 	// LoadStreamImage would be private member, not on store apps.
 
     // {481D4609-E28B-4698-BB2D-6480475B8F31}
-    inline static const gmpi::api::Guid guid =
-    { 0x481D4609, 0xE28B, 0x4698, { 0xBB, 0x2D, 0x64, 0x80, 0x47, 0x5B, 0x8F, 0x31} };
-};
+//    inline static const gmpi::api::Guid guid =
+//    { 0x481D4609, 0xE28B, 0x4698, { 0xBB, 0x2D, 0x64, 0x80, 0x47, 0x5B, 0x8F, 0x31} };
+//};
 
 // INTERFACE 'IFactory2'
-struct DECLSPEC_NOVTABLE IFactory2 : public IFactory
-{
+//struct DECLSPEC_NOVTABLE IFactory2 : public IFactory
+//{
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
 
     // {61568E7F-5256-49C6-95E6-10327EB33EC4}

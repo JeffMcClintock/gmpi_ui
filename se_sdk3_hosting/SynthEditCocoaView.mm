@@ -28,11 +28,11 @@ public GmpiGuiHosting::PlatformTextEntryObserver,
 /*public gmpi::IMpUserInterfaceHost2,*/
 public IDrawingHost
 {
-//    gmpi_sdk::mp_shared_ptr<SE2::ContainerView> containerView;
+//    gmpi::shared_ptr<SE2::ContainerView> containerView;
 //    IGuiHost2* controller;
-    gmpi_sdk::mp_shared_ptr<IMpDrawingClient> drawingClient;
+    gmpi::shared_ptr<IDrawingClient> drawingClient;
 #ifdef GMPI_HOST_POINTER_SUPPORT
-    gmpi_sdk::mp_shared_ptr<gmpi_gui_api::IMpGraphics3> client;
+    gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
     int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
 #endif
@@ -62,11 +62,11 @@ public:
      }
 #endif
     
-    void Init(gmpi::IMpUnknown* pclient)
+    void Init(gmpi::api::IUnknown* pclient)
     {
  //todo       client = pclient;
         
-        pclient->queryInterface(IMpDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+        pclient->queryInterface(&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
         
         if(drawingClient)
             drawingClient->open(this);
@@ -98,62 +98,62 @@ public:
     }
 #endif
     
-    void OnRender(NSView* frame, GmpiDrawing_API::MP1_RECT* dirtyRect)
+    void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)
     {
         gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
         
-        context.PushAxisAlignedClip(dirtyRect);
+        context.pushAxisAlignedClip(dirtyRect);
         
 //        client->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
         if(drawingClient)
-            drawingClient->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
+            drawingClient->onRender(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
 
-        context.PopAxisAlignedClip();
+        context.popAxisAlignedClip();
     }
 #if 0
     // Inherited via IMpUserInterfaceHost2
-    virtual int32_t MP_STDCALL pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice = 0) override
+    virtual gmpi::ReturnCode  pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice = 0) override
     {
 //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL createPinIterator(gmpi::IMpPinIterator** returnIterator) override
+    virtual gmpi::ReturnCode  createPinIterator(gmpi::IMpPinIterator** returnIterator) override
     {
 //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL getHandle(int32_t & returnValue) override
+    virtual gmpi::ReturnCode  getHandle(int32_t & returnValue) override
     {
  //TODO        assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL sendMessageToAudio(int32_t id, int32_t size, const void * messageData) override
+    virtual gmpi::ReturnCode  sendMessageToAudio(int32_t id, int32_t size, const void * messageData) override
     {
  //TODO        assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL ClearResourceUris() override
+    virtual gmpi::ReturnCode  ClearResourceUris() override
     {
 //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL RegisterResourceUri(const char * resourceName, const char * resourceType, gmpi::IString* returnString) override
+    virtual gmpi::ReturnCode  RegisterResourceUri(const char * resourceName, const char * resourceType, gmpi::IString* returnString) override
     {
 //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL OpenUri(const char * fullUri, gmpi::IProtectedFile2** returnStream) override
+    virtual gmpi::ReturnCode  OpenUri(const char * fullUri, gmpi::IProtectedFile2** returnStream) override
     {
 //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
-    virtual int32_t MP_STDCALL FindResourceU(const char * resourceName, const char * resourceType, gmpi::IString* returnString) override
+    virtual gmpi::ReturnCode  FindResourceU(const char * resourceName, const char * resourceType, gmpi::IString* returnString) override
     {
 //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
     }
     
-    virtual int32_t MP_STDCALL LoadPresetFile_DEPRECATED(const char* presetFilePath) override
+    virtual gmpi::ReturnCode  LoadPresetFile_DEPRECATED(const char* presetFilePath) override
     {
         //TODO         assert(false); // not implemented.
         return gmpi::MP_FAIL;
@@ -161,7 +161,7 @@ public:
 #endif
     
     // IMpGraphicsHost
-    virtual void MP_STDCALL invalidateRect(const GmpiDrawing_API::MP1_RECT* invalidRect) override
+    void invalidateRect(const gmpi::drawing::Rect* invalidRect) override
     {
         if(invalidRect)
         {
@@ -174,72 +174,72 @@ public:
     }
     
 #if 0
-    virtual void MP_STDCALL invalidateMeasure() override
+    virtual void  invalidateMeasure() override
     {
 //TODO        assert(false); // not implemented.
     }
-    virtual int32_t MP_STDCALL setCapture(void) override
+    virtual gmpi::ReturnCode  setCapture(void) override
     {
         mouseCaptured = 1;
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
-    virtual int32_t MP_STDCALL getCapture(int32_t & returnValue) override
+    virtual gmpi::ReturnCode  getCapture(int32_t & returnValue) override
     {
         returnValue = mouseCaptured;
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
-    virtual int32_t MP_STDCALL releaseCapture(void) override
+    virtual gmpi::ReturnCode  releaseCapture(void) override
     {
         mouseCaptured = 0;
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
 #endif
-    int32_t MP_STDCALL getDrawingFactory(gmpi::IMpUnknown ** returnFactory) override
+    gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown ** returnFactory) override
     {
         *returnFactory = &drawingFactory;
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
 
 #if 0
-    virtual int32_t MP_STDCALL GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override
+    virtual gmpi::ReturnCode  GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override
     {
         *returnFactory = &drawingFactory;
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
 
-    virtual int32_t MP_STDCALL createPlatformMenu(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override
+    virtual gmpi::ReturnCode  createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override
     {
         *returnMenu = new GmpiGuiHosting::PlatformMenu(view, rect);
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
-    virtual int32_t MP_STDCALL createPlatformTextEdit(GmpiDrawing_API::MP1_RECT* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override
+    virtual gmpi::ReturnCode  createPlatformTextEdit(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override
     {
         currentTextEdit = new GmpiGuiHosting::PlatformTextEntry(this, view, rect);
         *returnTextEdit = currentTextEdit;
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
-    virtual int32_t MP_STDCALL createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override
+    virtual gmpi::ReturnCode  createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override
     {
         *returnFileDialog = new GmpiGuiHosting::PlatformFileDialog(dialogType, view);
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
-    virtual int32_t MP_STDCALL createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override
+    virtual gmpi::ReturnCode  createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override
     {
         *returnDialog = new GmpiGuiHosting::PlatformOkCancelDialog(dialogType, view);
-        return gmpi::MP_OK;
+        return gmpi::ReturnCode::Ok;
     }
 #endif
     
     // IUnknown methods
-    virtual int32_t MP_STDCALL queryInterface(const gmpi::MpGuid& iid, void** returnInterface) override
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
 
-        if (iid == IDrawingHost::guid)
+        if (*iid == IDrawingHost::guid)
         {
             *returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
             addRef();
-            return gmpi::MP_OK;
+            return gmpi::ReturnCode::Ok;
         }
 
 #if 0
@@ -248,7 +248,7 @@ public:
             // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
             *returnInterface = reinterpret_cast<void*>(static_cast<IMpUserInterfaceHost2*>(this));
             addRef();
-            return gmpi::MP_OK;
+            return gmpi::ReturnCode::Ok;
         }
 
         if (iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
@@ -256,10 +256,10 @@ public:
             // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
             *returnInterface = reinterpret_cast<void*>(static_cast<IMpGraphicsHost*>(this));
             addRef();
-            return gmpi::MP_OK;
+            return gmpi::ReturnCode::Ok;
         }
 #endif
-        return gmpi::MP_NOSUPPORT;
+        return gmpi::ReturnCode::NoSupport;
     }
 #if 0
     void removeTextEdit()
@@ -297,7 +297,7 @@ public:
     NSTimer* timer;
     int toolTipTimer;
     bool toolTipShown;
-    GmpiDrawing::Point mousePos;
+    gmpi::drawing::Point mousePos;
     
     whatever testIfItGetsDeleted;
 }
@@ -316,7 +316,7 @@ public:
     NSTimer* timer;
     int toolTipTimer;
     bool toolTipShown;
-    GmpiDrawing::Point mousePos;
+    gmpi::drawing::Point mousePos;
     */
     
     whatever testIfItGetsDeleted;
@@ -458,7 +458,7 @@ public:
         [self addTrackingArea:self->trackingArea ];
         
         drawingFrame.view = self;
-        drawingFrame.Init((gmpi::IMpUnknown*) _client);
+        drawingFrame.Init((gmpi::api::IUnknown*) _client);
         
         timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
     }
@@ -515,9 +515,14 @@ public:
 
 - (void)drawRect:(NSRect)dirtyRect
 {
-    GmpiDrawing::Rect r(dirtyRect.origin.x, dirtyRect.origin.y, dirtyRect.origin.x + dirtyRect.size.width, dirtyRect.origin.y + dirtyRect.size.height);
+    gmpi::drawing::Rect r{
+        static_cast<float>(dirtyRect.origin.x),
+        static_cast<float>(dirtyRect.origin.y),
+        static_cast<float>(dirtyRect.origin.x + dirtyRect.size.width),
+        static_cast<float>(dirtyRect.origin.y + dirtyRect.size.height)
+    };
 
-    drawingFrame.OnRender(self, &r);
+    drawingFrame.onRender(self, &r);
     
 #ifdef _DEBUG
     {
@@ -691,7 +696,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
  
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
 
-    GmpiDrawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p(localPoint.x, localPoint.y);
 
     int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
@@ -709,7 +714,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     drawingFrame.removeTextEdit();
     
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    GmpiDrawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p(localPoint.x, localPoint.y);
     
     int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
@@ -723,7 +728,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 - (void)rightMouseUp:(NSEvent *)theEvent
 {
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    GmpiDrawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p(localPoint.x, localPoint.y);
     
     int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
@@ -736,7 +741,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 - (void)mouseUp:(NSEvent *)theEvent {
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    GmpiDrawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p(localPoint.x, localPoint.y);
 
     int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;

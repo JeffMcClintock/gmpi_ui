@@ -2,7 +2,7 @@
 
 #include <JuceHeader.h>
 
-// bounces a bunch of coloured rectangles arround the screen like an ancient screensaver.
+// bounces a bunch of coloured rectangles around the screen like an ancient screensaver.
 struct BouncingRectangles
 {
     struct Sprite
@@ -12,12 +12,13 @@ struct BouncingRectangles
         juce::Colour colour;
     };
 
-    std::vector< Sprite > rects;
+    std::vector<Sprite> rects;
 
     BouncingRectangles()
     {
         const int numRects = 10000;
-
+        rects.reserve(numRects);
+        
         for (int i = 0; i < numRects; ++i)
         {
             Sprite s;

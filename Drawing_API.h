@@ -352,12 +352,12 @@ struct RoundedRect
 // * MP1_CAP_STYLE_TRIANGLE is not supported on macOS, it draws as MP1_CAP_STYLE_ROUND.
 struct StrokeStyleProperties
 {
-    CapStyle startCap;
-    CapStyle endCap;
-    CapStyle dashCap;
-    LineJoin lineJoin;
+    CapStyle startCap{};
+    CapStyle endCap{};
+    CapStyle dashCap{};
+    LineJoin lineJoin{};
     float miterLimit{};
-    DashStyle dashStyle;
+    DashStyle dashStyle{};
     float dashOffset{};
     int32_t transformTypeUnused{};
 };

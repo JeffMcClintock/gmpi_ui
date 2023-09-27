@@ -32,7 +32,7 @@ public:
 	gmpi::drawing::StrokeStyleProperties strokeStyleProperties;
 	std::vector<float> dashes;
 
-	StrokeStyle(gmpi::drawing::api::IFactory* pfactory, const gmpi::drawing::StrokeStyleProperties* pstrokeStyleProperties, float* pdashes, int32_t dashesCount) :
+	StrokeStyle(gmpi::drawing::api::IFactory* pfactory, const gmpi::drawing::StrokeStyleProperties* pstrokeStyleProperties, const float* pdashes, int32_t dashesCount) :
 		Resource(pfactory)
 		, strokeStyleProperties(*pstrokeStyleProperties)
 	{

@@ -75,7 +75,7 @@ inline int32_t getHeight(RectL r)
 	return r.bottom - r.top;
 }
 
-inline RectL Intersect(const RectL& a, const RectL& b)
+inline RectL intersectRect(RectL a, RectL b)
 {
 	return
 	{
@@ -85,8 +85,18 @@ inline RectL Intersect(const RectL& a, const RectL& b)
 	(std::min)(a.bottom, (std::max)(a.top,    b.bottom))
 	};
 }
+inline Rect intersectRect(Rect a, Rect b)
+{
+    return
+    {
+    (std::max)(a.left,   (std::min)(a.right,  b.left)),
+    (std::max)(a.top,    (std::min)(a.bottom, b.top)),
+    (std::min)(a.right,  (std::max)(a.left,   b.right)),
+    (std::min)(a.bottom, (std::max)(a.top,    b.bottom))
+    };
+}
 
-inline RectL Union(const RectL& a, const RectL& b)
+inline RectL unionRect(RectL a, RectL b)
 {
 	return
 	{

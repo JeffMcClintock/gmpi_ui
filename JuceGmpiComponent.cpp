@@ -2,7 +2,6 @@
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
 #include "../../../RefCountMacros.h"
-//#include <Windowsx.h>
 
 class JuceComponentProxy : public IDrawingClient
 {

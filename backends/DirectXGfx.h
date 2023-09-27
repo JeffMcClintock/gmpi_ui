@@ -1043,7 +1043,7 @@ public:
 };
 
 
-class Factory : public drawing::api::IFactory2
+class Factory : public drawing::api::IFactory
 {
 	ID2D1Factory1* m_pDirect2dFactory = {};
 	IDWriteFactory* writeFactory = {};

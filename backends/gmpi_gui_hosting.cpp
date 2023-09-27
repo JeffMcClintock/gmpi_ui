@@ -195,7 +195,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapCh
 //				_RPTW4(_CRT_WARN, L"rect %d, %d, %d, %d\n", r.left, r.top, r.right,r.bottom);
 
 				// Direct 2D will fail if any rect outside swapchain bitmap area.
-				const auto res = Intersect(r, { 0, 0, swapChainSize.width, swapChainSize.height });
+				const auto res = intersectRect(r, { 0, 0, swapChainSize.width, swapChainSize.height });
 
 				if (!empty(res))
 				{

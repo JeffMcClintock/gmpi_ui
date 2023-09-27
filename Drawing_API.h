@@ -651,8 +651,8 @@ struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
 //    { 0x481D4609, 0xE28B, 0x4698, { 0xBB, 0x2D, 0x64, 0x80, 0x47, 0x5B, 0x8F, 0x31} };
 //};
 
-// INTERFACE 'IFactory2'
-//struct DECLSPEC_NOVTABLE IFactory2 : public IFactory
+// INTERFACE 'IFactory'
+//struct DECLSPEC_NOVTABLE IFactory : public IFactory
 //{
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
 

@@ -2,23 +2,12 @@
 
 #import "SynthEditCocoaView.h"
 #include "CocoaNamespaceMacros.h"
-
 #include "./CocoaGuiHost.h"
-//#import "./ContainerView.h"
-//#include "./JsonDocPresenter.h"
-//#include "BundleInfo.h"
 #include "../se_sdk3_hosting/GraphicsRedrawClient.h"
-//#if defined(SE_TARGET_AU)
-//#include "../../../se_au/SEInstrumentBase.h"
-//#endif
 
 // In VST3 wrapper this object is a child window of SynthEditPluginCocoaView,
 // It serves to provide a C++ to Objective-C adaptor to the gmpi Drawing framework.
 // (actual parent is objective c).
-namespace Json
-{
-    class Value;
-}
 
 class DrawingFrameCocoa :
 #ifdef GMPI_HOST_POINTER_SUPPORT
@@ -28,8 +17,6 @@ public GmpiGuiHosting::PlatformTextEntryObserver,
 /*public gmpi::IMpUserInterfaceHost2,*/
 public IDrawingHost
 {
-//    gmpi::shared_ptr<SE2::ContainerView> containerView;
-//    IGuiHost2* controller;
     gmpi::shared_ptr<IDrawingClient> drawingClient;
 #ifdef GMPI_HOST_POINTER_SUPPORT
     gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
@@ -69,7 +56,9 @@ public:
         pclient->queryInterface(&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
         
         if(drawingClient)
+        {
             drawingClient->open(this);
+        }
     }
      
      void DeInit()
@@ -90,25 +79,15 @@ public:
 // alternative?
 // controller->OnDrawingFrameDeleted(); // nulls it's 'OnUnloadPlugin' callback
     }
-
-#if 0
-    inline SE2::ContainerView* getView()
-    {
-        return containerView.get();
-    }
-#endif
     
     void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)
     {
         gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
         
-        context.pushAxisAlignedClip(dirtyRect);
-        
-//        client->OnRender(static_cast<GmpiDrawing_API::IMpDeviceContext*>(&context));
         if(drawingClient)
             drawingClient->onRender(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
 
-        context.popAxisAlignedClip();
+ //       context.popAxisAlignedClip();
     }
 #if 0
     // Inherited via IMpUserInterfaceHost2
@@ -521,7 +500,7 @@ public:
         static_cast<float>(dirtyRect.origin.x + dirtyRect.size.width),
         static_cast<float>(dirtyRect.origin.y + dirtyRect.size.height)
     };
-
+    
     drawingFrame.onRender(self, &r);
     
 #ifdef _DEBUG
@@ -546,112 +525,6 @@ public:
             [@"P3:NO" drawAtPoint:CGPointMake(320,0) withAttributes:nil];
         }
     }
-    
-#endif
-    
-#if 0 // trying to get additive premultiplied image to render
-    const int width = 256;
-    const int height = 32;
-    
-    int32_t pixels[width*height];
-    int32_t* p = pixels;
-    for(int y = 0 ; y < height ; ++y)
-    {
-        for(int x = 0 ; x < width ; ++x)
-        {
-            int alpha = x;// > width/2 ? 0 : 255;
-            // ARGB?
-            if( y > height/2)
-            {
- //               *p++ = 0x0000ff00 | (alpha << 24); // increase alpha, green stays at max
-                *p++ = 0xff000000 | (x << 8); // increase green, alpha stays at max
-            }
-            else{
-                *p++ = 0x00000000 | x; // increase blue, alpha zero
-           
-            } // conclusion alpha is ignored with kCGBlendModePlusLighter
-        }
-    }
-    auto provider = CGDataProviderCreateWithData(nullptr, pixels, width*height*4, nullptr);
-    
-    auto cgImage = CGImageCreate(width, height, 8, 32, 4*width, CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB) //CGColorSpaceCreateDeviceRGB()
-                  , kCGBitmapByteOrderDefault /*| kCGImageAlphaPremultipliedLast*/
-                  , provider, NULL, true
-                  , kCGRenderingIntentDefault
-                  );
-    CGBlendMode blendModes[] = {
-        /* Available in Mac OS X 10.4 & later. */
-        kCGBlendModeNormal,
-        kCGBlendModeMultiply,
-        kCGBlendModeScreen,
-        kCGBlendModeOverlay,
-        kCGBlendModeDarken,
-        kCGBlendModeLighten,
-        kCGBlendModeColorDodge,
-        kCGBlendModeColorBurn,
-        kCGBlendModeSoftLight,
-        kCGBlendModeHardLight,
-        kCGBlendModeDifference,
-        kCGBlendModeExclusion,
-        kCGBlendModeHue,
-        kCGBlendModeSaturation,
-        kCGBlendModeColor,
-        kCGBlendModeLuminosity,
-
-        /* Available in Mac OS X 10.5 & later. R, S, and D are, respectively,
-           premultiplied result, source, and destination colors with alpha; Ra,
-           Sa, and Da are the alpha components of these colors.
-
-           The Porter-Duff "source over" mode is called `kCGBlendModeNormal':
-             R = S + D*(1 - Sa)
-
-           Note that the Porter-Duff "XOR" mode is only titularly related to the
-           classical bitmap XOR operation (which is unsupported by
-           CoreGraphics). */
-
-        kCGBlendModeClear,                  /* R = 0 */
-        kCGBlendModeCopy,                   /* R = S */
-        kCGBlendModeSourceIn,               /* R = S*Da */
-        kCGBlendModeSourceOut,              /* R = S*(1 - Da) */
-        kCGBlendModeSourceAtop,             /* R = S*Da + D*(1 - Sa) */
-        kCGBlendModeDestinationOver,        /* R = S*(1 - Da) + D */
-        kCGBlendModeDestinationIn,          /* R = D*Sa */
-        kCGBlendModeDestinationOut,         /* R = D*(1 - Sa) */
-        kCGBlendModeDestinationAtop,        /* R = S*(1 - Da) + D*Sa */
-        kCGBlendModeXOR,                    /* R = S*(1 - Da) + D*(1 - Sa) */
-        kCGBlendModePlusDarker,             /* R = MAX(0, (1 - D) + (1 - S)) */
-        kCGBlendModePlusLighter             /* R = MIN(1, S + D) */
-    };
-    
-    if(cgImage)
-    {
-        auto rect = CGRectMake(40,60,width,height);
-        
-        auto currentContext = [[NSGraphicsContext currentContext] CGContext];
-        
-        [[NSColor whiteColor] set];
-        NSRectFill(NSMakeRect(40,60,15,height));
-
-        [[NSColor redColor] set];
-        NSRectFill(NSMakeRect(60,60,15,height));
- 
-        [[NSColor blueColor] set];
-        NSRectFill(NSMakeRect(80,60,15,height));
-
-        [[NSColor blackColor] set];
-        NSRectFill(NSMakeRect(100,60,15,height));
-        
-        static int blendModeIndex = 0;
-        CGBlendMode mode = blendModes[blendModeIndex];
-        CGContextSetBlendMode(currentContext, kCGBlendModePlusLighter); //mode);
-        CGContextDrawImage(currentContext, rect, cgImage);
-        
-        CFRelease(cgImage);
-        
-        blendModeIndex = (1+blendModeIndex) % (sizeof(blendModes)/sizeof(blendModes[0]));
-    }
-    
-    CFRelease(provider);
 #endif
  }
 

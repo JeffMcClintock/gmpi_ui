@@ -1620,10 +1620,23 @@ public:
 		, view_(pview)
 	{
 		currentTransform = [NSAffineTransform transform];
+        
+        // JUCE standalone tends to draw over window non-client area on macOS. clip drawing.
+        const auto r = [view_ bounds];
+        const drawing::Rect bounds{
+            (float) r.origin.x,
+            (float) r.origin.y,
+            (float) (r.origin.x + r.size.width),
+            (float) (r.origin.y + r.size.height)
+        };
+        
+        pushAxisAlignedClip(&bounds);
 	}
 
 	~GraphicsContext()
 	{
+        assert(clipRectStack.size() == 1);
+        popAxisAlignedClip();
 	}
 
 	ReturnCode getFactory(drawing::api::IFactory** pfactory) override

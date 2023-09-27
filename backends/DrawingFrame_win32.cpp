@@ -526,15 +526,9 @@ void RenderLog(ID2D1RenderTarget* context_, IDWriteFactory* writeFactory, ID2D1F
 
 void DrawingFrameBase::OnPaint()
 {
-#ifdef USE_BEGINPAINT
-	PAINTSTRUCT ps;
-	BeginPaint(getWindowHandle(), &ps);
-#else
 	// First clear update region (else windows will pound on this repeatedly).
-
 	updateRegion_native.copyDirtyRects(getWindowHandle(), swapChainSize);
 	ValidateRect(getWindowHandle(), NULL); // Clear invalid region for next frame.
-#endif
 
 	// prevent infinite assert dialog boxes when assert happens during painting.
 	if (reentrant)
@@ -543,12 +537,6 @@ void DrawingFrameBase::OnPaint()
 	}
 	reentrant = true;
 
-#ifdef USE_BEGINPAINT
-	std::vector<RectL> dirtyRects;
-	dirtyRects.push_back(RectL(ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom));
-
-	if (containerView)
-#else
 	auto& dirtyRects = updateRegion_native.getUpdateRects();
 	if (
 		(
@@ -558,7 +546,6 @@ void DrawingFrameBase::OnPaint()
 			drawingClient
 		)
 		&& !dirtyRects.empty())
-#endif
 	{
 		//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
 
@@ -566,11 +553,6 @@ void DrawingFrameBase::OnPaint()
 		{
 			CreateDevice();
 		}
-/* didn't help
-		ID2D1Multithread* m_D2DMultithread;
-		DrawingFactory.getD2dFactory()->QueryInterface(IID_PPV_ARGS(&m_D2DMultithread));
-		m_D2DMultithread->Enter();
-*/
 
 		{
 			Graphics graphics(context.get());
@@ -578,64 +560,27 @@ void DrawingFrameBase::OnPaint()
 			graphics.beginDraw();
 			graphics.setTransform(viewTransform);
 
-			if (false) // Draw entire update area as one big rect. didn't help
+			// clip and draw each rect individually (causes some objects to redraw several times)
+			for (auto& r : dirtyRects)
 			{
-				auto r = updateRegion_native.getBoundingRect();
-
 				auto r2 = transformRect(WindowToDips, drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
 
 				// Snap to whole DIPs.
 				drawing::Rect temp;
-				/*
-				temp.left = static_cast<float>(FastRealToIntTruncateTowardZero(r2.left));
-				temp.top = static_cast<float>(FastRealToIntTruncateTowardZero(r2.top));
-				temp.right = static_cast<float>(FastRealToIntTruncateTowardZero(r2.right) + 1);
-				temp.bottom = static_cast<float>(FastRealToIntTruncateTowardZero(r2.bottom) + 1);
-				*/
-				// attempt to avoid drawing one extra pixel
 				temp.left = floorf(r2.left);
 				temp.top = floorf(r2.top);
 				temp.right = ceilf(r2.right);
 				temp.bottom = ceilf(r2.bottom);
 
-				//_RPTW4(_CRT_WARN, L"RectL dirtyRect{%4d,%4d,%4d,%4d};\n", (int)r.left, (int)r.top, (int)r.right, (int)r.bottom);
-				//_RPTW4(_CRT_WARN, L"Rect dirtyRect{%4d,%4d,%4d,%4d};\n", (int)temp.left, (int)temp.top, (int)temp.right, (int)temp.bottom);
 				graphics.pushAxisAlignedClip(temp);
-
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
 				gmpi_gui_client->onRender(context.get());
 #endif
-				if(drawingClient)
+				if (drawingClient)
 					drawingClient->onRender(context.get());
 
 				graphics.popAxisAlignedClip();
-			}
-			else
-			{
-				// GLITCHES, WITH TEXT OVERDRAWN WITH GARBARGE INSTRUCTURE VIEW
-				// clip and draw each react individually (causes some objects to redraw several times)
-				for (auto& r : dirtyRects)
-				{
-					auto r2 = transformRect(WindowToDips, drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
-
-					// Snap to whole DIPs.
-					drawing::Rect temp;
-					temp.left = floorf(r2.left);
-					temp.top = floorf(r2.top);
-					temp.right = ceilf(r2.right);
-					temp.bottom = ceilf(r2.bottom);
-
-					graphics.pushAxisAlignedClip(temp);
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-					gmpi_gui_client->onRender(context.get());
-#endif
-					if (drawingClient)
-						drawingClient->onRender(context.get());
-
-					graphics.popAxisAlignedClip();
-				}
 			}
 
 			// Print OS Version.
@@ -687,10 +632,7 @@ void DrawingFrameBase::OnPaint()
 			}
 
 			/*const auto r =*/ graphics.endDraw();
-
 		}
-
-		//	frontBufferDirtyRects.insert(frontBufferDirtyRects.end(), dirtyRects.begin(), dirtyRects.end());
 
 		// Present the backbuffer (if it has some new content)
 		if (firstPresent)
@@ -743,10 +685,6 @@ void DrawingFrameBase::OnPaint()
 	}
 
 	reentrant = false;
-
-#ifdef USE_BEGINPAINT
-	EndPaint(getWindowHandle(), &ps);
-#endif
 }
 
 void DrawingFrameBase::CreateDevice()

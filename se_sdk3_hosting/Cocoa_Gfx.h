@@ -91,7 +91,7 @@ CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some c
 // helper
 void setNativePenStrokeStyle(NSBezierPath * path, drawing::api::IStrokeStyle* strokeStyle)
 {
-    drawing::CapStyle capstyle = strokeStyle == nullptr ? drawing::CapStyle::Flat : ((generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.startCap;
+    drawing::CapStyle capstyle = strokeStyle == nullptr ? drawing::CapStyle::Flat : ((generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.lineCap;
             
     switch(capstyle)
     {
@@ -104,7 +104,7 @@ void setNativePenStrokeStyle(NSBezierPath * path, drawing::api::IStrokeStyle* st
             [ path setLineCapStyle:NSLineCapStyleSquare ];
             break;
                     
-        case drawing::CapStyle::Triangle:
+//        case drawing::CapStyle::Triangle:
         case drawing::CapStyle::Round:
             [ path setLineCapStyle:NSLineCapStyleRound ];
             break;

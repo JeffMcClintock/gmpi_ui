@@ -789,53 +789,6 @@ class StrokeStyle final : public GmpiDXResourceWrapper<drawing::api::IStrokeStyl
 public:
 	StrokeStyle(ID2D1StrokeStyle* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
-#if 0
-	drawing::CapStyle GetStartCap() override
-	{
-		return (drawing::CapStyle) native()->getStartCap();
-	}
-
-	drawing::CapStyle GetEndCap() override
-	{
-		return (drawing::CapStyle) native()->getEndCap();
-	}
-
-	drawing::CapStyle GetDashCap() override
-	{
-		return (drawing::CapStyle) native()->getDashCap();
-	}
-
-	float GetMiterLimit() override
-	{
-		return native()->getMiterLimit();
-	}
-
-	drawing::api::MP1_LINE_JOIN GetLineJoin() override
-	{
-		return (drawing::api::MP1_LINE_JOIN) native()->getLineJoin();
-	}
-
-	float GetDashOffset() override
-	{
-		return native()->getDashOffset();
-	}
-
-	drawing::api::MP1_DASH_STYLE GetDashStyle() override
-	{
-		return (drawing::api::MP1_DASH_STYLE) native()->getDashStyle();
-	}
-
-	uint32_t GetDashesCount() override
-	{
-		return native()->getDashesCount();
-	}
-
-	void GetDashes(float* dashes, uint32_t dashesCount) override
-	{
-		return native()->getDashes(dashes, dashesCount);
-	}
-#endif
-
 	GMPI_QUERYINTERFACE_NEW(drawing::api::IStrokeStyle);
 	GMPI_REFCOUNT;
 };
@@ -848,55 +801,6 @@ inline ID2D1StrokeStyle* toNative(const drawing::api::IStrokeStyle* strokeStyle)
 	}
 	return nullptr;
 }
-
-#if 0
-class TessellationSink final : public GmpiDXWrapper<drawing::api::ITessellationSink, ID2D1TessellationSink>
-{
-public:
-	TessellationSink(ID2D1Mesh* mesh)
-	{
-		[[maybe_unused]] HRESULT hr = mesh->Open(&native_);
-		assert(hr == S_OK);
-	}
-
-	void AddTriangles(const drawing::api::MP1_TRIANGLE* triangles, uint32_t trianglesCount) override
-	{
-		native_->AddTriangles((const D2D1_TRIANGLE*) triangles, trianglesCount);
-	}
-
-	int32_t Close() override
-	{
-		native_->Close();
-		return MP_OK;
-	}
-
-	GMPI_QUERYINTERFACE1(drawing::api::SE_IID_TESSELLATIONSINK_MPGUI, drawing::api::ITessellationSink);
-	GMPI_REFCOUNT;
-};
-		
-class Mesh final : public GmpiDXResourceWrapper<drawing::api::IMesh, ID2D1Mesh>
-{
-public:
-	Mesh(drawing::api::IFactory* factory, ID2D1RenderTarget* context) :
-		GmpiDXResourceWrapper(factory)
-	{
-		[[maybe_unused]] HRESULT hr = context->CreateMesh(&native_);
-		assert(hr == S_OK);
-	}
-
-	// IMesh
-	int32_t Open(drawing::api::ITessellationSink** returnObject) override
-	{
-		*returnObject = nullptr;
-		gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
-		wrapper.Attach(new TessellationSink(native_));
-		return wrapper->queryInterface(drawing::api::SE_IID_TESSELLATIONSINK_MPGUI, reinterpret_cast<void **>(returnObject));
-	}
-
-	GMPI_QUERYINTERFACE1(drawing::api::SE_IID_MESH_MPGUI, drawing::api::IMesh);
-	GMPI_REFCOUNT;
-};
-#endif
 
 class GeometrySink final : public drawing::api::IGeometrySink
 {

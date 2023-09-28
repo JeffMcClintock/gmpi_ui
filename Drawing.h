@@ -1175,51 +1175,6 @@ public:
 	}
 };
 
-// TODO : any point to this crap? just use the struct?
-class StrokeStyleProperties : public gmpi::drawing::StrokeStyleProperties
-{
-public:
-	StrokeStyleProperties()
-	{
-		startCap = endCap = dashCap = gmpi::drawing::CapStyle::Flat;
-
-		lineJoin = gmpi::drawing::LineJoin::Miter;
-		miterLimit = 10.0f;
-		dashStyle = gmpi::drawing::DashStyle::Solid;
-		dashOffset = 0.0f;
-		transformTypeUnused = 0;// gmpi::drawing::StrokeTransformType::Normal;
-	}
-
-	StrokeStyleProperties(gmpi::drawing::StrokeStyleProperties native) :
-		gmpi::drawing::StrokeStyleProperties(native)
-	{
-	}
-
-	void setLineJoin(gmpi::drawing::LineJoin joinStyle)
-	{
-		lineJoin = (gmpi::drawing::LineJoin) joinStyle;
-	}
-
-	void setCapStyle(gmpi::drawing::CapStyle style)
-	{
-		startCap = endCap = dashCap = (gmpi::drawing::CapStyle) style;
-	}
-
-	void setMiterLimit(float pMiterLimit) // NEW!!!
-	{
-		miterLimit = pMiterLimit;
-	}
-
-	void setDashStyle(gmpi::drawing::DashStyle style) // NEW!!!
-	{
-		dashStyle = (gmpi::drawing::DashStyle)style;
-	}
-
-	void setDashOffset(float pDashOffset) // NEW!!!
-	{
-		dashOffset = pDashOffset;
-	}
-};
 
 class BezierSegment : public gmpi::drawing::BezierSegment
 {
@@ -2172,7 +2127,7 @@ public:
 				gmpi::drawing::FontMetrics referenceMetrics;
 				referenceTextFormat.getFontMetrics(&referenceMetrics);
 
-				family_it->second.first = referenceFontSize / referenceMetrics.bodyHeight();
+				family_it->second.first = referenceFontSize / calcBodyHeight(referenceMetrics);
 				family_it->second.second = referenceFontSize / referenceMetrics.capHeight;
 			}
 
@@ -2251,7 +2206,7 @@ public:
 	StrokeStyle createStrokeStyle(gmpi::drawing::CapStyle allCapsStyle)
 	{
 		gmpi::drawing::StrokeStyleProperties strokeStyleProperties;
-		strokeStyleProperties.startCap = strokeStyleProperties.endCap = static_cast<gmpi::drawing::CapStyle>(allCapsStyle);
+		strokeStyleProperties.lineCap = allCapsStyle;// .startCap = strokeStyleProperties.endCap = static_cast<gmpi::drawing::CapStyle>(allCapsStyle);
 
 		StrokeStyle temp;
 		get()->createStrokeStyle(&strokeStyleProperties, nullptr, 0, temp.put());

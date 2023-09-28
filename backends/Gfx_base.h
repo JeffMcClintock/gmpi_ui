@@ -41,59 +41,7 @@ public:
 			dashes.push_back(pdashes[i]);
 		}
 	}
-#if 0
-	// gmpi::drawing::api::IStrokeStyle
-	gmpi::drawing::CapStyle getStartCap() override
-	{
-		return strokeStyleProperties.startCap;
-	}
 
-	gmpi::drawing::CapStyle getEndCap() override
-	{
-		return strokeStyleProperties.endCap;
-	}
-
-	gmpi::drawing::CapStyle getDashCap() override
-	{
-		return strokeStyleProperties.dashCap;
-	}
-
-	float getMiterLimit() override
-	{
-		return strokeStyleProperties.miterLimit;
-	}
-
-	gmpi::drawing::api::MP1_LINE_JOIN getLineJoin() override
-	{
-		return strokeStyleProperties.lineJoin;
-	}
-
-	float getDashOffset() override
-	{
-		return strokeStyleProperties.dashOffset;
-	}
-
-	gmpi::drawing::api::MP1_DASH_STYLE getDashStyle() override
-	{
-		return strokeStyleProperties.dashStyle;
-	}
-
-	uint32_t getDashesCount() override
-	{
-		return static_cast<uint32_t>(dashes.size());
-	}
-
-	void getDashes(float* pdashes, uint32_t dashesCount) override
-	{
-		if (dashesCount == dashes.size())
-		{
-			for (size_t i = 0; i < dashes.size(); ++i)
-			{
-				pdashes[i] = dashes[i];
-			}
-		}
-	}
-#endif
 	// IMpResource
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override
 	{

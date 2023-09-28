@@ -148,7 +148,7 @@ enum class CapStyle : int32_t
     Flat     = 0,
     Square   = 1,
     Round    = 2,
-    Triangle = 3,
+//    Triangle = 3,
 };
 
 enum class DashStyle : int32_t
@@ -352,14 +352,15 @@ struct RoundedRect
 // * MP1_CAP_STYLE_TRIANGLE is not supported on macOS, it draws as MP1_CAP_STYLE_ROUND.
 struct StrokeStyleProperties
 {
-    CapStyle startCap{};
-    CapStyle endCap{};
-    CapStyle dashCap{};
+    //CapStyle startCap{};
+    //CapStyle endCap{};
+    //CapStyle dashCap{};
+    CapStyle lineCap{};
     LineJoin lineJoin{};
-    float miterLimit{};
+    float miterLimit{10.0f};
     DashStyle dashStyle{};
     float dashOffset{};
-    int32_t transformTypeUnused{};
+//    int32_t transformTypeUnused{};
 };
 
 // mimicks DWRITE_FONT_METRICS, except measurements are in DIPs not design units.
@@ -374,12 +375,12 @@ struct FontMetrics
     float underlineThickness{};
     float strikethroughPosition{}; // Strikethrough position is the position of strikethrough relative to the English baseline. The value is usually made positive in order to place the strikethrough above the baseline.
     float strikethroughThickness{};
-
-	inline float bodyHeight() const
-	{
-		return ascent + descent;
-	}
 };
+
+inline float calcBodyHeight(const FontMetrics& fm)
+{
+	return fm.ascent + fm.descent;
+}
 
 namespace api
 {

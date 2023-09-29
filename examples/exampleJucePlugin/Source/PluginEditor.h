@@ -40,7 +40,8 @@ public:
 #if USE_GMPI_RENDERER
 
     // GMPI-UI rendering
-    void onRender(gmpi::drawing::Graphics& g) override
+    void onRender(gmpi::drawing::Graphics& g) override;
+#if 0
     {
         g.clear(gmpi::drawing::Colors::Green);
 
@@ -52,6 +53,7 @@ public:
             g.fillRectangle( toGmpi(r.pos), brush );
         }
     }
+#endif
 #else
 
     // JUCE rendering

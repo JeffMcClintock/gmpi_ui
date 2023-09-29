@@ -1,5 +1,4 @@
 #pragma once
-
 /*
   GMPI - Generalized Music Plugin Interface specification.
   Copyright 2023 Jeff McClintock.
@@ -30,7 +29,7 @@ using namespace GmpiDrawing_API;
 	* Support drawing extended-color bitmaps (e.g. 10 bits per pixel)
 */
 
-#include "GmpiApiCommon.h"//gmpi_common.h"
+#include "GmpiApiCommon.h"
 
 // Platform specific definitions.
 #pragma pack(push,8)
@@ -347,23 +346,16 @@ struct RoundedRect
 };
 
 // Notes:
-// * On macOS all cap styles are taken from 'startCap'. There is no way to have a different end cap for example.
 // * MP1_CAP_STYLE_FLAT is not recommended for dashed or dotted lines. It does not draw 'dots' on Windows.
-// * MP1_CAP_STYLE_TRIANGLE is not supported on macOS, it draws as MP1_CAP_STYLE_ROUND.
 struct StrokeStyleProperties
 {
-    //CapStyle startCap{};
-    //CapStyle endCap{};
-    //CapStyle dashCap{};
     CapStyle lineCap{};
     LineJoin lineJoin{};
     float miterLimit{10.0f};
     DashStyle dashStyle{};
     float dashOffset{};
-//    int32_t transformTypeUnused{};
 };
 
-// mimicks DWRITE_FONT_METRICS, except measurements are in DIPs not design units.
 struct FontMetrics
 {
     float ascent{};                // Ascent is the distance from the top of font character alignment box to the English baseline.

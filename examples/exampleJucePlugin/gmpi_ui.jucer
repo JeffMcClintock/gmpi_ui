@@ -5,6 +5,8 @@
               headerPath="../../../.." defines="_UNICODE UNICODE" cppLanguageStandard="20">
   <MAINGROUP id="wfdSeb" name="GMPI_Drawing">
     <GROUP id="{BD1CCC41-A448-A8AF-D230-9DEF5D00554B}" name="Source">
+      <FILE id="uqvfih" name="gmpi_ui_demo_text.h" compile="0" resource="0"
+            file="Source/gmpi_ui_demo_text.h"/>
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">
         <FILE id="dXyTpN" name="CocoaGuiHost.mm" compile="1" resource="0" file="../../se_sdk3_hosting/CocoaGuiHost.mm"/>
         <FILE id="htX3dH" name="DirectXGfx.cpp" compile="1" resource="0" file="../../backends/DirectXGfx.cpp"/>

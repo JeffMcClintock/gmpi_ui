@@ -862,6 +862,29 @@ inline Matrix3x2 makeSkew(
 	//			MP1MakeSkewMatrix(angleX, angleY, center, &skew);
 	return skew;
 }
+
+inline gmpi::drawing::Rect offsetRect(gmpi::drawing::Rect r, gmpi::drawing::Size offset)
+{
+	return
+	{
+		r.left += offset.width,
+		r.top += offset.height,
+		r.right += offset.width,
+		r.bottom += offset.height
+	};
+}
+
+inline gmpi::drawing::RectL offsetRect(gmpi::drawing::RectL r, gmpi::drawing::SizeL offset)
+{
+	return
+	{
+		r.left += offset.width,
+		r.top += offset.height,
+		r.right += offset.width,
+		r.bottom += offset.height
+	};
+}
+
 #if 0
 
 /*
@@ -1485,6 +1508,7 @@ inline static Color YellowGreen = colorFromHex(0x9ACD32u);
 class TextFormat_readonly : public gmpi::IWrapper<gmpi::drawing::api::ITextFormat>
 {
 public:
+#if 0
 	Size getTextExtentU(const char* utf8String)
 	{
 		Size s;
@@ -1498,13 +1522,16 @@ public:
 		get()->getTextExtentU(utf8String, (int32_t)size, &s);
 		return s;
 	}
+#endif
 
-	Size getTextExtentU(std::string utf8String)
+	Size getTextExtentU(std::string_view utf8String)
 	{
 		Size s;
-		get()->getTextExtentU(utf8String.c_str(), (int32_t)utf8String.size(), &s);
+		get()->getTextExtentU(utf8String.data(), (int32_t)utf8String.size(), &s);
 		return s;
 	}
+
+	// TODO should be getTextExtentW for consitancy?
 	Size getTextExtentU(std::wstring wString)
 	{
 		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
@@ -1531,15 +1558,11 @@ public:
 class TextFormat : public TextFormat_readonly
 {
 public:
+	// hmm, mutable?
 	gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment textAlignment)
 	{
 		return get()->setTextAlignment(textAlignment);
 	}
-
-	//gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment textAlignment)
-	//{
-	//	return get()->setTextAlignment(textAlignment);
-	//}
 
 	gmpi::ReturnCode setParagraphAlignment(gmpi::drawing::ParagraphAlignment paragraphAlignment)
 	{
@@ -2604,15 +2627,21 @@ public:
 	}
 
 	// todo should options be int to allow bitwise combining??? !!!
-	void drawTextU(const char* utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
+	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
-		int32_t stringLength = (int32_t) strlen(utf8String);
-		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String, stringLength, textFormat.get(), &layoutRect, brush.get(), options/*, measuringMode*/);
+//		int32_t stringLength = (int32_t) strlen(utf8String);
+		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), textFormat.get(), &layoutRect, brush.get(), options/*, measuringMode*/);
+	}
+#if 0
+	void drawTextU(const char8_t* utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
+	{
+		drawTextU((const char*)utf8String, textFormat, layoutRect, brush, options);
 	}
 	void drawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
 		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), options);
 	}
+#endif
 	//void drawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t flags)
 	//{
 	//	Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), flags);
@@ -2631,6 +2660,7 @@ public:
 		const auto utf8String = stringConverter.to_bytes(wString);
 		this->drawTextU(utf8String, textFormat, rect, brush, options);
 	}
+#if 0
 	// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
 	void drawTextU(std::string utf8String, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
@@ -2641,7 +2671,6 @@ public:
         Rect rect{x, y, x + 10000, y + 10000};
 		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), (int32_t)utf8String.size(), textFormat.get(), &rect, brush.get(), options);
 	}
-
 	// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
 	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
@@ -2650,6 +2679,7 @@ public:
 
 		this->drawTextU(utf8String, textFormat, x, y, brush, options);
 	}
+#endif
 
 	void setTransform(const Matrix3x2& transform)
 	{

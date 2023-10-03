@@ -20,6 +20,4 @@ void PluginEditor::resized()
 void BouncingBoxesComponent::onRender(gmpi::drawing::Graphics& g)
 {
 	drawTextDemo(g, { 400, 300 });
-
-
 }

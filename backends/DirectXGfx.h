@@ -998,9 +998,19 @@ public:
     {
         *returnStrokeStyle = nullptr;
 
-        ID2D1StrokeStyle* b = nullptr;
+        const D2D1_STROKE_STYLE_PROPERTIES nativeProperties
+        {
+            (D2D1_CAP_STYLE) strokeStyleProperties->lineCap,
+            (D2D1_CAP_STYLE) strokeStyleProperties->lineCap,
+            (D2D1_CAP_STYLE) strokeStyleProperties->lineCap,
+            (D2D1_LINE_JOIN) strokeStyleProperties->lineJoin,
+            strokeStyleProperties->miterLimit,
+            (D2D1_DASH_STYLE)strokeStyleProperties->dashStyle,
+            strokeStyleProperties->dashOffset
+		};
 
-        auto r = m_pDirect2dFactory->CreateStrokeStyle((const D2D1_STROKE_STYLE_PROPERTIES*) strokeStyleProperties, dashes, dashesCount, &b);
+        ID2D1StrokeStyle* b = nullptr;
+        auto r = m_pDirect2dFactory->CreateStrokeStyle(&nativeProperties, dashes, dashesCount, &b);
 
         if (r == S_OK)
         {

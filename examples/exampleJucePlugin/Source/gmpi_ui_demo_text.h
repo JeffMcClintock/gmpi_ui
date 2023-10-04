@@ -97,7 +97,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		auto font = g.getFactory().createTextFormat2(14);
 
 		gmpi::drawing::Rect alignmentRect(textRect.left, textRect.top, textRect.right, textRect.top + boxHeight);
-		auto boxBrush = g.createSolidColorBrush(gmpi::drawing::Colors::DarkGreen);
+		auto boxBrush = g.createSolidColorBrush(gmpi::drawing::Colors::Blue);
 
 		for (auto& box : alignments)
 		{

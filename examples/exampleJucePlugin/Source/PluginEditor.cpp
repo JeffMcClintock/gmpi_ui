@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 
 #include "gmpi_ui_demo_text.h"
+#include "gmpi_ui_demo_lines.h"
 
 //==============================================================================
 PluginEditor::PluginEditor (NewProjectAudioProcessor& p)
@@ -19,5 +20,6 @@ void PluginEditor::resized()
 
 void BouncingBoxesComponent::onRender(gmpi::drawing::Graphics& g)
 {
-	drawTextDemo(g, { 400, 300 });
+//	drawTextDemo(g, { 400, 300 });
+	drawLinesDemo(g, { 400, 300 });
 }

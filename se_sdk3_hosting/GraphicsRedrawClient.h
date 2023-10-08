@@ -43,6 +43,18 @@ public:
 	{ 0xe922d16f, 0x447b, 0x4e82, { 0xb0, 0xb1, 0xfd, 0x99, 0x5c, 0xa4, 0x21, 0xe } };
 };
 
+// TODO incorporate IMpKeyClient?
+class DECLSPEC_NOVTABLE IInputClient : public gmpi::api::IUnknown
+{
+public:
+	virtual gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) = 0;
+	virtual gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) = 0;
+	virtual gmpi::ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t flags) = 0;
+
+	// {D2D020D1-BCEE-49F9-A173-97BC6460A727}
+	inline static const gmpi::api::Guid guid =
+	{ 0xd2d020d1, 0xbcee, 0x49f9, { 0xa1, 0x73, 0x97, 0xbc, 0x64, 0x60, 0xa7, 0x27 } };
+};
 
 class IDrawingHost : public gmpi::api::IUnknown
 {

@@ -70,16 +70,53 @@ public:
 #endif
 };
 
+class GmpiDrawingDemoComponent :
+    public GmpiComponent
+{
+    int demo_idx = 1;
+
+public:
+    GmpiDrawingDemoComponent()
+    {
+    }
+    // override hit test
+bool hitTest(int x, int y) override
+	{
+    _RPT0(0, "hitTest\n");
+		return true;
+	}
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
+    gmpi::ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t pflags) override
+    {
+        nextDemo();
+        return gmpi::ReturnCode::Handled;
+    }
+
+    void onRender(gmpi::drawing::Graphics& g) override;
+    void nextDemo();
+};
+
 class PluginEditor : public juce::AudioProcessorEditor
 {
 public:
     PluginEditor (NewProjectAudioProcessor&);
     void resized() override;
-    
+
+    void mouseDown(const juce::MouseEvent& e) override;
+    bool hitTest(int x, int y) override
+    {
+        _RPT0(0, "hitTest top\n");
+        return true;
+    }
+
 private:
     NewProjectAudioProcessor& audioProcessor;
 
-    BouncingBoxesComponent boxesComponent;
+//    BouncingBoxesComponent boxesComponent;
+
+    GmpiDrawingDemoComponent clientComponent;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

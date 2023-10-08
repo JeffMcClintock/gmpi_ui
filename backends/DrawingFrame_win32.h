@@ -39,10 +39,11 @@ namespace GmpiGuiHosting
 		bool firstPresent = false;
 		UpdateRegionWinGdi updateRegion_native;
 		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
-		gmpi::shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
-		gmpi::shared_ptr<IDrawingClient> drawingClient;
 
 	protected:
+		gmpi::shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
+		gmpi::shared_ptr<IDrawingClient> drawingClient;
+		gmpi::shared_ptr<IInputClient> inputClient;
 		gmpi::drawing::SizeL swapChainSize = {};
 
 		ID2D1DeviceContext* mpRenderTarget = {};
@@ -139,7 +140,8 @@ namespace GmpiGuiHosting
 			{
 				drawingClient->open(this);// static_cast<gmpi_gui::IMpGraphicsHost*>(this));
 			}
-
+			pcontainerView->queryInterface(&IInputClient::guid, inputClient.asIMpUnknownPtr());
+			
 			// legacy
 			pcontainerView->queryInterface(&IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
 #ifdef GMPI_HOST_POINTER_SUPPORT

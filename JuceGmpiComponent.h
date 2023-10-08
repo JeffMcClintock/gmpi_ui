@@ -29,6 +29,11 @@ public:
 
 	// call this to repaint the component.
 	void invalidateRect();
+
+	// override these to handle mouse events.
+	virtual gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t pflags) { return gmpi::ReturnCode::Unhandled; }
+	virtual gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t pflags) { return gmpi::ReturnCode::Unhandled; }
+	virtual gmpi::ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t pflags) { return gmpi::ReturnCode::Unhandled; }
 };
 
 

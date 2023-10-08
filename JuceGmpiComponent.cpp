@@ -2,8 +2,37 @@
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
 #include "../../../RefCountMacros.h"
+#include "windowsx.h"
 
-class JuceComponentProxy : public IDrawingClient
+using namespace gmpi;
+using namespace gmpi::drawing;
+
+namespace gmpi
+{
+namespace interaction
+{
+	// TODO niceify
+	enum GG_POINTER_FLAGS {
+		GG_POINTER_FLAG_NONE = 0,
+		GG_POINTER_FLAG_NEW = 0x01,					// Indicates the arrival of a new pointer.
+		GG_POINTER_FLAG_INCONTACT = 0x04,
+		GG_POINTER_FLAG_FIRSTBUTTON = 0x10,
+		GG_POINTER_FLAG_SECONDBUTTON = 0x20,
+		GG_POINTER_FLAG_THIRDBUTTON = 0x40,
+		GG_POINTER_FLAG_FOURTHBUTTON = 0x80,
+		GG_POINTER_FLAG_CONFIDENCE = 0x00000400,	// Confidence is a suggestion from the source device about whether the pointer represents an intended or accidental interaction.
+		GG_POINTER_FLAG_PRIMARY = 0x00002000,	// First pointer to contact surface. Mouse is usually Primary.
+
+		GG_POINTER_SCROLL_HORIZ = 0x00008000,	// Mouse Wheel is scrolling horizontal.
+
+		GG_POINTER_KEY_SHIFT = 0x00010000,	// Modifer key - <SHIFT>.
+		GG_POINTER_KEY_CONTROL = 0x00020000,	// Modifer key - <CTRL> or <Command>.
+		GG_POINTER_KEY_ALT = 0x00040000,	// Modifer key - <ALT> or <Option>.
+	};
+}
+}
+
+class JuceComponentProxy : public IDrawingClient, public IInputClient
 {
 	class GmpiComponent* component = {};
 	IDrawingHost* drawinghost = {};
@@ -29,6 +58,12 @@ public:
 
 	gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) override;
 
+	// IInputClient
+	gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) override;
+	gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) override;
+	gmpi::ReturnCode onPointerUp  (gmpi::drawing::Point point, int32_t flags) override;
+
+
 	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
@@ -41,22 +76,29 @@ public:
 			return gmpi::ReturnCode::Ok;
 		}
 
+		if (iid == /*gmpi::interaction::*/&IInputClient::guid)
+		{
+			*returnInterface = static_cast<IInputClient*>(this);
+			addRef();
+			return gmpi::ReturnCode::Ok;
+		}
+
 #ifdef GMPI_HOST_POINTER_SUPPORT
-		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI3)
+		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI3)
 		{
 			*returnInterface = static_cast<IMpGraphics3*>(this);
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
 
-		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI2)
+		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI2)
 		{
 			*returnInterface = static_cast<IMpGraphics2*>(this);
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
 
-		if (iid == gmpi_gui_api::SE_IID_GRAPHICS_MPGUI)
+		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI)
 		{
 			*returnInterface = static_cast<IMpGraphics*>(this);
 			addRef();
@@ -95,7 +137,7 @@ public:
 	{
 		switch (message)
 		{
-#ifdef GMPI_HOST_POINTER_SUPPORT
+#if 1 //def GMPI_HOST_POINTER_SUPPORT
 		case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_MOUSEMOVE:
@@ -104,14 +146,14 @@ public:
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONUP:
 		{
-			Point p(static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)));
-			p = WindowToDips.TransformPoint(p);
+			Point p{ static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)) };
+			p = transformPoint(WindowToDips, p);
 
 			// Cubase sends spurious mouse move messages when transport running.
 			// This prevents tooltips working.
 			if (message == WM_MOUSEMOVE)
 			{
-				if (cubaseBugPreviousMouseMove == p)
+				if (cubaseBugPreviousMouseMove.x == p.x && cubaseBugPreviousMouseMove.y == p.y)
 				{
 					return TRUE;
 				}
@@ -124,14 +166,14 @@ public:
 
 			TooltipOnMouseActivity();
 
-			int32_t eventFlags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
+			int32_t eventFlags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
 
 			switch (message)
 			{
 			case WM_MBUTTONDOWN:
 			case WM_LBUTTONDOWN:
 			case WM_RBUTTONDOWN:
-				eventFlags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
+				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
 				break;
 			}
 
@@ -139,51 +181,54 @@ public:
 			{
 			case WM_LBUTTONUP:
 			case WM_LBUTTONDOWN:
-				eventFlags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;
+				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
 				break;
 			case WM_RBUTTONDOWN:
 			case WM_RBUTTONUP:
-				eventFlags |= gmpi_gui_api::GG_POINTER_FLAG_SECONDBUTTON;
+				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
 				break;
 			case WM_MBUTTONDOWN:
 			case WM_MBUTTONUP:
-				eventFlags |= gmpi_gui_api::GG_POINTER_FLAG_THIRDBUTTON;
+				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_THIRDBUTTON;
 				break;
 			}
 
 			if (GetKeyState(VK_SHIFT) < 0)
 			{
-				eventFlags |= gmpi_gui_api::GG_POINTER_KEY_SHIFT;
+				eventFlags |= gmpi::interaction::GG_POINTER_KEY_SHIFT;
 			}
 			if (GetKeyState(VK_CONTROL) < 0)
 			{
-				eventFlags |= gmpi_gui_api::GG_POINTER_KEY_CONTROL;
+				eventFlags |= gmpi::interaction::GG_POINTER_KEY_CONTROL;
 			}
 			if (GetKeyState(VK_MENU) < 0)
 			{
-				eventFlags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
+				eventFlags |= gmpi::interaction::GG_POINTER_KEY_ALT;
 			}
 
-			//		int32_t r;
-			switch (message)
+			gmpi::ReturnCode r{};
+			if (inputClient)
 			{
-			case WM_MOUSEMOVE:
-			{
-				//?			r = containerView->onPointerMove(eventFlags, p);
-			}
-			break;
-
-			case WM_LBUTTONDOWN:
-			case WM_RBUTTONDOWN:
-			case WM_MBUTTONDOWN:
-				//?			r = containerView->onPointerDown(eventFlags, p);
+				switch (message)
+				{
+				case WM_MOUSEMOVE:
+				{
+					r = inputClient->onPointerMove(p, eventFlags);
+				}
 				break;
 
-			case WM_MBUTTONUP:
-			case WM_RBUTTONUP:
-			case WM_LBUTTONUP:
-				//? handled by drawingframe?			r = containerView->onPointerUp(eventFlags, p);
-				break;
+				case WM_LBUTTONDOWN:
+				case WM_RBUTTONDOWN:
+				case WM_MBUTTONDOWN:
+					r = inputClient->onPointerDown(p, eventFlags);
+					break;
+
+				case WM_MBUTTONUP:
+				case WM_RBUTTONUP:
+				case WM_LBUTTONUP:
+					r = inputClient->onPointerUp(p, eventFlags);
+					break;
+				}
 			}
 		}
 		break;
@@ -357,7 +402,7 @@ struct GmpiComponent::Pimpl
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-        JuceDrawingFrameBase.AddView(static_cast</*gmpi_gui_api::*/IDrawingClient*>(&proxy));
+        JuceDrawingFrameBase.AddView(static_cast</*gmpi::interaction::*/IDrawingClient*>(&proxy));
 
         JuceDrawingFrameBase.open(
             hwnd,
@@ -437,4 +482,19 @@ gmpi::ReturnCode JuceComponentProxy::onRender(gmpi::drawing::api::IDeviceContext
 	gmpi::drawing::Graphics g(drawingContext);
 	component->onRender(g);
 	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode JuceComponentProxy::onPointerDown(gmpi::drawing::Point point, int32_t flags)
+{
+	return component->onPointerDown(point, flags);
+}
+
+gmpi::ReturnCode JuceComponentProxy::onPointerMove(gmpi::drawing::Point point, int32_t flags)
+{
+	return component->onPointerMove(point, flags);
+}
+
+gmpi::ReturnCode JuceComponentProxy::onPointerUp(gmpi::drawing::Point point, int32_t flags)
+{
+	return component->onPointerUp(point, flags);
 }

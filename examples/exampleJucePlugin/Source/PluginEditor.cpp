@@ -8,33 +8,8 @@
 PluginEditor::PluginEditor (NewProjectAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-	//	addAndMakeVisible(boxesComponent);
 	addAndMakeVisible(clientComponent);
-
     setSize (400, 300);
-//	setInterceptsMouseClicks(true, true);
-}
-
-void PluginEditor::resized()
-{
-	//	boxesComponent.setBounds(getBounds());
-	clientComponent.setBounds(getBounds());
-}
-
-void PluginEditor::mouseDown(const juce::MouseEvent& e)
-{
-//	nextDemo();
-//	int x = 9;
-}
-
-void GmpiDrawingDemoComponent::mouseDown(const juce::MouseEvent& e)
-{
-	nextDemo();
-}
-
-void GmpiDrawingDemoComponent::mouseUp(const juce::MouseEvent& e)
-{
-	nextDemo();
 }
 
 void GmpiDrawingDemoComponent::onRender(gmpi::drawing::Graphics& g)
@@ -50,9 +25,15 @@ void GmpiDrawingDemoComponent::onRender(gmpi::drawing::Graphics& g)
 	}
 }
 
-void GmpiDrawingDemoComponent::nextDemo()
+void PluginEditor::resized()
+{
+	clientComponent.setBounds(getBounds());
+}
+
+gmpi::ReturnCode GmpiDrawingDemoComponent::onPointerUp(gmpi::drawing::Point point, int32_t pflags)
 {
 	demo_idx = (demo_idx + 1) % 2;
-
 	invalidateRect(); // GMPI-UI equivalent of 'repaint()'
+
+	return gmpi::ReturnCode::Handled;
 }

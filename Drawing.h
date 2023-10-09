@@ -22,18 +22,13 @@ Lee Louque
 Sasha Radojevic
 
    TODO
-   * Draw bitmap with blending modes (e.g. additive)
    * Consider supporting text underline (would require support for DrawGlyphRun)
 */
 
 /*
 #include "Drawing.h"
-using namespace GmpiDrawing;
+using namespace gmpi::drawing;
 */
-
-
-#ifndef GMPI_GRAPHICS2_H_INCLUDED
-#define GMPI_GRAPHICS2_H_INCLUDED
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4100) // "unreferenced formal parameter"
@@ -85,6 +80,7 @@ inline RectL intersectRect(RectL a, RectL b)
 	(std::min)(a.bottom, (std::max)(a.top,    b.bottom))
 	};
 }
+
 inline Rect intersectRect(Rect a, Rect b)
 {
     return
@@ -111,637 +107,6 @@ inline bool empty(const RectL& a)
 {
 	return getWidth(a) <= 0 || getHeight(a) <= 0;
 }
-#if 0
-// Wrap structs in friendly classes.
-template<class SizeClass> struct Size_traits;
-
-template<>
-struct Size_traits<float>
-{
-	typedef gmpi::drawing::Size BASE_TYPE;
-};
-
-/*
-template<>
-struct Size_traits<int32_t>
-{
-	typedef gmpi::drawing::SizeL BASE_TYPE;
-};
-*/
-
-template<>
-struct Size_traits<uint32_t>
-{
-	typedef gmpi::drawing::SizeU BASE_TYPE;
-};
-
-template<>
-struct Size_traits<int32_t>
-{
-	typedef gmpi::drawing::SizeL BASE_TYPE;
-};
-
-template< typename T>
-class SizeBase : public Size_traits<T>::BASE_TYPE
-{
-public:
-	SizeBase()
-	{
-		this->width = this->height = static_cast<T>(0);
-	}
-
-	SizeBase(T w, T h)
-	{
-        this->width = w;
-		this->height = h;
-	}
-
-	SizeBase(typename Size_traits<T>::BASE_TYPE native) :
-		Size_traits<T>::BASE_TYPE(native)
-	{
-	}
-
-	/*The following operators simply return Sizes that
-	have operations performed on the relative (width, height) values*/
-	SizeBase& operator+=(const SizeBase& v) { this->width += v.width; this->height += v.height; return *this; }
-	SizeBase& operator-=(const SizeBase& v) { this->width -= v.width; this->height -= v.height; return *this; }
-	//SizeBase& operator*=(const SizeBase& v) { width *= v.width; height *= v.height; return *this; }
-	//SizeBase& operator/=(const SizeBase& v) { width /= v.width; height /= v.height; return *this; }
-
-	SizeBase& operator*=(const T& s) { this->width *= s; this->height *= s; return *this; }
-	SizeBase& operator/=(const T& s) { this->width /= s; this->height /= s; return *this; }
-
-	//Negate both the width and height values.
-	SizeBase operator-() const { return SizeBase(-this->width, -this->height); }
-
-	// Check if the Vectors have the same values.
-	friend bool operator==(const SizeBase& L, const SizeBase& R) { return L.width == R.width && L.height == R.height; }
-	friend bool operator!=(const SizeBase& L, const SizeBase& R) { return !(L == R); }
-};
-
-typedef SizeBase<float> Size;
-typedef SizeBase<int32_t> SizeL;
-typedef SizeBase<uint32_t> SizeU;
-
-
-template<class PointClass> struct Point_traits;
-
-template<>
-struct Point_traits<float>
-{
-	typedef gmpi::drawing::Point BASE_TYPE;
-	typedef Size SIZE_TYPE;
-};
-
-template<>
-struct Point_traits<int32_t>
-{
-	typedef gmpi::drawing::PointL BASE_TYPE;
-	typedef SizeL SIZE_TYPE;
-};
-	
-template< typename T>
-class PointBase : public Point_traits<T>::BASE_TYPE
-{
-public:
-	PointBase()
-	{
-		this->x = this->y = static_cast<T>(0);
-	}
-
-	PointBase(T px, T py)
-	{
-		this->x = px;
-		this->y = py;
-	}
-		
-	PointBase(typename Point_traits<T>::BASE_TYPE native) :
-		Point_traits<T>::BASE_TYPE(native)
-	{
-	}
-
-	/*The following operators simply return Pointds that
-	have operations performed on the relative (x, y) values*/
-	PointBase& operator+=(const typename Point_traits<T>::SIZE_TYPE& v) { this->x += v.width; this->y += v.height; return *this; }
-	PointBase& operator-=(const typename Point_traits<T>::SIZE_TYPE& v) { this->x -= v.width; this->y -= v.height; return *this; }
-	//PointBase& operator*=(const PointBase& v) { x *= v.x; y *= v.y; return *this; }
-	//PointBase& operator/=(const PointBase& v) { x /= v.x; y /= v.y; return *this; }
-
-	PointBase& operator*=(const T& s) { this->x *= s; this->y *= s; return *this; }
-	PointBase& operator/=(const T& s) { this->x /= s; this->y /= s; return *this; }
-
-	//Negate both the x and y values.
-	PointBase operator-() const { return PointBase(-this->x, -this->y); }
-
-	// Check if the Vectors have the same values.
-	friend bool operator==(const PointBase& L, const PointBase& R) { return L.x == R.x && L.y == R.y; }
-	friend bool operator!=(const PointBase& L, const PointBase& R) { return !(L == R); }
-};
-
-// Operations on Points and Sizes.
-// Point = Point + Size
-template<class T> PointBase<T> operator+(const PointBase<T>& L, const SizeBase<T>& R) { return PointBase<T>(L.x + R.width, L.y + R.height); }
-// Point = Point - Size
-template<class T> PointBase<T> operator-(const PointBase<T>& L, const SizeBase<T>& R) { return PointBase<T>(L.x - R.width, L.y - R.height); }
-
-// Size = Point - Point
-template<class T> SizeBase<T> operator-(const PointBase<T>& L, const PointBase<T>& R) { return SizeBase<T>(L.x - R.x, L.y - R.y); }
-// Size = Point - MP_POINT
-//template<class T> SizeBase<T> operator-(const PointBase<T>& L, const typename Point_traits<T>::BASE_TYPE& R) { return SizeBase<T>(L.x - R.x, L.y - R.y); }
-	
-// Size = Size - Size
-template<class T> SizeBase<T> operator-(const SizeBase<T>& L, const SizeBase<T>& R) { return SizeBase<T>(L.width - R.width, L.height - R.height); }
-// Size = Size + Size
-template<class T> SizeBase<T> operator+(const SizeBase<T>& L, const SizeBase<T>& R) { return SizeBase<T>(L.width + R.width, L.height + R.height); }
-
-template<class T> SizeBase<T> toSize(PointBase<T> p)
-{
-	return { p.x, p.y };
-}
-
-template<class T> PointBase<T> toPoint(SizeBase<T> s)
-{
-	return { s.width, s.height };
-}
-
-typedef PointBase<float> Point;
-typedef PointBase<int32_t> PointL;
-
-// TODO : inconsistent method capitalization !!!
-template<class RectClass> struct Rect_traits;
-
-template<>
-struct Rect_traits<float>
-{
-	typedef gmpi::drawing::Rect BASE_TYPE;
-	typedef Size SIZE_TYPE;
-};
-
-template<>
-struct Rect_traits<int32_t>
-{
-	typedef gmpi::drawing::RectL BASE_TYPE;
-	typedef SizeL SIZE_TYPE;
-};
-
-template< typename T>
-class RectBase : public Rect_traits<T>::BASE_TYPE
-{
-public:
-	RectBase(typename Rect_traits<T>::BASE_TYPE native) :
-		Rect_traits<T>::BASE_TYPE(native)
-	{
-	}
-
-	//RectBase(gmpi::drawing::RectL native)
-	//{
-	//	left = static_cast<float>(native.left);
-	//	top = static_cast<float>(native.top);
-	//	right = static_cast<float>(native.right);
-	//	bottom = static_cast<float>(native.bottom);
-	//}
-
-	RectBase()
-	{
-		this->left = this->top = this->right = this->bottom = 0;
-	}
-
-	RectBase(T pleft, T ptop, T pright, T pbottom)
-	{
-		this->left = pleft;
-		this->top = ptop;
-		this->right = pright;
-		this->bottom = pbottom;
-	}
-	bool operator==(const typename Rect_traits<T>::BASE_TYPE& other) const
-	{
-		return
-			this->left == other.left
-			&& this->top == other.top
-			&& this->right == other.right
-			&& this->bottom == other.bottom;
-	}
-	bool operator!=(const typename Rect_traits<T>::BASE_TYPE& other) const
-	{
-		return
-			this->left != other.left
-			|| this->top != other.top
-			|| this->right != other.right
-			|| this->bottom != other.bottom;
-	}
-
-	RectBase& operator+=(const SizeBase<T>& v) { this->left += v.width; this->right += v.width; this->top += v.height; this->bottom += v.height; return *this; }
-	RectBase& operator-=(const SizeBase<T>& v) { this->left -= v.width; this->right -= v.width; this->top -= v.height; this->bottom -= v.height; return *this; }
-
-	SizeBase<T> getSize()
-	{
-		return Size(this->right - this->left, this->bottom - this->top);
-	}
-
-	T getWidth() const
-	{
-		return this->right - this->left;
-	}
-
-	T getHeight() const
-	{
-		return this->bottom - this->top;
-	}
-
-	void Offset(PointBase<T> offset)
-	{
-		this->left += offset.x;
-		this->right += offset.x;
-		this->top += offset.y;
-		this->bottom += offset.y;
-	}
-
-	void Offset(typename Rect_traits<T>::SIZE_TYPE offset)
-	{
-		this->left += offset.width;
-		this->right += offset.width;
-		this->top += offset.height;
-		this->bottom += offset.height;
-	}
-
-	void Offset(gmpi::drawing::SizeU offset)
-	{
-		this->left += offset.width;
-		this->right += offset.width;
-		this->top += offset.height;
-		this->bottom += offset.height;
-	}
-
-	void Offset(T dx, T dy)
-	{
-		this->left += dx;
-		this->right += dx;
-		this->top += dy;
-		this->bottom += dy;
-	}
-
-	void Inflate(T dx, T dy)
-	{
-		dx = (std::max)(dx, getWidth() / (T)-2);
-		dy = (std::max)(dy, getHeight() / (T)-2);
-
-		this->left -= dx;
-		this->right += dx;
-		this->top -= dy;
-		this->bottom += dy;
-	}
-
-	void Inflate(T inset)
-	{
-		Inflate(inset, inset);
-	}
-
-	void Deflate(T dx, T dy)
-	{
-		Inflate(-dx, -dy);
-	}
-
-	void Deflate(T inset)
-	{
-		Deflate(inset, inset);
-	}
-
-	void Intersect(typename Rect_traits<T>::BASE_TYPE rect)
-	{
-		this->left   = (std::max)(this->left,   (std::min)(this->right,  rect.left));
-		this->top    = (std::max)(this->top,    (std::min)(this->bottom, rect.top));
-		this->right  = (std::min)(this->right,  (std::max)(this->left,   rect.right));
-		this->bottom = (std::min)(this->bottom, (std::max)(this->top,    rect.bottom));
-	}
-
-	void Union(typename Rect_traits<T>::BASE_TYPE rect)
-	{
-		this->left = (std::min)(this->left, rect.left);
-		this->top = (std::min)(this->top, rect.top);
-		this->right = (std::max)(this->right, rect.right);
-		this->bottom = (std::max)(this->bottom, rect.bottom);
-	}
-
-	PointBase<T> getTopLeft() const
-	{
-		return PointBase<T>(this->left, this->top);
-	}
-
-	PointBase<T> getTopRight() const
-	{
-		return PointBase<T>(this->right, this->top);
-	}
-
-	PointBase<T> getBottomLeft() const
-	{
-		return PointBase<T>(this->left, this->bottom);
-	}
-
-	PointBase<T> getBottomRight() const
-	{
-		return PointBase<T>(this->right, this->bottom);
-	}
-
-	bool ContainsPoint(PointBase<T> point) const
-	{
-		return this->left <= point.x && this->right > point.x && this->top <= point.y && this->bottom > point.y;
-	}
-
-	bool empty() const
-	{
-		return getWidth() <= (T)0 || getHeight() <= (T)0;
-	}
-};
-
-template<class T>
-bool IsNull(const RectBase<T>& a)
-{
-	return a.left == T{} && a.top == T{} && a.right == T{} && a.bottom == T{};
-}
-	
-// Operations on Rects and Sizes.
-// Rect = Rect + Size
-template<class T> RectBase<T> operator+(const RectBase<T>& L, const SizeBase<T>& R) { return RectBase<T>(L.left + R.width, L.top + R.height, L.right + R.width, L.bottom + R.height); }
-// Rect = Rect - Size
-template<class T> RectBase<T> operator-(const RectBase<T>& L, const SizeBase<T>& R) { return RectBase<T>(L.left - R.width, L.top - R.height, L.right - R.width, L.bottom - R.height); }
-
-template<class T> RectBase<T> Intersect(const RectBase<T>& a, const RectBase<T>& b)
-{
-	RectBase<T> result(a);
-	result.left = (std::max)(a.left, b.left);
-	result.top = (std::max)(a.top, b.top);
-	result.right = (std::min)(a.right, b.right);
-	result.bottom = (std::min)(a.bottom, b.bottom);
-
-	// clamp negative dimensions to zero.
-	result.right = (std::max)(result.left, result.right);
-	result.bottom = (std::max)(result.top, result.bottom);
-	return result;
-}
-
-template<class T> RectBase<T> Union(const RectBase<T>& a, const RectBase<T>& b)
-{
-	RectBase<T> result(a);
-
-	result.top = (std::min)(a.top, b.top);
-	result.left = (std::min)(a.left, b.left);
-	result.right = (std::max)(a.right, b.right);
-	result.bottom = (std::max)(a.bottom, b.bottom);
-
-	return result;
-}
-
-// combines update regions, ignoring empty rectangles.
-template<class T> RectBase<T> UnionIgnoringNull(const RectBase<T>& a, const RectBase<T>& b)
-{
-	if (IsNull(a))
-		return b;
-	else if (IsNull(b))
-		return a;
-	else
-		return Union(a, b);
-}
-
-template<class T> bool isOverlapped(const RectBase<T>& a, const RectBase<T>& b)
-{
-	return (std::max)(a.left, b.left) < (std::min)(a.right, b.right)
-		&& (std::max)(a.top, b.top) < (std::min)(a.bottom, b.bottom);
-}
-
-template<class T> PointBase<T> CenterPoint(const RectBase<T>& r)
-{
-	return PointBase<T>( (T)0.5 * (r.left + r.right), (T)0.5 * (r.top + r.bottom));
-}
-
-typedef RectBase<float> Rect;
-typedef RectBase<int32_t> RectL;
-
-class Matrix3x2 : public gmpi::drawing::Matrix3x2
-{
-public:
-	Matrix3x2(gmpi::drawing::Matrix3x2 native) :
-		gmpi::drawing::Matrix3x2(native)
-	{
-	}
-
-	Matrix3x2()
-	{
-		_11 = 1.0f;
-		_12 = 0.0f;
-		_21 = 0.0f;
-		_22 = 1.0f;
-		_31 = 0.0f;
-		_32 = 0.0f;
-	}
-
-	Matrix3x2(float p_11, float p_12, float p_21, float p_22, float p_31, float p_32)
-	{
-		_11 = p_11;
-		_12 = p_12;
-		_21 = p_21;
-		_22 = p_22;
-		_31 = p_31;
-		_32 = p_32;
-	}
-	bool operator==(const Matrix3x2& other) const
-	{
-		return
-			_11 == other._11
-			&& _12 == other._12
-			&& _21 == other._21
-			&& _22 == other._22
-			&& _31 == other._31
-			&& _32 == other._32;
-	}
-	bool operator!=(const Matrix3x2& other) const
-	{
-		return
-			_11 != other._11
-			|| _12 != other._12
-			|| _21 != other._21
-			|| _22 != other._22
-			|| _31 != other._31
-			|| _32 != other._32;
-	}
-	//
-	// Named quasi-constructors
-	//
-	static Matrix3x2 Identity()
-	{
-		Matrix3x2 identity;
-
-		identity._11 = 1.f;
-		identity._12 = 0.f;
-		identity._21 = 0.f;
-		identity._22 = 1.f;
-		identity._31 = 0.f;
-		identity._32 = 0.f;
-
-		return identity;
-	}
-
-
-
-
-	float Determinant() const
-	{
-		return (_11 * _22) - (_12 * _21);
-	}
-
-	bool IsInvertible() const
-	{
-		assert(false); // TODO
-		return false; // !!MP1IsMatrixInvertible(this);
-	}
-
-	float m(int y, int x)
-	{
-		if (y < 2)
-		{
-			return ((float*)this)[x * 2 + y];
-		}
-		else
-		{
-			return y == 2 ? 1.0f : 0.0f;
-		}
-	}
-
-	bool Invert()
-	{
-#if 0
-		float m[3][3]; // original.
-		float a[3][3]; // inverted.
-
-		m[0][0] = _11;
-		m[0][1] = _12;
-		m[0][2] = 0.0f;
-		m[1][0] = _21;
-		m[1][1] = _22;
-		m[1][2] = 0.0f;
-		m[2][0] = _31;
-		m[2][1] = _32;
-		m[2][2] = 1.0f;
-
-		double det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]);
-		det -= m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]);
-		det += m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-
-		float s = 1.0f / (float)det;
-
-		a[0][0] = s * (m[1][1] * m[2][2] - m[1][2] * m[2][1]);
-		a[1][0] = s * (m[1][2] * m[2][0] - m[1][0] * m[2][2]);
-		a[2][0] = s * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-
-		a[0][1] = s * (m[0][2] * m[2][1] - m[0][1] * m[2][2]);
-		a[1][1] = s * (m[0][0] * m[2][2] - m[0][2] * m[2][0]);
-		a[2][1] = s * (m[0][1] * m[2][0] - m[0][0] * m[2][1]);
-
-		a[0][2] = s * (m[0][1] * m[1][2] - m[0][2] * m[1][1]);
-		a[1][2] = s * (m[0][2] * m[1][0] - m[0][0] * m[1][2]);
-		a[2][2] = s * (m[0][0] * m[1][1] - m[0][1] * m[1][0]);
-
-		_11 = a[0][0];
-		_12 = a[0][1];
-		// a[0][2] = 0.0f;
-		_21 = a[1][0];
-		_22 = a[1][1];
-		// a[1][2] = 0.0f;
-		_31 = a[2][0];
-		_32 = a[2][1];
-		// a[2][2] = 1.0f;
-#else
-		double det =  _11 * (_22 /** 1.0f - 0.0 * _32*/);
-				det -=  _12 * (_21 /** 1.0f - 0.0 * _31*/);
-				// det += 0.0 * (_21 *  _32 -  _22 * _31);
-
-		float s = 1.0f / (float) det;
-
-		Matrix3x2 result;
-
-		result._11 = s * ( _22 * 1.0f - 0.0f *  _32);
-		result._21 = s * (0.0f *  _31 -  _21 * 1.0f);
-		result._31 = s * ( _21 *  _32 -  _22 *  _31);
-
-		result._12 = s * (0.0f *  _32 -  _12 * 1.0f);
-		result._22 = s * ( _11 * 1.0f - 0.0f *  _31);
-		result._32 = s * ( _12 *  _31 -  _11 *  _32);
-
-		*this = result;
-#endif
-		return true;
-	}
-
-	bool IsIdentity() const
-	{
-		return     _11 == 1.f && _12 == 0.f
-			&& _21 == 0.f && _22 == 1.f
-			&& _31 == 0.f && _32 == 0.f;
-	}
-
-	void setProduct(
-		const Matrix3x2 &a,
-		const Matrix3x2 &b
-	)
-	{
-		_11 = a._11 * b._11 + a._12 * b._21;
-		_12 = a._11 * b._12 + a._12 * b._22;
-		_21 = a._21 * b._11 + a._22 * b._21;
-		_22 = a._21 * b._12 + a._22 * b._22;
-		_31 = a._31 * b._11 + a._32 * b._21 + b._31;
-		_32 = a._31 * b._12 + a._32 * b._22 + b._32;
-	}
-
-	Point TransformPoint(Point point) const
-	{
-		return Point(
-			point.x * _11 + point.y * _21 + _31,
-			point.x * _12 + point.y * _22 + _32
-		);
-	}
-
-	Rect TransformRect(gmpi::drawing::Rect rect) const
-	{
-		return Rect(
-			rect.left * _11 + rect.top * _21 + _31,
-			rect.left * _12 + rect.top * _22 + _32,
-			rect.right * _11 + rect.bottom * _21 + _31,
-			rect.right * _12 + rect.bottom * _22 + _32
-		);
-	}
-
-	Matrix3x2 operator*(	const Matrix3x2 &matrix	) const
-	{
-		Matrix3x2 result;
-		result.setProduct(*this, matrix);
-		return result;
-	}
-/*
-	Matrix3x2 operator=(const Matrix3x2 other) const
-	{
-		*this = other;
-		return other;
-	}
-*/
-	/*
-	Matrix3x2& Matrix3x2::operator=(const Matrix3x2& other)
-	{
-		*((gmpi::drawing::Matrix3x2*)this) = other;
-		return *this;
-	}
-	*/
-
-	Matrix3x2 operator*=(const Matrix3x2 other) const
-	{
-		Matrix3x2 result;
-		result.setProduct(*this, other);
-
-		*((gmpi::drawing::Matrix3x2*)this) = result;
-		return *this;
-	}
-
-};
-
-#endif
 
 inline Point transformPoint(const Matrix3x2& transform, Point point)
 {
@@ -763,9 +128,8 @@ inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
 
 inline Matrix3x2 invert(const Matrix3x2& transform)
 {
-	double det = transform._11 * (transform._22 /** 1.0f - 0.0 * transform._32*/);
-	det -= transform._12 * (transform._21 /** 1.0f - 0.0 * transform._31*/);
-	// det += 0.0 * (transform._21 *  transform._32 -  transform._22 * transform._31);
+	double det = transform._11 * (transform._22);
+	det -= transform._12 * (transform._21);
 
 	float s = 1.0f / (float)det;
 
@@ -802,7 +166,6 @@ inline Matrix3x2 makeTranslation(
 {
     return makeTranslation(Size{x, y});
 }
-
 
 inline Matrix3x2 makeScale(
 	Size size,
@@ -884,459 +247,6 @@ inline gmpi::drawing::RectL offsetRect(gmpi::drawing::RectL r, gmpi::drawing::Si
 		r.bottom += offset.height
 	};
 }
-
-#if 0
-
-/*
-class PixelFormat : public gmpi::drawing::MP1_PIXEL_FORMAT
-{
-public:
-	PixelFormat(gmpi::drawing::MP1_PIXEL_FORMAT native) :
-		gmpi::drawing::MP1_PIXEL_FORMAT(native)
-	{
-	}
-
-};
-*/
-// TODO. Perhaps remove this, just create native bitmaps with defaults. becuase we can't handle any other format anyhow.
-// might need to support DPI but
-class BitmapProperties : public gmpi::drawing::BitmapProperties
-{
-public:
-	BitmapProperties(gmpi::drawing::BitmapProperties native) :
-		gmpi::drawing::BitmapProperties(native)
-	{
-	}
-
-	BitmapProperties()
-	{
-		dpiX = dpiY = 0; // default.
-	}
-};
-
-class Color : public gmpi::drawing::Color
-{
-	static const uint32_t sc_alphaShift = 24;
-	static const uint32_t sc_redShift   = 16;
-	static const uint32_t sc_greenShift =  8;
-	static const uint32_t sc_blueShift  =  0;
-
-	static const uint32_t sc_redMask   = 0xffu << sc_redShift;
-	static const uint32_t sc_greenMask = 0xffu << sc_greenShift;
-	static const uint32_t sc_blueMask  = 0xffu << sc_blueShift;
-	static const uint32_t sc_alphaMask = 0xffu << sc_alphaShift;
-public:
-
-
-
-	constexpr Color(gmpi::drawing::Color native) :
-		gmpi::drawing::Color(native)
-	{
-	}
-		
-	bool operator==(const Color& other) const
-	{
-		return
-			r == other.r
-			&& g == other.g
-			&& b == other.b
-			&& a == other.a;
-	}
-
-	bool operator!=(const Color& other) const
-	{
-		return !(*this == other);
-	}
-
-	Color(float pRed = 1.0f, float pGreen = 1.0f, float pBlue = 1.0f, float pAlpha = 1.0f)
-	{
-		assert(pRed < 50.f && pGreen < 50.f && pBlue < 50.f); // for 0-255 use Color::FromBytes(200,200,200)
-
-		r = pRed;
-		g = pGreen;
-		b = pBlue;
-		a = pAlpha;
-	}
-
-	Color(uint32_t rgb, float a = 1.0)
-	{
-		InitFromSrgba(
-			static_cast<uint8_t>((rgb & sc_redMask)   >> sc_redShift),
-			static_cast<uint8_t>((rgb & sc_greenMask) >> sc_greenShift),
-			static_cast<uint8_t>((rgb & sc_blueMask)  >> sc_blueShift), a);
-	}
-
-	Color(Enum c)
-	{
-		auto rgb = (uint32_t)c;
-		InitFromSrgba((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
-	}
-
-	static Color FromBytes(unsigned char pRed, unsigned char pGreen, unsigned char pBlue, unsigned char pAlpha = 255)
-	{
-		constexpr float oneOver255 = 1.0f / 255.0f;
-
-		Color r;
-		r.InitFromSrgba(pRed, pGreen, pBlue, static_cast<float>(pAlpha) * oneOver255);
-		return r;
-	}
-
-	static Color Transparent()
-	{
-		return Color(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-
-	static Color FromArgb(uint32_t argb)
-	{
-		return FromBytes(
-		static_cast<uint8_t>((argb & sc_redMask)   >> sc_redShift),
-		static_cast<uint8_t>((argb & sc_greenMask) >> sc_greenShift),
-		static_cast<uint8_t>((argb & sc_blueMask)  >> sc_blueShift),
-		static_cast<uint8_t>((argb & sc_alphaMask) >> sc_alphaShift));
-	}
-
-	static Color FromRgb(uint32_t rgb)
-	{
-		return FromBytes(
-			static_cast<uint8_t>((rgb & sc_redMask)   >> sc_redShift),
-			static_cast<uint8_t>((rgb & sc_greenMask) >> sc_greenShift),
-			static_cast<uint8_t>((rgb & sc_blueMask)  >> sc_blueShift), 0xFF);
-	}
-
-	/*
-	FromHexString: Converts a hexadecimal color to a Color object.
-	If you pass a 3-byte color, e.g. “000000” (black) we assume it’s a solid color (same as “FF000000”).
-	This makes it convenient to specify RGB without any alpha.
-	However if you pass a specific alpha, e.g. "77000000" (transparent black) we use the alpha "77".
-	*/
-	static Color FromHexString(const std::wstring &s)
-	{
-		wchar_t* stopString;
-		uint32_t hex = static_cast<uint32_t>( wcstoul(s.c_str(), &stopString, 16) );
-
-		// If Alpha not specified, default to 1.0
-		if (s.size() <= 6)
-		{
-			hex |= 0xff000000;
-		}
-
-		return FromArgb(hex);
-	}
-	static Color FromHexStringU(const std::string& s)
-	{
-		std::size_t stopString;
-		uint32_t hex = static_cast<uint32_t>(stoul(s, &stopString, 16));
-
-		// If Alpha not specified, default to 1.0
-		if (s.size() <= 6)
-		{
-			hex |= 0xff000000;
-		}
-
-		return FromArgb(hex);
-	}
-};
-
-Color interpolateColor(Color a, Color b, float fraction)
-{
-	return Color(
-		a.r + (b.r - a.r) * fraction,
-		a.g + (b.g - a.g) * fraction,
-		a.b + (b.b - a.b) * fraction,
-		a.a + (b.a - a.a) * fraction
-		);
-}
-
-Color addColorComponents(Color const& lhs, Color const& rhs)
-{
-	return Color{
-		lhs.r + rhs.r,
-		lhs.g + rhs.g,
-		lhs.b + rhs.b,
-		lhs.a,			// alpha left as-is
-	};
-}
-
-Color MultiplyBrightness(Color const& lhs, float rhs)
-{
-	return Color{
-		lhs.r * rhs,
-		lhs.g * rhs,
-		lhs.b * rhs,
-		lhs.a,			// alpha left as-is
-	};
-}
-
-class Gradientstop //: public gmpi::drawing::Gradientstop
-{
-public:
-	float position;
-	Color color;
-
-	Gradientstop()
-	{
-		position = 0.0f;
-		color = Color(0u);
-	}
-
-	Gradientstop(gmpi::drawing::Gradientstop& native) :
-//			gmpi::drawing::Gradientstop(native)
-		position(native.position)
-		, color(native.color)
-	{
-	}
-
-	Gradientstop(float pPosition, gmpi::drawing::Color pColor) :
-		position(pPosition)
-		, color(pColor)
-	{
-	}
-
-	Gradientstop(float pPosition, gmpi::drawing::Color pColor) :
-		position(pPosition)
-		, color(pColor)
-	{
-	}
-
-	operator gmpi::drawing::Gradientstop()
-	{
-		return *reinterpret_cast<gmpi::drawing::Gradientstop*>(this);
-	}
-};
-
-class BrushProperties : public gmpi::drawing::BrushProperties
-{
-public:
-	BrushProperties(gmpi::drawing::BrushProperties native) :
-		gmpi::drawing::BrushProperties(native)
-	{
-	}
-
-	BrushProperties()
-	{
-		opacity = 1.0f;
-		transform = (gmpi::drawing::Matrix3x2) Matrix3x2::Identity();
-	}
-
-	BrushProperties(float pOpacity)
-	{
-		opacity = pOpacity;
-		transform = (gmpi::drawing::Matrix3x2) Matrix3x2::Identity();
-	}
-};
-
-class BitmapBrushProperties : public gmpi::drawing::BitmapBrushProperties
-{
-public:
-	BitmapBrushProperties(gmpi::drawing::BitmapBrushProperties native) :
-		gmpi::drawing::BitmapBrushProperties(native)
-	{
-	}
-
-	BitmapBrushProperties()
-	{
-		extendModeX = gmpi::drawing::ExtendMode::Wrap;
-		extendModeY = gmpi::drawing::ExtendMode::Wrap;
-		interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear;
-	}
-};
-
-class LinearGradientBrushProperties : public gmpi::drawing::LinearGradientBrushProperties
-{
-public:
-	LinearGradientBrushProperties(gmpi::drawing::LinearGradientBrushProperties native) :
-		gmpi::drawing::LinearGradientBrushProperties(native)
-	{
-	}
-
-	LinearGradientBrushProperties(gmpi::drawing::Point pStartPoint, gmpi::drawing::Point pEndPoint)
-	{
-		startPoint = pStartPoint;
-		endPoint = pEndPoint;
-	}
-};
-
-class RadialGradientBrushProperties // : public gmpi::drawing::RadialGradientBrushProperties
-{
-public:
-	// Must be identical layout to gmpi::drawing::RadialGradientBrushProperties
-	Point center;
-	Point gradientOriginOffset;
-	float radiusX;
-	float radiusY;
-
-	RadialGradientBrushProperties(gmpi::drawing::RadialGradientBrushProperties native) :
-		center(native.center),
-		gradientOriginOffset(native.gradientOriginOffset),
-		radiusX(native.radiusX),
-		radiusY(native.radiusY)
-	{
-	}
-
-	RadialGradientBrushProperties(
-		gmpi::drawing::Point pCenter,
-		gmpi::drawing::Point pGradientOriginOffset,
-		float pRadiusX,
-		float pRadiusY
-	) :
-		center(pCenter),
-		gradientOriginOffset(pGradientOriginOffset),
-		radiusX(pRadiusX),
-		radiusY(pRadiusY)
-	{
-	}
-
-	RadialGradientBrushProperties(
-		gmpi::drawing::Point pCenter,
-		float pRadius,
-		gmpi::drawing::Point pGradientOriginOffset = {}
-	)
-	{
-		center = pCenter;
-		gradientOriginOffset = pGradientOriginOffset;
-		radiusX = radiusY = pRadius;
-	}
-};
-
-
-class BezierSegment : public gmpi::drawing::BezierSegment
-{
-public:
-	BezierSegment(gmpi::drawing::BezierSegment native) :
-		gmpi::drawing::BezierSegment(native)
-	{
-	}
-
-	BezierSegment(Point pPoint1, Point pPoint2, Point pPoint3 )
-	{
-		point1 = pPoint1;
-		point2 = pPoint2;
-		point3 = pPoint3;
-	}
-};
-
-class Triangle : public gmpi::drawing::Triangle
-{
-public:
-	Triangle(gmpi::drawing::Triangle native) :
-		gmpi::drawing::Triangle(native)
-	{
-	}
-
-	Triangle(gmpi::drawing::Point p1, gmpi::drawing::Point p2, gmpi::drawing::Point p3)
-	{
-		point1 = p1;
-		point2 = p2;
-		point3 = p3;
-	}
-};
-
-class ArcSegment : public gmpi::drawing::ArcSegment
-{
-public:
-	ArcSegment(gmpi::drawing::ArcSegment native) :
-		gmpi::drawing::ArcSegment(native)
-	{
-	}
-
-	ArcSegment(Point pEndPoint, Size pSize, float pRotationAngleRadians = 0.0f, gmpi::drawing::SweepDirection pSweepDirection = gmpi::drawing::SweepDirection::Clockwise, gmpi::drawing::ArcSize pArcSize = gmpi::drawing::ArcSize::Small)
-	{
-		point = pEndPoint;
-		size = pSize;
-		rotationAngle = pRotationAngleRadians;
-		sweepDirection = (gmpi::drawing::SweepDirection) pSweepDirection;
-		arcSize = (gmpi::drawing::ArcSize) pArcSize;
-	}
-};
-
-class QuadraticBezierSegment : public gmpi::drawing::QuadraticBezierSegment
-{
-public:
-	QuadraticBezierSegment(gmpi::drawing::QuadraticBezierSegment native) :
-		gmpi::drawing::QuadraticBezierSegment(native)
-	{
-	}
-
-	QuadraticBezierSegment(gmpi::drawing::Point pPoint1, gmpi::drawing::Point pPoint2)
-	{
-		point1 = pPoint1;
-		point2 = pPoint2;
-	}
-};
-
-class Ellipse : public gmpi::drawing::Ellipse
-{
-public:
-	Ellipse(gmpi::drawing::Ellipse native) :
-		gmpi::drawing::Ellipse(native)
-	{
-	}
-
-	Ellipse(gmpi::drawing::Point ppoint, float pradiusX, float pradiusY )
-	{
-		point = ppoint;
-		radiusX = pradiusX;
-		radiusY = pradiusY;
-	}
-
-	Ellipse(gmpi::drawing::Point ppoint, float pradius)
-	{
-		point = ppoint;
-		radiusX = radiusY = pradius;
-	}
-};
-
-class RoundedRect : public gmpi::drawing::RoundedRect
-{
-public:
-	RoundedRect(gmpi::drawing::RoundedRect native) :
-		gmpi::drawing::RoundedRect(native)
-	{
-	}
-
-	RoundedRect(gmpi::drawing::Rect pRect, float pRadiusX, float pRadiusY)
-	{
-		rect = pRect;
-		radiusX = pRadiusX;
-		radiusY = pRadiusY;
-	}
-
-	RoundedRect(gmpi::drawing::Rect pRect, float pRadius)
-	{
-		rect = pRect;
-		radiusX = radiusY = pRadius;
-	}
-
-	RoundedRect(gmpi::drawing::Point pPoint1, gmpi::drawing::Point pPoint2, float pRadius)
-	{
-		rect = gmpi::drawing::Rect{ pPoint1.x, pPoint1.y, pPoint2.x, pPoint2.y };
-		radiusX = radiusY = pRadius;
-	}
-
-	RoundedRect(float pLeft, float pTop, float pRight, float pBottom, float pRadius)
-	{
-		rect = gmpi::drawing::Rect{ pLeft, pTop, pRight, pBottom };
-		radiusX = radiusY = pRadius;
-	}
-};
-
-// Wrap interfaces in friendly classes.
-// class Factory;
-/*
-struct TextFormatProperties
-{
-	float size{ 12 };
-	std::string familyName{ "Sans Serif" };
-	FontWeight weight{ FontWeight::Normal };
-	FontStyle style{ gmpi::drawing::FontStyle::Normal };
-	FontStretch stretch{ gmpi::drawing::FontStretch::Normal };
-
-	gmpi::drawing::TextAlignment textAlignment;
-	gmpi::drawing::TextAlignment paragraphAlignment;
-	gmpi::drawing::WordWrapping wordWrapping;
-};
-*/
-#endif
 
 inline Color colorFromSrgba(unsigned char pRed, unsigned char pGreen, unsigned char pBlue, float pAlpha = 1.0f)
 {
@@ -1508,22 +418,6 @@ inline static Color YellowGreen = colorFromHex(0x9ACD32u);
 class TextFormat_readonly : public gmpi::IWrapper<gmpi::drawing::api::ITextFormat>
 {
 public:
-#if 0
-	Size getTextExtentU(const char* utf8String)
-	{
-		Size s;
-		get()->getTextExtentU(utf8String, (int32_t)strlen(utf8String), &s);
-		return s;
-	}
-
-	Size getTextExtentU(const char* utf8String, int size)
-	{
-		Size s;
-		get()->getTextExtentU(utf8String, (int32_t)size, &s);
-		return s;
-	}
-#endif
-
 	Size getTextExtentU(std::string_view utf8String)
 	{
 		Size s;
@@ -1686,44 +580,6 @@ public:
 		return ret;
 	}
 
-	/*
-		LockPixels - Gives access to the raw pixels of a bitmap. The pixel format is 8-bit per channel ARGB premultiplied, sRGB color-space.
-			            If you are used to colors in 'normal' non-premultiplied ARGB format, the following routine will convert to pre-multiplied for you.
-						You get the pixelformat by calling BitmapPixels::getPixelFormat().
-
-		uint32_t toNative(uint32_t colorSrgb8, int32_t pixelFormat)
-		{
-				uint32_t result{};
-
-				const unsigned char* sourcePixels = reinterpret_cast<unsigned char*>(&colorSrgb8);
-				unsigned char* destPixels = reinterpret_cast<unsigned char*>(&result);
-
-				int alpha = sourcePixels[3];
-
-				// apply pre-multiplied alpha.
-				for (int i = 0; i < 3; ++i)
-				{
-						if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
-						{
-							constexpr float inv255 = 1.0f / 255.0f;
-
-							// This method will be chosen on Win10 with SRGB support.
-							const float cf2 = se_sdk::FastGamma::RGB_to_float(sourcePixels[i]);
-							destPixels[i] = se_sdk::FastGamma::float_to_sRGB(cf2 * alpha * inv255);
-						}
-						else
-						{
-							// This method will be chosen on Mac and Win7 because they use (inferior) linear gamma.
-							const int r2 = sourcePixels[i] * alpha + 127;
-							destPixels[i] = (r2 + 1 + (r2 >> 8)) >> 8; // fast way to divide by 255
-						}
-				}
-				destPixels[3] = alpha;
-
-				return result;
-		}
-	*/
-
 	BitmapPixels lockPixels(int32_t flags = (int32_t) gmpi::drawing::BitmapLockFlags::Read)
 	{
 		BitmapPixels temp;
@@ -1784,10 +640,6 @@ public:
 		Resource<gmpi::drawing::api::ISolidColorBrush>::get()->setColor((gmpi::drawing::Color*) &color);
 	}
 
-	//Color getColor()
-	//{
-	//	return Resource<gmpi::drawing::api::ISolidColorBrush>::get()->getColor();
-	//}
 protected:
 	gmpi::drawing::api::IBrush* getDerived() override
 	{
@@ -1807,6 +659,7 @@ public:
 	{
 		Resource<gmpi::drawing::api::ILinearGradientBrush>::get()->setEndPoint((gmpi::drawing::Point) endPoint);
 	}
+
 protected:
 	gmpi::drawing::api::IBrush* getDerived() override
 	{
@@ -1836,54 +689,13 @@ public:
 	{
 		Resource<gmpi::drawing::api::IRadialGradientBrush>::get()->setRadiusY(radiusY);
 	}
+
 protected:
 	gmpi::drawing::api::IBrush* getDerived() override
 	{
 		return Resource<gmpi::drawing::api::IRadialGradientBrush>::get();
 	}
 };
-
-/*
-class Geometry : public Resource
-{
-public:
-	GMPIGUISDK_DEFINE_CLASS(Geometry, Resource, gmpi::drawing::api::IGeometry);
-};
-
-class RectangleGeometry : public Geometry
-{
-public:
-	GMPIGUISDK_DEFINE_CLASS(RectangleGeometry, Geometry, gmpi::drawing::api::IRectangleGeometry);
-
-	void getRect(Rect& rect)
-	{
-		get()->getRect(&rect);
-	}
-};
-
-class RoundedRectangleGeometry : public Geometry
-{
-public:
-	GMPIGUISDK_DEFINE_CLASS(RoundedRectangleGeometry, Geometry, gmpi::drawing::api::IRoundedRectangleGeometry);
-
-	void getRoundedRect(RoundedRect& roundedRect)
-	{
-		get()->getRoundedRect(&roundedRect);
-	}
-};
-
-class EllipseGeometry : public Geometry
-{
-public:
-	GMPIGUISDK_DEFINE_CLASS(EllipseGeometry, Geometry, gmpi::drawing::api::IEllipseGeometry);
-
-	void getEllipse(Ellipse& ellipse)
-	{
-		get()->getEllipse(&ellipse);
-	}
-};
-*/
-
 
 template <class interfaceType = gmpi::drawing::api::IGeometrySink>
 class GeometrySink : public gmpi::IWrapper<interfaceType>
@@ -1993,38 +805,6 @@ public:
 		return r;
 	}
 };
-#if 0
-class TessellationSink : public gmpi::IWrapper<gmpi::drawing::api::ITessellationSink>
-{
-public:
-	void addTriangles(const gmpi::drawing::Triangle* triangles, uint32_t trianglesCount)
-	{
-		get()->addTriangles(triangles, trianglesCount);
-	}
-
-	template <int N>
-	void addTriangles(gmpi::drawing::Triangle(&triangles)[N])
-	{
-		get()->addTriangles(triangles, N);
-	}
-
-	void close()
-	{
-		get()->close();
-	}
-};
-
-class Mesh : public Resource<gmpi::drawing::api::IMesh>
-{
-public:
-	TessellationSink open()
-	{
-		TessellationSink temp;
-		get()->open(temp.put());
-		return temp;
-	}
-};
-#endif
 
 class Factory : public gmpi::IWrapper<gmpi::drawing::api::IFactory>
 {
@@ -2049,16 +829,6 @@ public:
 		get()->createTextFormat(TextFormatfontFamilyName/* , nullptr fontCollection */, fontWeight, fontStyle, fontStretch, fontSize/* , nullptr localeName */, temp.put());
 		return temp;
 	}
-
-	// Dont forget to call TextFormat::setImprovedVerticalBaselineSnapping() to get consistant results on macOS
-#if 0
-	TextFormat createTextFormat(float fontSize, const char* TextFormatfontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal)
-	{
-		TextFormat temp;
-		get()->createTextFormat(TextFormatfontFamilyName/* , nullptr fontCollection */, fontWeight, fontStyle, fontStretch, fontSize/* , nullptr localeName */, temp.put());
-		return temp;
-	}
-#endif
 
 	struct FontStack
 	{
@@ -2253,22 +1023,6 @@ template <typename BASE_INTERFACE>
 class Graphics_base : public Resource<BASE_INTERFACE>
 {
 public:
-/*
-	Bitmap createBitmap(SizeU size, BitmapProperties& bitmapProperties)
-	{
-		gmpi::drawing::api::IBitmap* l_bitmap = nullptr;
-		get()->createBitmap((gmpi::drawing::SizeU) size, &bitmapProperties, &l_bitmap);
-		return Bitmap(l_bitmap);
-	}
-	Bitmap createBitmap(SizeU size)
-	{
-		gmpi::drawing::api::IBitmap* l_bitmap = nullptr;
-		BitmapProperties bitmapProperties;
-		get()->createBitmap((gmpi::drawing::SizeU) size, &bitmapProperties, &l_bitmap);
-		return Bitmap(l_bitmap);
-	}
-*/
-
 	BitmapBrush createBitmapBrush(Bitmap& bitmap) // N/A on macOS: BitmapBrushProperties& bitmapBrushProperties, BrushProperties& brushProperties)
 	{
         const BitmapBrushProperties bitmapBrushProperties{};
@@ -2286,6 +1040,7 @@ public:
 		return temp;
 	}
 
+	// TODO gradientstop view? span?
 	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
 	{
 		GradientstopCollection temp;
@@ -2315,16 +1070,6 @@ public:
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
-/*
-	LinearGradientBrush createLinearGradientBrush(GradientstopCollection gradientStopCollection, LinearGradientBrushProperties linearGradientBrushProperties)
-	{
-		BrushProperties brushProperties;
-
-		LinearGradientBrush temp;
-		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
-		return temp;
-	}
-*/
 
 	LinearGradientBrush createLinearGradientBrush(GradientstopCollection gradientStopCollection, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
 	{
@@ -2361,26 +1106,6 @@ public:
 		BrushProperties bp;
 		return createLinearGradientBrush(lp, bp, gradientStopCollection);
 	}
-#if 0
-	// Simple 2-color gradient.
-	LinearGradientBrush createLinearGradientBrush(Color color1, Color color2, Point point1, Point point2)
-    {
-		gmpi::drawing::Gradientstop gradientstops[] = {
-			{ 0.0f, startColor},
-			{ 1.0f, endColor}
-		};
-
-        auto gradientStopCollection = createGradientstopCollection(gradientstops);
-        
-        LinearGradientBrushProperties linearGradientBrushProperties{point1, point2};
-		BrushProperties brushproperties;
-
-		LinearGradientBrush temp;
-		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushproperties, gradientStopCollection.get(), temp.put());
-		return temp;
-	}
-#endif
-//		Graphics createCompatibleRenderTarget(Size& desiredSize);
 
 	RadialGradientBrush createRadialGradientBrush(RadialGradientBrushProperties radialGradientBrushProperties, BrushProperties brushProperties, GradientstopCollection gradientStopCollection)
 	{
@@ -2435,35 +1160,6 @@ public:
 		BrushProperties bp;
 		return createRadialGradientBrush(radialGradientBrushProperties, bp, gradientStopCollection);
 	}
-#if 0
-	// Simple 2-color gradient.
-	RadialGradientBrush createRadialGradientBrush(Color color1, Color color2, Point center, float radius)
-    {
-        Gradientstop gradientStops[2];
-        gradientStops[0].color = color1;
-        gradientStops[0].position = 0.0f;
-        gradientStops[1].color = color2;
-        gradientStops[1].position = 1.0f;
-        
-        auto gradientStopCollection = createGradientstopCollection(gradientStops, 2);
-        
-		RadialGradientBrushProperties radialGradientBrushProperties{};
-		radialGradientBrushProperties.center = center;
-		radialGradientBrushProperties.radiusX = radius;
-		radialGradientBrushProperties.radiusY = radius;
-		BrushProperties brushproperties;
-
-		RadialGradientBrush temp;
-		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushproperties, gradientStopCollection.get(), temp.put());
-		return temp;
-	}
-#endif
-	//Mesh createMesh()
-	//{
-	//	Mesh temp;
-	//	Resource<BASE_INTERFACE>::get()->createMesh(temp.put());
-	//	return temp;
-	//}
 
 	void drawLine(Point point0, Point point1, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
@@ -2612,18 +1308,6 @@ public:
 		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
-	//void fillMesh(Mesh& mesh, Brush& brush)
-	//{
-	//	Resource<BASE_INTERFACE>::get()->fillMesh(mesh.get(), brush.get());
-	//}
-
-	/*
-
-	void fillOpacityMask(Bitmap& opacityMask, Brush& brush, OpacityMaskContent content, Rect& destinationRectangle, Rect& sourceRectangle)
-	{
-	Resource<BASE_INTERFACE>::get()->fillOpacityMask(opacityMask.get(), brush.get(), (gmpi::drawing::MP1_OPACITY_MASK_CONTENT) content, &destinationRectangle, &sourceRectangle);
-	}
-	*/
 
 	void drawBitmap(gmpi::drawing::api::IBitmap* bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
 	{
@@ -2653,57 +1337,15 @@ public:
 	// todo should options be int to allow bitwise combining??? !!!
 	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
-//		int32_t stringLength = (int32_t) strlen(utf8String);
 		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), textFormat.get(), &layoutRect, brush.get(), options/*, measuringMode*/);
 	}
-#if 0
-	void drawTextU(const char8_t* utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
-	{
-		drawTextU((const char*)utf8String, textFormat, layoutRect, brush, options);
-	}
-	void drawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
-	{
-		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), options);
-	}
-#endif
-	//void drawTextU(std::string utf8String, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t flags)
-	//{
-	//	Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), static_cast<int32_t>(utf8String.size()), textFormat.get(), &rect, brush.get(), flags);
-	//}
-#if 0
-	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, gmpi::drawing::DrawTextOptions flags)
-	{
-		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
-		const auto utf8String = stringConverter.to_bytes(wString);
-		this->drawTextU(utf8String, textFormat, rect, brush, flags);
-	}
-#endif
+
 	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
 		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
 		const auto utf8String = stringConverter.to_bytes(wString);
 		this->drawTextU(utf8String, textFormat, rect, brush, options);
 	}
-#if 0
-	// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
-	void drawTextU(std::string utf8String, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
-	{
-#ifdef _RPT0
-		_RPT0(_CRT_WARN, "drawTextU(std::string, TextFormat, float, float ...) DEPRECATED, works only when text is left-aligned.\n");
-#endif
-	//	const int32_t flags = static_cast<int32_t>(options);
-        Rect rect{x, y, x + 10000, y + 10000};
-		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.c_str(), (int32_t)utf8String.size(), textFormat.get(), &rect, brush.get(), options);
-	}
-	// don't care about rect, only position. DEPRECATED, works only when text is left-aligned.
-	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, float x, float y, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
-	{
-		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
-		auto utf8String = stringConverter.to_bytes(wString);
-
-		this->drawTextU(utf8String, textFormat, x, y, brush, options);
-	}
-#endif
 
 	void setTransform(const Matrix3x2& transform)
 	{
@@ -2755,17 +1397,6 @@ public:
 	{
 		return Resource<BASE_INTERFACE>::get()->endDraw();
 	}
-	/*
-	UpdateRegion getUpdateRegion()
-	{
-		UpdateRegion temp;
-		auto r = Resource<BASE_INTERFACE>::get()->getUpdateRegion(temp.put());
-		return temp;
-	}
-*/
-
-	//	void InsetNewMethodHere(){}
-
 
 	// Composit convenience methods.
 	void fillPolygon(Point *points, uint32_t pointCount, Brush& brush)
@@ -2813,23 +1444,6 @@ public:
 		DrawGeometry(geometry, brush, strokeWidth);
 	}
 };
-/*
-class TessellationSink : public gmpi::IWrapper<>
-{
-public:
-	GMPIGUISDK_DEFINE_CLASS(TessellationSink, gmpi::IWrapper<>, gmpi::drawing::api::ITessellationSink);
-
-	void addTriangles(Triangle& triangles, uint32_t trianglesCount)
-	{
-		Resource<BASE_INTERFACE>::get()->addTriangles(&triangles, trianglesCount);
-	}
-
-	int32_t close()
-	{
-		return get()->close();
-	}
-};
-*/
 
 class BitmapRenderTarget : public Graphics_base<gmpi::drawing::api::IBitmapRenderTarget>
 {
@@ -2900,8 +1514,5 @@ public:
 	}
 };
 
-
 } // namespace drawing
 } // namespace gmpi
-
-#endif // GMPI_GRAPHICS2_H_INCLUDED

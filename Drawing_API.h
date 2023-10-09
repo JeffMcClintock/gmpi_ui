@@ -277,7 +277,7 @@ struct Gradientstop
 
 struct BrushProperties
 {
-    float opacity{};
+    float opacity{1.0f};
     Matrix3x2 transform;
 };
 

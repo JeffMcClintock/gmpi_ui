@@ -4,8 +4,8 @@
 
 A cross-platform drawing library for Windows and macOS
 
-<img src="docs/text.png" width="260"/>
-<img src="docs/lines.png" width="260"/>
+<img src="docs/images/text.png" width="260"/>
+<img src="docs/images/lines.png" width="260"/>
 
 # Features
 

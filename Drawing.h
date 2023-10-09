@@ -1591,12 +1591,24 @@ public:
 
 class BitmapPixels : public gmpi::IWrapper<gmpi::drawing::api::IBitmapPixels>
 {
+	friend class Bitmap;
+	// cache data for faster setPixel etc.
+	uint32_t* data = {};
+	size_t pixelPerRow = {};
+
+protected:
+	void init()
+	{
+		uint8_t* temp{};
+		get()->getAddress(&temp);
+		data = reinterpret_cast<uint32_t*>(temp);
+		pixelPerRow = getBytesPerRow() / sizeof(uint32_t);
+	}
+
 public:
 	uint8_t* getAddress()
 	{
-		uint8_t* ret{};
-		get()->getAddress(&ret);
-		return ret;
+		return (uint8_t*) data;
 	}
 	int32_t getBytesPerRow()
 	{
@@ -1612,14 +1624,12 @@ public:
 	}
 	uint32_t getPixel(int x, int y)
 	{
-		auto data = reinterpret_cast<int32_t*>(getAddress());
-		return data[x + y * getBytesPerRow() / ((int) sizeof(int32_t))];
+		return data[x + y * pixelPerRow];
 	}
 
 	void setPixel(int x, int y, uint32_t pixel)
 	{
-		auto data = reinterpret_cast<uint32_t*>(getAddress());
-		data[x + y * getBytesPerRow() / ((int) sizeof(uint32_t))] = pixel;
+		data[x + y * pixelPerRow] = pixel;
 	}
 
 	void blit(BitmapPixels& source, gmpi::drawing::PointL destinationTopLeft, gmpi::drawing::RectL sourceRectangle, int32_t unused = 0)
@@ -1718,11 +1728,12 @@ public:
 	{
 		BitmapPixels temp;
 		get()->lockPixels(temp.put(), flags);
+		temp.init();
 		return temp;
 	}
 };
 
-class GradientStopCollection : public Resource<gmpi::drawing::api::IGradientstopCollection>
+class GradientstopCollection : public Resource<gmpi::drawing::api::IGradientstopCollection>
 {
 };
 
@@ -1742,6 +1753,7 @@ public:
 class BitmapBrush : public Brush, public Resource<gmpi::drawing::api::IBitmapBrush>
 {
 public:
+	// TODO ensure default extend mode is the same on macoS and Windows
 	void setExtendModeX(gmpi::drawing::ExtendMode extendModeX)
 	{
 		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeX(extendModeX);
@@ -2274,37 +2286,37 @@ public:
 		return temp;
 	}
 
-	GradientStopCollection createGradientStopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
+	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
 	{
-		GradientStopCollection temp;
-		Resource<BASE_INTERFACE>::get()->createGradientStopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, temp.put());
+		GradientstopCollection temp;
+		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, temp.put());
 		return temp;
 	}
 
-	GradientStopCollection createGradientStopCollection(std::vector<gmpi::drawing::Gradientstop>& gradientStops)
+	GradientstopCollection createGradientstopCollection(std::vector<gmpi::drawing::Gradientstop>& gradientStops)
 	{
-		GradientStopCollection temp;
-		Resource<BASE_INTERFACE>::get()->createGradientStopCollection((gmpi::drawing::Gradientstop *) gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), temp.put());
+		GradientstopCollection temp;
+		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), temp.put());
 		return temp;
 	}
 
 	// Pass POD array, infer size.
 	template <int N>
-	GradientStopCollection createGradientStopCollection(gmpi::drawing::Gradientstop(&gradientStops)[N])
+	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop(&gradientStops)[N])
 	{
-		GradientStopCollection temp;
-		Resource<BASE_INTERFACE>::get()->createGradientStopCollection((gmpi::drawing::Gradientstop *) &gradientStops, N, temp.put());
+		GradientstopCollection temp;
+		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop *) &gradientStops, N, gmpi::drawing::ExtendMode::Clamp, temp.put());
 		return temp;
 	}
 
-	LinearGradientBrush createLinearGradientBrush(LinearGradientBrushProperties linearGradientBrushProperties, BrushProperties brushProperties, GradientStopCollection gradientStopCollection)
+	LinearGradientBrush createLinearGradientBrush(LinearGradientBrushProperties linearGradientBrushProperties, BrushProperties brushProperties, GradientstopCollection gradientStopCollection)
 	{
 		LinearGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
 /*
-	LinearGradientBrush createLinearGradientBrush(GradientStopCollection gradientStopCollection, LinearGradientBrushProperties linearGradientBrushProperties)
+	LinearGradientBrush createLinearGradientBrush(GradientstopCollection gradientStopCollection, LinearGradientBrushProperties linearGradientBrushProperties)
 	{
 		BrushProperties brushProperties;
 
@@ -2314,7 +2326,7 @@ public:
 	}
 */
 
-	LinearGradientBrush createLinearGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
+	LinearGradientBrush createLinearGradientBrush(GradientstopCollection gradientStopCollection, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
 	{
 		BrushProperties brushProperties;
         LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
@@ -2329,7 +2341,7 @@ public:
     {
         BrushProperties brushProperties;
         LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
-		auto gradientStopCollection = createGradientStopCollection(gradientStops);
+		auto gradientStopCollection = createGradientstopCollection(gradientStops);
 
 		LinearGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
@@ -2339,28 +2351,26 @@ public:
 	// Simple 2-color gradient.
 	LinearGradientBrush createLinearGradientBrush(gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
 	{
-		Gradientstop gradientStops[2];
-		gradientStops[0].color = startColor;
-		gradientStops[0].position = 0.0f;
-		gradientStops[1].color = endColor;
-		gradientStops[1].position = 1.0f;
+		gmpi::drawing::Gradientstop gradientstops[] = {
+			{ 0.0f, startColor},
+			{ 1.0f, endColor}
+		};
 
-		auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
+		auto gradientStopCollection = createGradientstopCollection(gradientstops);
         LinearGradientBrushProperties lp{startPoint, endPoint};
 		BrushProperties bp;
 		return createLinearGradientBrush(lp, bp, gradientStopCollection);
 	}
-
+#if 0
 	// Simple 2-color gradient.
 	LinearGradientBrush createLinearGradientBrush(Color color1, Color color2, Point point1, Point point2)
     {
-        Gradientstop gradientStops[2];
-        gradientStops[0].color = color1;
-        gradientStops[0].position = 0.0f;
-        gradientStops[1].color = color2;
-        gradientStops[1].position = 1.0f;
-        
-        auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
+		gmpi::drawing::Gradientstop gradientstops[] = {
+			{ 0.0f, startColor},
+			{ 1.0f, endColor}
+		};
+
+        auto gradientStopCollection = createGradientstopCollection(gradientstops);
         
         LinearGradientBrushProperties linearGradientBrushProperties{point1, point2};
 		BrushProperties brushproperties;
@@ -2369,20 +2379,23 @@ public:
 		Resource<BASE_INTERFACE>::get()->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushproperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
-
+#endif
 //		Graphics createCompatibleRenderTarget(Size& desiredSize);
 
-	RadialGradientBrush createRadialGradientBrush(RadialGradientBrushProperties radialGradientBrushProperties, BrushProperties brushProperties, GradientStopCollection gradientStopCollection)
+	RadialGradientBrush createRadialGradientBrush(RadialGradientBrushProperties radialGradientBrushProperties, BrushProperties brushProperties, GradientstopCollection gradientStopCollection)
 	{
 		RadialGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*)&radialGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
 
-	RadialGradientBrush createRadialGradientBrush(GradientStopCollection gradientStopCollection, gmpi::drawing::Point center, float radius)
+	RadialGradientBrush createRadialGradientBrush(GradientstopCollection gradientStopCollection, gmpi::drawing::Point center, float radius)
     {
         BrushProperties brushProperties;
-        RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
+        RadialGradientBrushProperties radialGradientBrushProperties{};
+		radialGradientBrushProperties.center = center;
+		radialGradientBrushProperties.radiusX = radius;
+		radialGradientBrushProperties.radiusY = radius;
 
 		RadialGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
@@ -2390,32 +2403,39 @@ public:
 	}
 
 	template <int N>
-	RadialGradientBrush createRadialGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point center, float radius)
+	RadialGradientBrush createRadialGradientBrush(Gradientstop(&gradientstops)[N], gmpi::drawing::Point center, float radius)
     {
-        BrushProperties brushProperties;
-        RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
-		auto gradientStopCollection = createGradientStopCollection(gradientStops);
+		BrushProperties brushProperties;
+
+		RadialGradientBrushProperties radialGradientBrushProperties{};
+		radialGradientBrushProperties.center = center;
+		radialGradientBrushProperties.radiusX = radius;
+		radialGradientBrushProperties.radiusY = radius;
+
+		auto gradientstopCollection = createGradientstopCollection(gradientstops);
 
 		RadialGradientBrush temp;
-		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, gradientStopCollection.get(), temp.put());
+		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, gradientstopCollection.get(), temp.put());
 		return temp;
 	}
 
 	// Simple 2-color gradient.
 	RadialGradientBrush createRadialGradientBrush(gmpi::drawing::Point center, float radius, gmpi::drawing::Color startColor, gmpi::drawing::Color endColor)
     {
-        Gradientstop gradientStops[2];
-        gradientStops[0].color = startColor;
-        gradientStops[0].position = 0.0f;
-        gradientStops[1].color = endColor;
-        gradientStops[1].position = 1.0f;
-        
-        auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
-        RadialGradientBrushProperties rp{center, radius};
-		BrushProperties bp;
-		return createRadialGradientBrush(rp, bp, gradientStopCollection);
-	}
+		gmpi::drawing::Gradientstop gradientstops[] = {
+			{ 0.0f, startColor},
+			{ 1.0f, endColor}
+		};
 
+        auto gradientStopCollection = createGradientstopCollection(gradientstops);
+		RadialGradientBrushProperties radialGradientBrushProperties{};
+		radialGradientBrushProperties.center = center;
+		radialGradientBrushProperties.radiusX = radius;
+		radialGradientBrushProperties.radiusY = radius;
+		BrushProperties bp;
+		return createRadialGradientBrush(radialGradientBrushProperties, bp, gradientStopCollection);
+	}
+#if 0
 	// Simple 2-color gradient.
 	RadialGradientBrush createRadialGradientBrush(Color color1, Color color2, Point center, float radius)
     {
@@ -2425,15 +2445,19 @@ public:
         gradientStops[1].color = color2;
         gradientStops[1].position = 1.0f;
         
-        auto gradientStopCollection = createGradientStopCollection(gradientStops, 2);
+        auto gradientStopCollection = createGradientstopCollection(gradientStops, 2);
         
-        RadialGradientBrushProperties radialGradientBrushProperties{center, radius};
+		RadialGradientBrushProperties radialGradientBrushProperties{};
+		radialGradientBrushProperties.center = center;
+		radialGradientBrushProperties.radiusX = radius;
+		radialGradientBrushProperties.radiusY = radius;
 		BrushProperties brushproperties;
 
 		RadialGradientBrush temp;
 		Resource<BASE_INTERFACE>::get()->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushproperties, gradientStopCollection.get(), temp.put());
 		return temp;
 	}
+#endif
 	//Mesh createMesh()
 	//{
 	//	Mesh temp;

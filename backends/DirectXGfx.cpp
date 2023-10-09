@@ -741,8 +741,9 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				{
 					return gmpi::ReturnCode::Fail;
 				}
+
+				return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fully.
 			}
-			return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fully.
 #if 0
 				const auto size = nativeBitmap_->GetPixelSize();
 				D2D1_BITMAP_PROPERTIES1 props = {};
@@ -785,11 +786,11 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				return gmpi::ReturnCode::Fail;
 			}
 */
+#endif
 			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 			b2.Attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));
 
 			return b2->queryInterface(&drawing::api::IBitmapPixels::guid, (void**)(returnInterface));
-#endif
 		}
 
 		ID2D1Bitmap* Bitmap::getNativeBitmap(ID2D1DeviceContext* nativeContext)
@@ -873,7 +874,8 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 		{
 			drawing::Bitmap bitmap;
 			*bitmap.put() = this;
-			
+			addRef(); // MESSY, fix. drawing::Bitmap dosn't incremnet ref count.
+
 			auto pixelsSource = bitmap.lockPixels((int32_t) gmpi::drawing::BitmapLockFlags::ReadWrite);
 			auto imageSize = bitmap.getSize();
 			size_t totalPixels = imageSize.height * pixelsSource.getBytesPerRow() / sizeof(uint32_t);

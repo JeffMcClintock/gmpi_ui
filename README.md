@@ -1,4 +1,4 @@
-<img src="Docs/images/GMPI_Icon.png" width="128"/>
+<img src="docs/images/GMPI_Icon.png" width="128"/>
 
 # GMPI-Drawing
 

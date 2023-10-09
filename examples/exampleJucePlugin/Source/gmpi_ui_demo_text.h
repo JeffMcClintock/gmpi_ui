@@ -69,7 +69,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 
 	// color emoji
 	{
-		const auto text = (const char*) u8"Color emoji: 🦑 😀"; // note: on Windows you need to save your source code as "UTF8 with signature"
+		const auto text = (const char*) u8"Color emoji: 絵文字 🦑 😀"; // note: on Windows you need to save your source code as "UTF8 with signature"
 
 		auto font = g.getFactory().createTextFormat2(14);
 		const auto textSize = font.getTextExtentU(text);

@@ -1043,24 +1043,6 @@ public:
     }
     void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override;
 
-	ReturnCode setExtendModeX(drawing::ExtendMode extendModeX) override
-    {
-        //                native()->setExtendModeX((D2D1_EXTEND_MODE)extendModeX);
-		return ReturnCode::Ok;
-    }
-
-	ReturnCode setExtendModeY(drawing::ExtendMode extendModeY) override
-    {
-        //               native()->setExtendModeY((D2D1_EXTEND_MODE)extendModeY);
-		return ReturnCode::Ok;
-    }
-
-    ReturnCode setInterpolationMode(drawing::BitmapInterpolationMode bitmapInterpolationMode) override
-    {
-        //              native()->setInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)interpolationMode);
-		return ReturnCode::Ok;
-    }
-
     ReturnCode getFactory(drawing::api::IFactory** factory) override
     {
         *factory = factory_;
@@ -1070,14 +1052,6 @@ public:
     GMPI_REFCOUNT;
     GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapBrush);
 };
-
-/*
-class Brush : / * public drawing::api::IBrush,* / public CocoaWrapperWithFactory<drawing::api::IBrush, nothing> // Resource
-{
-public:
-    Brush(drawing::api::IFactory* factory) : CocoaWrapperWithFactory(nullptr, factory) {}
-};
-*/
 
 class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrushBase
 {

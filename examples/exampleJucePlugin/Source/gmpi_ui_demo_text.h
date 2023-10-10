@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Drawing.h"
 
@@ -35,7 +35,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 	const float textheight = size.height / 12.0f;
 	const float margin = textheight / 2.0f;
 
-	gmpi::drawing::Rect textRect(margin, margin, margin, margin + textheight);
+    gmpi::drawing::Rect textRect{margin, margin, margin, margin + textheight};
 
 	auto brush = g.createSolidColorBrush(gmpi::drawing::Colors::WhiteSmoke);
 
@@ -96,7 +96,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		const float boxHeight = 28.0f;
 		auto font = g.getFactory().createTextFormat2(14);
 
-		gmpi::drawing::Rect alignmentRect(textRect.left, textRect.top, textRect.right, textRect.top + boxHeight);
+        gmpi::drawing::Rect alignmentRect{textRect.left, textRect.top, textRect.right, textRect.top + boxHeight};
 		auto boxBrush = g.createSolidColorBrush(gmpi::drawing::Colors::Blue);
 
 		for (auto& box : alignments)

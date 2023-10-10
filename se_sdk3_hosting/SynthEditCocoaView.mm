@@ -9,6 +9,32 @@
 // It serves to provide a C++ to Objective-C adaptor to the gmpi Drawing framework.
 // (actual parent is objective c).
 
+
+namespace gmpi
+{
+namespace interaction
+{
+    // TODO niceify, centralize
+    enum GG_POINTER_FLAGS {
+        GG_POINTER_FLAG_NONE = 0,
+        GG_POINTER_FLAG_NEW = 0x01,                    // Indicates the arrival of a new pointer.
+        GG_POINTER_FLAG_INCONTACT = 0x04,
+        GG_POINTER_FLAG_FIRSTBUTTON = 0x10,
+        GG_POINTER_FLAG_SECONDBUTTON = 0x20,
+        GG_POINTER_FLAG_THIRDBUTTON = 0x40,
+        GG_POINTER_FLAG_FOURTHBUTTON = 0x80,
+        GG_POINTER_FLAG_CONFIDENCE = 0x00000400,    // Confidence is a suggestion from the source device about whether the pointer represents an intended or accidental interaction.
+        GG_POINTER_FLAG_PRIMARY = 0x00002000,    // First pointer to contact surface. Mouse is usually Primary.
+
+        GG_POINTER_SCROLL_HORIZ = 0x00008000,    // Mouse Wheel is scrolling horizontal.
+
+        GG_POINTER_KEY_SHIFT = 0x00010000,    // Modifer key - <SHIFT>.
+        GG_POINTER_KEY_CONTROL = 0x00020000,    // Modifer key - <CTRL> or <Command>.
+        GG_POINTER_KEY_ALT = 0x00040000,    // Modifer key - <ALT> or <Option>.
+    };
+}
+}
+
 class DrawingFrameCocoa :
 #ifdef GMPI_HOST_POINTER_SUPPORT
 public gmpi_gui::IMpGraphicsHost,
@@ -17,14 +43,17 @@ public GmpiGuiHosting::PlatformTextEntryObserver,
 /*public gmpi::IMpUserInterfaceHost2,*/
 public IDrawingHost
 {
+public:
+    
     gmpi::shared_ptr<IDrawingClient> drawingClient;
+    gmpi::shared_ptr<IInputClient> inputClient;
 #ifdef GMPI_HOST_POINTER_SUPPORT
     gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
     int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
 #endif
 
-public:
+
     gmpi::cocoa::DrawingFactory drawingFactory;
     NSView* view;
 
@@ -54,7 +83,8 @@ public:
  //todo       client = pclient;
         
         pclient->queryInterface(&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
-        
+        pclient->queryInterface(&IInputClient::guid, inputClient.asIMpUnknownPtr());
+
         if(drawingClient)
         {
             drawingClient->open(this);
@@ -240,15 +270,18 @@ public:
 #endif
         return gmpi::ReturnCode::NoSupport;
     }
-#if 0
+
     void removeTextEdit()
     {
+#if 0 // TODO!!!
         if(!currentTextEdit)
             return;
         
         currentTextEdit->CallbackFromCocoa(nil);
+#endif
     }
     
+#if 0 // TODO!!!
     void onTextEditRemoved() override
     {
         currentTextEdit = nullptr;
@@ -540,23 +573,23 @@ public:
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 
 //-------------------------------------------------------------------------------------------------------------
-#if 0
+#if 1
 void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 {
     // <Shift> key?
     if(([theEvent modifierFlags ] & (NSEventModifierFlagShift | NSEventModifierFlagCapsLock)) != 0)
     {
-        flags |= gmpi_gui_api::GG_POINTER_KEY_SHIFT;
+        flags |= gmpi::interaction::GG_POINTER_KEY_SHIFT;
     }
     
     if(([theEvent modifierFlags ] & NSEventModifierFlagControl /* was NSEventModifierFlagCommand*/ ) != 0)
     {
-        flags |= gmpi_gui_api::GG_POINTER_KEY_CONTROL;
+        flags |= gmpi::interaction::GG_POINTER_KEY_CONTROL;
     }
     
     if(([theEvent modifierFlags ] & NSEventModifierFlagOption) != 0) // <Option> key.
     {
-        flags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
+        flags |= gmpi::interaction::GG_POINTER_KEY_ALT;
     }
 }
 
@@ -569,16 +602,17 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
  
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
 
-    gmpi::drawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
 
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
-	flags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
+	flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
- // TODO   drawingFrame.getView()->onPointerDown(flags, p);
-    
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerDown(p, flags);
+
  // no help to edit box   [super mouseDown:theEvent];
 }
 
@@ -587,41 +621,45 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     drawingFrame.removeTextEdit();
     
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    gmpi::drawing::Point p(localPoint.x, localPoint.y);
-    
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_SECONDBUTTON;
+    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
+
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
     // TODO     drawingFrame.getView()->onPointerDown(flags, p);
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerDown(p, flags);
 }
 
 - (void)rightMouseUp:(NSEvent *)theEvent
 {
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    gmpi::drawing::Point p(localPoint.x, localPoint.y);
-    
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_SECONDBUTTON;
+    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
+
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
-    // TODO     drawingFrame.getView()->onPointerUp(flags, p);
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerUp(p, flags);
 }
 
 - (void)mouseUp:(NSEvent *)theEvent {
     NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    gmpi::drawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
 
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
-    // TODO     drawingFrame.getView()->onPointerUp(flags, p);
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerUp(p, flags);
 }
 
 - (void)mouseDragged:(NSEvent *)theEvent {
@@ -631,12 +669,13 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     mousePos.x = static_cast<float>(localPoint.x);
     mousePos.y = static_cast<float>(localPoint.y);
 
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
-    // TODO     drawingFrame.getView()->onPointerMove(flags, mousePos);
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerMove(mousePos, flags);
 }
 
 - (void)scrollWheel:(NSEvent *)theEvent {
@@ -649,7 +688,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     mousePos.x = static_cast<float>(localPoint.x);
     mousePos.y = static_cast<float>(localPoint.y);
 
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     ApplyKeyModifiers(flags, theEvent);
 
     constexpr float wheelConversion = 120.0f; // on windows the wheel scrolls 120 per knotch
@@ -659,8 +698,10 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     }
     if(deltaX)
     {
-        flags |= gmpi_gui_api::GG_POINTER_SCROLL_HORIZ;
+        flags |= gmpi::interaction::GG_POINTER_SCROLL_HORIZ;
         // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaX, mousePos);
+        //if(drawingFrame.inputClient)
+        //    drawingFrame.inputClient->onMouseWheel(p, flags);
     }
 }
 
@@ -677,12 +718,13 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     [self ToolTipOnMouseActivity];
     
-    int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
-    // TODO     drawingFrame.getView()->onPointerMove(flags, mousePos);
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerMove(mousePos, flags);
 }
 
 - (void)mouseExited:(NSEvent *)theEvent {
@@ -692,7 +734,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 - (void) onTimer: (NSTimer*) t {
     if(toolTipTimer-- == 0 && !toolTipShown)
     {
-        gmpi_sdk::MpString text;
+        gmpi::ReturnString text;
         // TODO         drawingFrame.getView()->getToolTip(mousePos, &text);
         
         if(text.str().empty())

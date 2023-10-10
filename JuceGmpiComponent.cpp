@@ -2,7 +2,10 @@
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
 #include "../../../se_sdk3/TimerManager.h"
 #include "../../../RefCountMacros.h"
+
+#ifdef _WIN32
 #include "windowsx.h"
+#endif
 
 using namespace gmpi;
 using namespace gmpi::drawing;

@@ -19,7 +19,7 @@
   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
-#include <codecvt>
+//#include <codecvt>
 #include <map>
 #include "../Drawing.h"
 #include "../shared/xp_simd.h"
@@ -217,16 +217,6 @@ public:
 class nothing
 {
 };
-    
-
-
-
-
-
-
-
-
-
 
 class TextFormat final : public drawing::api::ITextFormat // : public CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>
 {
@@ -273,7 +263,7 @@ public:
         return windowsFont;
     }
 
-    TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, const char* pfontFamilyName, drawing::FontWeight pfontWeight, drawing::FontStyle pfontStyle, drawing::FontStretch pfontStretch, float pfontSize) :
+    TextFormat(/*std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter,*/ const char* pfontFamilyName, drawing::FontWeight pfontWeight, drawing::FontStyle pfontStyle, drawing::FontStretch pfontStretch, float pfontSize) :
         //				CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>(nullptr)
         fontWeight(pfontWeight)
         , fontStyle(pfontStyle)
@@ -723,7 +713,7 @@ class DrawingFactory : public drawing::api::IFactory
     std::vector<std::string> supportedFontFamilies;
         
 public:
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
+//    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
     NSColorSpace* gmpiColorSpace = {};
         
     DrawingFactory()
@@ -1015,19 +1005,19 @@ public:
 class BitmapBrush final : public drawing::api::IBitmapBrush, public CocoaBrushBase
 {
     Bitmap bitmap_;
-    drawing::BitmapBrushProperties bitmapBrushProperties_;
+//    drawing::BitmapBrushProperties bitmapBrushProperties_;
     drawing::BrushProperties brushProperties_;
 
 public:
     BitmapBrush(
         cocoa::DrawingFactory* factory,
         const drawing::api::IBitmap* bitmap,
-        const drawing::BitmapBrushProperties* bitmapBrushProperties,
+//        const drawing::BitmapBrushProperties* bitmapBrushProperties,
         const drawing::BrushProperties* brushProperties
     )
         : CocoaBrushBase(factory),
         bitmap_(factory, ((Bitmap*)bitmap)->nativeBitmap_),
-        bitmapBrushProperties_(*bitmapBrushProperties),
+//        bitmapBrushProperties_(*bitmapBrushProperties),
         brushProperties_(*brushProperties)
     {
     }
@@ -1582,7 +1572,7 @@ public:
 class GraphicsContext : public drawing::api::IDeviceContext
 {
 protected:
-	std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
+//	std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
 	cocoa::DrawingFactory* factory;
 	std::vector<drawing::Rect> clipRectStack;
 	NSAffineTransform* currentTransform;
@@ -2075,11 +2065,11 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, /*const drawing::BitmapBrushProperties* bitmapBrushProperties,*/ const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
 		*returnBitmapBrush = nullptr;
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new BitmapBrush(factory, bitmap, bitmapBrushProperties, brushProperties));
+		b2.Attach(new BitmapBrush(factory, bitmap, /*bitmapBrushProperties,*/ brushProperties));
 		return b2->queryInterface(&drawing::api::IBitmapBrush::guid, reinterpret_cast<void**>(returnBitmapBrush));
 		return ReturnCode::Ok;
 	}
@@ -2303,7 +2293,7 @@ ReturnCode GraphicsContext::createCompatibleRenderTarget(drawing::Size desiredSi
 inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, drawing::api::ITextFormat** textFormat)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
-	b2.Attach(new TextFormat(&stringConverter, fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
+	b2.Attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
 
 	return b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 }

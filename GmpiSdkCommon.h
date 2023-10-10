@@ -17,6 +17,7 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
+#include <string>
 #include <assert.h>
 #include "GmpiApiCommon.h"
 #include "RefCountMacros.h"

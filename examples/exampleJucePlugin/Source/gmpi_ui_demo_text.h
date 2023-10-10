@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Drawing.h"
 
@@ -29,6 +29,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 //		{"Light"     , gmpi::drawing::FontWeight::Thin , gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 		{"Italic"    , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Italic, gmpi::drawing::FontStretch::Normal},
 		{"Condensed" , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Condensed},
+		{"Gradient"  , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 	};
 
 
@@ -48,9 +49,28 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		const auto textSize = font.getTextExtentU(option.name);
 		textRect.right = textRect.left + textSize.width + 1;
 
-		g.drawTextU(option.name, font, textRect, brush);
+		if("Gradient" == option.name)
+		{
+			gmpi::drawing::Point grad1{ 0.f, textRect.top };
+			gmpi::drawing::Point grad2{ 0.f, textRect.bottom };
 
-		textRect = offsetRect(textRect, { margin + getWidth(textRect), 0 });
+			gmpi::drawing::Gradientstop gradientStops[] = {
+				{ 0.0f, gmpi::drawing::Colors::Violet},
+				{ 1.0f, gmpi::drawing::Colors::MediumPurple}
+			};
+
+			auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
+			gmpi::drawing::LinearGradientBrushProperties lgbp1{ grad1, grad2 };
+			auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollection);
+
+			g.drawTextU(option.name, font, textRect, gradientBrush);
+		}
+		else
+		{
+			g.drawTextU(option.name, font, textRect, brush);
+		}
+
+		textRect = offsetRect(textRect, { 0.5f * margin + getWidth(textRect), 0 });
 	}
 
 	// draw a paragraph of text

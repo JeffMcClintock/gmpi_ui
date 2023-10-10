@@ -269,13 +269,6 @@ namespace gmpi
 				b2.Attach(new gmpi::directx::Geometry(d2d_geometry));
 
 				b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
-
-#ifdef LOG_DIRECTX_CALLS
-				_RPT1(_CRT_WARN, "ID2D1PathGeometry* geometry%x = nullptr;\n", (int)*pathGeometry);
-				_RPT0(_CRT_WARN, "{\n");
-				_RPT1(_CRT_WARN, "factory->CreatePathGeometry(&geometry%x);\n", (int)*pathGeometry);
-				_RPT0(_CRT_WARN, "}\n");
-#endif
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
@@ -314,14 +307,6 @@ namespace gmpi
 				b2.Attach(new gmpi::directx::TextFormat(&stringConverter, dwTextFormat));
 
 				b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
-
-//				_RPT2(_CRT_WARN, "factory.CreateTextFormat() -> %x %S\n", (int)dwTextFormat, fontFamilyNameW.c_str());
-#ifdef LOG_DIRECTX_CALLS
-//				_RPT4(_CRT_WARN, "auto c = D2D1::ColorF(%.3f, %.3f, %.3f, %.3f);\n", color->r, color->g, color->b, color->a);
-				_RPT1(_CRT_WARN, "IDWriteTextFormat* textformat%x = nullptr;\n", (int)*TextFormat);
-				_RPT4(_CRT_WARN, "writeFactory->CreateTextFormat(L\"%S\",NULL, (DWRITE_FONT_WEIGHT)%d, (DWRITE_FONT_STYLE)%d, DWRITE_FONT_STRETCH_NORMAL, %f, L\"\",", fontFamilyNameW.c_str(), fontWeight, fontStyle, fontSize);
-				_RPT1(_CRT_WARN, "&textformat%x);\n", (int)*TextFormat);
-#endif
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
@@ -694,33 +679,6 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 
 			context_->DrawText(widestring.data(), (UINT32)widestring.size(), tf, reinterpret_cast<const D2D1_RECT_F*>(&adjusted), b, (D2D1_DRAW_TEXT_OPTIONS)options | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
 
-#ifdef LOG_DIRECTX_CALLS
-			{
-				std::wstring widestring2 = widestring;
-				replacein( widestring2, L"\n", L"\\n");
-				_RPT0(_CRT_WARN, "{\n");
-				_RPT4(_CRT_WARN, "auto r = D2D1::RectF(%.3f, %.3f, %.3f, %.3ff);\n", layoutRect->left, layoutRect->top, layoutRect->right, layoutRect->bottom);
-				_RPT4(_CRT_WARN, "context_->DrawTextW(L\"%S\", %d, textformat%x, &r, brush%x,", widestring2.c_str(), (int)widestring.size(), (int)textFormat, (int) brush);
-				_RPT1(_CRT_WARN, " (D2D1_DRAW_TEXT_OPTIONS) %d);\n}\n", flags);
-			}
-#endif
-/*
-
-#if 0
-			{
-				gmpi::drawing::api::MP1_FONT_METRICS fontMetrics;
-				((gmpi::drawing::api::ITextFormat*)textFormat)->GetFontMetrics(&fontMetrics);
-
-				float predictedBaseLine = layoutRect->top + fontMetrics.ascent;
-				const float scale = 0.5f;
-				predictedBaseLine = floorf(-0.5 + predictedBaseLine / scale) * scale;
-
-				Graphics g(this);
-				auto brush = g.CreateSolidColorBrush(Color::Lime);
-				g.DrawLine(Point(layoutRect->left, predictedBaseLine + 0.25f), Point(layoutRect->left + 2, predictedBaseLine + 0.25f), brush, 0.5);
-			}
-#endif
-*/
 			return gmpi::ReturnCode::Ok;
 		}
 
@@ -1006,13 +964,6 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 
 		gmpi::ReturnCode GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
 		{
-#ifdef LOG_DIRECTX_CALLS
-			_RPT0(_CRT_WARN, "{\n");
-			_RPT0(_CRT_WARN, "D2D1_MATRIX_3X2_F t;\n");
-			_RPT0(_CRT_WARN, "context_->GetTransform(&t);\n");
-			_RPT0(_CRT_WARN, "}\n");
-#endif
-
 			// Transform to original position.
 			drawing::Matrix3x2 currentTransform;
 			context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));

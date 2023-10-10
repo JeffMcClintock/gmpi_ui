@@ -32,15 +32,15 @@ using namespace gmpi::drawing;
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4100) // "unreferenced formal parameter"
-#pragma warning(disable : 4996) // "codecvt deprecated in C++17"
+//#pragma warning(disable : 4996) // "codecvt deprecated in C++17"
 #endif
 
 #include "Drawing_API.h"
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
-#include <codecvt>
-#include <locale>
+//#include <codecvt>
+//#include <locale>
 #include "GmpiSdkCommon.h"
 #include "./shared/unicode_conversion2.h"
 #include "./shared/fast_gamma.h"
@@ -273,7 +273,7 @@ return
 inline constexpr uint32_t rgBytesToPixel( uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xff)
 {
 #ifdef _WIN32
-    return (r << 24) | (g << 16) | (b << 8) | a; // RGBA
+    return (a << 24) | (r << 16) | (g << 8) | b; // ARGB
 #else
     return (a << 24) | (b << 16) | (g << 8) | r; // ABGR
 #endif
@@ -435,17 +435,17 @@ public:
 		return s;
 	}
 
-	// TODO should be getTextExtentW for consitancy?
-	Size getTextExtentU(std::wstring wString)
-	{
-		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
-		auto utf8String = stringConverter.to_bytes(wString);
-		//			auto utf8String = FastUnicode::WStringToUtf8(wString.c_str());
+	//// TODO should be getTextExtentW for consitancy?
+	//Size getTextExtentU(std::wstring wString)
+	//{
+	//	static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
+	//	auto utf8String = stringConverter.to_bytes(wString);
+	//	//			auto utf8String = FastUnicode::WStringToUtf8(wString.c_str());
 
-		Size s;
-		get()->getTextExtentU(utf8String.c_str(), (int32_t)utf8String.size(), &s);
-		return s;
-	}
+	//	Size s;
+	//	get()->getTextExtentU(utf8String.c_str(), (int32_t)utf8String.size(), &s);
+	//	return s;
+	//}
 
 	void getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
 	{
@@ -619,21 +619,20 @@ public:
 class BitmapBrush : public Brush, public Resource<gmpi::drawing::api::IBitmapBrush>
 {
 public:
-	// TODO ensure default extend mode is the same on macoS and Windows
-	void setExtendModeX(gmpi::drawing::ExtendMode extendModeX)
-	{
-		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeX(extendModeX);
-	}
+	//void setExtendModeX(gmpi::drawing::ExtendMode extendModeX)
+	//{
+	//	Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeX(extendModeX);
+	//}
 
-	void setExtendModeY(gmpi::drawing::ExtendMode extendModeY)
-	{
-		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeY(extendModeY);
-	}
+	//void setExtendModeY(gmpi::drawing::ExtendMode extendModeY)
+	//{
+	//	Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeY(extendModeY);
+	//}
 
-	void setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode)
-	{
-		Resource<gmpi::drawing::api::IBitmapBrush>::get()->setInterpolationMode(interpolationMode);
-	}
+	//void setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode)
+	//{
+	//	Resource<gmpi::drawing::api::IBitmapBrush>::get()->setInterpolationMode(interpolationMode);
+	//}
 
 protected:
 	gmpi::drawing::api::IBrush* getDerived() override
@@ -1035,11 +1034,11 @@ class Graphics_base : public Resource<BASE_INTERFACE>
 public:
 	BitmapBrush createBitmapBrush(Bitmap& bitmap) // N/A on macOS: BitmapBrushProperties& bitmapBrushProperties, BrushProperties& brushProperties)
 	{
-        const BitmapBrushProperties bitmapBrushProperties{};
+//        const BitmapBrushProperties bitmapBrushProperties{};
         const BrushProperties brushProperties{};
 
 		BitmapBrush temp;
-		Resource<BASE_INTERFACE>::get()->createBitmapBrush(bitmap.get(), &bitmapBrushProperties, &brushProperties, temp.put());
+		Resource<BASE_INTERFACE>::get()->createBitmapBrush(bitmap.get(), /*&bitmapBrushProperties,*/ &brushProperties, temp.put());
 		return temp;
 	}
 
@@ -1350,12 +1349,12 @@ public:
 		Resource<BASE_INTERFACE>::get()->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), textFormat.get(), &layoutRect, brush.get(), options/*, measuringMode*/);
 	}
 
-	void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
-	{
-		static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
-		const auto utf8String = stringConverter.to_bytes(wString);
-		this->drawTextU(utf8String, textFormat, rect, brush, options);
-	}
+	//void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
+	//{
+	//	static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
+	//	const auto utf8String = stringConverter.to_bytes(wString);
+	//	this->drawTextU(utf8String, textFormat, rect, brush, options);
+	//}
 
 	void setTransform(const Matrix3x2& transform)
 	{

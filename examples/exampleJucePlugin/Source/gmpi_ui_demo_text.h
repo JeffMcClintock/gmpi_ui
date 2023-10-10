@@ -55,7 +55,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 
 	// draw a paragraph of text
 	{
-		const auto text = "One spring morning at four o'clock the first cuckoo arrived in the valley of the Moomins. He perched on the blue roof of Momin house and cuckooed 8 times - rather hoarsely to be sure, for it was still a bit early in the spring.\n   Then he flew away to the east.\n   Moomintroll woke up and lay a long time looking at the ceiling before he realised where he was. He had slept a hundred nights and a hundred days, and his dreams still thronged about his head trying to coax him back to sleep.";
+		const auto text = "One spring morning at four o'clock the first cuckoo arrived in the valley of the Moomins. He perched on the blue roof of Moomin house and cuckooed 8 times - rather hoarsely to be sure, for it was still a bit early in the spring.\n   Then he flew away to the east.\n   Moomintroll woke up and lay a long time looking at the ceiling before he realised where he was. He had slept a hundred nights and a hundred days, and his dreams still thronged about his head trying to coax him back to sleep.";
 
 		auto font = g.getFactory().createTextFormat2(14);
 

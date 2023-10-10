@@ -196,8 +196,8 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 				}
 			}
 			auto bitmapBrush = g.createBitmapBrush(bitmap);
-			bitmapBrush.setExtendModeX(gmpi::drawing::ExtendMode::Wrap);
-			bitmapBrush.setExtendModeY(gmpi::drawing::ExtendMode::Wrap);	
+			//bitmapBrush.setExtendModeX(gmpi::drawing::ExtendMode::Wrap);
+			//bitmapBrush.setExtendModeY(gmpi::drawing::ExtendMode::Wrap);	
 //			bitmapBrush.setInterpolationMode(gmpi::drawing::BitmapInterpolationMode::Linear);
 			const auto radius = (y2 - y1) * 0.5f;
 			const gmpi::drawing::Point center{ x1 + radius, y1 + radius };
@@ -290,8 +290,8 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 			//g.fillCircle(center, radius, fillBrush);
 
 			auto bitmapBrush = g.createBitmapBrush(bitmap);
-			bitmapBrush.setExtendModeX(gmpi::drawing::ExtendMode::Wrap);
-			bitmapBrush.setExtendModeY(gmpi::drawing::ExtendMode::Wrap);
+			//bitmapBrush.setExtendModeX(gmpi::drawing::ExtendMode::Wrap);
+			//bitmapBrush.setExtendModeY(gmpi::drawing::ExtendMode::Wrap);
 			//			bitmapBrush.setInterpolationMode(gmpi::drawing::BitmapInterpolationMode::Linear);
 			const float strokeWidth = 10.0f;
 			g.drawCircle(center, radius, bitmapBrush, strokeWidth);

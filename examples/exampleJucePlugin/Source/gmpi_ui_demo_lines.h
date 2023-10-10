@@ -196,9 +196,6 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 				}
 			}
 			auto bitmapBrush = g.createBitmapBrush(bitmap);
-			//bitmapBrush.setExtendModeX(gmpi::drawing::ExtendMode::Wrap);
-			//bitmapBrush.setExtendModeY(gmpi::drawing::ExtendMode::Wrap);	
-//			bitmapBrush.setInterpolationMode(gmpi::drawing::BitmapInterpolationMode::Linear);
 			const auto radius = (y2 - y1) * 0.5f;
 			const gmpi::drawing::Point center{ x1 + radius, y1 + radius };
 			g.fillCircle(center, radius, bitmapBrush);
@@ -209,12 +206,9 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		y2 = 230.0f;
 
 		// outlines
-		// 
+
 		// solid outline
 		{
-			//auto fillBrush = g.createSolidColorBrush(gmpi::drawing::Color{0.5f, 0.5f, 0.5f, 0.5f});
-			//g.fillRectangle({ x1, y1, x1 + width, y2 }, fillBrush);
-
 			const float strokeWidth = 4.0f;
 			auto strokeBrush = g.createSolidColorBrush(gmpi::drawing::Colors::LightSeaGreen);
 			g.drawRectangle({ x1, y1, x1 + width, y2 }, strokeBrush, strokeWidth);
@@ -230,9 +224,6 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
                 { 0.0f, gmpi::drawing::Colors::Silver},
                 { 1.0f, gmpi::drawing::Colors::LightSlateGray}
             };
-            
-            //auto fillBrush = g.createSolidColorBrush(gmpi::drawing::Color{ 0.5f, 1.0f, 0.5f, 0.5f });
-            //g.fillRoundedRectangle({ { x1, y1, x1 + width, y2 }, margin, margin }, fillBrush);
             
             auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
             gmpi::drawing::LinearGradientBrushProperties lgbp1{grad1, grad2};

@@ -56,7 +56,8 @@ public:
 
     gmpi::cocoa::DrawingFactory drawingFactory;
     NSView* view;
-
+    NSBitmapImageRep* backBuffer{}; // backing buffer with linear colorspace for correct blending.
+    
 #if 0
     void Init(SE2::IPresenter* presenter, class IGuiHost2* hostPatchManager, int pviewType)
     {
@@ -84,7 +85,7 @@ public:
         
         pclient->queryInterface(&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
         pclient->queryInterface(&IInputClient::guid, inputClient.asIMpUnknownPtr());
-
+        
         if(drawingClient)
         {
             drawingClient->open(this);
@@ -112,12 +113,41 @@ public:
     
     void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)
     {
-        gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
+        if(!backBuffer)
+            initBackingBitmap();
         
-        if(drawingClient)
-            drawingClient->onRender(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
+        // draw onto linear back buffer.
+        [NSGraphicsContext saveGraphicsState];
+        NSGraphicsContext *g = [NSGraphicsContext graphicsContextWithBitmapImageRep:backBuffer];
+        [NSGraphicsContext setCurrentContext:g];
 
- //       context.popAxisAlignedClip();
+        // context must be disposed before restoring state, because it's destructor also restores state
+        {
+            gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
+            
+            // JUCE standalone tends to draw over window non-client area on macOS. clip drawing.
+            const auto r = [frame bounds];
+            const gmpi::drawing::Rect bounds{
+                (float) r.origin.x,
+                (float) r.origin.y,
+                (float) (r.origin.x + r.size.width),
+                (float) (r.origin.y + r.size.height)
+            };
+            
+            const gmpi::drawing::Rect dirtyClipped = intersectRect(bounds, *dirtyRect);
+
+            context.pushAxisAlignedClip(&dirtyClipped);
+
+           if(drawingClient)
+               drawingClient->onRender(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
+            
+            context.popAxisAlignedClip();
+        }
+        
+        [NSGraphicsContext restoreGraphicsState];
+        
+        // blit back buffer onto screen.
+        [backBuffer drawInRect:[view bounds]]; // copes with DPI
     }
 #if 0
     // Inherited via IMpUserInterfaceHost2
@@ -287,6 +317,40 @@ public:
         currentTextEdit = nullptr;
     }
 #endif
+    
+    void initBackingBitmap()
+    {
+        NSSize logicalsize = view.frame.size;
+        NSSize pysicalsize = [view convertRectToBacking:[view bounds]].size;
+
+        // kCGColorSpaceGenericRGBLinear - middle gray is darker, blend seems correct.
+        // kCGColorSpaceExtendedLinearSRGB, kCGColorSpaceLinearDisplayP3 - same
+        // kCGColorSpaceGenericRGB - actually sRGB
+        
+        // kCGColorSpaceExtendedLinearSRGB might be best since float color values should match SE's linear RGB
+        CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+        
+        NSColorSpace *linearRGBColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
+
+        NSBitmapImageRep* imagerep1 = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+           pixelsWide:pysicalsize.width
+           pixelsHigh:pysicalsize.height
+           bitsPerSample:16 //8     // 1, 2, 4, 8, 12, or 16.
+           samplesPerPixel:3
+           hasAlpha:NO
+           isPlanar:NO
+           colorSpaceName: NSCalibratedRGBColorSpace // makes no difference if we retag it later anyhow.
+           bitmapFormat: NSBitmapFormatFloatingPointSamples //NSAlphaFirstBitmapFormat
+           bytesPerRow:0    // 0 = don't care  800 * 4
+           bitsPerPixel:64 ];
+        
+        backBuffer = [imagerep1 bitmapImageRepByRetaggingWithColorSpace:linearRGBColorSpace];
+        [backBuffer setSize: logicalsize]; // Communicates DPI
+
+        // Release the resources
+        CGColorSpaceRelease(colorSpace);
+    }
+    
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -469,7 +533,7 @@ public:
         [self->trackingArea initWithRect:NSZeroRect options:(NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect | NSTrackingMouseMoved| NSTrackingActiveAlways) owner:self userInfo:nil];
         [self addTrackingArea:self->trackingArea ];
         
-        drawingFrame.view = self;
+        drawingFrame.view = self; // pass to init might be clearer
         drawingFrame.Init((gmpi::api::IUnknown*) _client);
         
         timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];

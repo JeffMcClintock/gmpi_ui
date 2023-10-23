@@ -898,6 +898,13 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
                 green : (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.g))
                 blue : (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.b))
                 alpha : (CGFloat)color.a];
+        
+        // or, without quantization, but slower.
+        return [NSColor colorWithSRGBRed:
+                        (CGFloat)se_sdk::FastGamma::linearToSrgb(color.r)
+                green : (CGFloat)se_sdk::FastGamma::linearToSrgb(color.g)
+                blue  : (CGFloat)se_sdk::FastGamma::linearToSrgb(color.b)
+                alpha : (CGFloat)color.a];
 #endif
         const CGFloat components[4] = {color.r, color.g, color.b, color.a};
         return [NSColor colorWithColorSpace:gmpiColorSpace components:components count:4];
@@ -1012,12 +1019,10 @@ public:
     BitmapBrush(
         cocoa::DrawingFactory* factory,
         const drawing::api::IBitmap* bitmap,
-//        const drawing::BitmapBrushProperties* bitmapBrushProperties,
         const drawing::BrushProperties* brushProperties
     )
         : CocoaBrushBase(factory),
         bitmap_(factory, ((Bitmap*)bitmap)->nativeBitmap_),
-//        bitmapBrushProperties_(*bitmapBrushProperties),
         brushProperties_(*brushProperties)
     {
     }
@@ -1572,7 +1577,6 @@ public:
 class GraphicsContext : public drawing::api::IDeviceContext
 {
 protected:
-//	std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
 	cocoa::DrawingFactory* factory;
 	std::vector<drawing::Rect> clipRectStack;
 	NSAffineTransform* currentTransform;
@@ -1584,23 +1588,11 @@ public:
 		, view_(pview)
 	{
 		currentTransform = [NSAffineTransform transform];
-        
-        // JUCE standalone tends to draw over window non-client area on macOS. clip drawing.
-        const auto r = [view_ bounds];
-        const drawing::Rect bounds{
-            (float) r.origin.x,
-            (float) r.origin.y,
-            (float) (r.origin.x + r.size.width),
-            (float) (r.origin.y + r.size.height)
-        };
-        
-        pushAxisAlignedClip(&bounds);
-	}
+    }
 
 	~GraphicsContext()
 	{
-        assert(clipRectStack.size() == 1);
-        popAxisAlignedClip();
+        assert(clipRectStack.size() == 0);
 	}
 
 	ReturnCode getFactory(drawing::api::IFactory** pfactory) override

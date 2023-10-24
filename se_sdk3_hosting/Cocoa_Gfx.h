@@ -278,7 +278,7 @@ public:
         if (pfontWeight >= drawing::FontWeight::DemiBold)
             fontTraits |= NSBoldFontMask;
 
-        if (pfontStyle == drawing::FontStyle::Italic)
+        if (pfontStyle == drawing::FontStyle::Italic || pfontStyle == drawing::FontStyle::Oblique)
             fontTraits |= NSItalicFontMask;
 
         auto nsFontName = [NSString stringWithCString : fontFamilyName.c_str() encoding : NSUTF8StringEncoding];
@@ -2326,32 +2326,30 @@ inline ReturnCode DrawingFactory::loadImageU(const char* utf8Uri, drawing::api::
 
 void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath) const
 {
-	[NSGraphicsContext saveGraphicsState] ;
+    [NSGraphicsContext saveGraphicsState];
 
-#if 0 // nope in Reaper
-	// calc image offset considering that Quartz origin is at bottom of View
-	const auto correction = context->getQuartzYorigin() - const_cast<Bitmap&>(bitmap_).getSizeF().height;
-
-	// we handle only translation on mac
-	const auto offset = TransformPoint(brushProperties_.transform, {});
-
-	CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
-	CGContextSetPatternPhase(ctx, CGSize{ offset.x, -offset.y + correction });
+    auto view = context->getNativeView();
+    
+#if USE_BACKING_BUFFER
+    // Adjust offset to be relative to the top (Windows) not bottom (mac)
+    CGFloat yOffset = view.bounds.size.height - const_cast<Bitmap&>(bitmap_).GetSizeF().height;
+#else
+    // convert to Core Grapics co-ords
+    CGFloat yOffset = NSMaxY([view convertRect:view.bounds toView:nil]);
 #endif
-	auto view = context->getNativeView();
-
-	// convert to Core Grapics co-ords
-	CGFloat yOffset = NSMaxY([view convertRect : view.bounds toView : nil]);
-	// CGFloat xOffset = -NSMinX([view convertRect:view.bounds toView:nil]);
-
-	// apply brushes transfer. we support only translation on mac
-	const auto offset = transformPoint(brushProperties_.transform, { 0.0f, static_cast<float>(yOffset) });
-
-	[[NSGraphicsContext currentContext]setPatternPhase:NSMakePoint(offset.x, offset.y)];
-	[[NSColor colorWithPatternImage : bitmap_.nativeBitmap_]set];
-	[nsPath fill] ;
-
-	[NSGraphicsContext restoreGraphicsState] ;
+    gmpi::drawing::Matrix3x2 moduleTransform;
+    context->getTransform(&moduleTransform);
+    auto offset = gmpi::drawing::transformPoint(moduleTransform, {0.0f, 0.0f});
+    // apply brushes transfer. we support only translation on mac
+    offset = gmpi::drawing::transformPoint(brushProperties_.transform, offset);
+    
+    // also need to apply current drawing transform for modules not at [0,0]
+    
+    [[NSGraphicsContext currentContext] setPatternPhase:NSMakePoint(offset.x, yOffset - offset.y)];
+    [[NSColor colorWithPatternImage:bitmap_.nativeBitmap_] set];
+    [nsPath fill];
+    
+    [NSGraphicsContext restoreGraphicsState];
 }
 
 inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool _alphaPremultiplied, int32_t pflags) :

@@ -1700,8 +1700,11 @@ public:
 	{
 		auto textformat = reinterpret_cast<const TextFormat*>(textFormat);
 
+        // solid color text only. TODO: Gradients
 		auto scb = dynamic_cast<const SolidColorBrush*>(brush);
-
+        if(!scb)
+            return ReturnCode::Fail;
+        
 		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
 		/*
 				if (stringLength > 4 && utf8String[4] == 'q')
@@ -1962,10 +1965,10 @@ public:
 	ReturnCode drawBitmap(drawing::api::IBitmap* mpBitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)mpBitmap);
-				auto bitmap = bm->GetNativeBitmap();
+				auto bitmap = bm->getNativeBitmap();
 
-                GmpiDrawing_API::MP1_SIZE_U imageSize;
-                bm->GetSize(&imageSize);
+                gmpi::drawing::SizeU imageSize;
+                bm->getSizeU(&imageSize);
 
                 auto destRect = gmpi::cocoa::NSRectFromRect(*destinationRectangle);
                 
@@ -2368,8 +2371,10 @@ void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath) const
     auto view = context->getNativeView();
     
 #if USE_BACKING_BUFFER
+    drawing::SizeU bitmapSize{};
+    const_cast<Bitmap&>(bitmap_).getSizeU(&bitmapSize);
     // Adjust offset to be relative to the top (Windows) not bottom (mac)
-    CGFloat yOffset = view.bounds.size.height - const_cast<Bitmap&>(bitmap_).GetSizeF().height;
+    CGFloat yOffset = view.bounds.size.height - bitmapSize.height;
 #else
     // convert to Core Grapics co-ords
     CGFloat yOffset = NSMaxY([view convertRect:view.bounds toView:nil]);

@@ -370,7 +370,7 @@ public:
     }
 };
 
-GmpiDrawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
+gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 {
     NSPoint localPoint = [view convertPoint: [theEvent locationInWindow] fromView: nil];
     
@@ -378,7 +378,7 @@ GmpiDrawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     localPoint.y = view.bounds.origin.y + view.bounds.size.height - localPoint.y;
 #endif
     
-    GmpiDrawing::Point p(localPoint.x, localPoint.y);
+    gmpi::drawing::Point p{(float)localPoint.x, (float)localPoint.y};
     return p;
 }
 

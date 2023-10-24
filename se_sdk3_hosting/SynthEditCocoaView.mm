@@ -113,14 +113,21 @@ public:
     
     void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)
     {
+#if USE_BACKING_BUFFER
         if(!backBuffer)
             initBackingBitmap();
         
         // draw onto linear back buffer.
         [NSGraphicsContext saveGraphicsState];
+        [backBuffer retain];
         NSGraphicsContext *g = [NSGraphicsContext graphicsContextWithBitmapImageRep:backBuffer];
         [NSGraphicsContext setCurrentContext:g];
 
+        auto flipper = [NSAffineTransform transform];
+        [flipper scaleXBy:1 yBy:-1];
+        [flipper translateXBy:0.0 yBy:-[frame bounds].size.height];
+        [flipper concat];
+#endif
         // context must be disposed before restoring state, because it's destructor also restores state
         {
             gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
@@ -362,6 +369,18 @@ public:
 //        _RPT0(0, "~whatever()\n");
     }
 };
+
+GmpiDrawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
+{
+    NSPoint localPoint = [view convertPoint: [theEvent locationInWindow] fromView: nil];
+    
+#if USE_BACKING_BUFFER
+    localPoint.y = view.bounds.origin.y + view.bounds.size.height - localPoint.y;
+#endif
+    
+    GmpiDrawing::Point p(localPoint.x, localPoint.y);
+    return p;
+}
 
 #define SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME SE_MAKE_CLASSNAME(Cocoa_NSViewWrapperForAU)
 
@@ -632,7 +651,9 @@ public:
 }
 
 //--------------------------------------------------------------------------------------------------------------
+#if !USE_BACKING_BUFFER
 - (BOOL)isFlipped { return YES; }
+#endif
 
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 
@@ -664,9 +685,6 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     [[self window] makeFirstResponder:self]; // take focus off any text-edit. Works but does not dimiss it.
  
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-
-    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
 
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
@@ -675,7 +693,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerDown(p, flags);
+        drawingFrame.inputClient->onPointerDown(mouseToGmpi(self, theEvent), flags);
 
  // no help to edit box   [super mouseDown:theEvent];
 }
@@ -683,9 +701,6 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 - (void)rightMouseDown:(NSEvent *)theEvent
 {
     drawingFrame.removeTextEdit();
-    
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
 
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
@@ -695,14 +710,11 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     // TODO     drawingFrame.getView()->onPointerDown(flags, p);
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerDown(p, flags);
+        drawingFrame.inputClient->onPointerDown(mouseToGmpi(self, theEvent), flags);
 }
 
 - (void)rightMouseUp:(NSEvent *)theEvent
 {
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
-
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
     flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
@@ -710,28 +722,20 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerUp(p, flags);
+        drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
 }
 
 - (void)mouseUp:(NSEvent *)theEvent {
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-    gmpi::drawing::Point p{static_cast<float>(localPoint.x), static_cast<float>(localPoint.y)};
-
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerUp(p, flags);
+        drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
 }
 
 - (void)mouseDragged:(NSEvent *)theEvent {
-    
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-
-    mousePos.x = static_cast<float>(localPoint.x);
-    mousePos.y = static_cast<float>(localPoint.y);
 
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
@@ -739,7 +743,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerMove(mousePos, flags);
+        drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
 }
 
 - (void)scrollWheel:(NSEvent *)theEvent {
@@ -747,11 +751,6 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     auto deltaX = theEvent.deltaX;
     auto deltaY = theEvent.deltaY;
  
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-
-    mousePos.x = static_cast<float>(localPoint.x);
-    mousePos.y = static_cast<float>(localPoint.y);
-
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     ApplyKeyModifiers(flags, theEvent);
 
@@ -765,7 +764,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
         flags |= gmpi::interaction::GG_POINTER_SCROLL_HORIZ;
         // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaX, mousePos);
         //if(drawingFrame.inputClient)
-        //    drawingFrame.inputClient->onMouseWheel(p, flags);
+        //    drawingFrame.inputClient->onMouseWheel(mouseToGmpi(self, theEvent), flags);
     }
 }
 
@@ -775,11 +774,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 }
 
 - (void)mouseMoved:(NSEvent *)theEvent {
-    NSPoint localPoint = [self convertPoint: [theEvent locationInWindow] fromView: nil];
-
-    mousePos.x = static_cast<float>(localPoint.x);
-    mousePos.y = static_cast<float>(localPoint.y);
-    
+   
     [self ToolTipOnMouseActivity];
     
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
@@ -788,7 +783,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerMove(mousePos, flags);
+        drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
 }
 
 - (void)mouseExited:(NSEvent *)theEvent {

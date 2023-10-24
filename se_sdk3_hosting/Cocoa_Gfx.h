@@ -24,6 +24,7 @@
 #include "../Drawing.h"
 #include "../shared/xp_simd.h"
 #include "../backends/Gfx_base.h"
+#define USE_BACKING_BUFFER 1
 
 /* TODO
 investigate CGContextSetShouldSmoothFonts, CGContextSetAllowsFontSmoothing (for less heavy fonts)
@@ -1852,8 +1853,23 @@ public:
 		// do last so don't affect font metrics.
 //              [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:testLineHeightMultiplier];
 //               textformat->native2[NSBaselineOffsetAttributeName] = [NSNumber numberWithFloat:shiftUp];
+#if USE_BACKING_BUFFER
+                // Create a flipped coordinate system
+                [[NSGraphicsContext currentContext] saveGraphicsState];
+                NSAffineTransform *transform = [NSAffineTransform transform];
+                [transform scaleXBy:1 yBy:-1];
+                [transform translateXBy:0 yBy:-2 * bounds.origin.y - bounds.size.height];
 
+                [transform concat];
+
+                // Draw in the flipped coordinate system
+                [str drawInRect : bounds withAttributes : textformat->native2];
+
+                // Restore the original graphics state
+                [[NSGraphicsContext currentContext] restoreGraphicsState];
+#else
 		[str drawInRect : bounds withAttributes : textformat->native2];
+#endif
 
 		//               [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:1.0f];
 
@@ -1946,18 +1962,36 @@ public:
 	ReturnCode drawBitmap(drawing::api::IBitmap* mpBitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)mpBitmap);
-		auto bitmap = bm->getNativeBitmap();
+				auto bitmap = bm->GetNativeBitmap();
 
-		drawing::SizeU imageSize;
-		bm->getSizeU(&imageSize);
+                GmpiDrawing_API::MP1_SIZE_U imageSize;
+                bm->GetSize(&imageSize);
 
-        drawing::Rect sourceRectangleFlipped{*sourceRectangle};
+                auto destRect = gmpi::cocoa::NSRectFromRect(*destinationRectangle);
+                
+#if USE_BACKING_BUFFER
+                auto sourceRect = gmpi::cocoa::NSRectFromRect(*sourceRectangle);
+                
+                // mirror source rectangle
+                sourceRect.origin.y = imageSize.height - (sourceRect.origin.y + sourceRect.size.height);
+                
+                // Create a flipped coordinate system
+                [[NSGraphicsContext currentContext] saveGraphicsState];
+                NSAffineTransform *transform = [NSAffineTransform transform];
+                [transform scaleXBy:1 yBy:-1];
+                [transform translateXBy:0 yBy:-2 * destRect.origin.y - destRect.size.height];
+
+                [transform concat];
+
+                // Draw in the flipped coordinate system
+#else
+                GmpiDrawing::Rect sourceRectangleFlipped(*sourceRectangle);
 		sourceRectangleFlipped.bottom = imageSize.height - sourceRectangle->top;
 		sourceRectangleFlipped.top = imageSize.height - sourceRectangle->bottom;
 
-		auto sourceRect = cocoa::NSRectFromRect(sourceRectangleFlipped);
-		auto destRect = cocoa::NSRectFromRect(*destinationRectangle);
+                auto sourceRect = gmpi::cocoa::NSRectFromRect(sourceRectangleFlipped);
 
+#endif
 		if (bitmap)
 		{
 			[bitmap drawInRect : destRect fromRect : sourceRect operation : NSCompositingOperationSourceOver fraction : opacity respectFlipped : TRUE hints : nil] ;
@@ -1984,7 +2018,10 @@ public:
 			[[NSGraphicsContext currentContext]restoreGraphicsState];
 #endif
 		}
-		return ReturnCode::Ok;
+#if USE_BACKING_BUFFER
+                // Restore the original graphics state
+                [[NSGraphicsContext currentContext] restoreGraphicsState];
+#endif
 	}
 
 	ReturnCode setTransform(const drawing::Matrix3x2* transform) override

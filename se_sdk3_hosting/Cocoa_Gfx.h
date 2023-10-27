@@ -1159,9 +1159,58 @@ public:
         native2 = [[NSGradient alloc]initWithColors:colors atLocations : locations2.data() colorSpace : factory->gmpiColorSpace];
     }
 
+    virtual void drawGradient() const = 0;
+
     ~Gradient()
     {
         [native2 release] ;
+    }
+    
+    void fillPath(NSBezierPath* nsPath) const
+    {
+        // If you plan to do more drawing later, it's a good idea
+        // to save the graphics state before clipping.
+        [NSGraphicsContext saveGraphicsState];
+
+        // clip following output to the path
+        [nsPath addClip];
+        
+        drawGradient();
+
+        // restore clip region
+        [NSGraphicsContext restoreGraphicsState] ;
+    }
+
+    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const
+    {
+        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
+
+        // convert NSPath to CGPath
+        CGPathRef strokePath;
+        {
+            CGMutablePathRef cgPath = NsToCGPath(nsPath);
+
+            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
+                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
+            CGPathRelease(cgPath);
+        }
+
+        // If you plan to do more drawing later, it's a good idea
+        // to save the graphics state before clipping.
+        [NSGraphicsContext saveGraphicsState];
+
+        // clip following output to the path
+        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
+
+        CGContextAddPath(ctx, strokePath);
+        CGContextClip(ctx);
+
+        drawGradient();
+        
+        // restore clip region
+        [NSGraphicsContext restoreGraphicsState] ;
+
+        CGPathRelease(strokePath);
     }
 };
 
@@ -1198,25 +1247,32 @@ public:
         brushProperties.endPoint = endPoint;
     }
 
-    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
+    void drawGradient() const override
     {
-        //				[native2 drawInBezierPath:nsPath angle : getAngle()];
+        // assuming the caller has applied a clipping path, just draw the gradient.
+        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
+    }
 
-                    // If you plan to do more drawing later, it's a good idea
-                    // to save the graphics state before clipping.
+    void fillPath(GraphicsContext*, NSBezierPath* nsPath) const override
+    {
+        Gradient::fillPath(nsPath);
+#if 0
         [NSGraphicsContext saveGraphicsState];
 
         // clip following output to the path
         [nsPath addClip] ;
 
-        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
+        drawGradient();
 
         // restore clip region
         [NSGraphicsContext restoreGraphicsState] ;
+#endif
     }
 
     void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
+        Gradient::strokePath(nsPath, strokeWidth, strokeStyle);
+#if 0
         setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
 
         // convert NSPath to CGPath
@@ -1240,12 +1296,14 @@ public:
         CGContextAddPath(ctx, strokePath);
         CGContextClip(ctx);
 
-        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
-
+        drawGradient();
+        
         // restore clip region
         [NSGraphicsContext restoreGraphicsState] ;
 
         CGPathRelease(strokePath);
+#endif
+        
     }
 
 	ReturnCode getFactory(drawing::api::IFactory** factory) override
@@ -1269,86 +1327,19 @@ public:
         , gradientProperties(*radialGradientBrushProperties)
     {
     }
-
-    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
+    
+    void drawGradient() const override
     {
-        const auto bounds = [nsPath bounds];
-
-        const auto centerX = bounds.origin.x + 0.5 * std::max(0.1, bounds.size.width);
-        const auto centerY = bounds.origin.y + 0.5 * std::max(0.1, bounds.size.height);
-
-        auto relativeX = (gradientProperties.center.x - centerX) / (0.5 * bounds.size.width);
-        auto relativeY = (gradientProperties.center.y - centerY) / (0.5 * bounds.size.height);
-
-        relativeX = std::max(-1.0, std::min(1.0, relativeX));
-        relativeY = std::max(-1.0, std::min(1.0, relativeY));
-
         const auto origin = NSMakePoint(
             gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
             gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
 
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        [nsPath addClip] ;
-        /*
-                    [native2 drawFromCenter:origin
-                        radius:0.0
-                        toCenter:toNative(gradientProperties.center)
-                        radius:gradientProperties.radiusX
-                        options:NSGradientDrawsAfterEndingLocation];
-        */
-
+        // assuming the caller has applied a clipping path, just draw the gradient.
         [native2 drawFromCenter : toNative(gradientProperties.center)
             radius : gradientProperties.radiusX
             toCenter : origin
             radius : 0.0
             options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation];
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-    }
-
-    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        setNativePenStrokeStyle(nsPath, (drawing::api::IStrokeStyle*)strokeStyle);
-
-        // convert NSPath to CGPath
-        CGPathRef strokePath;
-        {
-            CGMutablePathRef cgPath = NsToCGPath(nsPath);
-
-            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
-                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
-            CGPathRelease(cgPath);
-        }
-
-        const auto origin = NSMakePoint(
-            gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
-            gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
-
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
-
-        CGContextAddPath(ctx, strokePath);
-        CGContextClip(ctx);
-
-        [native2 drawFromCenter : toNative(gradientProperties.center)
-            radius : gradientProperties.radiusX
-            toCenter : origin
-            radius : 0.0
-            options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-
-        CGPathRelease(strokePath);
     }
 
     void setCenter(drawing::Point center) override
@@ -1369,7 +1360,15 @@ public:
     {
         gradientProperties.radiusY = radiusY;
     }
-
+    void fillPath(GraphicsContext*, NSBezierPath* nsPath) const override
+    {
+        Gradient::fillPath(nsPath);
+    }
+    void strokePath(NSBezierPath* nsPath, float strokeWidth, const drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    {
+        Gradient::strokePath(nsPath, strokeWidth, strokeStyle);
+    }
+    
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
@@ -1700,19 +1699,15 @@ public:
 	{
 		auto textformat = reinterpret_cast<const TextFormat*>(textFormat);
 
-        // solid color text only. TODO: Gradients
-		auto scb = dynamic_cast<const SolidColorBrush*>(brush);
-        if(!scb)
+        auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
+        if (!cocoabrush)
             return ReturnCode::Fail;
         
+        auto scb = dynamic_cast<const SolidColorBrush*>(brush);
+        auto lgb = dynamic_cast<const Gradient*>(brush);
+        
 		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
-		/*
-				if (stringLength > 4 && utf8String[4] == 'q')
-				{
-					int test=3;
-					bounds.size.height = 100.0f;
-				}
-		*/
+
 		drawing::Size textSize{};
 		if (textformat->paragraphAlignment != drawing::ParagraphAlignment::Near
 			|| options != (int32_t) drawing::DrawTextOptions::Clip)
@@ -1742,7 +1737,14 @@ public:
 
 		NSString* str = [NSString stringWithCString : string encoding : NSUTF8StringEncoding];
 
-		[textformat->native2 setObject : scb->nativeColor() forKey : NSForegroundColorAttributeName] ;
+        if(scb)
+        {
+            [textformat->native2 setObject : scb->nativeColor() forKey : NSForegroundColorAttributeName];
+        }
+        else
+        {
+            [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
+        }
 
 		const bool clipToRect = options & drawing::DrawTextOptions::Clip;
 
@@ -1856,6 +1858,52 @@ public:
 		// do last so don't affect font metrics.
 //              [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:testLineHeightMultiplier];
 //               textformat->native2[NSBaselineOffsetAttributeName] = [NSNumber numberWithFloat:shiftUp];
+
+        if(lgb)
+        {
+            // Create a grayscale context for the mask
+            CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
+            CGContextRef maskContext =
+            CGBitmapContextCreate(
+                NULL,
+                bounds.size.width,
+                bounds.size.height,
+                8,
+                bounds.size.width,
+                colorspace,
+                0);
+            CGColorSpaceRelease(colorspace);
+
+            // Switch to the context for drawing
+            NSGraphicsContext *maskGraphicsContext =
+                [NSGraphicsContext
+                    graphicsContextWithGraphicsPort:maskContext
+                    flipped:YES];
+            [NSGraphicsContext saveGraphicsState];
+            [NSGraphicsContext setCurrentContext:maskGraphicsContext];
+            
+            [str drawInRect: NSMakeRect(0, 0, bounds.size.width, bounds.size.height) withAttributes : textformat->native2];
+
+            // Switch back to the window's context
+            [NSGraphicsContext restoreGraphicsState];
+
+            // Create an image mask from what we've drawn so far
+            CGImageRef alphaMask = CGBitmapContextCreateImage(maskContext);
+            
+            CGContextRef windowContext = (CGContextRef) [[NSGraphicsContext currentContext] graphicsPort];
+
+            // Draw the fill, clipped by the mask
+            CGContextSaveGState(windowContext);
+            
+            CGContextClipToMask(windowContext, NSRectToCGRect(bounds), alphaMask);
+
+            lgb->drawGradient();
+            
+            CGContextRestoreGState(windowContext);
+            CGImageRelease(alphaMask);
+        }
+        else
+        {
 #if USE_BACKING_BUFFER
                 // Create a flipped coordinate system
                 [[NSGraphicsContext currentContext] saveGraphicsState];
@@ -1871,9 +1919,9 @@ public:
                 // Restore the original graphics state
                 [[NSGraphicsContext currentContext] restoreGraphicsState];
 #else
-		[str drawInRect : bounds withAttributes : textformat->native2];
+        [str drawInRect : bounds withAttributes : textformat->native2];
 #endif
-
+        }
 		//               [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:1.0f];
 
 #if 0
@@ -1947,17 +1995,6 @@ public:
 				g.DrawLine(Point(x, y), Point(x, y + 5), brush3, 0.25f);
 
 			}
-
-			/*
-						// clip baseline, then bottom. Not close
-						float predictedBaseline = layoutRect->top + fontMetrics.ascent;
-						predictedBaseline = floor(predictedBaseline * pixelScale) / pixelScale;
-
-						float predictedBt = predictedBaseline + fontMetrics.descent;
-						predictedBt = floor(predictedBt * pixelScale) / pixelScale;
-						predictedBaseline = predictedBt - fontMetrics.descent;
-			*/
-
 		}
 #endif
 	}

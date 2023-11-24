@@ -10,7 +10,7 @@
 
 #pragma warning(disable : 4100)
 
-using namespace se_sdk;
+//using namespace se_sdk;
 
 namespace gmpi
 {

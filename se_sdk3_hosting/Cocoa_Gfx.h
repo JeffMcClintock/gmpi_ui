@@ -22,7 +22,7 @@
 //#include <codecvt>
 #include <map>
 #include "../Drawing.h"
-#include "../shared/xp_simd.h"
+//#include "../shared/xp_simd.h"
 #include "../backends/Gfx_base.h"
 #define USE_BACKING_BUFFER 1
 
@@ -639,8 +639,8 @@ public:
     {
         NSSize s = [nativeBitmap_ size];
 
-        returnSize->width = FastRealToIntTruncateTowardZero(0.5f + s.width);
-        returnSize->height = FastRealToIntTruncateTowardZero(0.5f + s.height);
+        returnSize->width = static_cast<uint32_t>(0.5f + s.width);
+        returnSize->height = static_cast<uint32_t>(0.5f + s.height);
 
         /* hmm, assumes image representation at index 0 is actual size. size is already set correctly in constructor.
             *

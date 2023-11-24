@@ -8,7 +8,10 @@
       <FILE id="uqvfih" name="gmpi_ui_demo_text.h" compile="0" resource="0"
             file="Source/gmpi_ui_demo_text.h"/>
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">
-        <FILE id="dXyTpN" name="CocoaGuiHost.mm" compile="1" resource="0" file="../../se_sdk3_hosting/CocoaGuiHost.mm"/>
+        <FILE id="nJs2dx" name="Bezier.h" compile="0" resource="0" file="../../se_sdk3_hosting/Bezier.h"/>
+        <FILE id="DQ3YgT" name="CocoaGuiHost.h" compile="0" resource="0" file="../../se_sdk3_hosting/CocoaGuiHost.h"/>
+        <FILE id="iMR7JG" name="CocoaNamespaceMacros.h" compile="0" resource="0"
+              file="../../se_sdk3_hosting/CocoaNamespaceMacros.h"/>
         <FILE id="htX3dH" name="DirectXGfx.cpp" compile="1" resource="0" file="../../backends/DirectXGfx.cpp"/>
         <FILE id="PZPOBU" name="DirectXGfx.h" compile="0" resource="0" file="../../backends/DirectXGfx.h"/>
         <FILE id="hwIKpx" name="DrawingFrame_win32.cpp" compile="1" resource="0"
@@ -63,7 +66,7 @@
         <MODULEPATH id="juce_gui_extra" path="../../../../Waves2/JUCE/modules"/>
       </MODULEPATHS>
     </VS2022>
-    <XCODE_MAC targetFolder="Builds/MacOSX">
+    <XCODE_MAC targetFolder="Builds/MacOSX" extraDefs="USE_BACKING_BUFFER">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="NewProject"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="NewProject"/>

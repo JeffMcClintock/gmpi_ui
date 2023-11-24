@@ -10,7 +10,7 @@
 #define CocoaGuiHost_h
 
 #import "./Cocoa_Gfx.h"
-#import "./EventHelper.h"
+//#import "./EventHelper.h"
 
 namespace GmpiGuiHosting
 {

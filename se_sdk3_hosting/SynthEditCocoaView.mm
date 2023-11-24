@@ -3,7 +3,8 @@
 #import "SynthEditCocoaView.h"
 #include "CocoaNamespaceMacros.h"
 #include "./CocoaGuiHost.h"
-#include "../se_sdk3_hosting/GraphicsRedrawClient.h"
+#include "helpers/GraphicsRedrawClient.h"
+#include "GmpiSdkCommon.h"
 
 // In VST3 wrapper this object is a child window of SynthEditPluginCocoaView,
 // It serves to provide a C++ to Objective-C adaptor to the gmpi Drawing framework.

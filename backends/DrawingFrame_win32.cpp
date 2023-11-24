@@ -6,11 +6,8 @@
 #include <Windowsx.h>
 #include <commctrl.h>
 #include "./DrawingFrame_win32.h"
-#include "../shared/xp_dynamic_linking.h"
-#include "../shared/xp_simd.h"
-//#include "../SE_DSP_CORE/IGuiHost2.h"
-#include "../shared/unicode_conversion.h"
 #include "Drawing.h"
+//#include "../SE_DSP_CORE/IGuiHost2.h"
 
 using namespace std;
 using namespace gmpi;
@@ -979,13 +976,11 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 // Convert to an integer rect, ensuring it surrounds all partial pixels.
 inline drawing::RectL RectToIntegerLarger(gmpi::drawing::Rect f)
 {
-	drawing::RectL r;
-	r.left = FastRealToIntTruncateTowardZero(f.left);
-	r.top = FastRealToIntTruncateTowardZero(f.top);
-	r.right = FastRealToIntTruncateTowardZero(f.right) + 1;
-	r.bottom = FastRealToIntTruncateTowardZero(f.bottom) + 1;
-
-	return r;
+	return drawing::RectL{
+	static_cast<int32_t>(f.left),
+	static_cast<int32_t>(f.top),
+	static_cast<int32_t>(f.right) + 1,
+	static_cast<int32_t>(f.bottom) + 1 };
 }
 
 void DrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)

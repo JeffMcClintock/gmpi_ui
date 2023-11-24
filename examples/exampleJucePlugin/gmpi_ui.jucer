@@ -20,24 +20,17 @@
               file="../../backends/gmpi_gui_hosting.cpp"/>
         <FILE id="C1edYE" name="gmpi_gui_hosting.h" compile="0" resource="0"
               file="../../backends/gmpi_gui_hosting.h"/>
-        <FILE id="vHSSk1" name="it_enum_list.cpp" compile="1" resource="0"
-              file="../../se_sdk3/it_enum_list.cpp"/>
-        <FILE id="TP1i2d" name="it_enum_list.h" compile="0" resource="0" file="../../se_sdk3/it_enum_list.h"/>
-        <FILE id="sL1AYr" name="JuceGmpiComponent.cpp" compile="1" resource="0"
-              file="../../JuceGmpiComponent.cpp"/>
-        <FILE id="yY7PnD" name="JuceGmpiComponent.h" compile="0" resource="0"
-              file="../../JuceGmpiComponent.h"/>
+        <FILE id="pEnnMk" name="JuceGmpiComponent.cpp" compile="1" resource="0"
+              file="../../helpers/JuceGmpiComponent.cpp"/>
+        <FILE id="J3oRUi" name="JuceGmpiComponent.h" compile="0" resource="0"
+              file="../../helpers/JuceGmpiComponent.h"/>
         <FILE id="ggRuEq" name="SynthEditCocoaView.h" compile="0" resource="0"
               file="../../se_sdk3_hosting/SynthEditCocoaView.h"/>
         <FILE id="TBO8hU" name="SynthEditCocoaView.mm" compile="1" resource="0"
               file="../../se_sdk3_hosting/SynthEditCocoaView.mm"/>
-        <FILE id="jA86Ov" name="TimerManager.cpp" compile="1" resource="0"
-              file="../../se_sdk3/TimerManager.cpp"/>
-        <FILE id="SbGHp2" name="TimerManager.h" compile="0" resource="0" file="../../se_sdk3/TimerManager.h"/>
-        <FILE id="azDjOJ" name="xp_dynamic_linking.cpp" compile="1" resource="0"
-              file="../../shared/xp_dynamic_linking.cpp"/>
-        <FILE id="ixtnAW" name="xp_dynamic_linking.h" compile="0" resource="0"
-              file="../../shared/xp_dynamic_linking.h"/>
+        <FILE id="VRqIdg" name="TimerManager.cpp" compile="1" resource="0"
+              file="../../helpers/TimerManager.cpp"/>
+        <FILE id="ZDfSqW" name="TimerManager.h" compile="0" resource="0" file="../../helpers/TimerManager.h"/>
       </GROUP>
       <FILE id="kQL8Tn" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>

@@ -1,6 +1,6 @@
 #include "JuceGmpiComponent.h"
 #include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
-#include "../../../se_sdk3/TimerManager.h"
+#include "helpers/TimerManager.h"
 #include "../../../RefCountMacros.h"
 
 #ifdef _WIN32
@@ -339,10 +339,8 @@ static wchar_t gClassName[100];
 
 void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
 {
+	// while constructing editor, JUCE main window is a small fixed size, so no point querying it. easier to just pass in required size.
 	RECT r{ 0, 0, width ,height };
-	/* while constructing editor, JUCE main window is a small fixed size, so no point querying it. easier to just pass in required size.
-	GetClientRect(parentWnd, &r);
-	*/
 
 	if (!registeredWindowClass)
 	{

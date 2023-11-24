@@ -13,11 +13,9 @@ using namespace GmpiGuiHosting;
 #include <chrono>
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
-#include "../se_sdk3/TimerManager.h"
-//#include "../se_sdk3/mp_sdk_gui2.h"
-//#include "../se_sdk3_hosting/gmpi_gui_hosting.h"
 #include "./gmpi_gui_hosting.h"
-#include "../se_sdk3_hosting/GraphicsRedrawClient.h"
+#include "helpers/TimerManager.h"
+#include "helpers/GraphicsRedrawClient.h"
 
 namespace SynthEdit2
 {

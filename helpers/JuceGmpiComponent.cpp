@@ -1,5 +1,5 @@
 #include "JuceGmpiComponent.h"
-#include "../../../se_sdk3_hosting/GraphicsRedrawClient.h"
+#include "helpers/GraphicsRedrawClient.h"
 #include "helpers/TimerManager.h"
 #include "../../../RefCountMacros.h"
 

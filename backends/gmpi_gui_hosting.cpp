@@ -9,8 +9,8 @@
 #endif
 
 #include "./gmpi_gui_hosting.h"
-#include "../shared/it_enum_list.h"
-#include "../shared/xp_dynamic_linking.h"
+//#include "../shared/it_enum_list.h"
+//#include "../shared/xp_dynamic_linking.h"
 //#include "../se_sdk3/Drawing.h"
 #include "../Drawing.h"
 

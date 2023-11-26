@@ -1,15 +1,7 @@
-#import <Foundation/Foundation.h>
-
-#import "SynthEditCocoaView.h"
-#include "CocoaNamespaceMacros.h"
+#import <Cocoa/Cocoa.h>
 #include "./CocoaGuiHost.h"
 #include "helpers/GraphicsRedrawClient.h"
 #include "GmpiSdkCommon.h"
-
-// In VST3 wrapper this object is a child window of SynthEditPluginCocoaView,
-// It serves to provide a C++ to Objective-C adaptor to the gmpi Drawing framework.
-// (actual parent is objective c).
-
 
 namespace gmpi
 {
@@ -41,11 +33,9 @@ class DrawingFrameCocoa :
 public gmpi_gui::IMpGraphicsHost,
 public GmpiGuiHosting::PlatformTextEntryObserver,
 #endif
-/*public gmpi::IMpUserInterfaceHost2,*/
 public IDrawingHost
 {
 public:
-    
     gmpi::shared_ptr<IDrawingClient> drawingClient;
     gmpi::shared_ptr<IInputClient> inputClient;
 #ifdef GMPI_HOST_POINTER_SUPPORT
@@ -53,37 +43,13 @@ public:
     int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
 #endif
-
-
+    
     gmpi::cocoa::DrawingFactory drawingFactory;
     NSView* view;
     NSBitmapImageRep* backBuffer{}; // backing buffer with linear colorspace for correct blending.
     
-#if 0
-    void Init(SE2::IPresenter* presenter, class IGuiHost2* hostPatchManager, int pviewType)
-    {
-        controller = hostPatchManager;
-        
-        const int topViewBounds = 8000; // simply a large enough size.
-        containerView.Attach(new SE2::ContainerView(GmpiDrawing::Size(topViewBounds,topViewBounds)));
-        containerView->setHost(static_cast<gmpi_gui::IMpGraphicsHost*>(this));
-        
-        containerView->setDocument(presenter, pviewType);
-        
-#if defined(SE_TARGET_AU)
-        dynamic_cast<SEInstrumentBase*>(controller)->callbackOnUnloadPlugin = [this]
-        {
-            containerView = nullptr; // free all objects early to avoid dangling pointers to AudioUnit.
-            controller = nullptr; // ensure we don't reference in in destructor.
-        };
-#endif
-     }
-#endif
-    
     void Init(gmpi::api::IUnknown* pclient)
     {
- //todo       client = pclient;
-        
         pclient->queryInterface(&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
         pclient->queryInterface(&IInputClient::guid, inputClient.asIMpUnknownPtr());
         
@@ -95,21 +61,11 @@ public:
      
      void DeInit()
      {
-//         client = {};
          drawingClient = {};
      }
 
     ~DrawingFrameCocoa()
     {
-#if defined(SE_TARGET_AU)
-        auto audioUnit = dynamic_cast<SEInstrumentBase*>(controller);
-        if(audioUnit)
-        {
-            audioUnit->callbackOnUnloadPlugin = nullptr;
-        }
-#endif
-// alternative?
-// controller->OnDrawingFrameDeleted(); // nulls it's 'OnUnloadPlugin' callback
     }
     
     void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)
@@ -362,15 +318,6 @@ public:
     GMPI_REFCOUNT_NO_DELETE;
 };
 
-class whatever
-{
-public:
-    ~whatever()
-    {
-//        _RPT0(0, "~whatever()\n");
-    }
-};
-
 gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 {
     NSPoint localPoint = [view convertPoint: [theEvent locationInWindow] fromView: nil];
@@ -383,10 +330,11 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     return p;
 }
 
-#define SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME SE_MAKE_CLASSNAME(Cocoa_NSViewWrapperForAU)
+// Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
+#define GMPI_VIEW_CLASS GMPI_VIEW_VERSION_01
 
 //--------------------------------------------------------------------------------------------------------------
-@interface SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME : NSView {
+@interface GMPI_VIEW_CLASS : NSView {
     //--------------------------------------------------------------------------------------------------------------
     DrawingFrameCocoa drawingFrame;
     NSTrackingArea* trackingArea;
@@ -394,155 +342,17 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     int toolTipTimer;
     bool toolTipShown;
     gmpi::drawing::Point mousePos;
-    
-    whatever testIfItGetsDeleted;
 }
 
-- (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size;
 - (id) initWithClient: (class IMpUnknown*) _client preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
 
 @end
 
-@interface SeTestView : NSView {
-     NSTrackingArea* trackingArea;
-   /*
-    DrawingFrameCocoa drawingFrame;
-    NSTimer* timer;
-    int toolTipTimer;
-    bool toolTipShown;
-    gmpi::drawing::Point mousePos;
-    */
-    
-    whatever testIfItGetsDeleted;
-}
-
-@end
 
 //--------------------------------------------------------------------------------------------------------------
-// SMTG_AU_PLUGIN_NAMESPACE (SMTGAUPluginCocoaView)
-//--------------------------------------------------------------------------------------------------------------
-
-#if defined(SE_TARGET_AU)
-
-//--------------------------------------------------------------------------------------------------------------
-@implementation SYNTHEDIT_PLUGIN_COCOA_VIEW_CLASSNAME
-
-
-//--------------------------------------------------------------------------------------------------------------
-- (unsigned) interfaceVersion
-{
-    return 0;
-}
-
-//--------------------------------------------------------------------------------------------------------------
-- (NSString *) description
-{
-    return @"Cocoa View";
-}
-
-//--------------------------------------------------------------------------------------------------------------
-
-- (NSView *)uiViewForAudioUnit:(AudioUnit)inAU withSize:(NSSize)inPreferredSize
-{
-    class ausdk::AUBase* editController = {};
-    UInt32 size = sizeof (editController);
-    if (AudioUnitGetProperty (inAU, 64000, kAudioUnitScope_Global, 0, &editController, &size) != noErr)
-        return nil;
-    
-    return [[[SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME alloc] initWithController:dynamic_cast<IGuiHost2*>(editController) preferredSize:inPreferredSize] autorelease];
-}
-
-@end
-
-#endif
-
-@implementation SeTestView
-
-- (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size_unused
-{
-//    _RPT0(0, "SeTestView-initWithController()\n");
-    self = [super initWithFrame: NSMakeRect (0, 0, 200, 200)];
-    
-    if (!self)
-        return nil;
-    
-    return self;
-}
-
-// Opt-in to notification that mouse entered window.
-- (void)viewDidMoveToWindow {
-    [super viewDidMoveToWindow];
-
-    auto window = [self window];
-    if(window)
-    {
-//        _RPT0(0, "viewDidMoveToWindow. Adding trackingArea\n");
-   
-        // drawingFrame.drawingFactory.setBestColorSpace(window);
-        trackingArea = [NSTrackingArea alloc];
-        [trackingArea initWithRect:NSZeroRect options:(NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect | NSTrackingMouseMoved| NSTrackingActiveAlways) owner:self userInfo:nil];
-        [self addTrackingArea:trackingArea ];
-    }
-}
-
-- (void) removeFromSuperview
-{
-    [super removeFromSuperview];
-    
-    // Editor is closing
-    if( trackingArea )
-    {
-//        _RPT0(0, "removeFromSuperview. Removing trackingArea\n");
-        [trackingArea release];
-        trackingArea = nil;
-    }
-}
-
-- (void)drawRect:(NSRect)dirtyRect
-{
-    [[NSColor orangeColor] set];
-    NSRect aRect = NSMakeRect(5.0, 5.0, 7.0, 8.0);
-    NSRectFill(aRect);
-}
-
-@end
-
-
-//--------------------------------------------------------------------------------------------------------------
-@implementation SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME
-
-//--------------------------------------------------------------------------------------------------------------
-- (id) initWithController: (class IGuiHost2*) _editController preferredSize: (NSSize) size_unused
-{
-#if 0
-    Json::Value document_json;
-    Json::Reader r;
-    r.parse(BundleInfo::instance()->getResource("gui.se.json"), document_json);
-    auto& gui_json = document_json["gui"];
-    int width = gui_json["width"].asInt();
-    int height = gui_json["height"].asInt();
-
-    self = [super initWithFrame: NSMakeRect (0, 0, width, height)];
-    if (self)
-    {
-        self->trackingArea = [NSTrackingArea alloc];
-        [self->trackingArea initWithRect:NSZeroRect options:(NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect | NSTrackingMouseMoved| NSTrackingActiveAlways) owner:self userInfo:nil];
-        [self addTrackingArea:self->trackingArea ];
-        
-        drawingFrame.view = self;
-        auto presenter = new JsonDocPresenter(_editController);
-        drawingFrame.Init(presenter, _editController, CF_PANEL_VIEW);
-        presenter->RefreshView();
-        
-        timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
-    }
-    return self;
-#else
-    return nil;
-#endif
-}
+@implementation GMPI_VIEW_CLASS
 
 - (id) initWithClient: (class IMpUnknown*) _client preferredSize: (NSSize) size
 {
@@ -583,14 +393,6 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 
 -(void)onClose
 {
-/* don't seem nesc
-
-    if( trackingArea )
-    {
-        [self removeTrackingArea:trackingArea];
-        trackingArea = nil;
-    }
- */
     if( trackingArea )
     {
  //       _RPT0(0, "onClose. Removing trackingArea\n");
@@ -619,30 +421,6 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     };
     
     drawingFrame.onRender(self, &r);
-    
-#ifdef _DEBUG
-    {
-        // write colorspace to window in debug mode
-        auto window = [self window];
-        auto windowColorspace = [window colorSpace];
-        auto desc = [windowColorspace debugDescription];
-        
-        [desc drawAtPoint:CGPointMake(110,0) withAttributes:nil];
-        
-        const auto bpp = NSBitsPerSampleFromDepth( [window depthLimit] );
-        NSString *str = [@(bpp) stringValue];
-        
-        [str drawAtPoint:CGPointMake(0,0) withAttributes:nil];
-        
-        if([window canRepresentDisplayGamut:NSDisplayGamutP3])
-        {
-            [@"P3:YES" drawAtPoint:CGPointMake(320,0) withAttributes:nil];
-        }
-        else{
-            [@"P3:NO" drawAtPoint:CGPointMake(320,0) withAttributes:nil];
-        }
-    }
-#endif
  }
 
 //--------------------------------------------------------------------------------------------------------------
@@ -824,35 +602,15 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 // without including objective-C headers, we need to create an NSView from C++.
 // here is the function here to return the view, using void* as return type.
-void* createNativeView(class IGuiHost2* controller, int width, int height)
-{
-    NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
-    
-    return (void*) [[SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME alloc] initWithController:controller preferredSize:inPreferredSize];
-}
-
-// VST3 version
-void* createNativeView(void* parent, class IGuiHost2* controller, int width, int height)
-{
-    NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
-    NSView* native =
-    [[SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME alloc] initWithController:controller preferredSize:inPreferredSize];
-    
-    NSView* parentView = (NSView*) parent;
-    [parentView addSubview:native];
-    
-    return (void*) native;
-}
-
 void* createNativeView(class IMpUnknown* client, int width, int height)
 {
     NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
     
-    return (void*) [[SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME alloc] initWithClient:client preferredSize:inPreferredSize];
+    return (void*) [[GMPI_VIEW_CLASS alloc] initWithClient:client preferredSize:inPreferredSize];
 }
 
 void onCloseNativeView(void* ptr)
 {
-    auto view = (SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME*) ptr;
+    auto view = (GMPI_VIEW_CLASS*) ptr;
     [view onClose];
 }

@@ -1,39 +1,11 @@
+#pragma once
 #ifndef DrawingFrameCocoa_h
 #define DrawingFrameCocoa_h
-
-#pragma once
 
 #import <Cocoa/Cocoa.h>
 #include "mp_sdk_gui2.h"
 #include "CocoaGuiHost.h"
 #include "ContainerView.h"
-//#import <AudioUnit/AUCocoaUIView.h>
-//#include "../version.h"
-//#include "CocoaNamespaceMacros.h"
-
-/*
-//#ifndef SMTG_AU_NAMESPACE
-//# error define SMTG_AU_NAMESPACE
-#endif
-
-//-----------------------------------------------------------------------------
-#define SMTG_AU_PLUGIN_NAMESPACE0(x) x
-#define SMTG_AU_PLUGIN_NAMESPACE1(a, b) a##_##b
-#define SMTG_AU_PLUGIN_NAMESPACE2(a, b) SMTG_AU_PLUGIN_NAMESPACE1(a,b)
-#define SMTG_AU_PLUGIN_NAMESPACE(name) SMTG_AU_PLUGIN_NAMESPACE2(SMTG_AU_PLUGIN_NAMESPACE0(name), SMTG_AU_PLUGIN_NAMESPACE0(SMTG_AU_NAMESPACE))
-*/
-//-----------------------------------------------------------------------------
-// SMTG_AU_PLUGIN_NAMESPACE (SMTGAUPluginCocoaView)
-//-----------------------------------------------------------------------------
-
-
-//-----------------------------------------------------------------------------
-//@interface SYNTHEDIT_PLUGIN_COCOA_VIEW_CLASSNAME : NSObject <AUCocoaUIBase>
-//{
-//}
-
-//-----------------------------------------------------------------------------
-//@end
 
 class DrawingFrameCocoa : public gmpi_gui::IMpGraphicsHost, public gmpi::IMpUserInterfaceHost2, public GmpiGuiHosting::PlatformTextEntryObserver
 {
@@ -252,4 +224,4 @@ public:
     GMPI_REFCOUNT_NO_DELETE;
 };
 
-#endif /* SynthEditCocoaView_h */
+#endif

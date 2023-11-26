@@ -8,29 +8,30 @@
       <FILE id="uqvfih" name="gmpi_ui_demo_text.h" compile="0" resource="0"
             file="Source/gmpi_ui_demo_text.h"/>
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">
-        <FILE id="nJs2dx" name="Bezier.h" compile="0" resource="0" file="../../se_sdk3_hosting/Bezier.h"/>
-        <FILE id="DQ3YgT" name="CocoaGuiHost.h" compile="0" resource="0" file="../../se_sdk3_hosting/CocoaGuiHost.h"/>
-        <FILE id="iMR7JG" name="CocoaNamespaceMacros.h" compile="0" resource="0"
-              file="../../se_sdk3_hosting/CocoaNamespaceMacros.h"/>
+        <FILE id="M5RPR2" name="Bezier.h" compile="0" resource="0" file="../../backends/Bezier.h"/>
+        <FILE id="XTef8w" name="Cocoa_Gfx.h" compile="0" resource="0" file="../../backends/Cocoa_Gfx.h"/>
+        <FILE id="ym3Uol" name="CocoaGuiHost.h" compile="0" resource="0" file="../../backends/CocoaGuiHost.h"/>
         <FILE id="htX3dH" name="DirectXGfx.cpp" compile="1" resource="0" file="../../backends/DirectXGfx.cpp"/>
         <FILE id="PZPOBU" name="DirectXGfx.h" compile="0" resource="0" file="../../backends/DirectXGfx.h"/>
         <FILE id="hwIKpx" name="DrawingFrame_win32.cpp" compile="1" resource="0"
               file="../../backends/DrawingFrame_win32.cpp"/>
         <FILE id="JS1oqG" name="DrawingFrame_win32.h" compile="0" resource="0"
               file="../../backends/DrawingFrame_win32.h"/>
+        <FILE id="X02kLG" name="DrawingFrameCocoa.h" compile="0" resource="0"
+              file="../../backends/DrawingFrameCocoa.h"/>
+        <FILE id="Cn9u3h" name="DrawingFrameCocoa.mm" compile="1" resource="0"
+              file="../../backends/DrawingFrameCocoa.mm"/>
         <FILE id="q1A9xL" name="Gfx_base.h" compile="0" resource="0" file="../../backends/Gfx_base.h"/>
         <FILE id="DHaA3D" name="gmpi_gui_hosting.cpp" compile="1" resource="0"
               file="../../backends/gmpi_gui_hosting.cpp"/>
         <FILE id="C1edYE" name="gmpi_gui_hosting.h" compile="0" resource="0"
               file="../../backends/gmpi_gui_hosting.h"/>
+        <FILE id="LQAi1Y" name="GmpiCocoaView.mm" compile="1" resource="0"
+              file="../../backends/GmpiCocoaView.mm"/>
         <FILE id="pEnnMk" name="JuceGmpiComponent.cpp" compile="1" resource="0"
               file="../../helpers/JuceGmpiComponent.cpp"/>
         <FILE id="J3oRUi" name="JuceGmpiComponent.h" compile="0" resource="0"
               file="../../helpers/JuceGmpiComponent.h"/>
-        <FILE id="ggRuEq" name="SynthEditCocoaView.h" compile="0" resource="0"
-              file="../../se_sdk3_hosting/SynthEditCocoaView.h"/>
-        <FILE id="TBO8hU" name="SynthEditCocoaView.mm" compile="1" resource="0"
-              file="../../se_sdk3_hosting/SynthEditCocoaView.mm"/>
         <FILE id="VRqIdg" name="TimerManager.cpp" compile="1" resource="0"
               file="../../helpers/TimerManager.cpp"/>
         <FILE id="ZDfSqW" name="TimerManager.h" compile="0" resource="0" file="../../helpers/TimerManager.h"/>

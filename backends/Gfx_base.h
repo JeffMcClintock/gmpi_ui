@@ -3,14 +3,12 @@
 #include "Gfx_base.h"
 */
 
-#include "./gmpi_gui_hosting.h"
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include "../se_sdk3_hosting/Bezier.h"
+#include "./gmpi_gui_hosting.h"
+#include "Bezier.h"
 
 #pragma warning(disable : 4100)
-
-//using namespace se_sdk;
 
 namespace gmpi
 {

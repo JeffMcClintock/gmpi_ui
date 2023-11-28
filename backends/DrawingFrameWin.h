@@ -13,7 +13,6 @@ using namespace GmpiGuiHosting;
 #include <chrono>
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
-#include "./gmpi_gui_hosting.h"
 #include "helpers/TimerManager.h"
 #include "helpers/GraphicsRedrawClient.h"
 
@@ -24,6 +23,30 @@ namespace SynthEdit2
 
 namespace GmpiGuiHosting
 {
+	class UpdateRegionWinGdi
+	{
+		HRGN hRegion = 0;
+		std::string regionDataBuffer;
+		std::vector<gmpi::drawing::RectL> rects;
+		gmpi::drawing::RectL bounds;
+
+	public:
+		UpdateRegionWinGdi();
+		~UpdateRegionWinGdi();
+
+		void copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize);
+		void optimizeRects();
+
+		inline std::vector<gmpi::drawing::RectL>& getUpdateRects()
+		{
+			return rects;
+		}
+		inline gmpi::drawing::RectL& getBoundingRect()
+		{
+			return bounds;
+		}
+	};
+
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
 	class DrawingFrameBase :
 #ifdef GMPI_HOST_POINTER_SUPPORT

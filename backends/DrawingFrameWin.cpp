@@ -5,9 +5,8 @@
 #include <wrl.h> // Comptr
 #include <Windowsx.h>
 #include <commctrl.h>
-#include "./DrawingFrame_win32.h"
+#include "./DrawingFrameWin.h"
 #include "Drawing.h"
-//#include "../SE_DSP_CORE/IGuiHost2.h"
 
 using namespace std;
 using namespace gmpi;
@@ -18,6 +17,99 @@ using namespace D2D1;
 
 namespace GmpiGuiHosting
 {
+void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)
+{
+	rects.clear();
+
+	auto regionType = GetUpdateRgn(
+		window,
+		hRegion,
+		FALSE
+	);
+
+	assert(regionType != RGN_ERROR);
+
+	if (regionType != NULLREGION)
+	{
+		int size = GetRegionData(hRegion, 0, NULL); // query size of region data.
+		if (size)
+		{
+			regionDataBuffer.resize(size);
+			RGNDATA* pRegion = (RGNDATA*)regionDataBuffer.data();
+
+			GetRegionData(hRegion, size, pRegion);
+
+			// Overall bounding rect
+			{
+				auto& r = pRegion->rdh.rcBound;
+				bounds = { r.left, r.top, r.right, r.bottom };
+			}
+
+			const RECT* pRect = (const RECT*)&pRegion->Buffer;
+			for (unsigned i = 0; i < pRegion->rdh.nCount; i++)
+			{
+				gmpi::drawing::RectL r(pRect[i].left, pRect[i].top, pRect[i].right, pRect[i].bottom);
+
+				// Direct 2D will fail if any rect outside swapchain bitmap area.
+				const auto res = intersectRect(r, { 0, 0, swapChainSize.width, swapChainSize.height });
+
+				if (!empty(res))
+				{
+					rects.push_back(res);
+				}
+			}
+		}
+		optimizeRects();
+	}
+}
+
+void UpdateRegionWinGdi::optimizeRects()
+{
+	for (int i1 = 0; i1 < rects.size(); ++i1)
+	{
+		gmpi::drawing::RectL r1(rects[i1]);
+		auto area1 = getWidth(r1) * getHeight(r1);
+
+		for (int i2 = i1 + 1; i2 < rects.size(); )
+		{
+			gmpi::drawing::RectL r2(rects[i2]);
+			auto area2 = getWidth(r2) * getHeight(r2);
+
+			gmpi::drawing::RectL unionrect(rects[i1]);
+
+			unionrect.top = (std::min)(unionrect.top, rects[i2].top);
+			unionrect.bottom = (std::max)(unionrect.bottom, rects[i2].bottom);
+			unionrect.left = (std::min)(unionrect.left, rects[i2].left);
+			unionrect.right = (std::max)(unionrect.right, rects[i2].right);
+
+			auto unionarea = getWidth(unionrect) * getHeight(unionrect);
+
+			if (unionarea <= area1 + area2)
+			{
+				rects[i1] = unionrect;
+				area1 = unionarea;
+				rects.erase(rects.begin() + i2);
+			}
+			else
+			{
+				++i2;
+			}
+		}
+	}
+}
+
+UpdateRegionWinGdi::UpdateRegionWinGdi()
+{
+	hRegion = ::CreateRectRgn(0, 0, 0, 0);
+}
+
+UpdateRegionWinGdi::~UpdateRegionWinGdi()
+{
+	if (hRegion)
+		DeleteObject(hRegion);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
 
 LRESULT CALLBACK DrawingFrameWindowProc(
 	HWND hwnd,

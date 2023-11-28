@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
-#include "./CocoaGuiHost.h"
 #include "helpers/GraphicsRedrawClient.h"
 #include "GmpiSdkCommon.h"
+#import "CocoaGfx.h"
 
 namespace gmpi
 {

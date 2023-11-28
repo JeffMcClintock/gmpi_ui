@@ -10,20 +10,15 @@
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">
         <FILE id="M5RPR2" name="Bezier.h" compile="0" resource="0" file="../../backends/Bezier.h"/>
         <FILE id="yOlSmc" name="CocoaGfx.h" compile="0" resource="0" file="../../backends/CocoaGfx.h"/>
-        <FILE id="ym3Uol" name="CocoaGuiHost.h" compile="0" resource="0" file="../../backends/CocoaGuiHost.h"/>
         <FILE id="htX3dH" name="DirectXGfx.cpp" compile="1" resource="0" file="../../backends/DirectXGfx.cpp"/>
         <FILE id="PZPOBU" name="DirectXGfx.h" compile="0" resource="0" file="../../backends/DirectXGfx.h"/>
-        <FILE id="X02kLG" name="DrawingFrameCocoa.h" compile="0" resource="0"
-              file="../../backends/DrawingFrameCocoa.h"/>
-        <FILE id="Cn9u3h" name="DrawingFrameCocoa.mm" compile="1" resource="0"
-              file="../../backends/DrawingFrameCocoa.mm"/>
         <FILE id="ZuCbWF" name="DrawingFrameWin.cpp" compile="1" resource="0"
               file="../../backends/DrawingFrameWin.cpp"/>
         <FILE id="BilAou" name="DrawingFrameWin.h" compile="0" resource="0"
               file="../../backends/DrawingFrameWin.h"/>
         <FILE id="q1A9xL" name="Gfx_base.h" compile="0" resource="0" file="../../backends/Gfx_base.h"/>
-        <FILE id="LQAi1Y" name="GmpiCocoaView.mm" compile="1" resource="0"
-              file="../../backends/GmpiCocoaView.mm"/>
+        <FILE id="LQAi1Y" name="DrawingFrameMac.mm" compile="1" resource="0"
+              file="../../backends/DrawingFrameMac.mm"/>
         <FILE id="pEnnMk" name="JuceGmpiComponent.cpp" compile="1" resource="0"
               file="../../helpers/JuceGmpiComponent.cpp"/>
         <FILE id="J3oRUi" name="JuceGmpiComponent.h" compile="0" resource="0"

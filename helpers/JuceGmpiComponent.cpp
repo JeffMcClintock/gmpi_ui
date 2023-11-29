@@ -5,6 +5,8 @@
 
 #ifdef _WIN32
 #include "windowsx.h"
+// Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
+#include "backends/DrawingFrameWin.h"
 #endif
 
 using namespace gmpi;
@@ -116,9 +118,6 @@ public:
 
 
 #ifdef _WIN32
-
-// Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
-#include "backends/DrawingFrame_win32.h"
 
 class JuceDrawingFrameBase : public GmpiGuiHosting::DrawingFrameBase
 {

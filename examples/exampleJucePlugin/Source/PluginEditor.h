@@ -2,7 +2,7 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-#include "JuceGmpiComponent.h"
+#include "helpers/JuceGmpiComponent.h"
 
 class GmpiDrawingDemoComponent :
     public GmpiComponent

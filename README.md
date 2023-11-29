@@ -13,6 +13,7 @@ GMPI Drawing:
 * Has a permissive open-source license
 * An open standard. No fees, contracts or NDAs
 * Has cross-platform support (Windows and macOS)
+* No dependancies except for the standard OS features, and the standard C++ library
 * A clean and bloat-free API surface
 * Provides all APIs in both C++ and in pure portable 'C' for maximum compatibility
 * Uses the platforms native drawing (Cocoa / Direct-2D) to minimise overhead and build times.

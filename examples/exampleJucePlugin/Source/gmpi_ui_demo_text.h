@@ -29,13 +29,14 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 //		{"Light"     , gmpi::drawing::FontWeight::Thin , gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 		{"Italic"    , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Italic, gmpi::drawing::FontStretch::Normal},
 		{"Condensed" , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Condensed},
+		{"Gradient"  , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 	};
 
 
 	const float textheight = size.height / 12.0f;
 	const float margin = textheight / 2.0f;
 
-	gmpi::drawing::Rect textRect(margin, margin, margin, margin + textheight);
+    gmpi::drawing::Rect textRect{margin, margin, margin, margin + textheight};
 
 	auto brush = g.createSolidColorBrush(gmpi::drawing::Colors::WhiteSmoke);
 
@@ -48,14 +49,33 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		const auto textSize = font.getTextExtentU(option.name);
 		textRect.right = textRect.left + textSize.width + 1;
 
-		g.drawTextU(option.name, font, textRect, brush);
+		if("Gradient" == option.name)
+		{
+			gmpi::drawing::Point grad1{ 0.f, textRect.top };
+			gmpi::drawing::Point grad2{ 0.f, textRect.bottom };
 
-		textRect = offsetRect(textRect, { margin + getWidth(textRect), 0 });
+			gmpi::drawing::Gradientstop gradientStops[] = {
+				{ 0.0f, gmpi::drawing::Colors::Violet},
+				{ 1.0f, gmpi::drawing::Colors::MediumPurple}
+			};
+
+			auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
+			gmpi::drawing::LinearGradientBrushProperties lgbp1{ grad1, grad2 };
+			auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollection);
+
+			g.drawTextU(option.name, font, textRect, gradientBrush);
+		}
+		else
+		{
+			g.drawTextU(option.name, font, textRect, brush);
+		}
+
+		textRect = offsetRect(textRect, { 0.5f * margin + getWidth(textRect), 0 });
 	}
 
 	// draw a paragraph of text
 	{
-		const auto text = "One spring morning at four o'clock the first cuckoo arrived in the valley of the Moomins. He perched on the blue roof of Momin house and cuckooed 8 times - rather hoarsely to be sure, for it was still a bit early in the spring.\n   Then he flew away to the east.\n   Moomintroll woke up and lay a long time looking at the ceiling before he realised where he was. He had slept a hundred nights and a hundred days, and his dreams still thronged about his head trying to coax him back to sleep.";
+		const auto text = "One spring morning at four o'clock the first cuckoo arrived in the valley of the Moomins. He perched on the blue roof of Moomin house and cuckooed 8 times - rather hoarsely to be sure, for it was still a bit early in the spring.\n   Then he flew away to the east.\n   Moomintroll woke up and lay a long time looking at the ceiling before he realised where he was. He had slept a hundred nights and a hundred days, and his dreams still thronged about his head trying to coax him back to sleep.";
 
 		auto font = g.getFactory().createTextFormat2(14);
 
@@ -96,7 +116,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		const float boxHeight = 28.0f;
 		auto font = g.getFactory().createTextFormat2(14);
 
-		gmpi::drawing::Rect alignmentRect(textRect.left, textRect.top, textRect.right, textRect.top + boxHeight);
+        gmpi::drawing::Rect alignmentRect{textRect.left, textRect.top, textRect.right, textRect.top + boxHeight};
 		auto boxBrush = g.createSolidColorBrush(gmpi::drawing::Colors::Blue);
 
 		for (auto& box : alignments)

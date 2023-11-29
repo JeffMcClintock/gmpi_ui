@@ -2,17 +2,67 @@
 
 #include <sstream>
 #include "./DirectXGfx.h"
-#include "../shared/xplatform.h"
-#include "../shared/xp_simd.h"
-#include "../shared/fast_gamma.h"
-#include "../shared/unicode_conversion.h"
 #include "d2d1helper.h"
 
 namespace gmpi
 {
 	namespace directx
 	{
-		std::wstring_convert<std::codecvt_utf8<wchar_t>> Factory::stringConverter;
+		inline std::wstring Utf8ToWstring(std::string_view str)
+		{
+			std::wstring res;
+			const size_t size = MultiByteToWideChar(
+				CP_UTF8,
+				0,
+				str.data(),
+				static_cast<int>(str.size()),
+				0,
+				0
+			);
+
+			res.resize(size);
+
+			MultiByteToWideChar(
+				CP_UTF8,
+				0,
+				str.data(),
+				static_cast<int>(str.size()),
+				const_cast<LPWSTR>(res.data()),
+				static_cast<int>(size)
+			);
+
+			return res;
+		};
+		inline std::string WStringToUtf8(const std::wstring& p_cstring)
+		{
+			std::string res;
+
+			const size_t size = WideCharToMultiByte(
+				CP_UTF8,
+				0,
+				p_cstring.data(),
+				static_cast<int>(p_cstring.size()),
+				0,
+				0,
+				NULL,
+				NULL
+			);
+
+			res.resize(size);
+
+			WideCharToMultiByte(
+				CP_UTF8,
+				0,
+				p_cstring.data(),
+				static_cast<int>(p_cstring.size()),
+				const_cast<LPSTR>(res.data()),
+				static_cast<int>(size),
+				NULL,
+				NULL
+			);
+
+			return res;
+		}
 
 		gmpi::ReturnCode Geometry::open(drawing::api::IGeometrySink** returnGeometrySink)
 		{
@@ -93,7 +143,7 @@ namespace gmpi
 
 		gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
 		{
-			const auto widestring = JmUnicodeConversions::Utf8ToWstring(utf8String, stringLength);
+			const auto widestring = Utf8ToWstring({ utf8String, static_cast<size_t>(stringLength) });
 
 			IDWriteFactory* writeFactory = 0;
 			auto hr = DWriteCreateFactory(
@@ -214,7 +264,7 @@ namespace gmpi
 						wchar_t name[64];
 						names->GetString(nameIndex, name, sizeof(name) / sizeof(name[0]));
 
-						supportedFontFamilies.push_back(stringConverter.to_bytes(name));
+						supportedFontFamilies.push_back(WStringToUtf8(name));
 
 						std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
 						supportedFontFamiliesLowerCase.push_back(name);
@@ -269,13 +319,6 @@ namespace gmpi
 				b2.Attach(new gmpi::directx::Geometry(d2d_geometry));
 
 				b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
-
-#ifdef LOG_DIRECTX_CALLS
-				_RPT1(_CRT_WARN, "ID2D1PathGeometry* geometry%x = nullptr;\n", (int)*pathGeometry);
-				_RPT0(_CRT_WARN, "{\n");
-				_RPT1(_CRT_WARN, "factory->CreatePathGeometry(&geometry%x);\n", (int)*pathGeometry);
-				_RPT0(_CRT_WARN, "}\n");
-#endif
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
@@ -285,8 +328,7 @@ namespace gmpi
 		{
 			*textFormat = nullptr;
 
-			//auto fontFamilyNameW = stringConverter.from_bytes(fontFamilyName);
-			auto fontFamilyNameW = JmUnicodeConversions::Utf8ToWstring(fontFamilyName);
+			auto fontFamilyNameW = Utf8ToWstring(fontFamilyName);
 			std::wstring lowercaseName(fontFamilyNameW);
 			std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
 
@@ -311,17 +353,9 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new gmpi::directx::TextFormat(&stringConverter, dwTextFormat));
+				b2.Attach(new gmpi::directx::TextFormat(/*&stringConverter,*/ dwTextFormat));
 
 				b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
-
-//				_RPT2(_CRT_WARN, "factory.CreateTextFormat() -> %x %S\n", (int)dwTextFormat, fontFamilyNameW.c_str());
-#ifdef LOG_DIRECTX_CALLS
-//				_RPT4(_CRT_WARN, "auto c = D2D1::ColorF(%.3f, %.3f, %.3f, %.3f);\n", color->r, color->g, color->b, color->a);
-				_RPT1(_CRT_WARN, "IDWriteTextFormat* textformat%x = nullptr;\n", (int)*TextFormat);
-				_RPT4(_CRT_WARN, "writeFactory->CreateTextFormat(L\"%S\",NULL, (DWRITE_FONT_WEIGHT)%d, (DWRITE_FONT_STYLE)%d, DWRITE_FONT_STRETCH_NORMAL, %f, L\"\",", fontFamilyNameW.c_str(), fontWeight, fontStyle, fontSize);
-				_RPT1(_CRT_WARN, "&textformat%x);\n", (int)*TextFormat);
-#endif
 			}
 
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
@@ -575,7 +609,7 @@ If so that'd be far more efficient so do that.)
 			else
 #endif
 			{
-				const auto uriW = JmUnicodeConversions::Utf8ToWstring(uri);
+				const auto uriW = Utf8ToWstring(uri);
 
 				// To load a bitmap from a file, first use WIC objects to load the image and to convert it to a Direct2D-compatible format.
 				hr = pIWICFactory->CreateDecoderFromFilename(
@@ -669,7 +703,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 
 		gmpi::ReturnCode GraphicsContext_base::drawTextU(const char* utf8String, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options)
 		{
-			const auto widestring = JmUnicodeConversions::Utf8ToWstring(utf8String, stringLength);
+			const auto widestring = Utf8ToWstring({ utf8String, static_cast<size_t>(stringLength) });
 			
 			auto DxTextFormat = reinterpret_cast<const TextFormat*>(textFormat);
 			auto b = ((Brush*)brush)->native();
@@ -694,33 +728,6 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 
 			context_->DrawText(widestring.data(), (UINT32)widestring.size(), tf, reinterpret_cast<const D2D1_RECT_F*>(&adjusted), b, (D2D1_DRAW_TEXT_OPTIONS)options | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
 
-#ifdef LOG_DIRECTX_CALLS
-			{
-				std::wstring widestring2 = widestring;
-				replacein( widestring2, L"\n", L"\\n");
-				_RPT0(_CRT_WARN, "{\n");
-				_RPT4(_CRT_WARN, "auto r = D2D1::RectF(%.3f, %.3f, %.3f, %.3ff);\n", layoutRect->left, layoutRect->top, layoutRect->right, layoutRect->bottom);
-				_RPT4(_CRT_WARN, "context_->DrawTextW(L\"%S\", %d, textformat%x, &r, brush%x,", widestring2.c_str(), (int)widestring.size(), (int)textFormat, (int) brush);
-				_RPT1(_CRT_WARN, " (D2D1_DRAW_TEXT_OPTIONS) %d);\n}\n", flags);
-			}
-#endif
-/*
-
-#if 0
-			{
-				gmpi::drawing::api::MP1_FONT_METRICS fontMetrics;
-				((gmpi::drawing::api::ITextFormat*)textFormat)->GetFontMetrics(&fontMetrics);
-
-				float predictedBaseLine = layoutRect->top + fontMetrics.ascent;
-				const float scale = 0.5f;
-				predictedBaseLine = floorf(-0.5 + predictedBaseLine / scale) * scale;
-
-				Graphics g(this);
-				auto brush = g.CreateSolidColorBrush(Color::Lime);
-				g.DrawLine(Point(layoutRect->left, predictedBaseLine + 0.25f), Point(layoutRect->left + 2, predictedBaseLine + 0.25f), brush, 0.5);
-			}
-#endif
-*/
 			return gmpi::ReturnCode::Ok;
 		}
 
@@ -900,12 +907,12 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 							float originalPixel = p * overAlphaNorm; // un-premultiply.
 
 							// To linear
-							auto cf = se_sdk::FastGamma::sRGB_to_float(static_cast<unsigned char>(FastRealToIntTruncateTowardZero(originalPixel + 0.5f)));
+							auto cf = gmpi::drawing::SRGBPixelToLinear(static_cast<unsigned char>(originalPixel + 0.5f));
 
 							cf *= AlphaNorm;						// pre-multiply (correctly).
 
 							// back to SRGB
-							sourcePixels[j] = se_sdk::FastGamma::float_to_sRGB(cf);
+							sourcePixels[j] = gmpi::drawing::linearPixelToSRGB(cf);
 						}
 					}
 				}
@@ -1006,13 +1013,6 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 
 		gmpi::ReturnCode GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect)
 		{
-#ifdef LOG_DIRECTX_CALLS
-			_RPT0(_CRT_WARN, "{\n");
-			_RPT0(_CRT_WARN, "D2D1_MATRIX_3X2_F t;\n");
-			_RPT0(_CRT_WARN, "context_->GetTransform(&t);\n");
-			_RPT0(_CRT_WARN, "}\n");
-#endif
-
 			// Transform to original position.
 			drawing::Matrix3x2 currentTransform;
 			context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));

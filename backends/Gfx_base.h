@@ -1,16 +1,10 @@
 #pragma once
-/*
-#include "Gfx_base.h"
-*/
 
-#include "./gmpi_gui_hosting.h"
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include "../se_sdk3_hosting/Bezier.h"
+#include "Bezier.h"
 
 #pragma warning(disable : 4100)
-
-using namespace se_sdk;
 
 namespace gmpi
 {
@@ -288,8 +282,6 @@ public:
 		r.top = r.left = -defaultClipBounds;
 		r.bottom = r.right = defaultClipBounds;
 		clipRectStack.push_back(r);
-
-		//				stringConverter = &(mFactory.stringConverter);
 	}
 
 	virtual ~GraphicsContext()
@@ -446,14 +438,12 @@ public:
 
 	//	gmpi::ReturnCode createBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap) override;
 
-	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
-		//				return context_->createBitmapBrush((ID2D1Bitmap*)bitmap, (D2D1_BITMAP_BRUSH_PROPERTIES*)bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)bitmapBrush);
 		return ReturnCode::Fail;
 	}
 	ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
 	{
-		//				return context_->createRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)radialGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1GradientStopCollection*)gradientStopCollection, (ID2D1RadialGradientBrush**)radialGradientBrush);
 		return ReturnCode::Fail;
 	}
 
@@ -483,7 +473,6 @@ public:
 
 	ReturnCode popAxisAlignedClip() override
 	{
-		//				context_->PopAxisAlignedClip();
 		clipRectStack.pop_back();
 		return ReturnCode::Ok;
 	}

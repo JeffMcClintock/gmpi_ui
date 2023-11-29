@@ -20,7 +20,7 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include <codecvt>
+//#include <codecvt>
 #include <map>
 #include <d2d1_2.h>
 #include <dwrite.h>
@@ -29,9 +29,7 @@
 #include "../Drawing.h"
 #include "RefCountMacros.h"
 
-// MODIFICATION FOR GMPI_UI !!!
-
-// #define LOG_DIRECTX_CALLS
+#pragma warning(disable : 4996) // "codecvt deprecated in C++17"
 
 namespace gmpi
 {
@@ -55,7 +53,6 @@ protected:
         if (native_)
         {
             native_->Release();
-//					_RPT1(_CRT_WARN, "Release() -> %x\n", (int)native_);
         }
     }
 
@@ -87,53 +84,9 @@ public:
     }
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>
 {
-    std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter = {}; // constructed once is much faster.
+//    std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter = {}; // constructed once is much faster.
     bool useLegacyBaseLineSnapping = true;
     float topAdjustment = {};
     float fontMetrics_ascent = {};
@@ -153,19 +106,12 @@ class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWrite
     }
 
 public:
-    TextFormat(std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter, IDWriteTextFormat* native) :
+    TextFormat(/*std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter,*/ IDWriteTextFormat* native) :
         GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>(native)
-        , stringConverter(pstringConverter)
+//        , stringConverter(pstringConverter)
     {
         CalculateTopAdjustment();
     }
-#ifdef LOG_DIRECTX_CALLS
-    ~TextFormat()
-    {
-        _RPT1(_CRT_WARN, "textformat%x->Release();\n", (int)this);
-        _RPT1(_CRT_WARN, "textformat%x = nullptr;\n", (int)this);
-    }
-#endif
 
     ReturnCode setTextAlignment(drawing::TextAlignment textAlignment) override
     {
@@ -471,7 +417,6 @@ public:
         drawing::api::IFactory* factory,
         ID2D1DeviceContext* context,
         const drawing::api::IBitmap* bitmap,
-        const drawing::BitmapBrushProperties* bitmapBrushProperties,
         const drawing::BrushProperties* brushProperties
     )
         : factory_(factory)
@@ -479,7 +424,14 @@ public:
         auto bm = ((Bitmap*)bitmap);
         auto nativeBitmap = bm->getNativeBitmap(context);
 
-        [[maybe_unused]] const auto hr = context->CreateBitmapBrush(nativeBitmap, (D2D1_BITMAP_BRUSH_PROPERTIES*)bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)&native_);
+        // not supported on macOS, so hardcode them.
+        D2D1_BITMAP_BRUSH_PROPERTIES bitmapBrushProperties{
+            D2D1_EXTEND_MODE_WRAP,
+            D2D1_EXTEND_MODE_WRAP,
+            D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+        };
+
+        [[maybe_unused]] const auto hr = context->CreateBitmapBrush(nativeBitmap, &bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)&native_);
         assert(hr == 0);
     }
 
@@ -487,24 +439,6 @@ public:
     {
         if (native_)
             native_->Release();
-    }
-
-    ReturnCode setExtendModeX(drawing::ExtendMode extendModeX) override
-    {
-        native_->SetExtendModeX((D2D1_EXTEND_MODE)extendModeX);
-        return ReturnCode::Ok;
-    }
-
-    ReturnCode setExtendModeY(drawing::ExtendMode extendModeY) override
-    {
-        native_->SetExtendModeY((D2D1_EXTEND_MODE)extendModeY);
-        return ReturnCode::Ok;
-    }
-
-    ReturnCode setInterpolationMode(drawing::BitmapInterpolationMode bitmapInterpolationMode) override
-    {
-        native_->SetInterpolationMode((D2D1_BITMAP_INTERPOLATION_MODE)bitmapInterpolationMode);
-        return ReturnCode::Ok;
     }
 
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -553,17 +487,7 @@ public:
         native()->SetColor((D2D1::ColorF*) color);
         return ReturnCode::Ok;
     }
-    //ReturnCode drawing::Color GetColor() override
-    //{
-    //	const auto b = native()->GetColor();
-    //	return 
-    //	{
-    //		b.a,
-    //		b.r,
-    //		b.g,
-    //		b.b
-    //	};
-    //}
+
     // IResource
     ReturnCode getFactory(drawing::api::IFactory** factory) override
     {
@@ -586,6 +510,12 @@ public:
     GMPI_REFCOUNT;
 };
 
+// Windows7 has less support for sRGB
+inline drawing::Color colorWithoutGammaAdjustment(drawing::Color)
+{
+	return drawing::Color(0, 0, 0, 0);
+}
+
 class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
 {
     ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
@@ -594,14 +524,15 @@ class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
 public:
     SolidColorBrush_Win7(ID2D1RenderTarget* context, const drawing::Color* color, drawing::api::IFactory* factory) : factory_(factory)
     {
+        constexpr float c = 1.0f / 255.0f;
+
         const drawing::Color modified
         {
-            se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->r)),
-            se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->g)),
-            se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->b)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(color->r)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(color->g)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(color->b)),
             color->a
         };
-//				modified = drawing::Color::Orange;
 
         /*HRESULT hr =*/ context->CreateSolidColorBrush(*(D2D1_COLOR_F*)&modified, (ID2D1SolidColorBrush**) &native_);
     }
@@ -620,29 +551,19 @@ public:
     // IMPORTANT: Virtual functions must 100% match simulated interface (drawing::api::ISolidColorBrush)
     ReturnCode setColor(const drawing::Color* color) override
     {
-        //				D2D1::ConvertColorSpace(D2D1::ColorF*) color);
-        drawing::Color modified
+        constexpr float c = 1.0f / 255.0f;
+
+        const drawing::Color modified
         {
-            se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->r)),
-            se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->g)),
-            se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color->b)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(color->r)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(color->g)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(color->b)),
             color->a
         };
+
         nativeSolidColorBrush()->SetColor((D2D1::ColorF*) &modified);
         return ReturnCode::Ok;
     }
-
-    //virtual drawing::Color GetColor()override
-    //{
-    //	auto b = nativeSolidColorBrush()->GetColor();
-    //	//		return drawing::Color(b.r, b.g, b.b, b.a);
-    //	drawing::Color c;
-    //	c.a = b.a;
-    //	c.r = b.r;
-    //	c.g = b.g;
-    //	c.b = b.b;
-    //	return c;
-    //}
 
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
@@ -818,11 +739,6 @@ public:
         if (geometrysink_)
         {
             geometrysink_->Release();
-
-#ifdef LOG_DIRECTX_CALLS
-            _RPT1(_CRT_WARN, "sink%x->Release();\n", (int)this);
-            _RPT1(_CRT_WARN, "sink%x = nullptr;\n", (int)this);
-#endif
         }
     }
     void beginFigure(drawing::Point startPoint, drawing::FigureBegin figureBegin) override
@@ -900,10 +816,6 @@ public:
         if (geometry_)
         {
             geometry_->Release();
-#ifdef LOG_DIRECTX_CALLS
-            _RPT1(_CRT_WARN, "geometry%x->Release();\n", (int)this);
-            _RPT1(_CRT_WARN, "geometry%x = nullptr;\n", (int)this);
-#endif
         }
     }
 
@@ -959,7 +871,7 @@ class Factory : public drawing::api::IFactory
     bool DX_support_sRGB = true;
 
 public:
-    static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
+//    static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
 
     // for diagnostics only.
     auto getDirectWriteFactory()
@@ -1038,11 +950,11 @@ protected:
 
     Factory* factory;
     std::vector<drawing::Rect> clipRectStack;
-    std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
+//    std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
 
     void Init()
     {
-        stringConverter = &(factory->stringConverter);
+//        stringConverter = &(factory->stringConverter);
     }
 
     GraphicsContext_base(ID2D1DeviceContext* deviceContext, Factory* pfactory) :
@@ -1123,9 +1035,6 @@ public:
 
     ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
     {
-#ifdef LOG_DIRECTX_CALLS
-        _RPT3(_CRT_WARN, "context_->FillGeometry(geometry%x, brush%x, nullptr);\n", (int)geometry, (int)brush);
-#endif
         auto d2d_geometry = ((Geometry*)pathGeometry)->native();
 
         ID2D1Brush* opacityBrushNative{};
@@ -1190,11 +1099,11 @@ public:
             returnLinearGradientBrush);
     }
 
-    ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BitmapBrushProperties* bitmapBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+    ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, /*const drawing::BitmapBrushProperties* bitmapBrushProperties, */const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
     {
         *returnBitmapBrush = nullptr;
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-        b2.Attach(new BitmapBrush(factory, context_, bitmap, bitmapBrushProperties, brushProperties));
+        b2.Attach(new BitmapBrush(factory, context_, bitmap, /*bitmapBrushProperties, */brushProperties));
         return b2->queryInterface(&drawing::api::IBitmapBrush::guid, reinterpret_cast<void **>(returnBitmapBrush));
     }
     ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
@@ -1211,10 +1120,6 @@ public:
 
     ReturnCode popAxisAlignedClip() override
     {
-//				_RPT0(_CRT_WARN, "                 PopAxisAlignedClip()\n");
-#ifdef LOG_DIRECTX_CALLS
-        _RPT0(_CRT_WARN, "context_->PopAxisAlignedClip();\n");
-#endif
         context_->PopAxisAlignedClip();
         clipRectStack.pop_back();
         return ReturnCode::Ok;
@@ -1328,9 +1233,14 @@ public:
             auto& dest = stops[i];
             dest.position = srce.position;
             dest.color.a = srce.color.a;
-            dest.color.r = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.r));
-            dest.color.g = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.g));
-            dest.color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.b));
+            //dest.color.r = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.r));
+            //dest.color.g = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.g));
+            //dest.color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.b));
+
+            constexpr float c = 1.0f / 255.0f;
+            dest.color.r = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.r));
+            dest.color.g = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.g));
+            dest.color.b = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.b));
         }
 
         return GraphicsContext_base::createGradientstopCollection(stops.data(), gradientstopsCount, extendMode, returnGradientstopCollection);
@@ -1338,11 +1248,17 @@ public:
 
     ReturnCode clear(const drawing::Color* clearColor) override
     {
-        drawing::Color color(*clearColor);
-        color.r = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.r));
-        color.g = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.g));
-        color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.b));
-        context_->Clear((D2D1_COLOR_F*)&color);
+        constexpr float c = 1.0f / 255.0f;
+
+        const drawing::Color modified
+        {
+            c * static_cast<float>(drawing::linearPixelToSRGB(clearColor->r)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(clearColor->g)),
+            c * static_cast<float>(drawing::linearPixelToSRGB(clearColor->b)),
+            clearColor->a
+        };
+
+        context_->Clear((D2D1_COLOR_F*)&modified);
 
         return ReturnCode::Ok;
     }

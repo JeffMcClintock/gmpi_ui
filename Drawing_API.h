@@ -281,12 +281,12 @@ struct BrushProperties
     Matrix3x2 transform;
 };
 
-struct BitmapBrushProperties
-{
-    ExtendMode extendModeX;
-    ExtendMode extendModeY;
-    BitmapInterpolationMode interpolationMode;
-};
+//struct BitmapBrushProperties
+//{
+//    ExtendMode extendModeX;
+//    ExtendMode extendModeY;
+//    BitmapInterpolationMode interpolationMode;
+//};
 
 struct LinearGradientBrushProperties
 {
@@ -456,9 +456,9 @@ struct DECLSPEC_NOVTABLE IBrush : public IResource
 // INTERFACE 'IBitmapBrush'
 struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
 {
-    virtual gmpi::ReturnCode setExtendModeX(ExtendMode extendModeX) = 0;
-    virtual gmpi::ReturnCode setExtendModeY(ExtendMode extendModeY) = 0;
-    virtual gmpi::ReturnCode setInterpolationMode(BitmapInterpolationMode bitmapInterpolationMode) = 0;
+    //virtual gmpi::ReturnCode setExtendModeX(ExtendMode extendModeX) = 0;
+    //virtual gmpi::ReturnCode setExtendModeY(ExtendMode extendModeY) = 0;
+    //virtual gmpi::ReturnCode setInterpolationMode(BitmapInterpolationMode bitmapInterpolationMode) = 0;
 
     // {10E6068D-75D7-4C36-89AD-1C8878E70988}
     inline static const gmpi::api::Guid guid =
@@ -585,7 +585,7 @@ struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
 // INTERFACE 'IDeviceContext'
 struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
 {
-    virtual gmpi::ReturnCode createBitmapBrush(IBitmap* bitmap, const BitmapBrushProperties* bitmapBrushProperties, const BrushProperties* brushProperties, IBitmapBrush** returnBitmapBrush) = 0;
+    virtual gmpi::ReturnCode createBitmapBrush(IBitmap* bitmap, /*const BitmapBrushProperties* bitmapBrushProperties,*/ const BrushProperties* brushProperties, IBitmapBrush** returnBitmapBrush) = 0;
     virtual gmpi::ReturnCode createSolidColorBrush(const Color* color, const BrushProperties* brushProperties, ISolidColorBrush** returnSolidColorBrush) = 0;
     virtual gmpi::ReturnCode createGradientstopCollection(const Gradientstop* gradientstops, uint32_t gradientstopsCount, ExtendMode extendMode, IGradientstopCollection** returnGradientstopCollection) = 0;
     virtual gmpi::ReturnCode createLinearGradientBrush(const LinearGradientBrushProperties* linearGradientBrushProperties, const BrushProperties* brushProperties, IGradientstopCollection* gradientstopCollection, ILinearGradientBrush** returnLinearGradientBrush) = 0;

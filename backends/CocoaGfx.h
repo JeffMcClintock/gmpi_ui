@@ -1012,11 +1012,10 @@ public:
 
 class BitmapBrush final : public drawing::api::IBitmapBrush, public CocoaBrushBase
 {
+public:
     Bitmap bitmap_;
-//    drawing::BitmapBrushProperties bitmapBrushProperties_;
     drawing::BrushProperties brushProperties_;
 
-public:
     BitmapBrush(
         cocoa::DrawingFactory* factory,
         const drawing::api::IBitmap* bitmap,
@@ -1702,10 +1701,7 @@ public:
         auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
         if (!cocoabrush)
             return ReturnCode::Fail;
-        
-        auto scb = dynamic_cast<const SolidColorBrush*>(brush);
-        auto lgb = dynamic_cast<const Gradient*>(brush);
-        
+                
 		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
 
 		drawing::Size textSize{};
@@ -1736,15 +1732,6 @@ public:
 		}
 
 		NSString* str = [NSString stringWithCString : string encoding : NSUTF8StringEncoding];
-
-        if(scb)
-        {
-            [textformat->native2 setObject : scb->nativeColor() forKey : NSForegroundColorAttributeName];
-        }
-        else
-        {
-            [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
-        }
 
 		const bool clipToRect = options & drawing::DrawTextOptions::Clip;
 
@@ -1858,9 +1845,11 @@ public:
 		// do last so don't affect font metrics.
 //              [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:testLineHeightMultiplier];
 //               textformat->native2[NSBaselineOffsetAttributeName] = [NSNumber numberWithFloat:shiftUp];
-
-        if(lgb)
+#if 0
+        if(auto lgb = dynamic_cast<const Gradient*>(brush); lgb)
         {
+            [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
+
             // Create a grayscale context for the mask
             CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
             CGContextRef maskContext =
@@ -1904,6 +1893,11 @@ public:
         }
         else
         {
+#endif
+            if(auto scb = dynamic_cast<const SolidColorBrush*>(brush) ; scb)
+            {
+                [textformat->native2 setObject : scb->nativeColor() forKey : NSForegroundColorAttributeName];
+                
 #if USE_BACKING_BUFFER
                 // Create a flipped coordinate system
                 [[NSGraphicsContext currentContext] saveGraphicsState];
@@ -1919,9 +1913,114 @@ public:
                 // Restore the original graphics state
                 [[NSGraphicsContext currentContext] restoreGraphicsState];
 #else
-        [str drawInRect : bounds withAttributes : textformat->native2];
+                [str drawInRect : bounds withAttributes : textformat->native2];
 #endif
-        }
+                
+            }
+            else // if(auto bmb = dynamic_cast<const BitmapBrush*>(brush) ; bmb)
+            {
+                auto lgb = dynamic_cast<const Gradient*>(brush);
+                auto bmb = dynamic_cast<const BitmapBrush*>(brush);
+                
+                if( lgb || bmb)
+                {
+                    [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
+                    
+                    NSSize logicalsize = bounds.size;
+                    NSSize pysicalsize = [view_ convertRectToBacking:bounds].size;
+                    
+                    // Create a grayscale context for the mask
+                    CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
+                    CGContextRef maskContext =
+                    CGBitmapContextCreate(
+                                          NULL,
+                                          pysicalsize.width,
+                                          pysicalsize.height,
+                                          8,
+                                          pysicalsize.width,
+                                          colorspace,
+                                          0);
+                    CGColorSpaceRelease(colorspace);
+                    
+                    // Switch to the context for drawing
+                    NSGraphicsContext *maskGraphicsContext =
+                    [NSGraphicsContext
+                     graphicsContextWithGraphicsPort:maskContext
+                     flipped:YES];
+                    [NSGraphicsContext saveGraphicsState];
+                    [NSGraphicsContext setCurrentContext:maskGraphicsContext];
+                    
+                    if(pysicalsize.width != logicalsize.width)
+                    {
+                        auto scale = pysicalsize.width / logicalsize.width;
+                        NSAffineTransform *transform = [NSAffineTransform transform];
+                        [transform scaleXBy:scale yBy:scale];
+                        [transform concat];
+                    }
+                    
+                    [str drawInRect: NSMakeRect(0, 0, bounds.size.width, bounds.size.height) withAttributes : textformat->native2];
+                    
+                    // Switch back to the window's context
+                    [NSGraphicsContext restoreGraphicsState];
+                    
+                    // Create an image mask from what we've drawn so far
+                    CGImageRef alphaMask = CGBitmapContextCreateImage(maskContext);
+                    
+                    CGContextRef windowContext = (CGContextRef) [[NSGraphicsContext currentContext] graphicsPort];
+                    
+                    // Draw the fill, clipped by the mask
+                    CGContextSaveGState(windowContext);
+                    
+                    CGContextClipToMask(windowContext, NSRectToCGRect(bounds), alphaMask);
+                    
+                    if(bmb)
+                    {
+                        NSBezierPath* rectPath = [NSBezierPath bezierPathWithRect : bounds];
+                        bmb->fillPath(this, rectPath);
+                    }
+                    else if(lgb)
+                    {
+                        lgb->drawGradient();
+                    }
+                    
+                    CGContextRestoreGState(windowContext);
+                    CGImageRelease(alphaMask);
+#if 0
+                    
+                    [NSGraphicsContext saveGraphicsState];
+                    
+                    auto view = /*context->*/ getNativeView();
+                    
+#if USE_BACKING_BUFFER
+                    drawing::SizeU bitmapSize{};
+                    const_cast<Bitmap&>(bmb->bitmap_).getSizeU(&bitmapSize);
+                    // Adjust offset to be relative to the top (Windows) not bottom (mac)
+                    CGFloat yOffset = view.bounds.size.height - bitmapSize.height;
+#else
+                    // convert to Core Grapics co-ords
+                    CGFloat yOffset = NSMaxY([view convertRect:view.bounds toView:nil]);
+#endif
+                    gmpi::drawing::Matrix3x2 moduleTransform;
+                    /*context->*/getTransform(&moduleTransform);
+                    auto offset = gmpi::drawing::transformPoint(moduleTransform, {0.0f, 0.0f});
+                    // apply brushes transfer. we support only translation on mac
+                    offset = gmpi::drawing::transformPoint(bmb->brushProperties_.transform, offset);
+                    
+                    // also need to apply current drawing transform for modules not at [0,0]
+                    
+                    [[NSGraphicsContext currentContext] setPatternPhase:NSMakePoint(offset.x, yOffset - offset.y)];
+                    [[NSColor colorWithPatternImage:bmb->bitmap_.nativeBitmap_] set];
+                    //                [nsPath fill];
+                    
+                    //               [NSGraphicsContext restoreGraphicsState];
+                    extraRestoreState = true;
+#endif
+                }
+            }
+            
+
+            
+//        }
 		//               [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:1.0f];
 
 #if 0

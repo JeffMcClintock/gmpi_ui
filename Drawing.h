@@ -40,7 +40,6 @@ using namespace gmpi::drawing;
 #include <unordered_map>
 #include <algorithm>
 #include "GmpiSdkCommon.h"
-//#include "./shared/fast_gamma.h"
 
 namespace gmpi
 {
@@ -1160,7 +1159,7 @@ public:
 	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
 	{
 		GradientstopCollection temp;
-		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, temp.put());
+		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop*) gradientStops, gradientStopsCount, temp.put());
 		return temp;
 	}
 
@@ -1172,11 +1171,11 @@ public:
 	}
 
 	// Pass POD array, infer size.
-	template <int N>
-	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop(&gradientStops)[N])
+	template <size_t N>
+	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop const (&gradientStops)[N])
 	{
 		GradientstopCollection temp;
-		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop *) &gradientStops, N, gmpi::drawing::ExtendMode::Clamp, temp.put());
+		Resource<BASE_INTERFACE>::get()->createGradientstopCollection((gmpi::drawing::Gradientstop*) &gradientStops, N, gmpi::drawing::ExtendMode::Clamp, temp.put());
 		return temp;
 	}
 

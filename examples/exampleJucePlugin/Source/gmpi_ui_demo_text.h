@@ -26,10 +26,9 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 	{
 		{"Regular"   , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 		{"Bold"      , gmpi::drawing::FontWeight::Bold  , gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
-//		{"Light"     , gmpi::drawing::FontWeight::Thin , gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 		{"Italic"    , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Italic, gmpi::drawing::FontStretch::Normal},
 		{"Condensed" , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Condensed},
-		{"Gradient"  , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
+//		{"Gradient"  , gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal},
 	};
 
 
@@ -43,12 +42,11 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 	for (auto& option : options)
 	{
 		gmpi::drawing::Factory::FontStack stack{ std::vector<std::string>{"Segoe"} };
-
 		auto font = g.getFactory().createTextFormat2(textheight, stack, option.weight, option.style, option.stretch);
 
 		const auto textSize = font.getTextExtentU(option.name);
 		textRect.right = textRect.left + textSize.width + 1;
-
+#if 0
 		if("Gradient" == option.name)
 		{
 			gmpi::drawing::Point grad1{ 0.f, textRect.top };
@@ -66,6 +64,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 			g.drawTextU(option.name, font, textRect, gradientBrush);
 		}
 		else
+#endif
 		{
 			g.drawTextU(option.name, font, textRect, brush);
 		}

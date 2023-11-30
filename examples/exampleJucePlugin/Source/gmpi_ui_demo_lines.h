@@ -19,7 +19,7 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 {
 	g.clear(gmpi::drawing::colorFromHex(0x323E44u));
 
-	const float margin = size.height / 24.0f;
+	const float margin = size.height / 20.0f;
 
 	// lines
 	const lineStyle lineStyles[] = {
@@ -114,9 +114,60 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		float y2 = 150.0f;
 		float width = 80.0f;
 
+		// create some common resources
+		auto solidColorBrush = g.createSolidColorBrush(gmpi::drawing::Colors::LightSeaGreen);
+
+		const gmpi::drawing::Gradientstop gradientStopsLinear[] = {
+			{ 0.0f, gmpi::drawing::Colors::White},
+			{ 1.0f, gmpi::drawing::Colors::Peru}
+		};
+
+		const gmpi::drawing::Gradientstop gradientStopsRadial[] = {
+			{ 0.0f, gmpi::drawing::Colors::White},
+			{ 1.0f, gmpi::drawing::Colors::LightSlateGray}
+		};
+
+		auto gradientStopCollectionLinear = g.createGradientstopCollection(gradientStopsLinear);
+		auto gradientStopCollectionRadial = g.createGradientstopCollection(gradientStopsRadial);
+
+		// create a pattern brush
+		auto tartan = [](int x, int y) -> uint32_t
+		{
+			uint32_t col{ gmpi::drawing::rgBytesToPixel(0x42,0x73,0x9e) }; //  0xFF42739Eu }; // Blue
+
+			int index = (x & 1) ^ (y & 1) ? x : y;
+
+			if ((index >> 3) % 2 == 0)
+			{
+				col = gmpi::drawing::rgBytesToPixel(0, 0, 0); // 0xFF000000u; // Black
+			}
+			else
+			{
+				if ((index >> 1) % 4 == 2)
+				{
+					col = gmpi::drawing::rgBytesToPixel(0xff, 0xff, 0xff); // 0xFFffffffu; // White
+				}
+			}
+
+			return col;
+		};
+
+		const uint32_t sz = 128;
+		auto bitmap = g.getFactory().createImage({ sz, sz });
+		{
+			auto pixels = bitmap.lockPixels((int32_t)gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
+			for (uint32_t py = 0; py < sz; ++py)
+			{
+				for (uint32_t px = 0; px < sz; ++px)
+				{
+					pixels.setPixel(px, py, tartan(px, py)); // ARGB
+				}
+			}
+		}
+		auto bitmapBrush = g.createBitmapBrush(bitmap);
+
 		// solid fill
 		{
-			auto solidColorBrush = g.createSolidColorBrush(gmpi::drawing::Colors::LightSeaGreen);
 			g.fillRectangle({ x1, y1, x1 + width, y2 }, solidColorBrush);
 		}
 
@@ -127,14 +178,8 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
             gmpi::drawing::Point grad1{ 0.f, y1 };
             gmpi::drawing::Point grad2{ 0.f, y2 };
             
-            gmpi::drawing::Gradientstop gradientStops[] = {
-                { 0.0f, gmpi::drawing::Colors::Silver},
-                { 1.0f, gmpi::drawing::Colors::LightSlateGray}
-            };
-            
-            auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
             gmpi::drawing::LinearGradientBrushProperties lgbp1{grad1, grad2};
-			auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollection);
+			auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollectionLinear);
 
 			g.fillRoundedRectangle({ { x1, y1, x1 + width, y2 }, margin, margin }, gradientBrush);
 		}
@@ -145,57 +190,14 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		{
 			gmpi::drawing::Point gradientCenter{ x1 + width * 0.25f, y1 + (y2 - y1) * 0.25f };
 
-			gmpi::drawing::Gradientstop gradientStops[] = {
-				{ 0.0f, gmpi::drawing::Colors::White},
-				{ 1.0f, gmpi::drawing::Colors::Peru}
-			};
-
-			auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
-			auto gradientBrush = g.createRadialGradientBrush(gradientStopCollection, gradientCenter, width);
+			auto gradientBrush = g.createRadialGradientBrush(gradientStopCollectionRadial, gradientCenter, width);
 			g.fillRoundedRectangle({ { x1, y1, x1 + width, y2 }, margin * 2.0f, margin * 2.0f }, gradientBrush);
 		}
 
-
 		x1 += width + margin;
-
-		// tiled image fill
-        auto tartan = [](int x, int y) -> uint32_t
-        {
-            uint32_t col{gmpi::drawing::rgBytesToPixel(0x42,0x73,0x9e)}; //  0xFF42739Eu }; // Blue
-
-            int index = (x & 1) ^ (y & 1) ? x : y;
-
-            if ((index >> 3) % 2 == 0)
-            {
-                col = gmpi::drawing::rgBytesToPixel(0,0,0); // 0xFF000000u; // Black
-            }
-            else
-            {
-                if ((index >> 1) % 4 == 2)
-                {
-                    col = gmpi::drawing::rgBytesToPixel(0xff,0xff,0xff); // 0xFFffffffu; // White
-                }
-            }
-
-            return col;
-        };
-        
+       
+		// pattern fill
 		{
-			uint32_t sz = 128;
-			auto bitmap = g.getFactory().createImage({ sz, sz });
-//			auto bitmap = g.getFactory().loadImageU("C:\\SE\\gmpi_ui\\docs\\images\\GMPI_Icon.png");
-
-			{
-				auto pixels = bitmap.lockPixels((int32_t)gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
-				for (uint32_t py = 0; py < sz; ++py)
-				{
-					for (uint32_t px = 0; px < sz; ++px)
-					{
-						pixels.setPixel(px, py, tartan(px, py)); // ARGB
-					}
-				}
-			}
-			auto bitmapBrush = g.createBitmapBrush(bitmap);
 			const auto radius = (y2 - y1) * 0.5f;
 			const gmpi::drawing::Point center{ x1 + radius, y1 + radius };
 			g.fillCircle(center, radius, bitmapBrush);
@@ -210,8 +212,7 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		// solid outline
 		{
 			const float strokeWidth = 4.0f;
-			auto strokeBrush = g.createSolidColorBrush(gmpi::drawing::Colors::LightSeaGreen);
-			g.drawRectangle({ x1, y1, x1 + width, y2 }, strokeBrush, strokeWidth);
+			g.drawRectangle({ x1, y1, x1 + width, y2 }, solidColorBrush, strokeWidth);
 		}
 		x1 += width + margin;
 
@@ -220,14 +221,8 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
             gmpi::drawing::Point grad1{ 0.f, y1 };
             gmpi::drawing::Point grad2{ 0.f, y2 };
             
-            gmpi::drawing::Gradientstop gradientStops[] = {
-                { 0.0f, gmpi::drawing::Colors::Silver},
-                { 1.0f, gmpi::drawing::Colors::LightSlateGray}
-            };
-            
-            auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
             gmpi::drawing::LinearGradientBrushProperties lgbp1{grad1, grad2};
-			auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollection);
+			auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollectionLinear);
 
 			const float strokeWidth = 6.0f;
 			g.drawRoundedRectangle({ { x1, y1, x1 + width, y2 }, margin, margin }, gradientBrush, strokeWidth);
@@ -239,58 +234,81 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		{
 			gmpi::drawing::Point gradientCenter{ x1 + width * 0.25f, y1 + (y2 - y1) * 0.25f };
 
-			gmpi::drawing::Gradientstop gradientStops[] = {
-				{ 0.0f, gmpi::drawing::Colors::White},
-				{ 1.0f, gmpi::drawing::Colors::Peru}
-			};
-
-			//auto fillBrush = g.createSolidColorBrush(gmpi::drawing::Color{ 0.5f, 1.0f, 0.5f, 0.5f });
-			//g.fillRoundedRectangle({ { x1, y1, x1 + width, y2 }, margin * 2.0f, margin * 2.0f }, fillBrush);
-
-			auto gradientStopCollection = g.createGradientstopCollection(gradientStops);
-			auto gradientBrush = g.createRadialGradientBrush(gradientStopCollection, gradientCenter, width);
+			auto gradientBrush = g.createRadialGradientBrush(gradientStopCollectionRadial, gradientCenter, width);
 
 			const float strokeWidth = 8.0f;
 			g.drawRoundedRectangle({ { x1, y1, x1 + width, y2 }, margin * 2.0f, margin * 2.0f }, gradientBrush, strokeWidth);
 		}
 
-
 		x1 += width + margin;
 
 		// tiled image fill
 		{
-			uint32_t sz = 128;
-			auto bitmap = g.getFactory().createImage({ sz, sz });
-			//			auto bitmap = g.getFactory().loadImageU("C:\\SE\\gmpi_ui\\docs\\images\\GMPI_Icon.png");
-
-			{
-				auto pixels = bitmap.lockPixels((int32_t)gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
-				for (uint32_t py = 0; py < sz; ++py)
-				{
-					for (uint32_t px = 0; px < sz; ++px)
-					{
-						pixels.setPixel(px, py, tartan(px, py)); // ARGB
-					}
-				}
-			}
-
 			const auto radius = (y2 - y1) * 0.5f;
 			const gmpi::drawing::Point center{ x1 + radius, y1 + radius };
 			
-			//auto fillBrush = g.createSolidColorBrush(gmpi::drawing::Color{ 0.5f, 1.0f, 0.5f, 0.5f });
-			//g.fillCircle(center, radius, fillBrush);
-
-			auto bitmapBrush = g.createBitmapBrush(bitmap);
-			//bitmapBrush.setExtendModeX(gmpi::drawing::ExtendMode::Wrap);
-			//bitmapBrush.setExtendModeY(gmpi::drawing::ExtendMode::Wrap);
-			//			bitmapBrush.setInterpolationMode(gmpi::drawing::BitmapInterpolationMode::Linear);
 			const float strokeWidth = 10.0f;
 			g.drawCircle(center, radius, bitmapBrush, strokeWidth);
 		}
 
+		x1 = margin;
+		y1 = 236.0f;
+		y2 = 260.0f;
+
+		// Text fills
+		{
+			gmpi::drawing::Factory::FontStack stack{ std::vector<std::string>{"Segoe"} };
+			auto textFormat = g.getFactory().createTextFormat2(y2 - y1, stack);
+			textFormat.setTextAlignment(gmpi::drawing::TextAlignment::Center);
+
+			// Solid
+			{
+				gmpi::drawing::Rect textRect{ x1, y1, x1 + width, y2 };
+
+				g.drawTextU("Solid", textFormat, textRect, solidColorBrush);
+			}
+
+			x1 += width + margin;
+
+			// Gradient (linear)
+			{
+				gmpi::drawing::Rect textRect{ x1, y1, x1 + width, y2 };
+
+				gmpi::drawing::Point grad1{ 0.f, textRect.top };
+				gmpi::drawing::Point grad2{ 0.f, textRect.bottom };
+
+				gmpi::drawing::LinearGradientBrushProperties lgbp1{ grad1, grad2 };
+				auto gradientBrush = g.createLinearGradientBrush(lgbp1, {}, gradientStopCollectionLinear);
+
+				g.drawTextU("Linear", textFormat, textRect, gradientBrush);
+			}
+
+			x1 += width + margin;
+
+			// Gradient (radial)
+			{
+				gmpi::drawing::Rect textRect{ x1, y1, x1 + width, y2 };
+
+				gmpi::drawing::Point gradientCenter{ x1 + width * 0.25f, y1 + (y2 - y1) * 0.25f };
+
+				auto gradientBrush = g.createRadialGradientBrush(gradientStopCollectionRadial, gradientCenter, width);
+
+				g.drawTextU("Radial", textFormat, textRect, gradientBrush);
+			}
+
+			x1 += width + margin;
+
+			// Pattern
+			{
+				gmpi::drawing::Rect textRect{ x1, y1, x1 + width, y2 };
+
+				g.drawTextU("Pattern", textFormat, textRect, bitmapBrush);
+			}
+		}
+
 		// alpha composting
 		{
-			const auto radius = size.height * 0.06f;
+			const auto radius = size.height * 0.04f;
 			gmpi::drawing::Point p{ size.width * 0.5f, size.height - radius - margin };
 #if 0
 			//chekerboard

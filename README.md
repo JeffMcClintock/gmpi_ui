@@ -2,7 +2,7 @@
 
 # GMPI-Drawing
 
-A cross-platform drawing library for Windows and macOS
+A cross-platform drawing library for Windows and macOS which is lightweight and can be used in a shared library, which makes it a good fit for audio plugin GUIs.
 
 <img src="docs/images/text.png" width="260"/>
 <img src="docs/images/lines.png" width="260"/>

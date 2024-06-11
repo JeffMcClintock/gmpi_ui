@@ -1,4 +1,6 @@
 #pragma once
+#ifndef _GMPI_SDK_COMMON_H_INCLUDED // ignore source file in multiple locations.
+#define _GMPI_SDK_COMMON_H_INCLUDED
 
 /*
   GMPI - Generalized Music Plugin Interface specification.
@@ -17,16 +19,9 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include <string>
 #include <assert.h>
 #include "GmpiApiCommon.h"
 #include "RefCountMacros.h"
-
-// Helper for comparing GUIDs
-inline bool operator==(const gmpi::api::Guid& left, const gmpi::api::Guid& right)
-{
-	return 0 == std::memcmp(&left, &right, sizeof(left));
-}
 
 namespace gmpi
 {
@@ -243,8 +238,9 @@ public:
 		return cppString;
 	}
 	// identification and reference counting
-	GMPI_QUERYINTERFACE(gmpi::api::IString::guid, gmpi::api::IString);
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IString);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
 } // namespace gmpi
+#endif // _GMPI_SDK_COMMON_H_

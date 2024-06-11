@@ -18,12 +18,12 @@
 
 /*
 #include "Drawing_API.h"
-using namespace GmpiDrawing_API;
+using namespace gmpi::drawing;
 */
 
 /* FUTURE ideas
-	// Obtain information about physical pixels. Translates DIPs to pixels. Alternatly GetPixelDpi, but might need offset also.
-	// Alternatly might want to do like dpi in terms of integer 96ths to aliviate rounding errors.
+	// Obtain information about physical pixels. Translates DIPs to pixels. Alternately GetPixelDpi, but might need offset also.
+	// Alternately might want to do like dpi in terms of integer 96ths to alleviate rounding errors.
 	virtual void IMpDeviceContext::GetPixelTranslation(MP1_MATRIX_3X2* returnTransform) = 0;
 
 	* Support drawing extended-color bitmaps (e.g. 10 bits per pixel)

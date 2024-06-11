@@ -36,6 +36,8 @@ public:
 	// Second pass of layout.
 	virtual gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) = 0;
 
+	// TODO: getClipRect() ?
+
 	virtual gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
 
 	// {E922D16F-447B-4E82-B0B1-FD995CA4210E}

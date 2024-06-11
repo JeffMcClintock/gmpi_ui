@@ -34,7 +34,7 @@ using namespace gmpi::drawing;
 #pragma warning(disable : 4100) // "unreferenced formal parameter"
 #endif
 
-#include "Drawing_API.h"
+#include "GmpiApiDrawing.h"
 #include <vector>
 #include <array>
 #include <unordered_map>
@@ -289,12 +289,10 @@ inline constexpr uint8_t linearPixelToSRGB(float intensity)
 		0.867257f, 0.875489f, 0.883767f, 0.892091f, 0.900460f, 0.908874f, 0.917335f, 0.925841f,
 		0.934393f, 0.942990f, 0.951634f, 0.960324f, 0.969060f, 0.977842f, 0.986671f, 0.995545f };
 
-	unsigned char i;
+	unsigned char i{ 0 };
 
 	if (intensity > toSRGB[128])
 		i = 128;
-	else
-		i = 0;
 
 	if (intensity > toSRGB[i + 64])
 		i += 64;
@@ -541,7 +539,7 @@ public:
 		return s;
 	}
 
-	//// TODO should be getTextExtentW for consitancy?
+	//// TODO should be getTextExtentW for consistency?
 	//Size getTextExtentU(std::wstring wString)
 	//{
 	//	static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;

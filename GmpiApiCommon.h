@@ -1,4 +1,6 @@
 #pragma once
+#ifndef _GMPI_API_COMMON_H_INCLUDED // ignore source file in multiple locations.
+#define _GMPI_API_COMMON_H_INCLUDED
 
 /*
   GMPI - Generalized Music Plugin Interface specification.
@@ -18,6 +20,7 @@
 */
 
 #include <cstdint>
+#include <cstring>
 
 // Platform specific definitions.
 #if defined __BORLANDC__
@@ -85,6 +88,12 @@ struct Guid
     uint8_t data4[8];
 };
 
+// Helper for comparing GUIDs
+inline bool operator==(Guid const& left, Guid const& right)
+{
+    return !std::memcmp(&left, &right, sizeof(left));
+}
+
 // INTERFACE 'IUnknown'
 struct DECLSPEC_NOVTABLE IUnknown
 {
@@ -130,4 +139,6 @@ struct DECLSPEC_NOVTABLE IPluginFactory : public IUnknown
 #elif defined(_WIN32) || defined(__FLAT__) || defined (CBUILDER)
 #pragma pack(pop)
 #endif
+
+#endif // _GMPI_API_COMMON_H_
 

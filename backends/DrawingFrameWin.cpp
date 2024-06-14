@@ -48,7 +48,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapCh
 			const RECT* pRect = (const RECT*)&pRegion->Buffer;
 			for (unsigned i = 0; i < pRegion->rdh.nCount; i++)
 			{
-				gmpi::drawing::RectL r(pRect[i].left, pRect[i].top, pRect[i].right, pRect[i].bottom);
+				gmpi::drawing::RectL r{ pRect[i].left, pRect[i].top, pRect[i].right, pRect[i].bottom };
 
 				// Direct 2D will fail if any rect outside swapchain bitmap area.
 				const auto res = intersectRect(r, { 0, 0, swapChainSize.width, swapChainSize.height });
@@ -652,7 +652,7 @@ void DrawingFrameBase::OnPaint()
 			// clip and draw each rect individually (causes some objects to redraw several times)
 			for (auto& r : dirtyRects)
 			{
-				auto r2 = transformRect(WindowToDips, drawing::Rect(static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom)));
+				auto r2 = transformRect(WindowToDips, drawing::Rect{ static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom) });
 
 				// Snap to whole DIPs.
 				drawing::Rect temp;
@@ -711,7 +711,7 @@ void DrawingFrameBase::OnPaint()
 					frameCount = 0;
 
 					auto brush = graphics.createSolidColorBrush(Colors::Black);
-					auto fpsRect = drawing::Rect(0, 0, 50, 18);
+					auto fpsRect = drawing::Rect{ 0, 0, 50, 18 };
 					graphics.fillRectangle(fpsRect, brush);
 					brush.setColor(Colors::White);
 					graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);

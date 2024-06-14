@@ -166,7 +166,7 @@ public:
         return useLegacyBaseLineSnapping;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::ITextFormat);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
     GMPI_REFCOUNT;
 };
 #if 0
@@ -179,7 +179,7 @@ public:
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IResource);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IResource);
     GMPI_REFCOUNT;
 };
 #endif
@@ -332,7 +332,7 @@ public:
         }
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapPixels);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmapPixels);
     GMPI_REFCOUNT;
 };
 
@@ -342,13 +342,13 @@ public:
     ID2D1Bitmap* nativeBitmap_;
     ID2D1DeviceContext* nativeContext_;
     IWICBitmap* diBitmap_ = {};
-    class Factory* factory;
+    drawing::api::IFactory* factory;
 #ifdef _DEBUG
     std::string debugFilename;
 #endif
-    Bitmap(Factory* pfactory, IWICBitmap* diBitmap);
+    Bitmap(drawing::api::IFactory* pfactory, IWICBitmap* diBitmap);
 
-    Bitmap(Factory* pfactory, ID2D1DeviceContext* nativeContext, ID2D1Bitmap* nativeBitmap) :
+    Bitmap(drawing::api::IFactory* pfactory, ID2D1DeviceContext* nativeContext, ID2D1Bitmap* nativeBitmap) :
         nativeBitmap_(nativeBitmap)
         , nativeContext_(nativeContext)
         , factory(pfactory)
@@ -383,7 +383,7 @@ public:
 //	ReturnCode getFactory(drawing::api::IFactory** pfactory) override;
     ReturnCode getFactory(drawing::api::IFactory** returnFactory) override;
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmap);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmap);
     GMPI_REFCOUNT;
 };
 
@@ -392,7 +392,7 @@ class GradientstopCollection final : public GmpiDXResourceWrapper<drawing::api::
 public:
     GradientstopCollection(ID2D1GradientStopCollection* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IGradientstopCollection);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IGradientstopCollection);
     GMPI_REFCOUNT;
 };
 
@@ -513,7 +513,7 @@ public:
 // Windows7 has less support for sRGB
 inline drawing::Color colorWithoutGammaAdjustment(drawing::Color)
 {
-	return drawing::Color(0, 0, 0, 0);
+    return drawing::Color{};
 }
 
 class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
@@ -710,7 +710,7 @@ class StrokeStyle final : public GmpiDXResourceWrapper<drawing::api::IStrokeStyl
 public:
     StrokeStyle(ID2D1StrokeStyle* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IStrokeStyle);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IStrokeStyle);
     GMPI_REFCOUNT;
 };
 
@@ -797,7 +797,7 @@ public:
         native()->AddArc(reinterpret_cast<const D2D1_ARC_SEGMENT*>(arc));
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IGeometrySink);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IGeometrySink);
     GMPI_REFCOUNT;
 };
 
@@ -855,23 +855,29 @@ public:
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IPathGeometry);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IPathGeometry);
     GMPI_REFCOUNT;
 };
 
 
-class Factory : public drawing::api::IFactory
+class Factory_base : public drawing::api::IFactory
 {
+protected:
     ID2D1Factory1* m_pDirect2dFactory = {};
     IDWriteFactory* writeFactory = {};
     IWICImagingFactory* pIWICFactory = {};
-    std::vector<std::wstring> supportedFontFamiliesLowerCase;
-    std::vector<std::string> supportedFontFamilies;
-    std::map<std::wstring, std::wstring> GdiFontConversions;
+    std::vector<std::wstring>& supportedFontFamiliesLowerCase;
+    std::vector<std::string>& supportedFontFamilies;
+    std::map<std::wstring, std::wstring>& GdiFontConversions;
     bool DX_support_sRGB = true;
 
 public:
-//    static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
+    Factory_base(
+        std::vector<std::wstring>& supportedFontFamiliesLowerCase,
+        std::vector<std::string>& supportedFontFamilies,
+        std::map<std::wstring, std::wstring>& GdiFontConversions
+    );
+    ~Factory_base();
 
     // for diagnostics only.
     auto getDirectWriteFactory()
@@ -888,14 +894,11 @@ public:
         DX_support_sRGB = s;
     }
             
-    drawing::api::IBitmapPixels::PixelFormat getPlatformPixelFormat()
+    ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
     {
-        return DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
+        *returnPixelFormat = DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
+        return ReturnCode::Ok;
     }
-
-    Factory();
-    void Init(ID2D1Factory1* existingFactory = nullptr);
-    ~Factory();
 
     ID2D1Factory1* getD2dFactory()
     {
@@ -939,37 +942,39 @@ public:
 
     ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IFactory);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
+};
+
+class Factory : public Factory_base
+{
+    std::vector<std::wstring> supportedFontFamiliesLowerCase;
+    std::vector<std::string> supportedFontFamilies;
+    std::map<std::wstring, std::wstring> GdiFontConversions;
+
+public:
+    Factory();
 };
 
 class GraphicsContext_base : public drawing::api::IDeviceContext
 {
 protected:
-    ID2D1DeviceContext* context_;
+    ID2D1DeviceContext* context_{};
 
-    Factory* factory;
+    drawing::api::IFactory* factory{};
     std::vector<drawing::Rect> clipRectStack;
-//    std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter; // cached, as constructor is super-slow.
 
-    void Init()
-    {
-//        stringConverter = &(factory->stringConverter);
-    }
-
-    GraphicsContext_base(ID2D1DeviceContext* deviceContext, Factory* pfactory) :
+    GraphicsContext_base(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) :
         context_(deviceContext)
         , factory(pfactory)
     {
         context_->AddRef();
-        Init();
     }
 
-    GraphicsContext_base(Factory* pfactory) :
-        context_(nullptr)
-        , factory(pfactory)
+    // for BitmapRenderTarget which populates context in it's constructor
+    GraphicsContext_base(drawing::api::IFactory* pfactory) :
+        factory(pfactory)
     {
-        Init();
     }
 
 public:
@@ -1147,26 +1152,28 @@ public:
 
     bool SupportSRGB()
     {
-        return factory->getPlatformPixelFormat() == drawing::api::IBitmapPixels::kBGRA_SRGB;
+        drawing::api::IBitmapPixels::PixelFormat pixelFormat;
+        factory->getPlatformPixelFormat(&pixelFormat);
+        return pixelFormat == drawing::api::IBitmapPixels::kBGRA_SRGB;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IDeviceContext);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IDeviceContext);
 };
 
 class GraphicsContext final : public GraphicsContext_base
 {
 public:
-    GraphicsContext(ID2D1DeviceContext* deviceContext, Factory* pfactory) : GraphicsContext_base(deviceContext, pfactory) {}
+    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) : GraphicsContext_base(deviceContext, pfactory) {}
 
     GMPI_REFCOUNT_NO_DELETE;
 };
 
-class BitmapRenderTarget final : public GraphicsContext_base // emulated by carefull layout: public IBitmapRenderTarget
+class BitmapRenderTarget final : public GraphicsContext_base // emulated by careful layout: public IBitmapRenderTarget
 {
     ID2D1BitmapRenderTarget* nativeBitmapRenderTarget = {};
 
 public:
-    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, Factory* pfactory) :
+    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, drawing::api::IFactory* pfactory) :
         GraphicsContext_base(pfactory)
     {
         /* auto hr = */ g->native()->CreateCompatibleRenderTarget(*(D2D1_SIZE_F*)desiredSize, &nativeBitmapRenderTarget);

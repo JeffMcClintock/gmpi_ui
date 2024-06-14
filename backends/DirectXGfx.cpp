@@ -180,22 +180,19 @@ namespace gmpi
 		}
 
 		// Create factory myself;
-		Factory::Factory() :
-			writeFactory(nullptr)
-			, pIWICFactory(nullptr)
-			, m_pDirect2dFactory(nullptr)
-			, DX_support_sRGB(true)
+		Factory_base::Factory_base(
+			std::vector<std::wstring>& psupportedFontFamiliesLowerCase,
+			std::vector<std::string>& psupportedFontFamilies,
+			std::map<std::wstring, std::wstring>& pGdiFontConversions
+		) :
+			supportedFontFamiliesLowerCase(psupportedFontFamiliesLowerCase)
+			, supportedFontFamilies(psupportedFontFamilies)
+			, GdiFontConversions(pGdiFontConversions)
 		{
 		}
 
-		void Factory::Init(ID2D1Factory1* existingFactory)
+		Factory::Factory() : Factory_base(supportedFontFamiliesLowerCase, supportedFontFamilies, GdiFontConversions)
 		{
-			if (existingFactory)
-			{
-				m_pDirect2dFactory = existingFactory;
-				m_pDirect2dFactory->AddRef();
-			}
-			else
 			{
 				D2D1_FACTORY_OPTIONS o;
 #ifdef _DEBUG
@@ -297,14 +294,14 @@ namespace gmpi
 #endif
 		}
 
-		Factory::~Factory()
+		Factory_base::~Factory_base()
 		{ 
 			SafeRelease(m_pDirect2dFactory);
 			SafeRelease(writeFactory);
 			SafeRelease(pIWICFactory);
 		}
 
-		gmpi::ReturnCode Factory::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
+		gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
 		{
 			*pathGeometry = nullptr;
 			//*pathGeometry = new GmpiGuiHosting::PathGeometry();
@@ -324,7 +321,7 @@ namespace gmpi
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 
-		gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat)
+		gmpi::ReturnCode Factory_base::createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat)
 		{
 			*textFormat = nullptr;
 
@@ -362,7 +359,7 @@ namespace gmpi
 		}
 
 		// 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
-		std::wstring Factory::fontMatch(std::wstring fontFamilyNameW, gmpi::drawing::FontWeight fontWeight, float fontSize)
+		std::wstring Factory_base::fontMatch(std::wstring fontFamilyNameW, gmpi::drawing::FontWeight fontWeight, float fontSize)
 		{
 			auto it = GdiFontConversions.find(fontFamilyNameW);
 			if (it != GdiFontConversions.end())
@@ -463,7 +460,7 @@ namespace gmpi
 			return fontFamilyNameW;
 		}
 
-		gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
+		gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
 		{
 			IWICBitmap* wicBitmap{};
 			auto hr = pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
@@ -482,7 +479,7 @@ namespace gmpi
 			return gmpi::ReturnCode::Ok;
 		}
 
-		IWICBitmap* Factory::CreateDiBitmapFromNative(ID2D1Bitmap* D2D_Bitmap)
+		IWICBitmap* Factory_base::CreateDiBitmapFromNative(ID2D1Bitmap* D2D_Bitmap)
 		{
 			return {};
 #if 0
@@ -560,7 +557,7 @@ If so that'd be far more efficient so do that.)
 #endif
 		}
 
-		gmpi::ReturnCode Factory::getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName)
+		gmpi::ReturnCode Factory_base::getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName)
 		{
 			if (fontIndex < 0 || fontIndex >= supportedFontFamilies.size())
 			{
@@ -571,7 +568,7 @@ If so that'd be far more efficient so do that.)
 			return gmpi::ReturnCode::Ok;
 		}
 
-		gmpi::ReturnCode Factory::loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap)
+		gmpi::ReturnCode Factory_base::loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap)
 		{
 			*returnBitmap = nullptr;
 
@@ -826,9 +823,12 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 					}
 				}
 #endif
+				drawing::api::IBitmapPixels::PixelFormat pixelFormat;
+				factory->getPlatformPixelFormat(&pixelFormat);
+
 				D2D1_BITMAP_PROPERTIES props;
 				props.dpiX = props.dpiY = 96;
-				if (factory->getPlatformPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB) //  graphics->SupportSRGB())
+				if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
 				{
 					props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB; // no good with DXGI_FORMAT_R16G16B16A16_FLOAT: nativeContext_->GetPixelFormat().format;
 				}
@@ -861,7 +861,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			return nativeBitmap_;
 		}
 
-		Bitmap::Bitmap(Factory* pfactory, IWICBitmap* diBitmap) :
+		Bitmap::Bitmap(drawing::api::IFactory* pfactory, IWICBitmap* diBitmap) :
 			nativeBitmap_(0)
 			, nativeContext_(0)
 			, diBitmap_(diBitmap)
@@ -870,7 +870,10 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			diBitmap->AddRef();
 
 			// on Windows 7, leave image as-is
-			if (factory->getPlatformPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
+			drawing::api::IBitmapPixels::PixelFormat pixelFormat;
+			factory->getPlatformPixelFormat(&pixelFormat);
+
+			if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
 			{
 				applyPreMultiplyCorrection();
 			}

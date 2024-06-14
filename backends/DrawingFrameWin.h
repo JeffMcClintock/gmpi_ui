@@ -101,7 +101,6 @@ namespace GmpiGuiHosting
 			, tooltipWindow(0)
 			, reentrant(false)
 		{
-			DrawingFactory.Init();
 		}
 
 		virtual ~DrawingFrameBase()

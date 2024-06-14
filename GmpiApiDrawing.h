@@ -611,15 +611,15 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
     virtual gmpi::ReturnCode endDraw() = 0;
     virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
 
-    // {A1D9751D-0C43-4F57-8958-E0BCE359B2FD}
+    // {F38EC187-BA04-4A63-B1D6-22D931E1F308}
     inline static const gmpi::api::Guid guid =
-    { 0xA1D9751D, 0x0C43, 0x4F57, { 0x89, 0x58, 0xE0, 0xBC, 0xE3, 0x59, 0xB2, 0xFD} };
+    { 0xf38ec187, 0xba04, 0x4a63, { 0xb1, 0xd6, 0x22, 0xd9, 0x31, 0xe1, 0xf3, 0x8 } };
 };
 
 // INTERFACE 'IBitmapRenderTarget'
 struct DECLSPEC_NOVTABLE IBitmapRenderTarget : public IDeviceContext
 {
-// should all interface return types by iUnknown? (to accomodate upgrades)
+// should all interface return types by iUnknown? (to accommodate upgrades)
     virtual gmpi::ReturnCode getBitmap(IBitmap** returnBitmap) = 0;
 
     // {242DC082-399A-4CAF-8782-878134502F99}
@@ -635,19 +635,8 @@ struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
     virtual gmpi::ReturnCode createImage(int32_t width, int32_t height, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode loadImageU(const char* uri, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;
-
-	// test for winrt. perhaps uri could indicate if image is in resources, and could use stream internally if nesc (i.e. VST2 only.) or just write it to disk temp.
-	// LoadStreamImage would be private member, not on store apps.
-
-    // {481D4609-E28B-4698-BB2D-6480475B8F31}
-//    inline static const gmpi::api::Guid guid =
-//    { 0x481D4609, 0xE28B, 0x4698, { 0xBB, 0x2D, 0x64, 0x80, 0x47, 0x5B, 0x8F, 0x31} };
-//};
-
-// INTERFACE 'IFactory'
-//struct DECLSPEC_NOVTABLE IFactory : public IFactory
-//{
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
+    virtual gmpi::ReturnCode getPlatformPixelFormat(IBitmapPixels::PixelFormat* returnPixelFormat) = 0;
 
     // {61568E7F-5256-49C6-95E6-10327EB33EC4}
     inline static const gmpi::api::Guid guid =

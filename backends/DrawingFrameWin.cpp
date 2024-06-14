@@ -966,7 +966,10 @@ void DrawingFrameBase::CreateDevice()
 
 	CreateDeviceSwapChainBitmap();
 
-	if (DrawingFactory.getPlatformPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB) // DX_support_sRGB)
+	drawing::api::IBitmapPixels::PixelFormat pixelFormat;
+	DrawingFactory.getPlatformPixelFormat(&pixelFormat);
+
+	if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
 	{
 		context.reset(new gmpi::directx::GraphicsContext(mpRenderTarget, &DrawingFactory));
 	}

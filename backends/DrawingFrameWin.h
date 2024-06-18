@@ -52,7 +52,7 @@ namespace GmpiGuiHosting
 #ifdef GMPI_HOST_POINTER_SUPPORT
 		public gmpi_gui::IMpGraphicsHost,
 #endif
-		public IDrawingHost,
+		public gmpi::api::IDrawingHost,
 		/*public gmpi::api::IUserInterfaceHost2,*/
 		public TimerClient
 	{
@@ -62,9 +62,9 @@ namespace GmpiGuiHosting
 		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
 
 	protected:
-		gmpi::shared_ptr<IGraphicsRedrawClient> frameUpdateClient;
-		gmpi::shared_ptr<IDrawingClient> drawingClient;
-		gmpi::shared_ptr<IInputClient> inputClient;
+		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
+		gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
+		gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
 		gmpi::drawing::SizeL swapChainSize = {};
 
 		ID2D1DeviceContext* mpRenderTarget = {};
@@ -155,15 +155,15 @@ namespace GmpiGuiHosting
 
 		void AddView(gmpi::api::IUnknown* pcontainerView)
 		{
-			pcontainerView->queryInterface(/*gmpi_gui_api::*/&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(/*gmpi_gui_api::*/&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
 			if(drawingClient)
 			{
 				drawingClient->open(this);// static_cast<gmpi_gui::IMpGraphicsHost*>(this));
 			}
-			pcontainerView->queryInterface(&IInputClient::guid, inputClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi::api::IInputClient::guid, inputClient.asIMpUnknownPtr());
 			
 			// legacy
-			pcontainerView->queryInterface(&IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
 #ifdef GMPI_HOST_POINTER_SUPPORT
 			pcontainerView->queryInterface(&gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
 			pcontainerView->queryInterface(&gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.asIMpUnknownPtr());

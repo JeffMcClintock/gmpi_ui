@@ -217,7 +217,12 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		gmpi_gui_client->measure(available, &desired);
 		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
 #endif
-
+		if(drawingClient)
+		{
+			drawingClient->measure(&available, &desired);
+			const drawing::Rect finalRect{ 0, 0, available.width, available.height };
+			drawingClient->arrange(&finalRect);
+		}
 		// starting Timer latest to avoid first event getting 'in-between' other init events.
 		StartTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
 	}

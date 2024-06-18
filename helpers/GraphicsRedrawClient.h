@@ -10,6 +10,11 @@
 
 #include "GmpiApiDrawing.h"
 
+namespace gmpi
+{
+namespace api
+{
+
 // notify a plugin when it's time to display a new frame.
 // Supports the client optimizing how often it checks the DSP queue
 class DECLSPEC_NOVTABLE IGraphicsRedrawClient : public gmpi::api::IUnknown
@@ -39,6 +44,8 @@ public:
 	// TODO: getClipRect() ?
 
 	virtual gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
+
+	virtual ReturnCode getClipArea(drawing::Rect* returnRect) = 0;
 
 	// {E922D16F-447B-4E82-B0B1-FD995CA4210E}
 	inline static const gmpi::api::Guid guid =
@@ -85,4 +92,6 @@ public:
 	{ 0x4e7eef02, 0x1f0b, 0x4e10, { 0xaa, 0x44, 0xdd, 0x54, 0xc0, 0xb1, 0xcb, 0xb0 } };
 };
 
+} // namespace api
+} // namespace gmpi
 #endif /* GraphicsRedrawClient_h */

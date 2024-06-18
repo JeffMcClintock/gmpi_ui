@@ -384,7 +384,6 @@ inline Color colorFromHex(uint32_t rgb, float a = 1.0)
 }
 
 
-
 namespace Colors
 {
 inline static Color AliceBlue = colorFromHex(0xF0F8FFu);

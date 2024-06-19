@@ -59,6 +59,8 @@ public:
 	virtual gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) = 0;
 	virtual gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) = 0;
 	virtual gmpi::ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t flags) = 0;
+	virtual gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point point, int32_t flags, int32_t delta) = 0;
+	virtual gmpi::ReturnCode setHover(bool isMouseOverMe) = 0;
 
 	// {D2D020D1-BCEE-49F9-A173-97BC6460A727}
 	inline static const gmpi::api::Guid guid =
@@ -70,7 +72,7 @@ class IDrawingHost : public gmpi::api::IUnknown
 public:
 	virtual gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) = 0;
 
-	// TODO: sort out methd name case.
+	// TODO: sort out method name case.
 	// Get host's current skin's font information.
 	virtual void invalidateRect(const gmpi::drawing::Rect* invalidRect) = 0;
 #if 0
@@ -92,6 +94,17 @@ public:
 	{ 0x4e7eef02, 0x1f0b, 0x4e10, { 0xaa, 0x44, 0xdd, 0x54, 0xc0, 0xb1, 0xcb, 0xb0 } };
 };
 
+class IInputHost : public gmpi::api::IUnknown
+{
+public:
+	virtual gmpi::ReturnCode setCapture() = 0;
+	virtual gmpi::ReturnCode getCapture(bool& returnValue) = 0;
+	virtual gmpi::ReturnCode releaseCapture() = 0;
+
+	// {B5109952-2608-48B3-9685-788D36EBA7AF}
+	inline static const gmpi::api::Guid guid =
+	{ 0xb5109952, 0x2608, 0x48b3, { 0x96, 0x85, 0x78, 0x8d, 0x36, 0xeb, 0xa7, 0xaf } };
+};
 } // namespace api
 } // namespace gmpi
 #endif /* GraphicsRedrawClient_h */

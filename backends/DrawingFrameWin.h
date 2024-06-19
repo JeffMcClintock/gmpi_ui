@@ -53,6 +53,7 @@ namespace GmpiGuiHosting
 		public gmpi_gui::IMpGraphicsHost,
 #endif
 		public gmpi::api::IDrawingHost,
+		public gmpi::api::IInputHost,
 		/*public gmpi::api::IUserInterfaceHost2,*/
 		public TimerClient
 	{
@@ -155,10 +156,10 @@ namespace GmpiGuiHosting
 
 		void AddView(gmpi::api::IUnknown* pcontainerView)
 		{
-			pcontainerView->queryInterface(/*gmpi_gui_api::*/&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
 			if(drawingClient)
 			{
-				drawingClient->open(this);// static_cast<gmpi_gui::IMpGraphicsHost*>(this));
+				drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
 			}
 			pcontainerView->queryInterface(&gmpi::api::IInputClient::guid, inputClient.asIMpUnknownPtr());
 			
@@ -222,6 +223,10 @@ namespace GmpiGuiHosting
 		int32_t createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override;
 		int32_t createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override;
 #endif
+		// IInputHost
+		gmpi::ReturnCode setCapture() override;
+		gmpi::ReturnCode getCapture(bool& returnValue) override;
+		gmpi::ReturnCode releaseCapture() override;
 
 #if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
@@ -236,6 +241,15 @@ namespace GmpiGuiHosting
 				addRef();
 				return gmpi::ReturnCode::Ok;
 			}
+			if (*iid == IInputHost::guid)
+			{
+				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
+				*returnInterface = reinterpret_cast<void*>(static_cast<IInputHost*>(this));
+				addRef();
+				return gmpi::ReturnCode::Ok;
+			}
+
+			
 #if 0
 			if (*iid == gmpi::MP_IID_UI_HOST2)
 			{

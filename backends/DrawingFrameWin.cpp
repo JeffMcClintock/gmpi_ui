@@ -7,6 +7,7 @@
 #include <commctrl.h>
 #include "./DrawingFrameWin.h"
 #include "Drawing.h"
+#include "mp_sdk_gui2.h"
 
 using namespace std;
 using namespace gmpi;
@@ -340,7 +341,7 @@ LRESULT DrawingFrameBase::WindowProc(
 
 	switch (message)
 	{
-#ifdef GMPI_HOST_POINTER_SUPPORT
+#if 1 //def GMPI_HOST_POINTER_SUPPORT
 	case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_MOUSEMOVE:
@@ -349,14 +350,14 @@ LRESULT DrawingFrameBase::WindowProc(
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONUP:
 		{
-			Point p(static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)));
-			p = WindowToDips.TransformPoint(p);
+			Point p{ static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)) };
+			p = transformPoint(WindowToDips, p);
 
 			// Cubase sends spurious mouse move messages when transport running.
 			// This prevents tooltips working.
 			if (message == WM_MOUSEMOVE)
 			{
-				if (cubaseBugPreviousMouseMove == p)
+				if (cubaseBugPreviousMouseMove.x == p.x && cubaseBugPreviousMouseMove.y == p.y)
 				{
 					return TRUE;
 				}
@@ -364,7 +365,7 @@ LRESULT DrawingFrameBase::WindowProc(
 			}
 			else
 			{
-				cubaseBugPreviousMouseMove = Point(-1, -1);
+				cubaseBugPreviousMouseMove = Point{ -1, -1 };
 			}
 
 			TooltipOnMouseActivity();
@@ -409,12 +410,12 @@ LRESULT DrawingFrameBase::WindowProc(
 				flags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
 			}
 
-			int32_t r;
+			gmpi::ReturnCode r;
 			switch (message)
 			{
 			case WM_MOUSEMOVE:
 				{
-					r = gmpi_gui_client->onPointerMove(flags, p);
+					r = inputClient->onPointerMove(p, flags);
 
 					// get notified when mouse leaves window
 					if (!isTrackingMouse)
@@ -428,7 +429,7 @@ LRESULT DrawingFrameBase::WindowProc(
 						{
 							isTrackingMouse = true;
 						}
-						gmpi_gui_client->setHover(true);
+						inputClient->setHover(true);
 					}
 				}
 				break;
@@ -436,14 +437,14 @@ LRESULT DrawingFrameBase::WindowProc(
 			case WM_LBUTTONDOWN:
 			case WM_RBUTTONDOWN:
 			case WM_MBUTTONDOWN:
-				r = gmpi_gui_client->onPointerDown(flags, p);
+				r = inputClient->onPointerDown(p, flags);
 				::SetFocus(hwnd);
 				break;
 
 			case WM_MBUTTONUP:
 			case WM_RBUTTONUP:
 			case WM_LBUTTONUP:
-				r = gmpi_gui_client->onPointerUp(flags, p);
+				r = inputClient->onPointerUp(p, flags);
 				break;
 			}
 		}
@@ -451,7 +452,7 @@ LRESULT DrawingFrameBase::WindowProc(
 
 	case WM_MOUSELEAVE:
 		isTrackingMouse = false;
-		gmpi_gui_client->setHover(false);
+//		inputClient->setHover(false);
 		break;
 
 	case WM_MOUSEWHEEL:
@@ -461,8 +462,8 @@ LRESULT DrawingFrameBase::WindowProc(
 			POINT pos = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 			MapWindowPoints(NULL, getWindowHandle(), &pos, 1); // !!! ::ScreenToClient() might be more correct. ref MyFrameWndDirectX::OnMouseWheel
 
-			Point p(static_cast<float>(pos.x), static_cast<float>(pos.y));
-			p = WindowToDips.TransformPoint(p);
+			Point p{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
+			p = transformPoint(WindowToDips, p);
 
             //The wheel rotation will be a multiple of WHEEL_DELTA, which is set at 120. This is the threshold for action to be taken, and one such action (for example, scrolling one increment) should occur for each delta.
 			const auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
@@ -486,13 +487,13 @@ LRESULT DrawingFrameBase::WindowProc(
 			//	flags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
 			//}
 
-			/*auto r =*/ gmpi_gui_client->onMouseWheel(flags, zDelta, p);
+			/*auto r =*/ inputClient->onMouseWheel(p, flags, zDelta);
 		}
 		break;
 
 	case WM_CHAR:
-		if(gmpi_key_client)
-			gmpi_key_client->OnKeyPress((wchar_t) wParam);
+		//if(gmpi_key_client)
+		//	gmpi_key_client->OnKeyPress((wchar_t) wParam);
 		break;
 #endif
 
@@ -1124,30 +1125,28 @@ void DrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 	backBufferDirtyRects.push_back(r);
 }
 
-#ifdef GMPI_HOST_POINTER_SUPPORT
-
-void DrawingFrameBase::invalidateMeasure()
-{
-}
-
-
-int32_t DrawingFrameBase::setCapture()
+gmpi::ReturnCode DrawingFrameBase::setCapture()
 {
 	::SetCapture(getWindowHandle());
 	return gmpi::ReturnCode::Ok;
 }
 
-int32_t DrawingFrameBase::getCapture(int32_t & returnValue)
+gmpi::ReturnCode DrawingFrameBase::getCapture(bool& returnValue)
 {
 	returnValue = ::GetCapture() == getWindowHandle();
 	return gmpi::ReturnCode::Ok;
 }
 
-int32_t DrawingFrameBase::releaseCapture()
+gmpi::ReturnCode DrawingFrameBase::releaseCapture()
 {
 	::ReleaseCapture();
-
 	return gmpi::ReturnCode::Ok;
+}
+
+#ifdef GMPI_HOST_POINTER_SUPPORT
+
+void DrawingFrameBase::invalidateMeasure()
+{
 }
 
 int32_t DrawingFrameBase::createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu)

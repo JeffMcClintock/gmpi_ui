@@ -166,7 +166,7 @@ public:
         return useLegacyBaseLineSnapping;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::ITextFormat);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
     GMPI_REFCOUNT;
 };
 #if 0
@@ -179,7 +179,7 @@ public:
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IResource);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IResource);
     GMPI_REFCOUNT;
 };
 #endif
@@ -332,7 +332,7 @@ public:
         }
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapPixels);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmapPixels);
     GMPI_REFCOUNT;
 };
 
@@ -383,7 +383,7 @@ public:
 //	ReturnCode getFactory(drawing::api::IFactory** pfactory) override;
     ReturnCode getFactory(drawing::api::IFactory** returnFactory) override;
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmap);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmap);
     GMPI_REFCOUNT;
 };
 
@@ -392,7 +392,7 @@ class GradientstopCollection final : public GmpiDXResourceWrapper<drawing::api::
 public:
     GradientstopCollection(ID2D1GradientStopCollection* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IGradientstopCollection);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IGradientstopCollection);
     GMPI_REFCOUNT;
 };
 
@@ -710,7 +710,7 @@ class StrokeStyle final : public GmpiDXResourceWrapper<drawing::api::IStrokeStyl
 public:
     StrokeStyle(ID2D1StrokeStyle* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IStrokeStyle);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IStrokeStyle);
     GMPI_REFCOUNT;
 };
 
@@ -797,7 +797,7 @@ public:
         native()->AddArc(reinterpret_cast<const D2D1_ARC_SEGMENT*>(arc));
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IGeometrySink);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IGeometrySink);
     GMPI_REFCOUNT;
 };
 
@@ -855,7 +855,7 @@ public:
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IPathGeometry);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IPathGeometry);
     GMPI_REFCOUNT;
 };
 
@@ -939,7 +939,7 @@ public:
 
     ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IFactory);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -1150,7 +1150,7 @@ public:
         return factory->getPlatformPixelFormat() == drawing::api::IBitmapPixels::kBGRA_SRGB;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IDeviceContext);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IDeviceContext);
 };
 
 class GraphicsContext final : public GraphicsContext_base

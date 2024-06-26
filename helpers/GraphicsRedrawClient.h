@@ -5,8 +5,8 @@
 //  Created by Jeff McClintock on 4/10/22.
 //
 
-#ifndef GraphicsRedrawClient_h
-#define GraphicsRedrawClient_h
+#ifndef GraphicsRedrawClient2_h
+#define GraphicsRedrawClient2_h
 
 #include "GmpiApiDrawing.h"
 
@@ -43,13 +43,32 @@ public:
 
 	// TODO: getClipRect() ?
 
-	virtual gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
+	virtual gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
 
 	virtual ReturnCode getClipArea(drawing::Rect* returnRect) = 0;
 
 	// {E922D16F-447B-4E82-B0B1-FD995CA4210E}
 	inline static const gmpi::api::Guid guid =
 	{ 0xe922d16f, 0x447b, 0x4e82, { 0xb0, 0xb1, 0xfd, 0x99, 0x5c, 0xa4, 0x21, 0xe } };
+};
+
+// TODO GMPIfy
+enum GG_POINTER_FLAGS {
+	GG_POINTER_FLAG_NONE = 0,
+	GG_POINTER_FLAG_NEW = 0x01,					// Indicates the arrival of a new pointer.
+	GG_POINTER_FLAG_INCONTACT = 0x04,
+	GG_POINTER_FLAG_FIRSTBUTTON = 0x10,
+	GG_POINTER_FLAG_SECONDBUTTON = 0x20,
+	GG_POINTER_FLAG_THIRDBUTTON = 0x40,
+	GG_POINTER_FLAG_FOURTHBUTTON = 0x80,
+	GG_POINTER_FLAG_CONFIDENCE = 0x00000400,	// Confidence is a suggestion from the source device about whether the pointer represents an intended or accidental interaction.
+	GG_POINTER_FLAG_PRIMARY = 0x00002000,	// First pointer to contact surface. Mouse is usually Primary.
+
+	GG_POINTER_SCROLL_HORIZ = 0x00008000,	// Mouse Wheel is scrolling horizontal.
+
+	GG_POINTER_KEY_SHIFT = 0x00010000,	// Modifer key - <SHIFT>.
+	GG_POINTER_KEY_CONTROL = 0x00020000,	// Modifer key - <CTRL> or <Command>.
+	GG_POINTER_KEY_ALT = 0x00040000,	// Modifer key - <ALT> or <Option>.
 };
 
 // TODO incorporate IMpKeyClient?

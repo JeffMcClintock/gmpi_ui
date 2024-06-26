@@ -6,8 +6,8 @@
 #include <Windowsx.h>
 #include <commctrl.h>
 #include "./DrawingFrameWin.h"
-#include "Drawing.h"
-#include "mp_sdk_gui2.h"
+//#include "Drawing.h"
+//#include "mp_sdk_gui2.h"
 
 using namespace std;
 using namespace gmpi;
@@ -370,14 +370,14 @@ LRESULT DrawingFrameBase::WindowProc(
 
 			TooltipOnMouseActivity();
 
-			int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_INCONTACT | gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
+			int32_t flags = gmpi::api::GG_POINTER_FLAG_INCONTACT | gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
 
 			switch (message)
 			{
 				case WM_MBUTTONDOWN:
 				case WM_LBUTTONDOWN:
 				case WM_RBUTTONDOWN:
-					flags |= gmpi_gui_api::GG_POINTER_FLAG_NEW;
+					flags |= gmpi::api::GG_POINTER_FLAG_NEW;
 					break;
 			}
 
@@ -385,29 +385,29 @@ LRESULT DrawingFrameBase::WindowProc(
 			{
 			case WM_LBUTTONUP:
 			case WM_LBUTTONDOWN:
-				flags |= gmpi_gui_api::GG_POINTER_FLAG_FIRSTBUTTON;
+				flags |= gmpi::api::GG_POINTER_FLAG_FIRSTBUTTON;
 				break;
 			case WM_RBUTTONDOWN:
 			case WM_RBUTTONUP:
-				flags |= gmpi_gui_api::GG_POINTER_FLAG_SECONDBUTTON;
+				flags |= gmpi::api::GG_POINTER_FLAG_SECONDBUTTON;
 				break;
 			case WM_MBUTTONDOWN:
 			case WM_MBUTTONUP:
-				flags |= gmpi_gui_api::GG_POINTER_FLAG_THIRDBUTTON;
+				flags |= gmpi::api::GG_POINTER_FLAG_THIRDBUTTON;
 				break;
 			}
 
 			if (GetKeyState(VK_SHIFT) < 0)
 			{
-				flags |= gmpi_gui_api::GG_POINTER_KEY_SHIFT;
+				flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
 			}
 			if (GetKeyState(VK_CONTROL) < 0)
 			{
-				flags |= gmpi_gui_api::GG_POINTER_KEY_CONTROL;
+				flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
 			}
 			if (GetKeyState(VK_MENU) < 0)
 			{
-				flags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
+				flags |= gmpi::api::GG_POINTER_KEY_ALT;
 			}
 
 			gmpi::ReturnCode r;
@@ -468,23 +468,23 @@ LRESULT DrawingFrameBase::WindowProc(
             //The wheel rotation will be a multiple of WHEEL_DELTA, which is set at 120. This is the threshold for action to be taken, and one such action (for example, scrolling one increment) should occur for each delta.
 			const auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
 
-			int32_t flags = gmpi_gui_api::GG_POINTER_FLAG_PRIMARY | gmpi_gui_api::GG_POINTER_FLAG_CONFIDENCE;
+			int32_t flags = gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
 
 			if (WM_MOUSEHWHEEL == message)
-				flags |= gmpi_gui_api::GG_POINTER_SCROLL_HORIZ;
+				flags |= gmpi::api::GG_POINTER_SCROLL_HORIZ;
 
 			const auto fwKeys = GET_KEYSTATE_WPARAM(wParam);
 			if (MK_SHIFT & fwKeys)
 			{
-				flags |= gmpi_gui_api::GG_POINTER_KEY_SHIFT;
+				flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
 			}
 			if (MK_CONTROL & fwKeys)
 			{
-				flags |= gmpi_gui_api::GG_POINTER_KEY_CONTROL;
+				flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
 			}
 			//if (GetKeyState(VK_MENU) < 0)
 			//{
-			//	flags |= gmpi_gui_api::GG_POINTER_KEY_ALT;
+			//	flags |= gmpi::api::GG_POINTER_KEY_ALT;
 			//}
 
 			/*auto r =*/ inputClient->onMouseWheel(p, flags, zDelta);
@@ -673,7 +673,7 @@ void DrawingFrameBase::OnPaint()
 				gmpi_gui_client->onRender(context.get());
 #endif
 				if (drawingClient)
-					drawingClient->onRender(context.get());
+					drawingClient->render(context.get());
 
 				graphics.popAxisAlignedClip();
 			}

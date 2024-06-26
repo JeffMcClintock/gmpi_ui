@@ -37,17 +37,17 @@ namespace interaction
 }
 }
 
-class JuceComponentProxy : public IDrawingClient, public IInputClient
+class JuceComponentProxy : public gmpi::api::IDrawingClient, public gmpi::api::IInputClient
 {
 	class GmpiComponent* component = {};
-	IDrawingHost* drawinghost = {};
-public:
+	gmpi::api::IDrawingHost* drawinghost = {};
 
+public:
 	JuceComponentProxy(class GmpiComponent* pcomponent) : component(pcomponent) {}
 
 	gmpi::ReturnCode open(gmpi::api::IUnknown* host) override
 	{
-		return host->queryInterface(&IDrawingHost::guid, (void**)&drawinghost);
+		return host->queryInterface(&gmpi::api::IDrawingHost::guid, (void**)&drawinghost);
 	}
 
 	void invalidateRect()
@@ -56,18 +56,21 @@ public:
 	}
 
 	// First pass of layout update. Return minimum size required for given available size
-	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override { return gmpi::ReturnCode::Ok; }
+	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override { return gmpi::ReturnCode::NoSupport; }
 
 	// Second pass of layout.
 	gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override { return gmpi::ReturnCode::Ok; }
 
-	gmpi::ReturnCode onRender(gmpi::drawing::api::IDeviceContext* drawingContext) override;
+	gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override;
+
+	gmpi::ReturnCode getClipArea(drawing::Rect* returnRect) override { return gmpi::ReturnCode::NoSupport; }
 
 	// IInputClient
 	gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onPointerUp  (gmpi::drawing::Point point, int32_t flags) override;
-
+	gmpi::ReturnCode onMouseWheel (gmpi::drawing::Point point, int32_t flags, int32_t delta) override { return gmpi::ReturnCode::Unhandled; }
+	gmpi::ReturnCode setHover(bool isMouseOverMe) { return gmpi::ReturnCode::Unhandled; }
 
 	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -402,7 +405,7 @@ struct GmpiComponent::Pimpl
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-        JuceDrawingFrameBase.AddView(static_cast</*gmpi::interaction::*/IDrawingClient*>(&proxy));
+        JuceDrawingFrameBase.AddView(static_cast<gmpi::api::IDrawingClient*>(&proxy));
 
         JuceDrawingFrameBase.open(
             hwnd,
@@ -477,7 +480,7 @@ void GmpiComponent::invalidateRect()
 }
 #endif
 
-gmpi::ReturnCode JuceComponentProxy::onRender(gmpi::drawing::api::IDeviceContext* drawingContext)
+gmpi::ReturnCode JuceComponentProxy::render(gmpi::drawing::api::IDeviceContext* drawingContext)
 {
 	gmpi::drawing::Graphics g(drawingContext);
 	component->onRender(g);

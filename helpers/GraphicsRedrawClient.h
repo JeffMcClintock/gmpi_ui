@@ -33,17 +33,17 @@ public:
 class IDrawingClient : public gmpi::api::IUnknown
 {
 public:
-	virtual gmpi::ReturnCode open(gmpi::api::IUnknown* host) = 0;
+	virtual ReturnCode open(gmpi::api::IUnknown* host) = 0;
 
 	// First pass of layout update. Return minimum size required for given available size
-	virtual gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) = 0;
+	virtual ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) = 0;
 
 	// Second pass of layout.
-	virtual gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) = 0;
+	virtual ReturnCode arrange(const gmpi::drawing::Rect* finalRect) = 0;
 
 	// TODO: getClipRect() ?
 
-	virtual gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
+	virtual ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
 
 	virtual ReturnCode getClipArea(drawing::Rect* returnRect) = 0;
 

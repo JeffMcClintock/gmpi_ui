@@ -485,7 +485,7 @@ public:
         return useLegacyBaseLineSnapping;
     }
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::ITextFormat);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
     GMPI_REFCOUNT;
 };
 
@@ -524,7 +524,7 @@ public:
         return (uint8_t)((t + 1 + (t >> 8)) >> 8); // fast way to divide by 255
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapPixels);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmapPixels);
     GMPI_REFCOUNT;
 };
 
@@ -690,7 +690,7 @@ public:
         return ReturnCode::Ok;
     }
 
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmap);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmap);
     GMPI_REFCOUNT;
 };
 
@@ -706,7 +706,7 @@ public:
             gradientstops.push_back(gradientStops[i]);
         }
     }
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IGradientstopCollection);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IGradientstopCollection);
 };
 
 class DrawingFactory : public drawing::api::IFactory
@@ -967,7 +967,13 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         returnString->setData(supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(supportedFontFamilies[fontIndex].size()));
         return ReturnCode::Ok;
     }
-
+    
+    ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
+    {
+        *returnPixelFormat = drawing::api::IBitmapPixels::kBGRA;
+        return ReturnCode::Ok;
+    }
+    
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = 0;
@@ -1045,7 +1051,7 @@ public:
     }
 
     GMPI_REFCOUNT;
-    GMPI_QUERYINTERFACE_NEW(drawing::api::IBitmapBrush);
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmapBrush);
 };
 
 class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrushBase
@@ -1312,7 +1318,7 @@ public:
     }
 
     GMPI_REFCOUNT;
-    GMPI_QUERYINTERFACE_NEW(gmpi::drawing::api::ILinearGradientBrush);
+    GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::ILinearGradientBrush);
 };
 
 class RadialGradientBrush : public drawing::api::IRadialGradientBrush, public CocoaBrushBase, public Gradient
@@ -1447,7 +1453,7 @@ public:
 		lastPoint = bezier->point3;
 	}
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::IGeometrySink);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IGeometrySink);
 
 	GMPI_REFCOUNT;
 };
@@ -1569,7 +1575,7 @@ public:
 		applyDashStyleToPath(geometry_, strokeStyle, strokeWidth);
 	}
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::IPathGeometry);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IPathGeometry);
 	GMPI_REFCOUNT;
 };
 
@@ -2383,7 +2389,7 @@ public:
 	*/
 	//	void InsetNewMethodHere(){}
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::IDeviceContext);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IDeviceContext);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 

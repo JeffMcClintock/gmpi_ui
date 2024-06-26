@@ -20,6 +20,7 @@
 */
 
 #include <assert.h>
+#include <string>
 #include "GmpiApiCommon.h"
 #include "RefCountMacros.h"
 

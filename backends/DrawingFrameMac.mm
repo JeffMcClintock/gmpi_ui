@@ -33,11 +33,11 @@ class DrawingFrameCocoa :
 public gmpi_gui::IMpGraphicsHost,
 public GmpiGuiHosting::PlatformTextEntryObserver,
 #endif
-public IDrawingHost
+public gmpi::api::IDrawingHost
 {
 public:
-    gmpi::shared_ptr<IDrawingClient> drawingClient;
-    gmpi::shared_ptr<IInputClient> inputClient;
+    gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
+    gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
 #ifdef GMPI_HOST_POINTER_SUPPORT
     gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
     int32_t mouseCaptured = 0;
@@ -50,8 +50,8 @@ public:
     
     void Init(gmpi::api::IUnknown* pclient)
     {
-        pclient->queryInterface(&IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
-        pclient->queryInterface(&IInputClient::guid, inputClient.asIMpUnknownPtr());
+        pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+        pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.asIMpUnknownPtr());
         
         if(drawingClient)
         {
@@ -103,7 +103,7 @@ public:
             context.pushAxisAlignedClip(&dirtyClipped);
 
            if(drawingClient)
-               drawingClient->onRender(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
+               drawingClient->render(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
             
             context.popAxisAlignedClip();
         }

@@ -43,7 +43,7 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::IStrokeStyle);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IStrokeStyle);
 	GMPI_REFCOUNT;
 };
 
@@ -265,7 +265,7 @@ public:
 		}
 	}
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::IGeometrySink);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IGeometrySink);
 	GMPI_REFCOUNT;
 };
 
@@ -492,7 +492,7 @@ public:
 		return ReturnCode::NoSupport;
 	}
 
-	GMPI_QUERYINTERFACE_NEW(drawing::api::IDeviceContext);
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IDeviceContext);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 

@@ -344,7 +344,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     gmpi::drawing::Point mousePos;
 }
 
-- (id) initWithClient: (class IMpUnknown*) _client preferredSize: (NSSize) size;
+- (id) initWithClient: (class IUnknown*) _client preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
 
@@ -354,7 +354,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 //--------------------------------------------------------------------------------------------------------------
 @implementation GMPI_VIEW_CLASS
 
-- (id) initWithClient: (class IMpUnknown*) _client preferredSize: (NSSize) size
+- (id) initWithClient: (class IUnknown*) _client preferredSize: (NSSize) size
 {
     self = [super initWithFrame: NSMakeRect (0, 0, size.width, size.height)];
     if (self)
@@ -602,7 +602,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 // without including objective-C headers, we need to create an NSView from C++.
 // here is the function here to return the view, using void* as return type.
-void* createNativeView(class IMpUnknown* client, int width, int height)
+void* createNativeView(class IUnknown* client, int width, int height)
 {
     NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
     

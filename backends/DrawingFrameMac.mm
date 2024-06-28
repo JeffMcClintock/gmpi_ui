@@ -34,6 +34,7 @@ public gmpi_gui::IMpGraphicsHost,
 public GmpiGuiHosting::PlatformTextEntryObserver,
 #endif
 public gmpi::api::IDrawingHost
+public gmpi::api::IInputHost,
 {
 public:
     gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
@@ -181,22 +182,23 @@ public:
     {
 //TODO        assert(false); // not implemented.
     }
-    virtual gmpi::ReturnCode  setCapture(void) override
+#endif
+    gmpi::ReturnCode setCapture(void) override
     {
         mouseCaptured = 1;
         return gmpi::ReturnCode::Ok;
     }
-    virtual gmpi::ReturnCode  getCapture(int32_t & returnValue) override
+    gmpi::ReturnCode getCapture(bool & returnValue) override
     {
         returnValue = mouseCaptured;
         return gmpi::ReturnCode::Ok;
     }
-    virtual gmpi::ReturnCode  releaseCapture(void) override
+    gmpi::ReturnCode releaseCapture() override
     {
         mouseCaptured = 0;
         return gmpi::ReturnCode::Ok;
     }
-#endif
+
     gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown ** returnFactory) override
     {
         *returnFactory = &drawingFactory;
@@ -244,6 +246,19 @@ public:
             addRef();
             return gmpi::ReturnCode::Ok;
         }
+		if (*iid == IInputHost::guid)
+		{
+			// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
+			*returnInterface = reinterpret_cast<void*>(static_cast<IInputHost*>(this));
+			addRef();
+			return gmpi::ReturnCode::Ok;
+		}
+		if (*iid == gmpi::api::IUnknown::guid)
+		{
+			*returnInterface = this;
+			addRef();
+			return gmpi::ReturnCode::Ok;
+		}
 
 #if 0
         if (iid == gmpi::MP_IID_UI_HOST2)

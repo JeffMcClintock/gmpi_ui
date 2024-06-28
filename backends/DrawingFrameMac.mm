@@ -2,6 +2,8 @@
 #include "helpers/GraphicsRedrawClient.h"
 #include "GmpiSdkCommon.h"
 #import "CocoaGfx.h"
+// hmm part of GMPI plugins not GMPI Drawing. how to keep no dependancy?
+//#include "GmpiApiEditor.h"
 
 namespace gmpi
 {
@@ -39,6 +41,8 @@ public gmpi::api::IInputHost
 public:
     gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
     gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
+    gmpi::api::IUnknown* parameterHost{};
+    
     int32_t mouseCaptured = 0;
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
@@ -50,20 +54,43 @@ public:
     NSView* view;
     NSBitmapImageRep* backBuffer{}; // backing buffer with linear colorspace for correct blending.
     
-    void Init(gmpi::api::IUnknown* pclient)
+    void Init(gmpi::api::IUnknown* paramHost, gmpi::api::IUnknown* pclient)
     {
+        parameterHost = paramHost;
+        
         pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
         pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.asIMpUnknownPtr());
-        
+//        gmpi::shared_ptr<gmpi::api::IEditor> editor;
+//        pclient->queryInterface(&gmpi::api::IEditor::guid, editor.asIMpUnknownPtr());
+
+ //       if (editor)
+ //           editor->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+    }
+    
+    void open()
+    {
         if(drawingClient)
         {
             drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
+            
+            const auto r = [view bounds];
+
+            const gmpi::drawing::Size available{
+                static_cast<float>(r.size.width),
+                static_cast<float>(r.size.height)
+            };
+            
+            gmpi::drawing::Size desired{};
+            drawingClient->measure(&available, &desired);
+            gmpi::drawing::Rect finalRect{0,0, available.width, available.height};
+            drawingClient->arrange(&finalRect);
         }
     }
-     
+    
      void DeInit()
      {
          drawingClient = {};
+         inputClient = {};
      }
 
     ~DrawingFrameCocoa()
@@ -241,6 +268,14 @@ public:
     {
         *returnInterface = {};
 
+        GMPI_QUERYINTERFACE(gmpi::api::IDrawingHost);
+        GMPI_QUERYINTERFACE(gmpi::api::IInputHost);
+
+        if(parameterHost)
+            return parameterHost->queryInterface(iid, returnInterface);
+
+        return gmpi::ReturnCode::NoSupport;
+#if 0
         if (*iid == IDrawingHost::guid)
         {
             *returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
@@ -260,7 +295,7 @@ public:
 			addRef();
 			return gmpi::ReturnCode::Ok;
 		}
-
+#endif
 #if 0
         if (iid == gmpi::MP_IID_UI_HOST2)
         {
@@ -360,7 +395,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     gmpi::drawing::Point mousePos;
 }
 
-- (id) initWithClient: (class IUnknown*) _client preferredSize: (NSSize) size;
+- (id) initWithClient: (class IUnknown*) _client parameterHost: (class IUnknown*) paramHost preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
 
@@ -370,7 +405,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 //--------------------------------------------------------------------------------------------------------------
 @implementation GMPI_VIEW_CLASS
 
-- (id) initWithClient: (class IUnknown*) _client preferredSize: (NSSize) size
+- (id) initWithClient: (class IUnknown*) _client parameterHost: (class IUnknown*) paramHost preferredSize: (NSSize) size
 {
     self = [super initWithFrame: NSMakeRect (0, 0, size.width, size.height)];
     if (self)
@@ -380,7 +415,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
         [self addTrackingArea:self->trackingArea ];
         
         drawingFrame.view = self; // pass to init might be clearer
-        drawingFrame.Init((gmpi::api::IUnknown*) _client);
+        drawingFrame.Init((gmpi::api::IUnknown*) paramHost, (gmpi::api::IUnknown*) _client);
         
         timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
     }
@@ -388,7 +423,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 }
 
 
-// Opt-in to notification that mouse entered window.
+// View shown for first time.
 - (void)viewDidMoveToWindow {
      [super viewDidMoveToWindow];
 
@@ -396,6 +431,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     if(window)
     {
         drawingFrame.drawingFactory.setBestColorSpace(window);
+        drawingFrame.open();
     }
 }
 
@@ -618,11 +654,19 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 // without including objective-C headers, we need to create an NSView from C++.
 // here is the function here to return the view, using void* as return type.
-void* createNativeView(class IUnknown* client, int width, int height)
+void* createNativeView(void* parent, class IUnknown* paramHost, class IUnknown* client, int width, int height)
 {
     NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
     
-    return (void*) [[GMPI_VIEW_CLASS alloc] initWithClient:client preferredSize:inPreferredSize];
+    NSView* native = [[GMPI_VIEW_CLASS alloc] initWithClient:client parameterHost:paramHost preferredSize:inPreferredSize];
+    
+    if(parent) // JUCE creates the view then *later* adds it to the parent. GMPI adds it here.
+    {
+        NSView* parentView = (NSView*) parent;
+        [parentView addSubview:native];
+    }
+    
+    return (void*) native;
 }
 
 void onCloseNativeView(void* ptr)

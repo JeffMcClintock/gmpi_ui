@@ -439,7 +439,7 @@ GmpiComponent::~GmpiComponent() {}
 // macOS
 // without including objective-C headers, we need to create an NSView.
 // forward declare function here to return the view, using void* as return type.
-void* createNativeView(class IMpUnknown* client, int width, int height);
+void* createNativeView(void* parent, class IUnknown* paramHost, class IUnknown* client, int width, int height);
 void onCloseNativeView(void* ptr);
 
 struct GmpiComponent::Pimpl
@@ -451,7 +451,7 @@ struct GmpiComponent::Pimpl
 	void open(juce::NSViewComponent* nsview)
 	{
 		const auto r = nsview->getLocalBounds();
-		auto nsView = createNativeView((class IMpUnknown*)&proxy, r.getWidth(), r.getHeight());
+		auto nsView = createNativeView(nullptr, nullptr, (class IUnknown*)&proxy, r.getWidth(), r.getHeight());
 		nsview->setView(nsView);
 	}
 };

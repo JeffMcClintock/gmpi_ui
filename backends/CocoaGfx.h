@@ -742,7 +742,7 @@ public:
         nsColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
 #endif
     }
-        
+
     void setBestColorSpace(NSWindow* window)
     {
         /* even non-wide displays benifit from kCGColorSpaceExtendedLinearSRGB, they appear to dither to approximate it

@@ -33,15 +33,16 @@ class DrawingFrameCocoa :
 public gmpi_gui::IMpGraphicsHost,
 public GmpiGuiHosting::PlatformTextEntryObserver,
 #endif
-public gmpi::api::IDrawingHost
-public gmpi::api::IInputHost,
+public gmpi::api::IDrawingHost,
+public gmpi::api::IInputHost
 {
 public:
     gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
     gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
+    int32_t mouseCaptured = 0;
+
 #ifdef GMPI_HOST_POINTER_SUPPORT
     gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
-    int32_t mouseCaptured = 0;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
 #endif
     
@@ -56,7 +57,7 @@ public:
         
         if(drawingClient)
         {
-            drawingClient->open(this);
+            drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
         }
     }
      

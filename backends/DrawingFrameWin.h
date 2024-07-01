@@ -66,6 +66,8 @@ namespace GmpiGuiHosting
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
 		gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
 		gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
+		gmpi::api::IUnknown* parameterHost{};
+
 		gmpi::drawing::SizeL swapChainSize = {};
 
 		ID2D1DeviceContext* mpRenderTarget = {};
@@ -154,8 +156,10 @@ namespace GmpiGuiHosting
 		void CreateDevice();
 		void CreateDeviceSwapChainBitmap();
 
-		void AddView(gmpi::api::IUnknown* pcontainerView)
+		void AddView(gmpi::api::IUnknown* paramHost, gmpi::api::IUnknown* pcontainerView)
 		{
+			parameterHost = paramHost;
+
 			pcontainerView->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
 			if(drawingClient)
 			{
@@ -275,6 +279,11 @@ namespace GmpiGuiHosting
 				return gmpi::ReturnCode::Ok;
 			}
 #endif
+			if (parameterHost)
+			{
+				return parameterHost->queryInterface(iid, returnInterface);
+			}
+
 			return gmpi::ReturnCode::NoSupport;
 		}
 

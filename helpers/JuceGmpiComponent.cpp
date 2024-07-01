@@ -405,7 +405,7 @@ struct GmpiComponent::Pimpl
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-        JuceDrawingFrameBase.AddView(static_cast<gmpi::api::IDrawingClient*>(&proxy));
+        JuceDrawingFrameBase.AddView(nullptr, static_cast<gmpi::api::IDrawingClient*>(&proxy));
 
         JuceDrawingFrameBase.open(
             hwnd,

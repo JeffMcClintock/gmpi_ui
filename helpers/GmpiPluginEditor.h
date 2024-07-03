@@ -94,19 +94,10 @@ public:
 
 	ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const void* data) override
 	{
-		auto it = pins.find(pinId);
-		if (it != pins.end())
+		if (auto it = pins.find(pinId); it != pins.end())
 		{
 			it->second->setFromHost(voice, size, data);
 		}
-
-		//if (pinId == 0 && size == sizeof(pinGain))
-		//{
-		//	pinGain.value = *(const float*)data;
-
-		//	if (drawingHost)
-		//		drawingHost->invalidateRect(nullptr);
-		//}
 		return ReturnCode::Ok;
 	}
 

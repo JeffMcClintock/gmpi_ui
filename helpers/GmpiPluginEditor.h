@@ -10,12 +10,21 @@
 namespace gmpi
 {
 
-struct PinBase
+class PinBase
 {
+public:
 	int id{};
+	std::function<void(void)> onUpdate;
 	gmpi::api::IEditorHost* host{};
-	std::function<void(PinBase*)> onUpdate;
 
+	PinBase(int moose)
+	{
+		_RPT0(_CRT_WARN, "PinBase()\n");
+		int test = 9;
+	}
+	virtual ~PinBase() {
+		int test = 9;
+	}
 	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
 };
 
@@ -25,6 +34,12 @@ class Pin : public PinBase
 public:
 	T value{};
 
+	Pin() : PinBase(56)
+	{
+		_RPT0(_CRT_WARN, "Pin()\n");
+			int test = 9;
+
+	}
 	const T& operator=(const T& pvalue)
 	{
 		if (pvalue != value)
@@ -39,7 +54,7 @@ public:
 	{
 		VariableFromRaw(size, data, value);
 		if(onUpdate)
-			onUpdate(this);
+			onUpdate();// this);
 	}
 };
 
@@ -165,6 +180,10 @@ public:
 		return ReturnCode::Unhandled;
 	}
 	gmpi::ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t flags) override
+	{
+		return ReturnCode::Unhandled;
+	}
+	gmpi::ReturnCode OnKeyPress(wchar_t c) override
 	{
 		return ReturnCode::Unhandled;
 	}

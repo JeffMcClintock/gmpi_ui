@@ -492,8 +492,8 @@ LRESULT DrawingFrameBase::WindowProc(
 		break;
 
 	case WM_CHAR:
-		//if(gmpi_key_client)
-		//	gmpi_key_client->OnKeyPress((wchar_t) wParam);
+		if(inputClient)
+			inputClient->OnKeyPress((wchar_t) wParam);
 		break;
 #endif
 

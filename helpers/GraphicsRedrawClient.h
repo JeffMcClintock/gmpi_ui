@@ -75,11 +75,15 @@ enum GG_POINTER_FLAGS {
 class DECLSPEC_NOVTABLE IInputClient : public gmpi::api::IUnknown
 {
 public:
-	virtual gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) = 0;
-	virtual gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) = 0;
-	virtual gmpi::ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t flags) = 0;
-	virtual gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point point, int32_t flags, int32_t delta) = 0;
-	virtual gmpi::ReturnCode setHover(bool isMouseOverMe) = 0;
+	// Mouse events.
+	virtual ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) = 0;
+	virtual ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) = 0;
+	virtual ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t flags) = 0;
+	virtual ReturnCode onMouseWheel(gmpi::drawing::Point point, int32_t flags, int32_t delta) = 0;
+	virtual ReturnCode setHover(bool isMouseOverMe) = 0;
+
+	// keyboard events.
+	virtual ReturnCode OnKeyPress(wchar_t c) = 0;
 
 	// {D2D020D1-BCEE-49F9-A173-97BC6460A727}
 	inline static const gmpi::api::Guid guid =
@@ -89,7 +93,7 @@ public:
 class IDrawingHost : public gmpi::api::IUnknown
 {
 public:
-	virtual gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) = 0;
+	virtual ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) = 0;
 
 	// TODO: sort out method name case.
 	// Get host's current skin's font information.
@@ -116,9 +120,11 @@ public:
 class IInputHost : public gmpi::api::IUnknown
 {
 public:
-	virtual gmpi::ReturnCode setCapture() = 0;
-	virtual gmpi::ReturnCode getCapture(bool& returnValue) = 0;
-	virtual gmpi::ReturnCode releaseCapture() = 0;
+	virtual ReturnCode setCapture() = 0;
+	virtual ReturnCode getCapture(bool& returnValue) = 0;
+	virtual ReturnCode releaseCapture() = 0;
+
+	// setFocus() ?
 
 	// {B5109952-2608-48B3-9685-788D36EBA7AF}
 	inline static const gmpi::api::Guid guid =

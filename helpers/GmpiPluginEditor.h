@@ -9,22 +9,21 @@
 
 namespace gmpi
 {
+namespace editor
+{
 
 class PinBase
 {
 public:
 	int id{};
-	std::function<void(void)> onUpdate;
 	gmpi::api::IEditorHost* host{};
+	std::function<void(PinBase*)> onUpdate;
 
-	PinBase(int moose)
+	PinBase()
 	{
-		_RPT0(_CRT_WARN, "PinBase()\n");
-		int test = 9;
+		_RPT0(_CRT_WARN, "PinBase() constructor\n");
 	}
-	virtual ~PinBase() {
-		int test = 9;
-	}
+	virtual ~PinBase() {}
 	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
 };
 
@@ -34,11 +33,9 @@ class Pin : public PinBase
 public:
 	T value{};
 
-	Pin() : PinBase(56)
+	Pin()
 	{
-		_RPT0(_CRT_WARN, "Pin()\n");
-			int test = 9;
-
+		_RPT0(_CRT_WARN, "Pin() constructor\n");
 	}
 	const T& operator=(const T& pvalue)
 	{
@@ -54,7 +51,7 @@ public:
 	{
 		VariableFromRaw(size, data, value);
 		if(onUpdate)
-			onUpdate();// this);
+			onUpdate(this);
 	}
 };
 
@@ -200,3 +197,4 @@ public:
 };
 
 } // namespace gmpi
+} // namespace editor

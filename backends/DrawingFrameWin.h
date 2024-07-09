@@ -232,6 +232,10 @@ namespace GmpiGuiHosting
 		gmpi::ReturnCode getCapture(bool& returnValue) override;
 		gmpi::ReturnCode releaseCapture() override;
 
+		gmpi::ReturnCode getFocus() override;
+		gmpi::ReturnCode releaseFocus() override;
+
+
 #if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
 		gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

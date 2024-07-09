@@ -120,12 +120,15 @@ public:
 class IInputHost : public gmpi::api::IUnknown
 {
 public:
+	// mouse
 	virtual ReturnCode setCapture() = 0;
 	virtual ReturnCode getCapture(bool& returnValue) = 0;
 	virtual ReturnCode releaseCapture() = 0;
 
-	// setFocus() ?
-
+	// keyboard
+	virtual ReturnCode getFocus() = 0;
+	virtual ReturnCode releaseFocus() = 0;
+	
 	// {B5109952-2608-48B3-9685-788D36EBA7AF}
 	inline static const gmpi::api::Guid guid =
 	{ 0xb5109952, 0x2608, 0x48b3, { 0x96, 0x85, 0x78, 0x8d, 0x36, 0xeb, 0xa7, 0xaf } };

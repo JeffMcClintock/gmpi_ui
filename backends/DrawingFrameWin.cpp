@@ -1143,6 +1143,17 @@ gmpi::ReturnCode DrawingFrameBase::releaseCapture()
 	return gmpi::ReturnCode::Ok;
 }
 
+gmpi::ReturnCode DrawingFrameBase::getFocus()
+{
+	::SetFocus(getWindowHandle());
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode DrawingFrameBase::releaseFocus()
+{
+	return gmpi::ReturnCode::Ok;
+}
+
 #ifdef GMPI_HOST_POINTER_SUPPORT
 
 void DrawingFrameBase::invalidateMeasure()

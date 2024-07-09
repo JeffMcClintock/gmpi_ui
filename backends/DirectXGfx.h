@@ -187,8 +187,8 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
 {
     bool alphaPremultiplied;
     IWICBitmap* bitmap;
-    UINT bytesPerRow;
-    BYTE* ptr;
+    UINT bytesPerRow{};
+    BYTE* ptr{};
     IWICBitmapLock* pBitmapLock;
     ID2D1Bitmap* nativeBitmap_;
     int flags;
@@ -231,6 +231,10 @@ public:
             alphaPremultiplied = _alphaPremultiplied;
             if (!alphaPremultiplied)
                 unpremultiplyAlpha();
+        }
+        else
+        {
+            alphaPremultiplied = true; // prevent possible null deference of 'bitmap' in destructor
         }
     }
 
@@ -444,7 +448,7 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::IBitmapBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+        if (*iid == drawing::api::IBitmapBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
         {
             *returnInterface = this;
             addRef();
@@ -498,7 +502,7 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+        if (*iid == drawing::api::ISolidColorBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
         {
             *returnInterface = this;
             addRef();
@@ -568,7 +572,7 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+        if (*iid == drawing::api::ISolidColorBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
         {
             *returnInterface = this;
             addRef();
@@ -622,7 +626,7 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::ILinearGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+        if (*iid == drawing::api::ILinearGradientBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
         {
             *returnInterface = this;
             addRef();
@@ -687,7 +691,7 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::IRadialGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
+        if (*iid == drawing::api::IRadialGradientBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
         {
             *returnInterface = this;
             addRef();

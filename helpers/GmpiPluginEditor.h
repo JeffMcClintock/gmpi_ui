@@ -4,7 +4,7 @@
 #include "GmpiApiEditor.h"
 #include "RefCountMacros.h"
 #include "Common.h"
-#include "Drawing.h"
+#include "../Drawing.h" // .. to force use of gmpi-ui not SE SDK
 #include "helpers/GraphicsRedrawClient.h"
 
 namespace gmpi
@@ -42,14 +42,14 @@ public:
 		if (pvalue != value)
 		{
 			value = pvalue;
-			host->setPin(id, 0, variableRawSize(value), variableRawData(value));
+			host->setPin(id, 0, dataSize(value), dataPtr(value));
 		}
 		return value;
 	}
 
 	void setFromHost(int32_t voice, int32_t size, const void* data)
 	{
-		VariableFromRaw(size, data, value);
+		valueFromData(size, data, value);
 		if(onUpdate)
 			onUpdate(this);
 	}

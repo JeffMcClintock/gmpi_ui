@@ -7,21 +7,23 @@
 This class provides a programmable timer for creating animation effects.
 NOTE: all instances of the module share the same timer, and therefore the same timer interval.
 */
+namespace gmpi
+{
 
 // todo lowercase methods
 class TimerClient
 {
 public:
 	virtual ~TimerClient();
-	virtual bool OnTimer() = 0;
+	virtual bool onTimer() = 0;
 
 	// New. Better
-	void StartTimer(int periodMilliSeconds);
-	void StopTimer();
+	void startTimer(int periodMilliSeconds);
+	void stopTimer();
 
 	// old. avoid.
-	void SetTimerIntervalMs( int periodMilliSeconds );
-	void StartTimer();
+	void setTimerIntervalMs( int periodMilliSeconds );
+	void startTimer();
 };
 
 typedef std::vector<class TimerClient*> clientContainer_t;
@@ -44,9 +46,9 @@ public:
 	Timer(int pPeriodMilliSeconds = 50) :
 		periodMilliSeconds(pPeriodMilliSeconds)
 	{}
-	void Start();
-	void Stop();
-	void OnTimer();
+	void start();
+	void stop();
+	void onTimer();
     bool isRunning();
 };
 
@@ -54,23 +56,24 @@ public:
 
 class TimerManager
 {
-//	std::vector< se_sdk_timers::Timer > timers; // !! invalidated object being iterated in OnTimer() when resizing vector to add new stuff.
 	std::list< se_sdk_timers::Timer > timers;
 
 public:
 	TimerManager();
-	static TimerManager* Instance();
-	void RegisterClient(TimerClient* client, int periodMilliSeconds);
-
-	void RegisterClient(TimerClient* client)
-	{
-		RegisterClient(client, interval_);
-	}
-	void UnRegisterClient( TimerClient* client );
-	void SetInterval( int intervalMs );
 	~TimerManager();
-    void OnTimer(se_sdk_timers::timer_id_t timerId);
+	static TimerManager* instance();
+	void registerClient(TimerClient* client, int periodMilliSeconds);
+
+	void registerClient(TimerClient* client)
+	{
+		registerClient(client, interval_);
+	}
+	void unRegisterClient( TimerClient* client );
+	void setInterval( int intervalMs );
+    void onTimer(se_sdk_timers::timer_id_t timerId);
 
 private:
 	int interval_;
 };
+
+}

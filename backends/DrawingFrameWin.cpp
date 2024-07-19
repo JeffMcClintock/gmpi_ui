@@ -225,7 +225,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 			drawingClient->arrange(&finalRect);
 		}
 		// starting Timer latest to avoid first event getting 'in-between' other init events.
-		StartTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+		startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
 	}
 }
 
@@ -562,7 +562,7 @@ void DrawingFrameBase::OnSize(UINT width, UINT height)
 }
 
 // Ideally this is called at 60Hz so we can draw as fast as practical, but without blocking to wait for Vsync all the time (makes host unresponsive).
-bool DrawingFrameBase::OnTimer()
+bool DrawingFrameBase::onTimer()
 {
 	auto hwnd = getWindowHandle();
 	if (hwnd == nullptr

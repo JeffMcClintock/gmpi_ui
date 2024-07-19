@@ -12,7 +12,7 @@ subclass it as a TreeViewModel or whatever
 
 create a body() method that 'builds' the views and saves them in the environment (I guess)
 
-whenever TreeViewModel is updated (though expansion/contraction) flay the view that built it as dirty,
+whenever TreeViewModel is updated (though expansion/contraction) flag the view that built it as dirty,
  this should delete any visuals created previously by that view (and it's children), and rebuild them.
 
  this would require each view (or someone) to keep a list of visuals that it created

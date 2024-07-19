@@ -13,7 +13,7 @@ using namespace GmpiGuiHosting;
 #include <chrono>
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
-#include "helpers/TimerManager.h"
+#include "helpers/Timer.h"
 #include "helpers/GraphicsRedrawClient.h"
 
 namespace SynthEdit2
@@ -55,7 +55,7 @@ namespace GmpiGuiHosting
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
 		/*public gmpi::api::IUserInterfaceHost2,*/
-		public TimerClient
+		public gmpi::TimerClient
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 		bool firstPresent = false;
@@ -108,7 +108,7 @@ namespace GmpiGuiHosting
 
 		virtual ~DrawingFrameBase()
 		{
-			StopTimer();
+			stopTimer();
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
 			// Free GUI objects first so they can release fonts etc before releasing factorys.
@@ -305,7 +305,7 @@ namespace GmpiGuiHosting
 		void ShowToolTip();
 		void HideToolTip();
 		void OnSize(UINT width, UINT height);
-		bool OnTimer() override;
+		bool onTimer() override;
 		virtual void autoScrollStart() {}
 		virtual void autoScrollStop() {}
 	};

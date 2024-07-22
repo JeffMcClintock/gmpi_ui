@@ -16,7 +16,9 @@ using namespace gmpi::drawing;
 using namespace Microsoft::WRL;
 using namespace D2D1;
 
-namespace GmpiGuiHosting
+namespace gmpi
+{
+namespace hosting //GmpiGuiHosting
 {
 void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)
 {
@@ -1230,6 +1232,7 @@ int32_t DrawingFrameBase::FindResourceU(const char * resourceName, const char * 
 }
 #endif
 
+} //namespace
 } //namespace
 
 #endif // skip compilation on macOS

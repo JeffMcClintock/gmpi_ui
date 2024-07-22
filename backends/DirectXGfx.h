@@ -984,7 +984,8 @@ protected:
 public:
     virtual ~GraphicsContext_base()
     {
-        context_->Release();
+        if(context_)
+            context_->Release();
     }
 
     ID2D1DeviceContext* native()

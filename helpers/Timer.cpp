@@ -18,7 +18,7 @@
 
 #ifdef _WIN32
 
-void CALLBACK SynthEditVstTimerProc(
+void CALLBACK GMPITimerProc(
    HWND /*hWnd*/,      // handle of CWnd that called SetTimer
    UINT /*nMsg*/,      // WM_TIMER
    UINT_PTR nIDEvent,   // timer identification
@@ -105,7 +105,7 @@ namespace gmpi
 					0,	// HWND. NULL = host main window
 					0,	// timer ID. must be 0 if HWND is null
 					periodMilliSeconds,
-					SynthEditVstTimerProc);
+					GMPITimerProc);
 
 				//			_RPT1(_CRT_WARN, "StartTimer %d\n", idleTimer_);
 

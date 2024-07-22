@@ -21,7 +21,10 @@ namespace SynthEdit2
 	class IPresenter;
 }
 
-namespace GmpiGuiHosting
+//namespace GmpiGuiHosting
+namespace gmpi
+{
+namespace hosting
 {
 	class UpdateRegionWinGdi
 	{
@@ -327,6 +330,7 @@ namespace GmpiGuiHosting
 		void reSize(int left, int top, int right, int bottom);
 		virtual void doClose() {}
 	};
+} // namespace.
 } // namespace.
 
 #endif // skip compilation on macOS

@@ -180,18 +180,12 @@ namespace gmpi
 		}
 
 		// Create factory myself;
-		Factory_base::Factory_base(
-			std::vector<std::wstring>& psupportedFontFamiliesLowerCase,
-			std::vector<std::string>& psupportedFontFamilies,
-			std::map<std::wstring, std::wstring>& pGdiFontConversions
-		) :
-			supportedFontFamiliesLowerCase(psupportedFontFamiliesLowerCase)
-			, supportedFontFamilies(psupportedFontFamilies)
-			, GdiFontConversions(pGdiFontConversions)
+		Factory_base::Factory_base(DxFactoryInfo& pinfo) :
+			info(pinfo)
 		{
 		}
 
-		Factory::Factory() : Factory_base(supportedFontFamiliesLowerCase, supportedFontFamilies, GdiFontConversions)
+		Factory::Factory() : Factory_base(concreteInfo)
 		{
 			{
 				D2D1_FACTORY_OPTIONS o;
@@ -201,13 +195,13 @@ namespace gmpi
 				o.debugLevel = D2D1_DEBUG_LEVEL_NONE;
 #endif
 //				auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&m_pDirect2dFactory);
-				auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&m_pDirect2dFactory);
+				auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&info.m_pDirect2dFactory);
 
 #ifdef _DEBUG
 				if (FAILED(rs))
 				{
 					o.debugLevel = D2D1_DEBUG_LEVEL_NONE; // fallback
-					rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&m_pDirect2dFactory);
+					rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&info.m_pDirect2dFactory);
 				}
 #endif
 				if (FAILED(rs))
@@ -218,22 +212,22 @@ namespace gmpi
 				//		_RPT2(_CRT_WARN, "D2D1CreateFactory OK %d : %x\n", rs, m_pDirect2dFactory);
 			}
 
-			writeFactory = nullptr;
+			info.writeFactory = nullptr;
 
 			auto hr = DWriteCreateFactory(
 				DWRITE_FACTORY_TYPE_SHARED, // no improvment to glitching DWRITE_FACTORY_TYPE_ISOLATED
-				__uuidof(writeFactory),
-				reinterpret_cast<::IUnknown**>(&writeFactory)
+				__uuidof(info.writeFactory),
+				reinterpret_cast<::IUnknown**>(&info.writeFactory)
 			);
 
-			pIWICFactory = nullptr;
+			info.pIWICFactory = nullptr;
 
 			hr = CoCreateInstance(
 				CLSID_WICImagingFactory,
 				NULL,
 				CLSCTX_INPROC_SERVER,
 				IID_IWICImagingFactory,
-				(LPVOID*)&pIWICFactory
+				(LPVOID*)&info.pIWICFactory
 			);
 
 			// Cache font family names
@@ -241,7 +235,7 @@ namespace gmpi
 				// TODO IDWriteFontSet is improved API, GetSystemFontSet()
 
 				IDWriteFontCollection* fonts = nullptr;
-				writeFactory->GetSystemFontCollection(&fonts, TRUE);
+				info.writeFactory->GetSystemFontCollection(&fonts, TRUE);
 
 				auto count = fonts->GetFontFamilyCount();
 
@@ -261,10 +255,10 @@ namespace gmpi
 						wchar_t name[64];
 						names->GetString(nameIndex, name, sizeof(name) / sizeof(name[0]));
 
-						supportedFontFamilies.push_back(WStringToUtf8(name));
+						info.supportedFontFamilies.push_back(WStringToUtf8(name));
 
 						std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
-						supportedFontFamiliesLowerCase.push_back(name);
+						info.supportedFontFamiliesLowerCase.push_back(name);
 					}
 
 					names->Release();
@@ -294,11 +288,11 @@ namespace gmpi
 #endif
 		}
 
-		Factory_base::~Factory_base()
+		Factory::~Factory()
 		{ 
-			SafeRelease(m_pDirect2dFactory);
-			SafeRelease(writeFactory);
-			SafeRelease(pIWICFactory);
+			SafeRelease(info.m_pDirect2dFactory);
+			SafeRelease(info.writeFactory);
+			SafeRelease(info.pIWICFactory);
 		}
 
 		gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
@@ -308,7 +302,7 @@ namespace gmpi
 			//return gmpi::ReturnCode::Ok;
 
 			ID2D1PathGeometry* d2d_geometry = nullptr;
-			HRESULT hr = m_pDirect2dFactory->CreatePathGeometry(&d2d_geometry);
+			HRESULT hr = info.m_pDirect2dFactory->CreatePathGeometry(&d2d_geometry);
 
 			if (hr == 0)
 			{
@@ -329,14 +323,14 @@ namespace gmpi
 			std::wstring lowercaseName(fontFamilyNameW);
 			std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
 
-			if (std::find(supportedFontFamiliesLowerCase.begin(), supportedFontFamiliesLowerCase.end(), lowercaseName) == supportedFontFamiliesLowerCase.end())
+			if (std::find(info.supportedFontFamiliesLowerCase.begin(), info.supportedFontFamiliesLowerCase.end(), lowercaseName) == info.supportedFontFamiliesLowerCase.end())
 			{
 				fontFamilyNameW = fontMatch(fontFamilyNameW, fontWeight, fontSize);
 			}
 
 			IDWriteTextFormat* dwTextFormat = nullptr;
 
-			auto hr = writeFactory->CreateTextFormat(
+			auto hr = info.writeFactory->CreateTextFormat(
 				fontFamilyNameW.c_str(),
 				NULL,
 				(DWRITE_FONT_WEIGHT)fontWeight,
@@ -361,14 +355,14 @@ namespace gmpi
 		// 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
 		std::wstring Factory_base::fontMatch(std::wstring fontFamilyNameW, gmpi::drawing::FontWeight fontWeight, float fontSize)
 		{
-			auto it = GdiFontConversions.find(fontFamilyNameW);
-			if (it != GdiFontConversions.end())
+			auto it = info.GdiFontConversions.find(fontFamilyNameW);
+			if (it != info.GdiFontConversions.end())
 			{
 				return (*it).second;
 			}
 
 			IDWriteGdiInterop* interop = nullptr;
-			writeFactory->GetGdiInterop(&interop);
+			info.writeFactory->GetGdiInterop(&interop);
 
 			LOGFONT lf;
 			memset(&lf, 0, sizeof(LOGFONT));   // Clear out structure.
@@ -446,7 +440,7 @@ namespace gmpi
 					std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c));});
 
 					//						supportedFontFamiliesLowerCase.push_back(name);
-					GdiFontConversions.insert(std::pair<std::wstring, std::wstring>(fontFamilyNameW, name));
+					info.GdiFontConversions.insert(std::pair<std::wstring, std::wstring>(fontFamilyNameW, name));
 					fontFamilyNameW = name;
 				}
 
@@ -463,7 +457,7 @@ namespace gmpi
 		gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
 		{
 			IWICBitmap* wicBitmap{};
-			auto hr = pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
+			auto hr = info.pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
 	// nuh	auto hr = pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppBGRA, WICBitmapCacheOnLoad, &wicBitmap);
 
 			if (hr == 0)
@@ -559,12 +553,12 @@ If so that'd be far more efficient so do that.)
 
 		gmpi::ReturnCode Factory_base::getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName)
 		{
-			if (fontIndex < 0 || fontIndex >= supportedFontFamilies.size())
+			if (fontIndex < 0 || fontIndex >= info.supportedFontFamilies.size())
 			{
 				return gmpi::ReturnCode::Fail;
 			}
 
-			returnName->setData(supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(supportedFontFamilies[fontIndex].size()));
+			returnName->setData(info.supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(info.supportedFontFamilies[fontIndex].size()));
 			return gmpi::ReturnCode::Ok;
 		}
 
@@ -609,7 +603,7 @@ If so that'd be far more efficient so do that.)
 				const auto uriW = Utf8ToWstring(uri);
 
 				// To load a bitmap from a file, first use WIC objects to load the image and to convert it to a Direct2D-compatible format.
-				hr = pIWICFactory->CreateDecoderFromFilename(
+				hr = info.pIWICFactory->CreateDecoderFromFilename(
 					uriW.c_str(),
 					NULL,
 					GENERIC_READ,
@@ -629,7 +623,7 @@ If so that'd be far more efficient so do that.)
 			if (hr == 0)
 			{
 				// 3.The bitmap must be converted to a format that Direct2D can use.
-				hr = pIWICFactory->CreateFormatConverter(&pConverter);
+				hr = info.pIWICFactory->CreateFormatConverter(&pConverter);
 			}
 			if (hr == 0)
 			{
@@ -646,7 +640,7 @@ If so that'd be far more efficient so do that.)
 			IWICBitmap* wicBitmap = nullptr;
 			if (hr == 0)
 			{
-				hr = pIWICFactory->CreateBitmapFromSource(
+				hr = info.pIWICFactory->CreateBitmapFromSource(
 					pConverter,
 					WICBitmapCacheOnLoad,
 					&wicBitmap);

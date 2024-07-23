@@ -863,50 +863,51 @@ public:
     GMPI_REFCOUNT;
 };
 
+struct DxFactoryInfo
+{
+    ID2D1Factory1* m_pDirect2dFactory = {};
+    IDWriteFactory* writeFactory = {};
+    IWICImagingFactory* pIWICFactory = {};
+    std::vector<std::wstring> supportedFontFamiliesLowerCase;
+    std::vector<std::string> supportedFontFamilies;
+    std::map<std::wstring, std::wstring> GdiFontConversions;
+    bool DX_support_sRGB = true;
+};
 
 class Factory_base : public drawing::api::IFactory
 {
 protected:
-    ID2D1Factory1* m_pDirect2dFactory = {};
-    IDWriteFactory* writeFactory = {};
-    IWICImagingFactory* pIWICFactory = {};
-    std::vector<std::wstring>& supportedFontFamiliesLowerCase;
-    std::vector<std::string>& supportedFontFamilies;
-    std::map<std::wstring, std::wstring>& GdiFontConversions;
-    bool DX_support_sRGB = true;
+    DxFactoryInfo& info;
 
 public:
-    Factory_base(
-        std::vector<std::wstring>& supportedFontFamiliesLowerCase,
-        std::vector<std::string>& supportedFontFamilies,
-        std::map<std::wstring, std::wstring>& GdiFontConversions
-    );
-    ~Factory_base();
+    Factory_base(DxFactoryInfo& pinfo);
+
+    gmpi::directx::DxFactoryInfo& getInfo() { return info; }
 
     // for diagnostics only.
     auto getDirectWriteFactory()
     {
-        return writeFactory;
+        return info.writeFactory;
     }
     auto getFactory()
     {
-        return m_pDirect2dFactory;
+        return info.m_pDirect2dFactory;
     }
 
     void setSrgbSupport(bool s)
     {
-        DX_support_sRGB = s;
+        info.DX_support_sRGB = s;
     }
             
     ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
     {
-        *returnPixelFormat = DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
+        *returnPixelFormat = info.DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
         return ReturnCode::Ok;
     }
 
     ID2D1Factory1* getD2dFactory()
     {
-        return m_pDirect2dFactory;
+        return info.m_pDirect2dFactory;
     }
     std::wstring fontMatch(std::wstring fontName, drawing::FontWeight fontWeight, float fontSize);
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
@@ -929,7 +930,7 @@ public:
 		};
 
         ID2D1StrokeStyle* b = nullptr;
-        auto r = m_pDirect2dFactory->CreateStrokeStyle(&nativeProperties, dashes, dashesCount, &b);
+        auto r = info.m_pDirect2dFactory->CreateStrokeStyle(&nativeProperties, dashes, dashesCount, &b);
 
         if (r == S_OK)
         {
@@ -952,12 +953,11 @@ public:
 
 class Factory : public Factory_base
 {
-    std::vector<std::wstring> supportedFontFamiliesLowerCase;
-    std::vector<std::string> supportedFontFamilies;
-    std::map<std::wstring, std::wstring> GdiFontConversions;
+    DxFactoryInfo concreteInfo;
 
 public:
     Factory();
+    ~Factory();
 };
 
 class GraphicsContext_base : public drawing::api::IDeviceContext
@@ -968,18 +968,25 @@ protected:
     drawing::api::IFactory* factory{};
     std::vector<drawing::Rect> clipRectStack;
 
-    GraphicsContext_base(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) :
+    GraphicsContext_base(drawing::api::IFactory* pfactory, ID2D1DeviceContext* deviceContext = {}) :
         context_(deviceContext)
         , factory(pfactory)
     {
-        context_->AddRef();
+        if(context_)
+            context_->AddRef();
+
+        const float defaultClipBounds = 100000.0f;
+        drawing::Rect r;
+        r.top = r.left = -defaultClipBounds;
+        r.bottom = r.right = defaultClipBounds;
+        clipRectStack.push_back(r);
     }
 
-    // for BitmapRenderTarget which populates context in it's constructor
-    GraphicsContext_base(drawing::api::IFactory* pfactory) :
-        factory(pfactory)
-    {
-    }
+    //// for BitmapRenderTarget which populates context in it's constructor
+    //GraphicsContext_base(drawing::api::IFactory* pfactory) :
+    //    factory(pfactory)
+    //{
+    //}
 
 public:
     virtual ~GraphicsContext_base()
@@ -1168,7 +1175,7 @@ public:
 class GraphicsContext final : public GraphicsContext_base
 {
 public:
-    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) : GraphicsContext_base(deviceContext, pfactory) {}
+    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) : GraphicsContext_base(pfactory, deviceContext) {}
 
     GMPI_REFCOUNT_NO_DELETE;
 };
@@ -1221,7 +1228,7 @@ class GraphicsContext_Win7 : public GraphicsContext_base
 {
 public:
     GraphicsContext_Win7(ID2D1DeviceContext* context, Factory* pfactory) :
-        GraphicsContext_base(context, pfactory)
+        GraphicsContext_base(pfactory, context)
     {}
 
     ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override

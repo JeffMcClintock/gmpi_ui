@@ -163,23 +163,23 @@ namespace hosting
 		{
 			parameterHost = paramHost;
 
-			pcontainerView->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
 			if(drawingClient)
 			{
 				drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
 			}
-			pcontainerView->queryInterface(&gmpi::api::IInputClient::guid, inputClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
 			
 			// legacy
-			pcontainerView->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
 #ifdef GMPI_HOST_POINTER_SUPPORT
-			pcontainerView->queryInterface(&gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.asIMpUnknownPtr());
-			pcontainerView->queryInterface(&gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.asIMpUnknownPtr());
+			pcontainerView->queryInterface(&gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.put());
+			pcontainerView->queryInterface(&gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.put());
 #endif
 
 #if 0
 			gmpi::shared_ptr<gmpi::api::IUserInterface2> pinHost;
-			gmpi_gui_client->queryInterface(&gmpi::MP_IID_GUI_PLUGIN2, pinHost.asIMpUnknownPtr());
+			gmpi_gui_client->queryInterface(&gmpi::MP_IID_GUI_PLUGIN2, pinHost.put());
 
 			if(pinHost)
 				pinHost->setHost(static_cast<gmpi_gui::IMpGraphicsHost*>(this));

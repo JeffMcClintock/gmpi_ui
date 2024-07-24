@@ -37,14 +37,14 @@ public:
 
 	explicit shared_ptr(wrappedObjT* newobj) : obj(0)
 	{
-		Assign(newobj);
+		assign(newobj);
 	}
 	shared_ptr(const shared_ptr<wrappedObjT>& value) : obj(0)
 	{
-		Assign(value.obj);
+		assign(value.obj);
 	}
 	// Attach object without incrementing ref count. For objects created with new.
-	void Attach(wrappedObjT* newobj)
+	void attach(wrappedObjT* newobj)
 	{
 		auto old = obj;
 		obj = newobj;
@@ -68,12 +68,12 @@ public:
 	}
 	const wrappedObjT* operator=( wrappedObjT* value )
 	{
-		Assign(value);
+		assign(value);
 		return value;
 	}
 	shared_ptr<wrappedObjT>& operator=( shared_ptr<wrappedObjT>& value )
 	{
-		Assign(value.get());
+		assign(value.get());
 		return *this;
 	}
 	bool operator==( const wrappedObjT* other ) const
@@ -107,19 +107,25 @@ public:
 		obj = nullptr;
 		return &obj;
 	}
-	void** asIMpUnknownPtr()
+
+	void** put_void() noexcept
+	{
+		return reinterpret_cast<void**>(put());
+	}
+
+	void** asIUnknownPtr()
 	{
 		assert(obj == 0); // Free it before you re-use it!
 		return reinterpret_cast<void**>(&obj);
 	}
 
 	template<typename I>
-	shared_ptr<I> As()
+	shared_ptr<I> as()
 	{
 		shared_ptr<I> returnInterface;
 		if (obj)
 		{
-			obj->queryInterface(&I::guid, returnInterface.asIMpUnknownPtr());
+			obj->queryInterface(&I::guid, returnInterface.put_void());
 		}
 		return returnInterface;
 	}
@@ -131,9 +137,9 @@ public:
 
 private:
 	// Attach object and increment ref count.
-	void Assign(wrappedObjT* newobj)
+	void assign(wrappedObjT* newobj)
 	{
-		Attach(newobj);
+		attach(newobj);
 		if( newobj )
 		{
 			newobj->addRef();
@@ -186,7 +192,7 @@ public:
 
 private: // need em?
 	inline gmpi::api::IUnknown*& Unknown() { return m_ptr.get(); };
-	inline void** asIMpUnknownPtr() { return m_ptr.asIMpUnknownPtr(); };
+	inline void** asIMpUnknownPtr() { return m_ptr.put(); };
 	inline bool isNull() { return m_ptr == nullptr; }
 	void setNull() { m_ptr = nullptr; }
 };

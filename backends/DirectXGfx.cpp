@@ -73,7 +73,7 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new gmpi::directx::GeometrySink(sink));
+				b2.attach(new gmpi::directx::GeometrySink(sink));
 
 				b2->queryInterface(&drawing::api::IGeometrySink::guid, reinterpret_cast<void**>(returnGeometrySink));
 			}
@@ -307,7 +307,7 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new gmpi::directx::Geometry(d2d_geometry));
+				b2.attach(new gmpi::directx::Geometry(d2d_geometry));
 
 				b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 			}
@@ -344,7 +344,7 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new gmpi::directx::TextFormat(/*&stringConverter,*/ dwTextFormat));
+				b2.attach(new gmpi::directx::TextFormat(/*&stringConverter,*/ dwTextFormat));
 
 				b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 			}
@@ -463,7 +463,7 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<Bitmap> b2;
-				b2.Attach(new Bitmap(this, wicBitmap));
+				b2.attach(new Bitmap(this, wicBitmap));
 
 				b2->queryInterface(&gmpi::drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 			}
@@ -671,7 +671,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 					bitmap->debugFilename = uri;
 #endif
 					gmpi::shared_ptr<gmpi::drawing::api::IBitmap> b2;
-					b2.Attach(bitmap);
+					b2.attach(bitmap);
 					b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
 				}
 			}
@@ -786,7 +786,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 */
 #endif
 			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-			b2.Attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));
+			b2.attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));
 
 			return b2->queryInterface(&drawing::api::IBitmapPixels::guid, (void**)(returnInterface));
 		}
@@ -928,7 +928,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new SolidColorBrush(b, factory));
+				b2.attach(new SolidColorBrush(b, factory));
 
 				b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 			}
@@ -957,7 +957,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
-				wrapper.Attach(new GradientstopCollection(native2, factory));
+				wrapper.attach(new GradientstopCollection(native2, factory));
 
 				wrapper->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
 			}
@@ -971,7 +971,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			*bitmapRenderTarget = nullptr;
 
 			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-			b2.Attach(new BitmapRenderTarget(this, &desiredSize, factory));
+			b2.attach(new BitmapRenderTarget(this, &desiredSize, factory));
 			return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void **>(bitmapRenderTarget));
 		}
 
@@ -985,7 +985,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.Attach(new Bitmap(factory, context_, nativeBitmap));
+				b2.attach(new Bitmap(factory, context_, nativeBitmap));
 				nativeBitmap->Release();
 
 				b2->queryInterface(&drawing::api::IBitmap::guid, reinterpret_cast<void **>(returnBitmap));

@@ -135,9 +135,9 @@ public:
 	{
         gmpi::shared_ptr<gmpi::api::IUnknown> unknown(host);
 
-        host->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.asIMpUnknownPtr());
-        inputHost = unknown.As<gmpi::api::IInputHost>();
-        editorHost = unknown.As<gmpi::api::IEditorHost>();
+        host->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
+        inputHost = unknown.as<gmpi::api::IInputHost>();
+        editorHost = unknown.as<gmpi::api::IEditorHost>();
         
 		for (auto& p : pins)
 		{

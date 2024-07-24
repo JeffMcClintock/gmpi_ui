@@ -935,7 +935,7 @@ public:
         if (r == S_OK)
         {
             gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
-            wrapper.Attach(new StrokeStyle(b, this));
+            wrapper.attach(new StrokeStyle(b, this));
 
             return wrapper->queryInterface(&drawing::api::IStrokeStyle::guid, reinterpret_cast<void**>(returnStrokeStyle));
         }
@@ -1104,7 +1104,7 @@ public:
     {
         *returnObject = nullptr;
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-        b2.Attach(object);
+        b2.attach(object);
         return b2->queryInterface(&iid, reinterpret_cast<void**>(returnObject));
     };
 
@@ -1120,14 +1120,14 @@ public:
     {
         *returnBitmapBrush = nullptr;
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-        b2.Attach(new BitmapBrush(factory, context_, bitmap, /*bitmapBrushProperties, */brushProperties));
+        b2.attach(new BitmapBrush(factory, context_, bitmap, /*bitmapBrushProperties, */brushProperties));
         return b2->queryInterface(&drawing::api::IBitmapBrush::guid, reinterpret_cast<void **>(returnBitmapBrush));
     }
     ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
     {
         *returnRadialGradientBrush = nullptr;
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-        b2.Attach(new RadialGradientBrush(factory, context_, radialGradientBrushProperties, brushProperties, gradientstopCollection));
+        b2.attach(new RadialGradientBrush(factory, context_, radialGradientBrushProperties, brushProperties, gradientstopCollection));
         return b2->queryInterface(&drawing::api::IRadialGradientBrush::guid, reinterpret_cast<void **>(returnRadialGradientBrush));
     }
 
@@ -1235,7 +1235,7 @@ public:
     {
         *returnSolidColorBrush = nullptr;
         gmpi::shared_ptr<gmpi::api::IUnknown> b;
-        b.Attach(new SolidColorBrush_Win7(context_, color, factory));
+        b.attach(new SolidColorBrush_Win7(context_, color, factory));
         return b->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
     }
 

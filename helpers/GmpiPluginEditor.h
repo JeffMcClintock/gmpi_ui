@@ -67,7 +67,7 @@ protected:
 	std::unordered_map<int, PinBase*> pins;
 
 public:
-	PluginEditor(){}
+	virtual ~PluginEditor(){}
 
 	void init(int id, PinBase& pin)
 	{
@@ -83,19 +83,22 @@ public:
 	}
 
 	// IEditor
+	// called right after constructor
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
-        // MOVED TO OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
-        /*
-         
-         
+        // Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
 
-		phost->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.asIMpUnknownPtr());
-		inputHost = unknown.As<gmpi::api::IInputHost>();
-		editorHost = unknown.As<gmpi::api::IEditorHost>();
-*/
+		// TODO:: None of these are provided by SynthEdit as a host
+//		phost->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
+		inputHost = unknown.as<gmpi::api::IInputHost>();
+		editorHost = unknown.as<gmpi::api::IEditorHost>();
+		drawingHost = unknown.as<gmpi::api::IDrawingHost>();
 
+		for (auto& p : pins)
+		{
+			p.second->host = editorHost.get();
+		}
 		return ReturnCode::Ok;
 	}
 
@@ -133,16 +136,17 @@ public:
 	// IDrawingClient
 	ReturnCode open(gmpi::api::IUnknown* host) override
 	{
-        gmpi::shared_ptr<gmpi::api::IUnknown> unknown(host);
+		// TOO LAte, measure and arrange need the drawing factory to size text correctly
+  //      gmpi::shared_ptr<gmpi::api::IUnknown> unknown(host);
 
-        host->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
-        inputHost = unknown.as<gmpi::api::IInputHost>();
-        editorHost = unknown.as<gmpi::api::IEditorHost>();
-        
-		for (auto& p : pins)
-		{
-			p.second->host = editorHost.get();
-		}
+  //      host->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
+  //      inputHost = unknown.as<gmpi::api::IInputHost>();
+  //      editorHost = unknown.as<gmpi::api::IEditorHost>();
+  //      
+		//for (auto& p : pins)
+		//{
+		//	p.second->host = editorHost.get();
+		//}
 
 		return ReturnCode::Ok;
 	}

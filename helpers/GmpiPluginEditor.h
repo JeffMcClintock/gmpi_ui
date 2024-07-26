@@ -60,13 +60,13 @@ class PluginEditor : public gmpi::api::IEditor, public gmpi::api::IDrawingClient
 protected:
 	gmpi::drawing::Rect bounds;
 
+public:
 	gmpi::shared_ptr<gmpi::api::IInputHost> inputHost;
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	gmpi::shared_ptr<gmpi::api::IDrawingHost> drawingHost;
 
 	std::unordered_map<int, PinBase*> pins;
 
-public:
 	virtual ~PluginEditor(){}
 
 	void init(int id, PinBase& pin)
@@ -162,16 +162,12 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point point, int32_t flags, int32_t delta) override
-	{
-		return ReturnCode::Ok;
-	}
-	gmpi::ReturnCode setHover(bool isMouseOverMe) override
-	{
-		return ReturnCode::Ok;
-	}
 
 	// IInputClient
+	ReturnCode hitTest(gmpi::drawing::Point point, int32_t flags) override
+	{
+		return ReturnCode::Ok; // Ok = hit
+	}
 	gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) override
 	{
 		return ReturnCode::Unhandled;
@@ -188,8 +184,15 @@ public:
 	{
 		return ReturnCode::Unhandled;
 	}
+	gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point point, int32_t flags, int32_t delta) override
+	{
+		return ReturnCode::Ok;
+	}
+	gmpi::ReturnCode setHover(bool isMouseOverMe) override
+	{
+		return ReturnCode::Ok;
+	}
 
-	// IUnknown
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);

@@ -76,6 +76,8 @@ class DECLSPEC_NOVTABLE IInputClient : public gmpi::api::IUnknown
 {
 public:
 	// Mouse events.
+	virtual ReturnCode hitTest(gmpi::drawing::Point point, int32_t flags) = 0;
+
 	virtual ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) = 0;
 	virtual ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) = 0;
 	virtual ReturnCode onPointerUp(gmpi::drawing::Point point, int32_t flags) = 0;

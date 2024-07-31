@@ -57,7 +57,6 @@ namespace hosting
 #endif
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
-		/*public gmpi::api::IUserInterfaceHost2,*/
 		public gmpi::TimerClient
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
@@ -106,6 +105,7 @@ namespace hosting
 			, toolTipShown(false)
 			, tooltipWindow(0)
 			, reentrant(false)
+			, DrawingFactory(nullptr)
 		{
 		}
 
@@ -159,15 +159,16 @@ namespace hosting
 		void CreateDevice();
 		void CreateDeviceSwapChainBitmap();
 
-		void AddView(gmpi::api::IUnknown* paramHost, gmpi::api::IUnknown* pcontainerView)
+		void setFallbackHost(gmpi::api::IUnknown* paramHost)
 		{
 			parameterHost = paramHost;
+		}
+
+		void AddView(/*gmpi::api::IUnknown* paramHost,*/ gmpi::api::IUnknown* pcontainerView)
+		{
+//			parameterHost = paramHost;
 
 			pcontainerView->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
-			if(drawingClient)
-			{
-				drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
-			}
 			pcontainerView->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
 			
 			// legacy
@@ -184,6 +185,10 @@ namespace hosting
 			if(pinHost)
 				pinHost->setHost(static_cast<gmpi_gui::IMpGraphicsHost*>(this));
 #endif
+			if (drawingClient)
+			{
+				drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
+			}
 		}
 
 		void OnPaint();

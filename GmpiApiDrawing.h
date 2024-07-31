@@ -638,9 +638,9 @@ struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
     virtual gmpi::ReturnCode getPlatformPixelFormat(IBitmapPixels::PixelFormat* returnPixelFormat) = 0;
 
-    // {61568E7F-5256-49C6-95E6-10327EB33EC4}
+    // {D47DEB59-BBA2-4B52-AF12-7983330A8C8A}
     inline static const gmpi::api::Guid guid =
-    { 0x61568E7F, 0x5256, 0x49C6, { 0x95, 0xE6, 0x10, 0x32, 0x7E, 0xB3, 0x3E, 0xC4} };
+    { 0xd47deb59, 0xbba2, 0x4b52, { 0xaf, 0x12, 0x79, 0x83, 0x33, 0xa, 0x8c, 0x8a } };
 };
 
 } // namespace api

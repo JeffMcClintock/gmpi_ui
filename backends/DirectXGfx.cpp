@@ -180,12 +180,13 @@ namespace gmpi
 		}
 
 		// Create factory myself;
-		Factory_base::Factory_base(DxFactoryInfo& pinfo) :
+		Factory_base::Factory_base(DxFactoryInfo& pinfo, gmpi::api::IUnknown* pfallback) :
 			info(pinfo)
+			, fallback(pfallback)
 		{
 		}
 
-		Factory::Factory() : Factory_base(concreteInfo)
+		Factory::Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
 		{
 			{
 				D2D1_FACTORY_OPTIONS o;

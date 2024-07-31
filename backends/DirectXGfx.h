@@ -878,9 +878,10 @@ class Factory_base : public drawing::api::IFactory
 {
 protected:
     DxFactoryInfo& info;
+    gmpi::api::IUnknown* fallback{};
 
 public:
-    Factory_base(DxFactoryInfo& pinfo);
+    Factory_base(DxFactoryInfo& pinfo, gmpi::api::IUnknown* pfallback);
 
     gmpi::directx::DxFactoryInfo& getInfo() { return info; }
 
@@ -947,7 +948,16 @@ public:
 
     ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
 
-    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
+//    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override {
+		*returnInterface = {};
+		GMPI_QUERYINTERFACE(drawing::api::IFactory)
+
+		if (fallback)
+			return fallback->queryInterface(iid, returnInterface);
+		return gmpi::ReturnCode::NoSupport;
+	}
+
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -956,7 +966,7 @@ class Factory : public Factory_base
     DxFactoryInfo concreteInfo;
 
 public:
-    Factory();
+    Factory(gmpi::api::IUnknown* pfallback);
     ~Factory();
 };
 

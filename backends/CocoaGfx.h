@@ -2102,6 +2102,7 @@ public:
 			}
 		}
 #endif
+        return ReturnCode::Ok;
 	}
 
 	ReturnCode drawBitmap(drawing::api::IBitmap* mpBitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
@@ -2167,6 +2168,8 @@ public:
                 // Restore the original graphics state
                 [[NSGraphicsContext currentContext] restoreGraphicsState];
 #endif
+
+        return ReturnCode::Ok;
 	}
 
 	ReturnCode setTransform(const drawing::Matrix3x2* transform) override

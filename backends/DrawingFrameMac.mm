@@ -58,8 +58,8 @@ public:
     {
         parameterHost = paramHost;
         
-        pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.asIMpUnknownPtr());
-        pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.asIMpUnknownPtr());
+        pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
+        pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
 //        gmpi::shared_ptr<gmpi::api::IEditor> editor;
 //        pclient->queryInterface(&gmpi::api::IEditor::guid, editor.asIMpUnknownPtr());
 
@@ -232,6 +232,16 @@ public:
         *returnFactory = &drawingFactory;
         return gmpi::ReturnCode::Ok;
     }
+    
+    gmpi::ReturnCode getFocus() override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
+    gmpi::ReturnCode releaseFocus() override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
+
 
 #if 0
     virtual gmpi::ReturnCode  GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override

@@ -675,7 +675,7 @@ public:
         *returnPixels = 0;
 
         gmpi::shared_ptr<api::IUnknown> b2;
-        b2.Attach(new BitmapPixels(this /*&nativeBitmap_*/, true, flags));
+        b2.attach(new BitmapPixels(this /*&nativeBitmap_*/, true, flags));
 
         return b2->queryInterface(&drawing::api::IBitmapPixels::guid, (void**)(returnPixels));
     }
@@ -928,7 +928,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         *returnValue = nullptr;
 
         gmpi::shared_ptr<api::IUnknown> b2;
-        b2.Attach(new generic_graphics::StrokeStyle(this, strokeStyleProperties, dashes, dashesCount));
+        b2.attach(new generic_graphics::StrokeStyle(this, strokeStyleProperties, dashes, dashesCount));
 
         return b2->queryInterface(&drawing::api::IStrokeStyle::guid, reinterpret_cast<void **>(returnValue));
     }
@@ -1502,7 +1502,7 @@ public:
 		[geometry_ retain] ;
 
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new GeometrySink(geometry_));
+		b2.attach(new GeometrySink(geometry_));
 
 		return b2->queryInterface(&gmpi::drawing::api::IGeometrySink::guid, reinterpret_cast<void**>(returnGeometrySink));
 	}
@@ -2215,7 +2215,7 @@ public:
 	ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override
 	{
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new SolidColorBrush(color, factory));
+		b2.attach(new SolidColorBrush(color, factory));
 
 		return b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void**>(returnSolidColorBrush));
 		return ReturnCode::Ok;
@@ -2224,7 +2224,7 @@ public:
 	ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override
 	{
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new GradientstopCollection(factory, gradientstops, gradientstopsCount));
+		b2.attach(new GradientstopCollection(factory, gradientstops, gradientstopsCount));
 
 		return b2->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
 		return ReturnCode::Ok;
@@ -2233,7 +2233,7 @@ public:
 	ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
 	{
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new LinearGradientBrush(factory, linearGradientBrushProperties, brushProperties, gradientstopCollection));
+		b2.attach(new LinearGradientBrush(factory, linearGradientBrushProperties, brushProperties, gradientstopCollection));
 
 		return b2->queryInterface(&drawing::api::ILinearGradientBrush::guid, reinterpret_cast<void**>(returnLinearGradientBrush));
 		return ReturnCode::Ok;
@@ -2243,7 +2243,7 @@ public:
 	{
 		*returnBitmapBrush = nullptr;
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new BitmapBrush(factory, bitmap, /*bitmapBrushProperties,*/ brushProperties));
+		b2.attach(new BitmapBrush(factory, bitmap, /*bitmapBrushProperties,*/ brushProperties));
 		return b2->queryInterface(&drawing::api::IBitmapBrush::guid, reinterpret_cast<void**>(returnBitmapBrush));
 		return ReturnCode::Ok;
 	}
@@ -2251,7 +2251,7 @@ public:
 	ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
 	{
 		gmpi::shared_ptr<api::IUnknown> b2;
-		b2.Attach(new RadialGradientBrush(factory, radialGradientBrushProperties, brushProperties, gradientstopCollection));
+		b2.attach(new RadialGradientBrush(factory, radialGradientBrushProperties, brushProperties, gradientstopCollection));
 
 		return b2->queryInterface(&drawing::api::IRadialGradientBrush::guid, reinterpret_cast<void**>(returnRadialGradientBrush));
 		return ReturnCode::Ok;
@@ -2434,7 +2434,7 @@ public:
 	virtual ReturnCode getBitmap(drawing::api::IBitmap** returnBitmap)
 	{
 		gmpi::shared_ptr<api::IUnknown> b;
-		b.Attach(new Bitmap(factory, image));
+		b.attach(new Bitmap(factory, image));
 		return b->queryInterface(&drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
 	}
 
@@ -2458,7 +2458,7 @@ public:
 ReturnCode GraphicsContext::createCompatibleRenderTarget(drawing::Size desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
-	b2.Attach(new class BitmapRenderTarget(factory, &desiredSize));
+	b2.attach(new class BitmapRenderTarget(factory, &desiredSize));
 
 	return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(bitmapRenderTarget));
 }
@@ -2467,7 +2467,7 @@ ReturnCode GraphicsContext::createCompatibleRenderTarget(drawing::Size desiredSi
 inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, drawing::api::ITextFormat** textFormat)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
-	b2.Attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
+	b2.attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
 
 	return b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 }
@@ -2475,7 +2475,7 @@ inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, d
 inline ReturnCode DrawingFactory::createPathGeometry(drawing::api::IPathGeometry** pathGeometry)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
-	b2.Attach(new PathGeometry());
+	b2.attach(new PathGeometry());
 
 	return b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 }
@@ -2485,7 +2485,7 @@ inline ReturnCode DrawingFactory::createImage(int32_t width, int32_t height, dra
 	*returnDiBitmap = nullptr;
 
 	gmpi::shared_ptr<api::IUnknown> bm;
-	bm.Attach(new Bitmap(this, width, height));
+	bm.attach(new Bitmap(this, width, height));
 
 	return bm->queryInterface(&drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 }
@@ -2496,7 +2496,7 @@ inline ReturnCode DrawingFactory::loadImageU(const char* utf8Uri, drawing::api::
 
 	gmpi::shared_ptr<api::IUnknown> bm;
 	auto temp = new Bitmap(this, utf8Uri);
-	bm.Attach(temp);
+	bm.attach(temp);
 
 	if (temp->isLoaded())
 	{

@@ -47,9 +47,9 @@ void timerCallback(CFRunLoopTimerRef t, void *info)
     //void* nIDEvent = info;
     //TimerManager::instance()->OnTimer(nIDEvent);
     
-    auto timer = (se_sdk_timers::Timer*)info;
+    auto timer = (gmpi::se_sdk_timers::Timer*)info;
 
-    TimerManager::instance()->OnTimer(timer->idleTimer_);
+    gmpi::TimerManager::instance()->onTimer(timer->idleTimer_);
 }
 #endif
 

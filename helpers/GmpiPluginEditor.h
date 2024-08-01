@@ -21,7 +21,7 @@ public:
 
 	PinBase()
 	{
-		_RPT0(_CRT_WARN, "PinBase() constructor\n");
+		//_RPT0(_CRT_WARN, "PinBase() constructor\n");
 	}
 	virtual ~PinBase() {}
 	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
@@ -35,7 +35,7 @@ public:
 
 	Pin()
 	{
-		_RPT0(_CRT_WARN, "Pin() constructor\n");
+		//_RPT0(_CRT_WARN, "Pin() constructor\n");
 	}
 	const T& operator=(const T& pvalue)
 	{

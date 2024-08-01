@@ -52,9 +52,6 @@ namespace hosting
 
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
 	class DrawingFrameBase :
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		public gmpi_gui::IMpGraphicsHost,
-#endif
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
 		public gmpi::TimerClient

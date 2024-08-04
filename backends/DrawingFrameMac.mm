@@ -3,7 +3,7 @@
 #include "GmpiSdkCommon.h"
 #import "CocoaGfx.h"
 // hmm part of GMPI plugins not GMPI Drawing. how to keep no dependancy?
-//#include "GmpiApiEditor.h"
+#include "GmpiApiEditor.h"
 
 namespace gmpi
 {
@@ -60,11 +60,11 @@ public:
         
         pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
         pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
-//        gmpi::shared_ptr<gmpi::api::IEditor> editor;
-//        pclient->queryInterface(&gmpi::api::IEditor::guid, editor.asIMpUnknownPtr());
+        gmpi::shared_ptr<gmpi::api::IEditor> editor;
+        pclient->queryInterface(&gmpi::api::IEditor::guid, editor.put_void());
 
- //       if (editor)
- //           editor->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+        if(editor)
+            editor->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
     }
     
     void open()

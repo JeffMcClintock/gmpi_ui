@@ -825,12 +825,8 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         }
 #endif
         {
-            auto temp = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
-            // auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // no difference on big sur
+            auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
             gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
-                
-// no diff on big sur               CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext] graphicsPort];
-//                CGContextSetFillColorSpace(ctx, temp);
                 
             if(temp)
                 CFRelease(temp);

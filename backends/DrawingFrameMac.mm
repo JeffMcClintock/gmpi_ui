@@ -96,7 +96,7 @@ public:
     ~DrawingFrameCocoa()
     {
     }
-    
+    // look into: https://blog.rectorsquid.com/getting-gpu-acceleration-with-nsgraphicscontext/
     void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)
     {
 #if USE_BACKING_BUFFER
@@ -353,7 +353,8 @@ public:
         // kCGColorSpaceGenericRGB - actually sRGB
         
         // kCGColorSpaceExtendedLinearSRGB might be best since float color values should match SE's linear RGB
-        CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+        // kCGColorSpaceExtendedLinearSRGB caused image to turn dark after intial draw, like OS was compressing non-extended colors
+        CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
         
         NSColorSpace *linearRGBColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
 

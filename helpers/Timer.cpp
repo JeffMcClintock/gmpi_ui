@@ -36,7 +36,7 @@ void CALLBACK GMPITimerProc(
 }
 
 #else
-void timerCallback(CFRunLoopTimerRef t, void *info)
+void timerCallback_GMPI_Wrapper(CFRunLoopTimerRef t, void *info)
 {
     /* info was null!!
      
@@ -112,7 +112,7 @@ namespace gmpi
 #else
 				CFRunLoopTimerContext timerContext = CFRunLoopTimerContext();
 				timerContext.info = this;
-				idleTimer_ = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + periodMilliSeconds * 0.001f, periodMilliSeconds * 0.001f, 0, 0, timerCallback, &timerContext);
+				idleTimer_ = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + periodMilliSeconds * 0.001f, periodMilliSeconds * 0.001f, 0, 0, timerCallback_GMPI_Wrapper, &timerContext);
 				if (idleTimer_)
 					CFRunLoopAddTimer(CFRunLoopGetCurrent(), (CFRunLoopTimerRef)idleTimer_, kCFRunLoopCommonModes);
 #endif

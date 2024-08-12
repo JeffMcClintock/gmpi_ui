@@ -101,7 +101,13 @@ public:
     {
 #if USE_BACKING_BUFFER
         if(!backBuffer)
+        {
             initBackingBitmap();
+
+            NSSize logicalsize = view.frame.size;
+            gmpi::drawing::Rect finalRect{0,0, (float) logicalsize.width, (float) logicalsize.height};
+            drawingClient->arrange(&finalRect);
+        }
         
         // draw onto linear back buffer.
         [NSGraphicsContext saveGraphicsState];
@@ -375,6 +381,19 @@ public:
         CGColorSpaceRelease(colorSpace);
     }
     
+    void onResize()
+    {
+ //       if(!backBuffer) // initial size
+ //           return;
+        
+
+//        [backBuffer release];
+        backBuffer = nil;
+        
+//        initBackingBitmap();
+        
+     }
+    
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -488,6 +507,8 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 - (void) setFrame: (NSRect) newSize
 {
     [super setFrame: newSize];
+    
+    drawingFrame.onResize();
 }
 
 //--------------------------------------------------------------------------------------------------------------
@@ -499,7 +520,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 
 //-------------------------------------------------------------------------------------------------------------
 #if 1
-void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
+void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 {
     // <Shift> key?
     if(([theEvent modifierFlags ] & (NSEventModifierFlagShift | NSEventModifierFlagCapsLock)) != 0)
@@ -530,7 +551,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
 	flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerDown(mouseToGmpi(self, theEvent), flags);
@@ -546,7 +567,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
     flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
     
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
     
     // TODO     drawingFrame.getView()->onPointerDown(flags, p);
     if(drawingFrame.inputClient)
@@ -559,7 +580,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
     flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
     
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
@@ -569,7 +590,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
@@ -580,7 +601,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
@@ -592,7 +613,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     auto deltaY = theEvent.deltaY;
  
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
 
     constexpr float wheelConversion = 120.0f; // on windows the wheel scrolls 120 per knotch
     if(deltaY)
@@ -620,7 +641,7 @@ void ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
-    ApplyKeyModifiers(flags, theEvent);
+    gmpi_ApplyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
@@ -678,7 +699,7 @@ void* createNativeView(void* parent, class IUnknown* paramHost, class IUnknown* 
     return (void*) native;
 }
 
-void onCloseNativeView(void* ptr)
+void gmpi_onCloseNativeView(void* ptr)
 {
     auto view = (GMPI_VIEW_CLASS*) ptr;
     [view onClose];

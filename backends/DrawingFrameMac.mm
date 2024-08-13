@@ -199,11 +199,29 @@ public:
 #endif
     
     // IMpGraphicsHost
-    void invalidateRect(const gmpi::drawing::Rect* invalidRect) override
+    void invalidateRect(const gmpi::drawing::Rect* rect) override
     {
-        if(invalidRect)
+        if(rect)
         {
-            [view setNeedsDisplayInRect:NSMakeRect (invalidRect->left, invalidRect->top, invalidRect->right - invalidRect->left, invalidRect->bottom - invalidRect->top)];
+#if 0
+            [view setNeedsDisplayInRect:
+            NSMakeRect(            // flip co-ords
+               rect->left,
+               rect->top,
+               rect->right - rect->left,
+               rect->bottom - rect->top
+               )
+            ];
+#else
+            [view setNeedsDisplayInRect:
+            NSMakeRect(            // flip co-ords
+               rect->left,
+               view.bounds.origin.y + view.bounds.size.height - rect->bottom,
+               rect->right - rect->left,
+               rect->bottom - rect->top
+               )
+            ];
+#endif
         }
         else
         {
@@ -383,15 +401,9 @@ public:
     
     void onResize()
     {
- //       if(!backBuffer) // initial size
- //           return;
-        
-
-//        [backBuffer release];
+        if(backBuffer)
+            [backBuffer release];
         backBuffer = nil;
-        
-//        initBackingBitmap();
-        
      }
     
     GMPI_REFCOUNT_NO_DELETE;
@@ -493,13 +505,22 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 
 - (void)drawRect:(NSRect)dirtyRect
 {
+#if 0
     gmpi::drawing::Rect r{
         static_cast<float>(dirtyRect.origin.x),
         static_cast<float>(dirtyRect.origin.y),
         static_cast<float>(dirtyRect.origin.x + dirtyRect.size.width),
         static_cast<float>(dirtyRect.origin.y + dirtyRect.size.height)
     };
-    
+#else
+    const auto bounds = [self bounds];
+    gmpi::drawing::Rect r{
+        static_cast<float>(dirtyRect.origin.x),
+        static_cast<float>(bounds.origin.y + bounds.size.height - dirtyRect.origin.y - dirtyRect.size.height),
+        static_cast<float>(dirtyRect.origin.x + dirtyRect.size.width),
+        static_cast<float>(bounds.origin.y + bounds.size.height - dirtyRect.origin.y)
+    };
+#endif
     drawingFrame.onRender(self, &r);
  }
 

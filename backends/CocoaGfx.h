@@ -2315,21 +2315,22 @@ public:
 	}
 
 	ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
-	{
+    {
         drawing::Matrix3x2 currentTransform;
-		getTransform(&currentTransform);
-		auto absClipRect = transformRect(currentTransform, *clipRect);
-
-		if (!clipRectStack.empty())
+        getTransform(&currentTransform);
+        auto absClipRect = transformRect(currentTransform, *clipRect);
+        
+        if (!clipRectStack.empty())
             absClipRect = intersectRect(absClipRect, clipRectStack.back());
+        
+        clipRectStack.push_back(absClipRect);
+        
+        // Save the current clipping region
+        [NSGraphicsContext saveGraphicsState];
+        
+        NSRectClip(NSRectFromRect(*clipRect));
 
-		clipRectStack.push_back(absClipRect);
-
-		// Save the current clipping region
-		[NSGraphicsContext saveGraphicsState] ;
-
-		NSRectClip(NSRectFromRect(*clipRect));
-		return ReturnCode::Ok;
+        return ReturnCode::Ok;
 	}
 
 	ReturnCode popAxisAlignedClip() override

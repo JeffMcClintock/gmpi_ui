@@ -5,9 +5,8 @@
 #include <wrl.h> // Comptr
 #include <Windowsx.h>
 #include <commctrl.h>
+#include <functional>
 #include "./DrawingFrameWin.h"
-//#include "Drawing.h"
-//#include "mp_sdk_gui2.h"
 
 using namespace std;
 using namespace gmpi;
@@ -437,9 +436,13 @@ LRESULT DrawingFrameBase::WindowProc(
 				break;
 
 			case WM_LBUTTONDOWN:
-			case WM_RBUTTONDOWN:
 			case WM_MBUTTONDOWN:
 				r = inputClient->onPointerDown(p, flags);
+				::SetFocus(hwnd);
+				break;
+
+			case WM_RBUTTONDOWN:
+				doContextMenu(p, flags);
 				::SetFocus(hwnd);
 				break;
 
@@ -521,6 +524,95 @@ LRESULT DrawingFrameBase::WindowProc(
 
 	}
 	return TRUE;
+}
+
+// Accepts context-menu items via IMpContextItemSink, and populates a popup menu with them.
+// Also suppresses redundant separators
+class ContextItemsSinkAdaptor : public gmpi::api::IContextItemSink
+{
+	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
+	bool pendingSeperator = false;
+
+public:
+	ContextItemsSinkAdaptor(gmpi::shared_ptr<gmpi::api::IUnknown> unknown)
+	{
+		contextMenu = unknown.as<gmpi::api::IPopupMenu>();
+	}
+
+	ReturnCode addItem(const char* text, int32_t id, int32_t flags = 0) override
+	{
+		// suppress redundant or repeated separators.
+		if (0 != (flags & (int32_t) gmpi::api::PopupMenuFlags::Separator))
+		{
+			pendingSeperator = true;
+		}
+		else
+		{
+			if (0 != (flags & (int32_t)gmpi::api::PopupMenuFlags::SubMenuEnd))
+			{
+				pendingSeperator = false;
+			}
+
+			if (pendingSeperator)
+			{
+				contextMenu->addItem("", 0, (int32_t)gmpi::api::PopupMenuFlags::Separator);
+				pendingSeperator = false;
+			}
+
+			contextMenu->addItem(text, id, flags);
+		}
+
+		return gmpi::ReturnCode::Ok;
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IContextItemSink);
+	GMPI_REFCOUNT_NO_DELETE;
+};
+
+class PopupMenuCallback : public gmpi::api::IPopupMenuCallback
+{
+	std::function<void(gmpi::ReturnCode, int32_t)> callback;
+public:
+	PopupMenuCallback(std::function<void(gmpi::ReturnCode, int32_t)> callback) : callback(callback) {}
+
+	void onComplete(gmpi::ReturnCode result, int32_t selectedID) override
+	{
+		callback(result, selectedID);
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
+	GMPI_REFCOUNT;
+};
+
+void DrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t flags)
+{
+	auto r = inputClient->onPointerDown(point, flags);
+
+	// Handle right-click on background. (right-click on objects is handled by object itself).
+	if (r == gmpi::ReturnCode::Unhandled && (flags & gmpi::api::GG_POINTER_FLAG_SECONDBUTTON) != 0 && inputClient)
+	{
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		createPopupMenu(unknown.put());
+
+		auto lcontextMenu = unknown.as<gmpi::api::IPopupMenu>();
+
+		ContextItemsSinkAdaptor sink(unknown);
+
+		r = inputClient->populateContextMenu(point, &sink);
+
+		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20};
+		lcontextMenu->showAsync(&rect,
+			new PopupMenuCallback(
+				[this](gmpi::ReturnCode res, int32_t commandId) -> void
+				{
+					if (res == gmpi::ReturnCode::Ok)
+					{
+						inputClient->onContextMenu(commandId);
+					}
+				}
+			)
+		);
+	}
 }
 
 void DrawingFrameBase::OnSize(UINT width, UINT height)
@@ -1154,6 +1246,220 @@ gmpi::ReturnCode DrawingFrameBase::getFocus()
 gmpi::ReturnCode DrawingFrameBase::releaseFocus()
 {
 	return gmpi::ReturnCode::Ok;
+}
+
+// IDialogHost
+gmpi::ReturnCode DrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
+{
+	return gmpi::ReturnCode::NoSupport;
+}
+gmpi::ReturnCode DrawingFrameBase::createTextEdit(gmpi::api::IUnknown** returnTextEdit)
+{
+	return gmpi::ReturnCode::NoSupport;
+}
+
+namespace privateStuff
+{
+	inline std::wstring Utf8ToWstring(std::string_view str)
+	{
+		std::wstring res;
+		const size_t size = MultiByteToWideChar(
+			CP_UTF8,
+			0,
+			str.data(),
+			static_cast<int>(str.size()),
+			0,
+			0
+		);
+
+		res.resize(size);
+
+		MultiByteToWideChar(
+			CP_UTF8,
+			0,
+			str.data(),
+			static_cast<int>(str.size()),
+			const_cast<LPWSTR>(res.data()),
+			static_cast<int>(size)
+		);
+
+		return res;
+	};
+	inline std::string WStringToUtf8(const std::wstring& p_cstring)
+	{
+		std::string res;
+
+		const size_t size = WideCharToMultiByte(
+			CP_UTF8,
+			0,
+			p_cstring.data(),
+			static_cast<int>(p_cstring.size()),
+			0,
+			0,
+			NULL,
+			NULL
+		);
+
+		res.resize(size);
+
+		WideCharToMultiByte(
+			CP_UTF8,
+			0,
+			p_cstring.data(),
+			static_cast<int>(p_cstring.size()),
+			const_cast<LPSTR>(res.data()),
+			static_cast<int>(size),
+			NULL,
+			NULL
+		);
+
+		return res;
+	}
+}
+
+class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
+{
+	HMENU hmenu;
+	std::vector<HMENU> hmenus;
+	HWND parentWnd;
+	int align;
+	float dpiScale;
+	gmpi::drawing::Rect editrect_s{};
+	int32_t selectedId;
+	std::vector<int32_t> menuIds;
+
+public:
+	// Might need to apply DPI to Text size, like text-entry does.
+	GMPI_WIN_PopupMenu(HWND pParentWnd, float dpi = 1.0f) : hmenu(0)
+		, parentWnd(pParentWnd)
+		, align(TPM_LEFTALIGN)
+		, dpiScale(dpi)
+		, selectedId(-1)
+	{
+		hmenu = CreatePopupMenu();
+		hmenus.push_back(hmenu);
+	}
+
+	~GMPI_WIN_PopupMenu()
+	{
+		DestroyMenu(hmenu);
+	}
+
+	gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
+	{
+		UINT nativeFlags = MF_STRING;
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)// gmpi_gui::MP_PLATFORM_MENU_TICKED) != 0)
+		{
+			nativeFlags |= MF_CHECKED;
+		}
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)// gmpi_gui::MP_PLATFORM_MENU_GRAYED) != 0)
+		{
+			nativeFlags |= MF_GRAYED;
+		}
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)// gmpi_gui::MP_PLATFORM_MENU_SEPARATOR) != 0)
+		{
+			nativeFlags |= MF_SEPARATOR;
+		}
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break)) != 0)// gmpi_gui::MP_PLATFORM_MENU_BREAK) != 0)
+		{
+			nativeFlags |= MF_MENUBREAK;
+		}
+
+		const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
+		const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;	
+
+		if (isSubMenuStart || isSubMenuEnd) //  (gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN | gmpi_gui::MP_PLATFORM_SUB_MENU_END)) != 0)
+		{
+			if (isSubMenuStart)// gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN) != 0)
+			{
+				auto submenu = CreatePopupMenu();
+				AppendMenu(hmenus.back(), nativeFlags | MF_POPUP, (UINT_PTR)submenu, privateStuff::Utf8ToWstring(text).c_str());
+				hmenus.push_back(submenu);
+			}
+			if (isSubMenuEnd)// gmpi_gui::MP_PLATFORM_SUB_MENU_END) != 0)
+			{
+				hmenus.pop_back();
+			}
+		}
+		else
+		{
+			menuIds.push_back(id);
+			AppendMenu(hmenus.back(), nativeFlags, menuIds.size(), privateStuff::Utf8ToWstring(text).c_str());
+		}
+
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* returnCallback) override
+	{
+		POINT nativePoint{(LONG)rect->left, (LONG)rect->top };
+		ClientToScreen(parentWnd, &nativePoint);
+
+		int flags = align | TPM_LEFTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD;
+
+		auto index = TrackPopupMenu(hmenu, flags, nativePoint.x, nativePoint.y, 0, parentWnd, 0) - 1;
+
+		if (index >= 0)
+		{
+			selectedId = menuIds[index];
+		}
+		else
+		{
+			selectedId = 0; // N/A
+		}
+
+//TODO		returnCompletionHandler->OnComplete(index >= 0 ? gmpi::ReturnCode::Ok: gmpi::ReturnCode::Cancel, selectedId);
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
+		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
+		{
+			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
+		}
+#if 0 // not required
+		else if (auto callback = unknown.as<gmpi::api::ILegacyCompletionCallback>(); callback)
+		{
+			callback->OnComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel);
+		}
+#endif
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode setAlignment(int32_t alignment) override
+	{
+#if 0 // TODO
+		switch (alignment)
+		{
+		case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_LEADING:
+			align = TPM_LEFTALIGN;
+			break;
+		case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_CENTER:
+			align = TPM_CENTERALIGN;
+			break;
+		case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_TRAILING:
+		default:
+			align = TPM_RIGHTALIGN;
+			break;
+		}
+#endif
+		return gmpi::ReturnCode::Ok;
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenu);
+	GMPI_REFCOUNT;
+};
+
+gmpi::ReturnCode DrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** returnMenu)
+{
+//	auto nativeRect = DipsToWindow.TransformRect(*rect);
+	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), /*&nativeRect, */DipsToWindow._22));
+	contextMenu->addRef(); // add an extra refcount so i can own it after caller releases.
+
+	*returnMenu = contextMenu.get();
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode DrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
+{
+	return gmpi::ReturnCode::NoSupport;
 }
 
 #ifdef GMPI_HOST_POINTER_SUPPORT

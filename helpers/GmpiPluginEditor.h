@@ -192,6 +192,15 @@ public:
 	{
 		return ReturnCode::Ok;
 	}
+	// right-click menu
+	gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point point, gmpi::api::IUnknown* contextMenuItemsSink) override
+	{
+		return ReturnCode::Unhandled;
+	}
+	gmpi::ReturnCode onContextMenu(int32_t idx) override
+	{
+		return ReturnCode::Unhandled;
+	}
 
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{

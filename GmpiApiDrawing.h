@@ -378,7 +378,7 @@ namespace api
 {
 
 // INTERFACE 'ITextFormat'
-struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE ITextFormat : gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode setTextAlignment(TextAlignment textAlignment) = 0;
     virtual gmpi::ReturnCode setParagraphAlignment(ParagraphAlignment paragraphAlignment) = 0;
@@ -399,7 +399,7 @@ struct DECLSPEC_NOVTABLE ITextFormat : public gmpi::api::IUnknown
 };
 
 // INTERFACE 'IResource'
-struct DECLSPEC_NOVTABLE IResource : public gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE IResource : gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode getFactory(struct IFactory** factory) = 0;
 
@@ -409,7 +409,7 @@ struct DECLSPEC_NOVTABLE IResource : public gmpi::api::IUnknown
 };
 
 // INTERFACE 'IBitmapPixels'
-struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE IBitmapPixels : gmpi::api::IUnknown
 {
 	// older Windows uses a format of kRGBA, newer uses kBGRA_SRGB. macOS uses kBGRA (sRGB curves)
 	enum PixelFormat {
@@ -429,7 +429,7 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : public gmpi::api::IUnknown
 };
 
 // INTERFACE 'IBitmap'
-struct DECLSPEC_NOVTABLE IBitmap : public IResource
+struct DECLSPEC_NOVTABLE IBitmap : IResource
 {
     virtual gmpi::ReturnCode getSizeU(SizeU* returnSizeU) = 0;
     // Note: Not supported when Bitmap was created by IMpDeviceContext::createCompatibleRenderTarget()
@@ -441,7 +441,7 @@ struct DECLSPEC_NOVTABLE IBitmap : public IResource
 };
 
 // INTERFACE 'IGradientstopCollection'
-struct DECLSPEC_NOVTABLE IGradientstopCollection : public IResource
+struct DECLSPEC_NOVTABLE IGradientstopCollection : IResource
 {
     // {AEE31225-BFF4-42DE-B8CA-233C5A3441CB}
     inline static const gmpi::api::Guid guid =
@@ -449,12 +449,12 @@ struct DECLSPEC_NOVTABLE IGradientstopCollection : public IResource
 };
 
 // INTERFACE 'IBrush'
-struct DECLSPEC_NOVTABLE IBrush : public IResource
+struct DECLSPEC_NOVTABLE IBrush : IResource
 {
 };
 
 // INTERFACE 'IBitmapBrush'
-struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
+struct DECLSPEC_NOVTABLE IBitmapBrush : IBrush
 {
     //virtual gmpi::ReturnCode setExtendModeX(ExtendMode extendModeX) = 0;
     //virtual gmpi::ReturnCode setExtendModeY(ExtendMode extendModeY) = 0;
@@ -466,7 +466,7 @@ struct DECLSPEC_NOVTABLE IBitmapBrush : public IBrush
 };
 
 // INTERFACE 'ISolidColorBrush'
-struct DECLSPEC_NOVTABLE ISolidColorBrush : public IBrush
+struct DECLSPEC_NOVTABLE ISolidColorBrush : IBrush
 {
     virtual gmpi::ReturnCode setColor(const Color* color) = 0;
 //	virtual Color getColor() = 0; // !!!ERROR !!! RETURNING A STRUCT
@@ -477,7 +477,7 @@ struct DECLSPEC_NOVTABLE ISolidColorBrush : public IBrush
 };
 
 // INTERFACE 'ILinearGradientBrush'
-struct DECLSPEC_NOVTABLE ILinearGradientBrush : public IBrush
+struct DECLSPEC_NOVTABLE ILinearGradientBrush : IBrush
 {
     virtual void setStartPoint(Point startPoint) = 0;
     virtual void setEndPoint(Point endPoint) = 0;
@@ -488,7 +488,7 @@ struct DECLSPEC_NOVTABLE ILinearGradientBrush : public IBrush
 };
 
 // INTERFACE 'IRadialGradientBrush'
-struct DECLSPEC_NOVTABLE IRadialGradientBrush : public IBrush
+struct DECLSPEC_NOVTABLE IRadialGradientBrush : IBrush
 {
     virtual void setCenter(Point center) = 0;
     virtual void setGradientOriginOffset(Point gradientOriginOffset) = 0;
@@ -501,7 +501,7 @@ struct DECLSPEC_NOVTABLE IRadialGradientBrush : public IBrush
 };
 
 // INTERFACE 'IStrokeStyle'
-struct DECLSPEC_NOVTABLE IStrokeStyle : public IResource
+struct DECLSPEC_NOVTABLE IStrokeStyle : IResource
 {
 
     // {27D19BF3-9DB2-49CC-A8EE-28E0716EA8B6}
@@ -511,7 +511,7 @@ struct DECLSPEC_NOVTABLE IStrokeStyle : public IResource
 
 #if 0
 // INTERFACE 'ISimplifiedGeometrySink'
-struct DECLSPEC_NOVTABLE ISimplifiedGeometrySink : public gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE ISimplifiedGeometrySink : gmpi::api::IUnknown
 {
     virtual void beginFigure(Point startPoint, FigureBegin figureBegin) = 0;
     virtual void addLines(const Point* points, uint32_t pointsCount) = 0;
@@ -525,7 +525,7 @@ struct DECLSPEC_NOVTABLE ISimplifiedGeometrySink : public gmpi::api::IUnknown
 };
 
 // INTERFACE 'IGeometrySink2'
-struct DECLSPEC_NOVTABLE IGeometrySink2 : public ISimplifiedGeometrySink
+struct DECLSPEC_NOVTABLE IGeometrySink2 : ISimplifiedGeometrySink
 {
 	// IGeometrysink
     virtual void addLine(Point point) = 0;
@@ -549,7 +549,7 @@ struct DECLSPEC_NOVTABLE IGeometrySink2 : public ISimplifiedGeometrySink
 #endif
 
 // INTERFACE 'IGeometrySink'
-struct DECLSPEC_NOVTABLE IGeometrySink : public gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE IGeometrySink : gmpi::api::IUnknown
 {
     virtual void beginFigure(Point startPoint, FigureBegin figureBegin) = 0;
     virtual void endFigure(FigureEnd figureEnd) = 0;
@@ -569,7 +569,7 @@ struct DECLSPEC_NOVTABLE IGeometrySink : public gmpi::api::IUnknown
 };
 
 // INTERFACE 'IPathGeometry'
-struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
+struct DECLSPEC_NOVTABLE IPathGeometry : IResource
 {
     virtual gmpi::ReturnCode open(IGeometrySink** returnGeometrySink) = 0;
 	// in DX, these are part of IMpGeometry. But were added later here, and so added last. not a big deal since we support only one type of geometry, not many like DX.
@@ -583,7 +583,7 @@ struct DECLSPEC_NOVTABLE IPathGeometry : public IResource
 };
 
 // INTERFACE 'IDeviceContext'
-struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
+struct DECLSPEC_NOVTABLE IDeviceContext : IResource
 {
     virtual gmpi::ReturnCode createBitmapBrush(IBitmap* bitmap, /*const BitmapBrushProperties* bitmapBrushProperties,*/ const BrushProperties* brushProperties, IBitmapBrush** returnBitmapBrush) = 0;
     virtual gmpi::ReturnCode createSolidColorBrush(const Color* color, const BrushProperties* brushProperties, ISolidColorBrush** returnSolidColorBrush) = 0;
@@ -617,7 +617,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : public IResource
 };
 
 // INTERFACE 'IBitmapRenderTarget'
-struct DECLSPEC_NOVTABLE IBitmapRenderTarget : public IDeviceContext
+struct DECLSPEC_NOVTABLE IBitmapRenderTarget : IDeviceContext
 {
 // should all interface return types by iUnknown? (to accommodate upgrades)
     virtual gmpi::ReturnCode getBitmap(IBitmap** returnBitmap) = 0;
@@ -628,7 +628,7 @@ struct DECLSPEC_NOVTABLE IBitmapRenderTarget : public IDeviceContext
 };
 
 // INTERFACE 'IFactory'
-struct DECLSPEC_NOVTABLE IFactory : public gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode createPathGeometry(IPathGeometry** returnPathGeometry) = 0;
     virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, ITextFormat** returnTextFormat) = 0;

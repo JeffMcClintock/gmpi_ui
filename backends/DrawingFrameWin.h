@@ -54,6 +54,7 @@ namespace hosting
 	class DrawingFrameBase :
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
+		public gmpi::api::IDialogHost,
 		public gmpi::TimerClient
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
@@ -91,6 +92,7 @@ namespace hosting
 		bool lowDpiMode = {};
 		bool isTrackingMouse = false;
 		gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
+		gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
 	public:
 		static const int viewDimensions = 7968; // DIPs (divisible by grids 60x60 + 2 24 pixel borders)
@@ -240,6 +242,13 @@ namespace hosting
 		gmpi::ReturnCode getFocus() override;
 		gmpi::ReturnCode releaseFocus() override;
 
+		// IDialogHost
+		gmpi::ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) override;
+		gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) override;
+		gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
+		gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;
+
+		void doContextMenu(gmpi::drawing::Point point, int32_t flags);
 
 #if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
@@ -261,33 +270,19 @@ namespace hosting
 				addRef();
 				return gmpi::ReturnCode::Ok;
 			}
-
-			
-#if 0
-			if (*iid == gmpi::MP_IID_UI_HOST2)
+			if (*iid == IDialogHost::guid)
 			{
-				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-				*returnInterface = reinterpret_cast<void*>(static_cast<IMpUserInterfaceHost2*>(this));
+				*returnInterface = reinterpret_cast<void*>(static_cast<IDialogHost*>(this));
 				addRef();
 				return gmpi::ReturnCode::Ok;
 			}
-#endif
-#ifdef GMPI_HOST_POINTER_SUPPORT
-			if (*iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
-			{
-				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-				*returnInterface = reinterpret_cast<void*>(static_cast<IMpGraphicsHost*>(this));
-				addRef();
-				return gmpi::ReturnCode::Ok;
-			}
-#else
 			if (*iid == gmpi::api::IUnknown::guid)
 			{
 				*returnInterface = this;
 				addRef();
 				return gmpi::ReturnCode::Ok;
 			}
-#endif
+
 			if (parameterHost)
 			{
 				return parameterHost->queryInterface(iid, returnInterface);

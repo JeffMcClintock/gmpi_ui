@@ -73,6 +73,8 @@ public:
 	gmpi::ReturnCode onMouseWheel (gmpi::drawing::Point point, int32_t flags, int32_t delta) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode setHover(bool isMouseOverMe) { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode OnKeyPress(wchar_t c) override { return gmpi::ReturnCode::Unhandled; }
+	gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point point, gmpi::api::IUnknown* contextMenuItemsSink) override { return gmpi::ReturnCode::Unhandled; }
+	gmpi::ReturnCode onContextMenu(int32_t idx) override { return gmpi::ReturnCode::Unhandled; }
 
 	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

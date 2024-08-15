@@ -442,7 +442,7 @@ GmpiComponent::~GmpiComponent() {}
 // without including objective-C headers, we need to create an NSView.
 // forward declare function here to return the view, using void* as return type.
 void* createNativeView(void* parent, class IUnknown* paramHost, class IUnknown* client, int width, int height);
-void onCloseNativeView(void* ptr);
+void gmpi_onCloseNativeView(void* ptr);
 
 struct GmpiComponent::Pimpl
 {
@@ -465,7 +465,7 @@ GmpiComponent::GmpiComponent() :
 
 GmpiComponent::~GmpiComponent()
 {
-    onCloseNativeView(getView());
+    gmpi_onCloseNativeView(getView());
 }
 
 void GmpiComponent::parentHierarchyChanged()

@@ -1,6 +1,6 @@
 #include "JuceGmpiComponent.h"
 #include "helpers/GraphicsRedrawClient.h"
-#include "helpers/TimerManager.h"
+#include "helpers/Timer.h"
 #include "../../../RefCountMacros.h"
 
 #ifdef _WIN32
@@ -66,11 +66,13 @@ public:
 	gmpi::ReturnCode getClipArea(drawing::Rect* returnRect) override { return gmpi::ReturnCode::NoSupport; }
 
 	// IInputClient
+	gmpi::ReturnCode hitTest(gmpi::drawing::Point point, int32_t flags) override { return gmpi::ReturnCode::Ok; }
 	gmpi::ReturnCode onPointerDown(gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onPointerUp  (gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onMouseWheel (gmpi::drawing::Point point, int32_t flags, int32_t delta) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode setHover(bool isMouseOverMe) { return gmpi::ReturnCode::Unhandled; }
+	gmpi::ReturnCode OnKeyPress(wchar_t c) override { return gmpi::ReturnCode::Unhandled; }
 
 	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -122,7 +124,7 @@ public:
 
 #ifdef _WIN32
 
-class JuceDrawingFrameBase : public GmpiGuiHosting::DrawingFrameBase
+class JuceDrawingFrameBase : public gmpi::hosting::DrawingFrameBase
 {
 	juce::HWNDComponent& juceComponent;
 
@@ -390,7 +392,7 @@ void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
 
 		initTooltip();
 
-		StartTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+		startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
 	}
 }
 
@@ -405,7 +407,7 @@ struct GmpiComponent::Pimpl
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-        JuceDrawingFrameBase.AddView(nullptr, static_cast<gmpi::api::IDrawingClient*>(&proxy));
+        JuceDrawingFrameBase.AddView(static_cast<gmpi::api::IDrawingClient*>(&proxy));
 
         JuceDrawingFrameBase.open(
             hwnd,

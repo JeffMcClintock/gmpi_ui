@@ -90,7 +90,6 @@ namespace hosting
 		bool lowDpiMode = {};
 		bool isTrackingMouse = false;
 		gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
-		gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
 	public:
 		static const int viewDimensions = 7968; // DIPs (divisible by grids 60x60 + 2 24 pixel borders)

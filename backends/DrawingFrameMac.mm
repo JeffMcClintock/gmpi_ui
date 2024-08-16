@@ -35,7 +35,7 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu // , public EventHelperC
     NSView* view;
     std::vector<int32_t> menuIds;
 //    SYNTHEDIT_EVENT_HELPER_CLASSNAME* eventhelper;
-    gmpi::api::IUnknown* completionHandler{};
+    gmpi::api::IUnknown* returnCallback{};
     NSPopUpButton* button;
     gmpi::drawing::Rect rect;
     
@@ -43,10 +43,9 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu // , public EventHelperC
     
 public:
 
-    GMPI_MAC_PopupMenu(NSView* pview/*, GmpiDrawing_API::MP1_RECT* prect*/)
+    GMPI_MAC_PopupMenu(NSView* pview)
     {
         view = pview;
-//        rect = *prect;
 /* TODO
  eventhelper = [SYNTHEDIT_EVENT_HELPER_CLASSNAME alloc];
  [eventhelper initWithClient : this];
@@ -66,14 +65,19 @@ public:
 
     void CallbackFromCocoa(NSObject* sender) // todo override
     {
-        int i = static_cast<int>([((NSMenuItem*) sender) tag]) - 1;
-        if (i >= 0 && i < menuIds.size())
+        int index = static_cast<int>([((NSMenuItem*) sender) tag]) - 1;
+        if (index >= 0 && index < menuIds.size())
         {
-            selectedId = menuIds[i];
+            selectedId = menuIds[index];
         }
 
         [button removeFromSuperview];
-        completionHandler->OnComplete(i >= 0 ? gmpi::MP_OK : gmpi::MP_CANCEL);
+
+        gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
+		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
+		{
+			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
+		}
     }
 
     gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
@@ -127,16 +131,13 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    int32_t MP_STDCALL showAsync(gmpi::api::IUnknown* pCompletionHandler) override
+	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* preturnCallback) override
     {
-        completionHandler = pCompletionHandler;
+        returnCallback = preturnCallback;
         
         [[button cell] setAltersStateOfSelectedItem:NO];
         [[button cell] attachPopUpWithFrame:NSMakeRect(0,0,1,1) inView:view];
         [[button cell] performClickWithFrame:gmpiRectToViewRect(view.bounds, rect) inView:view];
-
-//            [button setNeedsDisplay:YES];
-//         [button performClick:nil]; // Display popup.
 
         return gmpi::ReturnCode::Ok;
     }

@@ -1322,7 +1322,6 @@ public:
 			selectedId = 0; // N/A
 		}
 
-//TODO		returnCompletionHandler->OnComplete(index >= 0 ? gmpi::ReturnCode::Ok: gmpi::ReturnCode::Cancel, selectedId);
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
 		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
 		{

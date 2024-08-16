@@ -29,6 +29,142 @@ namespace interaction
 }
 }
 
+class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu // , public EventHelperClient
+{
+    int32_t selectedId;
+    NSView* view;
+    std::vector<int32_t> menuIds;
+//    SYNTHEDIT_EVENT_HELPER_CLASSNAME* eventhelper;
+    gmpi::api::IUnknown* completionHandler{};
+    NSPopUpButton* button;
+    gmpi::drawing::Rect rect;
+    
+    std::vector<NSMenu*> menuStack;
+    
+public:
+
+    GMPI_MAC_PopupMenu(NSView* pview/*, GmpiDrawing_API::MP1_RECT* prect*/)
+    {
+        view = pview;
+//        rect = *prect;
+/* TODO
+ eventhelper = [SYNTHEDIT_EVENT_HELPER_CLASSNAME alloc];
+ [eventhelper initWithClient : this];
+ */
+        button = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(10,1000,30,30)];
+        menuStack.push_back([button menu]);
+    }
+
+    ~GMPI_MAC_PopupMenu()
+    {
+        if (button != nil)
+        {
+            [button removeFromSuperview];
+            button = nil;
+        }
+    }
+
+    void CallbackFromCocoa(NSObject* sender) // todo override
+    {
+        int i = static_cast<int>([((NSMenuItem*) sender) tag]) - 1;
+        if (i >= 0 && i < menuIds.size())
+        {
+            selectedId = menuIds[i];
+        }
+
+        [button removeFromSuperview];
+        completionHandler->OnComplete(i >= 0 ? gmpi::MP_OK : gmpi::MP_CANCEL);
+    }
+
+    gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
+    {
+        menuIds.push_back(id);
+
+        if ((flags & gmpi_gui::MP_PLATFORM_MENU_SEPARATOR) != 0)
+        {
+            [menuStack.back() addItem:[NSMenuItem separatorItem] ];
+        }
+        else
+        {
+            NSString* nsstr = [NSString stringWithCString : text encoding : NSUTF8StringEncoding];
+
+            if ((flags & (gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN | gmpi_gui::MP_PLATFORM_SUB_MENU_END)) != 0)
+            {
+                if ((flags & (gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN)) != 0)
+                {
+                    auto menuItem = [menuStack.back() addItemWithTitle:nsstr action : nil keyEquivalent:@""];
+                    NSMenu* subMenu = [[NSMenu alloc] init];
+                    [menuItem setSubmenu:subMenu];
+                    menuStack.push_back(subMenu);
+                }
+                if ((flags & (gmpi_gui::MP_PLATFORM_SUB_MENU_END)) != 0)
+                {
+                    menuStack.pop_back();
+                }
+            }
+            else
+            {
+                NSMenuItem* menuItem;
+                if ((flags & gmpi_gui::MP_PLATFORM_MENU_GRAYED) != 0)
+                {
+                    menuItem = [menuStack.back() addItemWithTitle:nsstr action : nil keyEquivalent:@""];
+                }
+                else
+                {
+                    menuItem = [menuStack.back() addItemWithTitle:nsstr action : @selector(menuItemSelected : ) keyEquivalent:@""];
+                }
+                
+                [menuItem setTarget : eventhelper];
+                [menuItem setTag: menuIds.size()]; // successive tags, starting at 1
+                
+                if ((flags & gmpi_gui::MP_PLATFORM_MENU_TICKED) != 0)
+                {
+                    [menuItem setState:NSOnState];
+                }
+            }
+        }
+        
+        return gmpi::ReturnCode::Ok;
+    }
+
+    int32_t MP_STDCALL showAsync(gmpi::api::IUnknown* pCompletionHandler) override
+    {
+        completionHandler = pCompletionHandler;
+        
+        [[button cell] setAltersStateOfSelectedItem:NO];
+        [[button cell] attachPopUpWithFrame:NSMakeRect(0,0,1,1) inView:view];
+        [[button cell] performClickWithFrame:gmpiRectToViewRect(view.bounds, rect) inView:view];
+
+//            [button setNeedsDisplay:YES];
+//         [button performClick:nil]; // Display popup.
+
+        return gmpi::ReturnCode::Ok;
+    }
+
+    int32_t MP_STDCALL SetAlignment(int32_t alignment) override
+    {
+        /*
+        switch (alignment)
+        {
+            case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_LEADING:
+                align = TPM_LEFTALIGN;
+                break;
+            case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_CENTER:
+                align = TPM_CENTERALIGN;
+                break;
+            case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_TRAILING:
+            default:
+                align = TPM_RIGHTALIGN;
+                break;
+        }
+         */
+        return gmpi::ReturnCode::Ok;
+    }
+
+    GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenu);
+    GMPI_REFCOUNT;
+};
+
 class DrawingFrameCocoa :
     public DrawingFrameCommon,
     public gmpi::api::IDrawingHost,

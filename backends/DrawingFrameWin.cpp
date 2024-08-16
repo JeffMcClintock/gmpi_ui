@@ -1362,8 +1362,7 @@ public:
 
 gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** returnMenu)
 {
-//	auto nativeRect = DipsToWindow.TransformRect(*rect);
-	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), /*&nativeRect, */DipsToWindow._22));
+	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), DipsToWindow._22));
 	contextMenu->addRef(); // add an extra refcount so i can own it after caller releases.
 
 	*returnMenu = contextMenu.get();

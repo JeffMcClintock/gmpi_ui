@@ -2,8 +2,7 @@
 #include "helpers/GraphicsRedrawClient.h"
 #include "GmpiSdkCommon.h"
 #import "CocoaGfx.h"
-// hmm part of GMPI plugins not GMPI Drawing. how to keep no dependancy?
-//#include "GmpiApiEditor.h"
+#include "DrawingFrameCommon.h"
 
 namespace gmpi
 {
@@ -31,18 +30,17 @@ namespace interaction
 }
 
 class DrawingFrameCocoa :
-#ifdef GMPI_HOST_POINTER_SUPPORT
-public gmpi_gui::IMpGraphicsHost,
-public GmpiGuiHosting::PlatformTextEntryObserver,
-#endif
-public gmpi::api::IDrawingHost,
-public gmpi::api::IInputHost
+    public DrawingFrameCommon,
+    public gmpi::api::IDrawingHost,
+    public gmpi::api::IInputHost
+	public gmpi::api::IDialogHost
+
+//#ifdef GMPI_HOST_POINTER_SUPPORT
+//    public gmpi_gui::IMpGraphicsHost,
+//    public GmpiGuiHosting::PlatformTextEntryObserver,
+//#endif
 {
 public:
-    gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
-    gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
-    gmpi::api::IUnknown* parameterHost{};
-    
     int32_t mouseCaptured = 0;
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
@@ -269,6 +267,23 @@ public:
         return gmpi::ReturnCode::NoSupport;
     }
 
+    // IDialogHost
+    gmpi::ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
+    gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
+    gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
+    gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
 
 #if 0
     virtual gmpi::ReturnCode  GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override
@@ -563,22 +578,21 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     }
 }
 
-
 - (void)mouseDown:(NSEvent *)theEvent
 {
     drawingFrame.removeTextEdit();
     
     [[self window] makeFirstResponder:self]; // take focus off any text-edit. Works but does not dimiss it.
  
-
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
 	flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
-    
+    const auto p = mouseToGmpi(self, theEvent);
+
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerDown(mouseToGmpi(self, theEvent), flags);
+        drawingFrame.inputClient->onPointerDown(p, flags);
 
  // no help to edit box   [super mouseDown:theEvent];
 }
@@ -592,10 +606,17 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
-    
-    // TODO     drawingFrame.getView()->onPointerDown(flags, p);
+    const auto p = mouseToGmpi(self, theEvent);
+
+    gmpi::ReturnCode r = gmpi::ReturnCode::Unhandled;
+
     if(drawingFrame.inputClient)
-        drawingFrame.inputClient->onPointerDown(mouseToGmpi(self, theEvent), flags);
+        r = drawingFrame.inputClient->onPointerDown(p, flags);
+
+	if (r == gmpi::ReturnCode::Unhandled)
+	{
+		doContextMenu(p, flags);
+	}
 }
 
 - (void)rightMouseUp:(NSEvent *)theEvent

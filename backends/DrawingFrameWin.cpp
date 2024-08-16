@@ -5,7 +5,6 @@
 #include <wrl.h> // Comptr
 #include <Windowsx.h>
 #include <commctrl.h>
-#include <functional>
 #include "./DrawingFrameWin.h"
 
 using namespace std;
@@ -230,7 +229,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 	}
 }
 
-void DrawingFrameBase::initTooltip()
+void DxDrawingFrameBase::initTooltip()
 {
 	if (tooltipWindow == nullptr && getWindowHandle())
 	{
@@ -267,7 +266,7 @@ void DrawingFrameBase::initTooltip()
 	}
 }
 
-void DrawingFrameBase::TooltipOnMouseActivity()
+void DxDrawingFrameBase::TooltipOnMouseActivity()
 {
 	if(toolTipShown)
 	{
@@ -281,7 +280,7 @@ void DrawingFrameBase::TooltipOnMouseActivity()
 		toolTiptimer = toolTiptimerInit;
 }
 
-void DrawingFrameBase::ShowToolTip()
+void DxDrawingFrameBase::ShowToolTip()
 {
 	_RPT0(_CRT_WARN, "YEAH!\n");
 
@@ -309,7 +308,7 @@ void DrawingFrameBase::ShowToolTip()
 	toolTipShown = true;
 }
 
-void DrawingFrameBase::HideToolTip()
+void DxDrawingFrameBase::HideToolTip()
 {
 	toolTipShown = false;
 	_RPT0(_CRT_WARN, "NUH!\n");
@@ -326,7 +325,7 @@ void DrawingFrameBase::HideToolTip()
 	}
 }
 
-LRESULT DrawingFrameBase::WindowProc(
+LRESULT DxDrawingFrameBase::WindowProc(
 	HWND hwnd, 
 	UINT message,
 	WPARAM wParam,
@@ -442,8 +441,12 @@ LRESULT DrawingFrameBase::WindowProc(
 				break;
 
 			case WM_RBUTTONDOWN:
-				doContextMenu(p, flags);
+				r = inputClient->onPointerDown(p, flags);
 				::SetFocus(hwnd);
+				if (r == gmpi::ReturnCode::Unhandled)
+				{
+					doContextMenu(p, flags);
+				}
 				break;
 
 			case WM_MBUTTONUP:
@@ -526,96 +529,7 @@ LRESULT DrawingFrameBase::WindowProc(
 	return TRUE;
 }
 
-// Accepts context-menu items via IMpContextItemSink, and populates a popup menu with them.
-// Also suppresses redundant separators
-class ContextItemsSinkAdaptor : public gmpi::api::IContextItemSink
-{
-	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
-	bool pendingSeperator = false;
-
-public:
-	ContextItemsSinkAdaptor(gmpi::shared_ptr<gmpi::api::IUnknown> unknown)
-	{
-		contextMenu = unknown.as<gmpi::api::IPopupMenu>();
-	}
-
-	ReturnCode addItem(const char* text, int32_t id, int32_t flags = 0) override
-	{
-		// suppress redundant or repeated separators.
-		if (0 != (flags & (int32_t) gmpi::api::PopupMenuFlags::Separator))
-		{
-			pendingSeperator = true;
-		}
-		else
-		{
-			if (0 != (flags & (int32_t)gmpi::api::PopupMenuFlags::SubMenuEnd))
-			{
-				pendingSeperator = false;
-			}
-
-			if (pendingSeperator)
-			{
-				contextMenu->addItem("", 0, (int32_t)gmpi::api::PopupMenuFlags::Separator);
-				pendingSeperator = false;
-			}
-
-			contextMenu->addItem(text, id, flags);
-		}
-
-		return gmpi::ReturnCode::Ok;
-	}
-
-	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IContextItemSink);
-	GMPI_REFCOUNT_NO_DELETE;
-};
-
-class PopupMenuCallback : public gmpi::api::IPopupMenuCallback
-{
-	std::function<void(gmpi::ReturnCode, int32_t)> callback;
-public:
-	PopupMenuCallback(std::function<void(gmpi::ReturnCode, int32_t)> callback) : callback(callback) {}
-
-	void onComplete(gmpi::ReturnCode result, int32_t selectedID) override
-	{
-		callback(result, selectedID);
-	}
-
-	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
-	GMPI_REFCOUNT;
-};
-
-void DrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t flags)
-{
-	auto r = inputClient->onPointerDown(point, flags);
-
-	// Handle right-click on background. (right-click on objects is handled by object itself).
-	if (r == gmpi::ReturnCode::Unhandled && (flags & gmpi::api::GG_POINTER_FLAG_SECONDBUTTON) != 0 && inputClient)
-	{
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-		createPopupMenu(unknown.put());
-
-		auto lcontextMenu = unknown.as<gmpi::api::IPopupMenu>();
-
-		ContextItemsSinkAdaptor sink(unknown);
-
-		r = inputClient->populateContextMenu(point, &sink);
-
-		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20};
-		lcontextMenu->showAsync(&rect,
-			new PopupMenuCallback(
-				[this](gmpi::ReturnCode res, int32_t commandId) -> void
-				{
-					if (res == gmpi::ReturnCode::Ok)
-					{
-						inputClient->onContextMenu(commandId);
-					}
-				}
-			)
-		);
-	}
-}
-
-void DrawingFrameBase::OnSize(UINT width, UINT height)
+void DxDrawingFrameBase::OnSize(UINT width, UINT height)
 {
 	assert(m_swapChain);
 	assert(mpRenderTarget);
@@ -656,7 +570,7 @@ void DrawingFrameBase::OnSize(UINT width, UINT height)
 }
 
 // Ideally this is called at 60Hz so we can draw as fast as practical, but without blocking to wait for Vsync all the time (makes host unresponsive).
-bool DrawingFrameBase::onTimer()
+bool DxDrawingFrameBase::onTimer()
 {
 	auto hwnd = getWindowHandle();
 	if (hwnd == nullptr
@@ -713,7 +627,7 @@ void RenderLog(ID2D1RenderTarget* context_, IDWriteFactory* writeFactory, ID2D1F
 {
 } // RenderLog ====================================================
 
-void DrawingFrameBase::OnPaint()
+void DxDrawingFrameBase::OnPaint()
 {
 	// First clear update region (else windows will pound on this repeatedly).
 	updateRegion_native.copyDirtyRects(getWindowHandle(), swapChainSize);
@@ -876,7 +790,7 @@ void DrawingFrameBase::OnPaint()
 	reentrant = false;
 }
 
-void DrawingFrameBase::CreateDevice()
+void DxDrawingFrameBase::CreateDevice()
 {
 	ReleaseDevice();
 
@@ -1079,7 +993,7 @@ void DrawingFrameBase::CreateDevice()
 	}
 }
 
-void DrawingFrameBase::CreateDeviceSwapChainBitmap()
+void DxDrawingFrameBase::CreateDeviceSwapChainBitmap()
 {
 //	_RPT0(_CRT_WARN, "\n\nCreateDeviceSwapChainBitmap()\n");
 
@@ -1118,7 +1032,7 @@ void DrawingFrameBase::CreateDeviceSwapChainBitmap()
 	InvalidateRect(getWindowHandle(), nullptr, false);
 }
 
-void DrawingFrameBase::CreateRenderTarget()
+void DxDrawingFrameBase::CreateRenderTarget()
 {
 	CreateDevice();
 }
@@ -1178,7 +1092,7 @@ inline drawing::RectL RectToIntegerLarger(gmpi::drawing::Rect f)
 	static_cast<int32_t>(f.bottom) + 1 };
 }
 
-void DrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
+void DxDrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 {
 	drawing::RectL r;
 	if (invalidRect)
@@ -1219,41 +1133,41 @@ void DrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 	backBufferDirtyRects.push_back(r);
 }
 
-gmpi::ReturnCode DrawingFrameBase::setCapture()
+gmpi::ReturnCode DxDrawingFrameBase::setCapture()
 {
 	::SetCapture(getWindowHandle());
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DrawingFrameBase::getCapture(bool& returnValue)
+gmpi::ReturnCode DxDrawingFrameBase::getCapture(bool& returnValue)
 {
 	returnValue = ::GetCapture() == getWindowHandle();
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DrawingFrameBase::releaseCapture()
+gmpi::ReturnCode DxDrawingFrameBase::releaseCapture()
 {
 	::ReleaseCapture();
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DrawingFrameBase::getFocus()
+gmpi::ReturnCode DxDrawingFrameBase::getFocus()
 {
 	::SetFocus(getWindowHandle());
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DrawingFrameBase::releaseFocus()
+gmpi::ReturnCode DxDrawingFrameBase::releaseFocus()
 {
 	return gmpi::ReturnCode::Ok;
 }
 
 // IDialogHost
-gmpi::ReturnCode DrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
+gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
 {
 	return gmpi::ReturnCode::NoSupport;
 }
-gmpi::ReturnCode DrawingFrameBase::createTextEdit(gmpi::api::IUnknown** returnTextEdit)
+gmpi::ReturnCode DxDrawingFrameBase::createTextEdit(gmpi::api::IUnknown** returnTextEdit)
 {
 	return gmpi::ReturnCode::NoSupport;
 }
@@ -1447,7 +1361,7 @@ public:
 	GMPI_REFCOUNT;
 };
 
-gmpi::ReturnCode DrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** returnMenu)
+gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** returnMenu)
 {
 //	auto nativeRect = DipsToWindow.TransformRect(*rect);
 	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), /*&nativeRect, */DipsToWindow._22));
@@ -1457,7 +1371,7 @@ gmpi::ReturnCode DrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** returnM
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
+gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
 {
 	return gmpi::ReturnCode::NoSupport;
 }

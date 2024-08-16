@@ -14,7 +14,7 @@ using namespace GmpiGuiHosting;
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
 #include "helpers/Timer.h"
-#include "helpers/GraphicsRedrawClient.h"
+#include "DrawingFrameCommon.h"
 
 namespace SynthEdit2
 {
@@ -51,7 +51,8 @@ namespace hosting
 	};
 
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
-	class DrawingFrameBase :
+	class DxDrawingFrameBase :
+		public DrawingFrameCommon,
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
 		public gmpi::api::IDialogHost,
@@ -64,9 +65,6 @@ namespace hosting
 
 	protected:
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
-		gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
-		gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
-		gmpi::api::IUnknown* parameterHost{};
 
 		gmpi::drawing::SizeL swapChainSize = {};
 
@@ -98,7 +96,7 @@ namespace hosting
 		static const int viewDimensions = 7968; // DIPs (divisible by grids 60x60 + 2 24 pixel borders)
 		gmpi::directx::Factory DrawingFactory;
 
-		DrawingFrameBase() :
+		DxDrawingFrameBase() :
 			mpRenderTarget(nullptr)
 			,m_swapChain(nullptr)
 			, toolTipShown(false)
@@ -108,7 +106,7 @@ namespace hosting
 		{
 		}
 
-		virtual ~DrawingFrameBase()
+		virtual ~DxDrawingFrameBase()
 		{
 			stopTimer();
 
@@ -248,8 +246,6 @@ namespace hosting
 		gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
 		gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;
 
-		void doContextMenu(gmpi::drawing::Point point, int32_t flags);
-
 #if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
 		gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -311,7 +307,7 @@ namespace hosting
 	};
 
 	// This is used in VST3. Native HWND window frame.
-	class DrawingFrame : public DrawingFrameBase
+	class DrawingFrame : public DxDrawingFrameBase
 	{
 		HWND windowHandle = {};
 		HWND parentWnd = {};

@@ -29,6 +29,21 @@ namespace interaction
 }
 }
 
+inline NSRect gmpiRectToViewRect(NSRect viewbounds, gmpi::drawing::Rect const* rect)
+{
+    #if USE_BACKING_BUFFER
+        // flip co-ords
+        return NSMakeRect(
+          rect->left,
+          viewbounds.origin.y + viewbounds.size.height - rect->bottom,
+          rect->right - rect->left,
+          rect->bottom - rect->top
+          );
+    #else
+        return NSMakeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+    #endif
+}
+
 class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu // , public EventHelperClient
 {
     int32_t selectedId;
@@ -37,7 +52,7 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu // , public EventHelperC
 //    SYNTHEDIT_EVENT_HELPER_CLASSNAME* eventhelper;
     gmpi::api::IUnknown* returnCallback{};
     NSPopUpButton* button;
-    gmpi::drawing::Rect rect;
+//    gmpi::drawing::Rect rect;
     
     std::vector<NSMenu*> menuStack;
     
@@ -120,7 +135,7 @@ public:
                     menuItem = [menuStack.back() addItemWithTitle:nsstr action : @selector(menuItemSelected : ) keyEquivalent:@""];
                 }
                 
-                [menuItem setTarget : eventhelper];
+// TODO                [menuItem setTarget : eventhelper];
                 [menuItem setTag: menuIds.size()]; // successive tags, starting at 1
                 
 		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
@@ -144,7 +159,7 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    int32_t MP_STDCALL SetAlignment(int32_t alignment) override
+    gmpi::ReturnCode setAlignment(int32_t alignment) override
     {
         /*
         switch (alignment)
@@ -413,7 +428,10 @@ public:
     }
     gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) override
     {
-        return gmpi::ReturnCode::NoSupport;
+        contextMenu.attach(new GMPI_MAC_PopupMenu(view));
+        contextmenu->addRef();
+        *returnMenu = contextmenu.get();
+        return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override
     {

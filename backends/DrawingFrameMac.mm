@@ -4,6 +4,39 @@
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 
+struct EventHelperClient
+{
+    virtual void CallbackFromCocoa(NSObject* sender) = 0;
+};
+
+@interface GMPI_EVENT_HELPER_CLASSNAME : NSObject {
+    EventHelperClient* client;
+}
+- (void)initWithClient:(EventHelperClient*)client;
+- (void)menuItemSelected: (id) sender;
+- (void)endEditing: (id) sender;
+@end
+
+@implementation GMPI_EVENT_HELPER_CLASSNAME
+
+- (void)initWithClient:(EventHelperClient*)pclient
+{
+    client = pclient;
+}
+- (void)menuItemSelected: (id) sender
+{
+    client->CallbackFromCocoa(sender);
+}
+- (void)endEditing: (id) sender
+{
+    client->CallbackFromCocoa(sender);
+}
+- (void)onMenuAction: (id) sender
+{
+   client->CallbackFromCocoa(sender);
+}
+@end
+
 namespace gmpi
 {
 namespace interaction
@@ -44,15 +77,14 @@ inline NSRect gmpiRectToViewRect(NSRect viewbounds, gmpi::drawing::Rect const* r
     #endif
 }
 
-class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu // , public EventHelperClient
+class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClient
 {
     int32_t selectedId;
     NSView* view;
     std::vector<int32_t> menuIds;
-//    SYNTHEDIT_EVENT_HELPER_CLASSNAME* eventhelper;
+    GMPI_EVENT_HELPER_CLASSNAME* eventhelper{};
     gmpi::api::IUnknown* returnCallback{};
     NSPopUpButton* button;
-//    gmpi::drawing::Rect rect;
     
     std::vector<NSMenu*> menuStack;
     
@@ -61,10 +93,10 @@ public:
     GMPI_MAC_PopupMenu(NSView* pview)
     {
         view = pview;
-/* TODO
- eventhelper = [SYNTHEDIT_EVENT_HELPER_CLASSNAME alloc];
- [eventhelper initWithClient : this];
- */
+
+        eventhelper = [GMPI_EVENT_HELPER_CLASSNAME alloc];
+        [eventhelper initWithClient : this];
+ 
         button = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(10,1000,30,30)];
         menuStack.push_back([button menu]);
     }
@@ -135,7 +167,7 @@ public:
                     menuItem = [menuStack.back() addItemWithTitle:nsstr action : @selector(menuItemSelected : ) keyEquivalent:@""];
                 }
                 
-// TODO                [menuItem setTarget : eventhelper];
+                [menuItem setTarget : eventhelper];
                 [menuItem setTag: menuIds.size()]; // successive tags, starting at 1
                 
 		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
@@ -429,8 +461,8 @@ public:
     gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) override
     {
         contextMenu.attach(new GMPI_MAC_PopupMenu(view));
-        contextmenu->addRef();
-        *returnMenu = contextmenu.get();
+        contextMenu->addRef();
+        *returnMenu = contextMenu.get();
         return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override

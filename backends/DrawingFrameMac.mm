@@ -32,7 +32,7 @@ namespace interaction
 class DrawingFrameCocoa :
     public DrawingFrameCommon,
     public gmpi::api::IDrawingHost,
-    public gmpi::api::IInputHost
+    public gmpi::api::IInputHost,
 	public gmpi::api::IDialogHost
 
 //#ifdef GMPI_HOST_POINTER_SUPPORT
@@ -615,7 +615,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 	if (r == gmpi::ReturnCode::Unhandled)
 	{
-		doContextMenu(p, flags);
+        drawingFrame.doContextMenu(p, flags);
 	}
 }
 

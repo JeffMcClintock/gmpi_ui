@@ -1262,19 +1262,19 @@ public:
 	gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
 	{
 		UINT nativeFlags = MF_STRING;
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)// gmpi_gui::MP_PLATFORM_MENU_TICKED) != 0)
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
 		{
 			nativeFlags |= MF_CHECKED;
 		}
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)// gmpi_gui::MP_PLATFORM_MENU_GRAYED) != 0)
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
 		{
 			nativeFlags |= MF_GRAYED;
 		}
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)// gmpi_gui::MP_PLATFORM_MENU_SEPARATOR) != 0)
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
 		{
 			nativeFlags |= MF_SEPARATOR;
 		}
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break)) != 0)// gmpi_gui::MP_PLATFORM_MENU_BREAK) != 0)
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break)) != 0)
 		{
 			nativeFlags |= MF_MENUBREAK;
 		}
@@ -1282,15 +1282,15 @@ public:
 		const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
 		const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;	
 
-		if (isSubMenuStart || isSubMenuEnd) //  (gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN | gmpi_gui::MP_PLATFORM_SUB_MENU_END)) != 0)
+		if (isSubMenuStart || isSubMenuEnd)
 		{
-			if (isSubMenuStart)// gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN) != 0)
+			if (isSubMenuStart)
 			{
 				auto submenu = CreatePopupMenu();
 				AppendMenu(hmenus.back(), nativeFlags | MF_POPUP, (UINT_PTR)submenu, privateStuff::Utf8ToWstring(text).c_str());
 				hmenus.push_back(submenu);
 			}
-			if (isSubMenuEnd)// gmpi_gui::MP_PLATFORM_SUB_MENU_END) != 0)
+			else if (isSubMenuEnd)
 			{
 				hmenus.pop_back();
 			}

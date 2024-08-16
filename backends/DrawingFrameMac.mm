@@ -84,7 +84,7 @@ public:
     {
         menuIds.push_back(id);
 
-        if ((flags & gmpi_gui::MP_PLATFORM_MENU_SEPARATOR) != 0)
+		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
         {
             [menuStack.back() addItem:[NSMenuItem separatorItem] ];
         }
@@ -92,16 +92,18 @@ public:
         {
             NSString* nsstr = [NSString stringWithCString : text encoding : NSUTF8StringEncoding];
 
-            if ((flags & (gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN | gmpi_gui::MP_PLATFORM_SUB_MENU_END)) != 0)
+		    const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
+		    const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;	
+    		if (isSubMenuStart || isSubMenuEnd)
             {
-                if ((flags & (gmpi_gui::MP_PLATFORM_SUB_MENU_BEGIN)) != 0)
+                if (isSubMenuStart)
                 {
                     auto menuItem = [menuStack.back() addItemWithTitle:nsstr action : nil keyEquivalent:@""];
                     NSMenu* subMenu = [[NSMenu alloc] init];
                     [menuItem setSubmenu:subMenu];
                     menuStack.push_back(subMenu);
                 }
-                if ((flags & (gmpi_gui::MP_PLATFORM_SUB_MENU_END)) != 0)
+                else if (isSubMenuEnd)
                 {
                     menuStack.pop_back();
                 }
@@ -109,7 +111,7 @@ public:
             else
             {
                 NSMenuItem* menuItem;
-                if ((flags & gmpi_gui::MP_PLATFORM_MENU_GRAYED) != 0)
+		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
                 {
                     menuItem = [menuStack.back() addItemWithTitle:nsstr action : nil keyEquivalent:@""];
                 }
@@ -121,7 +123,7 @@ public:
                 [menuItem setTarget : eventhelper];
                 [menuItem setTag: menuIds.size()]; // successive tags, starting at 1
                 
-                if ((flags & gmpi_gui::MP_PLATFORM_MENU_TICKED) != 0)
+		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
                 {
                     [menuItem setState:NSOnState];
                 }

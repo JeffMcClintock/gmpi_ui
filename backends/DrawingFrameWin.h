@@ -241,6 +241,7 @@ namespace hosting
 
 		// IDialogHost
 		gmpi::ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) override;
+		gmpi::ReturnCode createKeyListener(gmpi::api::IUnknown** returnKeyListener) override;
 		gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) override;
 		gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
 		gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;

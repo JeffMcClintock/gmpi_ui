@@ -138,6 +138,7 @@ struct DECLSPEC_NOVTABLE IInputHost : gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 {
 	virtual ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) = 0;
+	virtual ReturnCode createKeyListener(gmpi::api::IUnknown** returnKeyListener) = 0;
 	virtual ReturnCode createPopupMenu(gmpi::api::IUnknown** returnPopupMenu) = 0;
 	virtual ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 	virtual ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
@@ -162,7 +163,7 @@ struct DECLSPEC_NOVTABLE IPopupMenu : gmpi::api::IUnknown
 {
 	virtual ReturnCode addItem(const char* text, int32_t id, int32_t flags) = 0;
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* returnCallback) = 0;
+	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
 // not async	virtual ReturnCode GetSelectedId() = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
@@ -198,7 +199,7 @@ struct DECLSPEC_NOVTABLE IFileDialog : gmpi::api::IUnknown
 	virtual ReturnCode addExtension(const char* extension, const char* description = "") = 0;
 	virtual ReturnCode setInitialFilename(const char* text) = 0;
 	virtual ReturnCode setInitialDirectory(const char* text) = 0;
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* returnCallback) = 0;
+	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
 // not async	virtual ReturnCode GetSelectedFilename(gmpi::api::IUnknown* returnString) = 0;
 
 // {5D44F94E-26DB-4A22-934B-FC07BFDD6096}
@@ -210,11 +211,55 @@ struct DECLSPEC_NOVTABLE IStockDialog : gmpi::api::IUnknown
 {
 	virtual ReturnCode setTitle(const char* text) = 0;
 	virtual ReturnCode setText(const char* text) = 0;
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* returnCallback) = 0;
+	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
 
 	// {A4F2DFEC-97B6-44CB-BE2F-44F0A7F90BC3}
 	inline static const gmpi::api::Guid guid =
 	{ 0xa4f2dfec, 0x97b6, 0x44cb, { 0xbe, 0x2f, 0x44, 0xf0, 0xa7, 0xf9, 0xb, 0xc3 } };
+};
+
+struct DECLSPEC_NOVTABLE ITextEdit : gmpi::api::IUnknown
+{
+	virtual ReturnCode setText(const char* text) = 0;
+//	virtual ReturnCode getText(IMpUnknown* returnString) = 0;
+	virtual ReturnCode setAlignment(int32_t alignment) = 0;
+	virtual ReturnCode setTextSize(float height) = 0;
+	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
+
+	// {90098F84-7F4C-4811-B01E-1376607CAC29}
+	inline static const gmpi::api::Guid guid =
+	{ 0x90098f84, 0x7f4c, 0x4811, { 0xb0, 0x1e, 0x13, 0x76, 0x60, 0x7c, 0xac, 0x29 } };
+};
+
+struct DECLSPEC_NOVTABLE ITextEditCallback : gmpi::api::IUnknown
+{
+public:
+	virtual void onChanged(const char* text) = 0;
+	virtual void onComplete(ReturnCode result) = 0;
+
+	// {49D321C5-2CE4-452D-999D-910F23613B74}
+	inline static const gmpi::api::Guid guid =
+	{ 0x49d321c5, 0x2ce4, 0x452d, { 0x99, 0x9d, 0x91, 0xf, 0x23, 0x61, 0x3b, 0x74 } };
+};
+
+struct DECLSPEC_NOVTABLE IKeyListener : gmpi::api::IUnknown
+{
+	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
+
+	// {10A5572C-A5AA-4AE3-A763-D78291F49C58}
+	inline static const gmpi::api::Guid guid =
+	{ 0x10a5572c, 0xa5aa, 0x4ae3, { 0xa7, 0x63, 0xd7, 0x82, 0x91, 0xf4, 0x9c, 0x58 } };
+};
+
+struct DECLSPEC_NOVTABLE IKeyListenerCallback : gmpi::api::IUnknown
+{
+public:
+	virtual void onKey(int32_t key) = 0;
+	virtual void onLostFocus(ReturnCode result) = 0;
+
+	// {7CA3D452-8C5D-42D1-84BD-37D684B14F17}
+	inline static const gmpi::api::Guid guid =
+	{ 0x7ca3d452, 0x8c5d, 0x42d1, { 0x84, 0xbd, 0x37, 0xd6, 0x84, 0xb1, 0x4f, 0x17 } };
 };
 
 } // namespace api

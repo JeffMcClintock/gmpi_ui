@@ -113,10 +113,10 @@ public:
 		return reinterpret_cast<void**>(put());
 	}
 
-	void** asIUnknownPtr()
+	gmpi::api::IUnknown** asIUnknownPtr()
 	{
 		assert(obj == 0); // Free it before you re-use it!
-		return reinterpret_cast<void**>(&obj);
+		return reinterpret_cast<gmpi::api::IUnknown**>(&obj);
 	}
 
 	template<typename I>

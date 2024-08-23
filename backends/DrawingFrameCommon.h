@@ -1,5 +1,5 @@
 #pragma once
-#include "helpers/GraphicsRedrawClient.h"
+#include "helpers/NativeUi.h"
 #include "GmpiSdkCommon.h"
 
 class DrawingFrameCommon

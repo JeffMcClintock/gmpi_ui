@@ -1369,6 +1369,11 @@ gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** retur
 	return gmpi::ReturnCode::Ok;
 }
 
+gmpi::ReturnCode DxDrawingFrameBase::createKeyListener(gmpi::api::IUnknown** returnKeyListener)
+{
+	return gmpi::ReturnCode::NoSupport;
+}
+
 gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
 {
 	return gmpi::ReturnCode::NoSupport;

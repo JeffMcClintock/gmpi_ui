@@ -34,13 +34,12 @@ using namespace gmpi::drawing;
 #pragma warning(disable : 4100) // "unreferenced formal parameter"
 #endif
 
-#include "GmpiApiDrawing.h"
 #include <vector>
 #include <array>
 #include <unordered_map>
 #include <algorithm>
+#include "GmpiApiDrawing.h"
 #include "GmpiSdkCommon.h"
-//#include "./shared/fast_gamma.h"
 
 namespace gmpi
 {

@@ -254,7 +254,8 @@ struct DECLSPEC_NOVTABLE IKeyListener : gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IKeyListenerCallback : gmpi::api::IUnknown
 {
 public:
-	virtual void onKey(int32_t key) = 0;
+	virtual void onKeyDown(int32_t key, int32_t flags) = 0;
+	virtual void onKeyUp(int32_t key, int32_t flags) = 0;
 	virtual void onLostFocus(ReturnCode result) = 0;
 
 	// {7CA3D452-8C5D-42D1-84BD-37D684B14F17}

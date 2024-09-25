@@ -306,6 +306,38 @@ public:
         [flipper scaleXBy:1 yBy:-1];
         [flipper translateXBy:0.0 yBy:-[frame bounds].size.height];
         [flipper concat];
+
+        if(-1 == gmpi::cocoa::GraphicsContext::logicProFix)
+        {
+            gmpi::cocoa::GraphicsContext::logicProFix = 0;
+            
+            gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
+            
+            gmpi::drawing::Graphics g(static_cast<GmpiDrawing_API::IMpDeviceContextExt*>(&context));
+            auto tf = g.GetFactory().CreateTextFormat(16, "Arial", gmpi::drawing::FontWeight::Normal);
+            auto brush = g.CreateSolidColorBrush(gmpi::drawing::Color::Black);
+            g.FillRectangle(0,0,40,40, brush);
+            brush.SetColor(gmpi::drawing::Color::White);
+            g.DrawTextU("_", tf, {0, 0, 40, 40}, brush);
+            
+            uint8_t* pixels = 1 + [backBuffer bitmapData];
+            int stride = [backBuffer bytesPerRow];
+            int bestBrightness = 0;
+            int bestRow = 1;
+            
+            for(int y = 0 ; y < 40 ; ++y)
+            {
+                if(*pixels > bestBrightness)
+                {
+                    bestBrightness = *pixels;
+                    bestRow = y;
+                }
+                
+                pixels += stride;
+            }
+            
+            gmpi::cocoa::GraphicsContext::logicProFix = (int) (bestRow != 17 && bestRow != 33); // SD / HD (will be 18 / 35 for buggy situation)
+        }
 #endif
         // context must be disposed before restoring state, because it's destructor also restores state
         {

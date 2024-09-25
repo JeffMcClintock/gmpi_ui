@@ -1584,6 +1584,8 @@ protected:
 	NSView* view_;
 
 public:
+    inline static int logicProFix = -1;
+
 	GraphicsContext(NSView* pview, cocoa::DrawingFactory* pfactory) :
 		factory(pfactory)
 		, view_(pview)
@@ -1819,8 +1821,16 @@ public:
 
 			float macBaselineCorrection = roundPixel(winBaseline - macBaseline, scale);
 #else
-			const float baseline = layoutRect->top + textformat->ascent;
-			const float macBaselineCorrection = winBaseline - baseline + textformat->baselineCorrection;
+            const float baseline = layoutRect->top + textformat->ascent;
+            float macBaselineCorrection{};
+            if (logicProFix)
+            {
+                macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + 1;
+            }
+            else
+            {
+                macBaselineCorrection = winBaseline - baseline + textformat->baselineCorrection;
+            }
 #endif
 
 			bounds.origin.y += macBaselineCorrection;

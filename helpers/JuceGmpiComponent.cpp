@@ -1,5 +1,5 @@
 #include "JuceGmpiComponent.h"
-#include "helpers/GraphicsRedrawClient.h"
+#include "NativeUi.h"
 #include "helpers/Timer.h"
 #include "../../../RefCountMacros.h"
 

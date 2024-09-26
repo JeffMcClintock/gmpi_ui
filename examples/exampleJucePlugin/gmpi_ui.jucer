@@ -10,6 +10,10 @@
       <FILE id="uqvfih" name="gmpi_ui_demo_text.h" compile="0" resource="0"
             file="Source/gmpi_ui_demo_text.h"/>
       <GROUP id="{F71A2D9D-7232-822F-9042-EB1C89CDFFCB}" name="gmpisdk">
+        <FILE id="vl36Qk" name="DrawingFrameCommon.cpp" compile="1" resource="0"
+              file="../../backends/DrawingFrameCommon.cpp"/>
+        <FILE id="IrddYI" name="DrawingFrameCommon.h" compile="0" resource="0"
+              file="../../backends/DrawingFrameCommon.h"/>
         <FILE id="YETFWA" name="Timer.cpp" compile="1" resource="0" file="../../helpers/Timer.cpp"/>
         <FILE id="ZrjE9i" name="Timer.h" compile="0" resource="0" file="../../helpers/Timer.h"/>
         <FILE id="M5RPR2" name="Bezier.h" compile="0" resource="0" file="../../backends/Bezier.h"/>

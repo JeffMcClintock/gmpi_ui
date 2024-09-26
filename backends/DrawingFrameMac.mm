@@ -1,5 +1,5 @@
 #import <Cocoa/Cocoa.h>
-#include "helpers/GraphicsRedrawClient.h"
+//#include "helpers/GraphicsRedrawClient.h"
 #include "GmpiSdkCommon.h"
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
@@ -313,15 +313,15 @@ public:
             
             gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
             
-            gmpi::drawing::Graphics g(static_cast<GmpiDrawing_API::IMpDeviceContextExt*>(&context));
-            auto tf = g.GetFactory().CreateTextFormat(16, "Arial", gmpi::drawing::FontWeight::Normal);
-            auto brush = g.CreateSolidColorBrush(gmpi::drawing::Color::Black);
-            g.FillRectangle(0,0,40,40, brush);
-            brush.SetColor(gmpi::drawing::Color::White);
-            g.DrawTextU("_", tf, {0, 0, 40, 40}, brush);
+            gmpi::drawing::Graphics g(&context);
+            auto tf = g.getFactory().createTextFormat(16, "Arial", gmpi::drawing::FontWeight::Normal);
+            auto brush = g.createSolidColorBrush(gmpi::drawing::Colors::Black);
+            g.fillRectangle(0,0,40,40, brush);
+            brush.setColor(gmpi::drawing::Colors::White);
+            g.drawTextU("_", tf, {0, 0, 40, 40}, brush);
             
-            uint8_t* pixels = 1 + [backBuffer bitmapData];
-            int stride = [backBuffer bytesPerRow];
+            uint8_t const* pixels = 1 + [backBuffer bitmapData];
+            const auto stride = [backBuffer bytesPerRow];
             int bestBrightness = 0;
             int bestRow = 1;
             
@@ -487,6 +487,10 @@ public:
 
     // IDialogHost
     gmpi::ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) override
+    {
+        return gmpi::ReturnCode::NoSupport;
+    }
+    gmpi::ReturnCode createKeyListener(gmpi::api::IUnknown** returnKeyListener) override
     {
         return gmpi::ReturnCode::NoSupport;
     }
@@ -969,4 +973,13 @@ void gmpi_onCloseNativeView(void* ptr)
 {
     auto view = (GMPI_VIEW_CLASS*) ptr;
     [view onClose];
+}
+
+void resizeNativeView(void* ptr, int width, int height)
+{
+    auto view = (GMPI_VIEW_CLASS*) ptr;
+    auto r = [view frame];
+    r.size.width = width;
+    r.size.height = height;
+    [view setFrame:r];
 }

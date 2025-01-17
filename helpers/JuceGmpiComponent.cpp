@@ -126,7 +126,7 @@ public:
 
 #ifdef _WIN32
 
-class JuceDrawingFrameBase : public gmpi::hosting::DrawingFrameBase
+class JuceDrawingFrameBase : public gmpi::hosting::DrawingFrame
 {
 	juce::HWNDComponent& juceComponent;
 

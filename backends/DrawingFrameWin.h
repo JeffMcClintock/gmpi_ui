@@ -62,6 +62,7 @@ namespace hosting
 		bool firstPresent = false;
 		UpdateRegionWinGdi updateRegion_native;
 		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
+		inline static bool m_disable_gpu = false;
 
 	protected:
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;

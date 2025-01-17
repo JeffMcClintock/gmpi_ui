@@ -31,6 +31,8 @@
 
 #pragma warning(disable : 4996) // "codecvt deprecated in C++17"
 
+#define ENABLE_HDR_SUPPORT 1
+
 namespace gmpi
 {
 namespace directx
@@ -872,6 +874,9 @@ struct DxFactoryInfo
     std::vector<std::string> supportedFontFamilies;
     std::map<std::wstring, std::wstring> GdiFontConversions;
     bool DX_support_sRGB = true;
+#if	ENABLE_HDR_SUPPORT
+    float whiteMult = 1.0f;
+#endif
 };
 
 class Factory_base : public drawing::api::IFactory
@@ -895,9 +900,10 @@ public:
         return info.m_pDirect2dFactory;
     }
 
-    void setSrgbSupport(bool s)
+    void setSrgbSupport(bool s, float whiteMult)
     {
         info.DX_support_sRGB = s;
+		info.whiteMult = whiteMult;
     }
             
     ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override

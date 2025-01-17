@@ -2,6 +2,7 @@
 
 #include <d2d1_2.h>
 #include <d3d11_1.h>
+#include <dxgi1_6.h>
 #include <wrl.h> // Comptr
 #include <Windowsx.h>
 #include <commctrl.h>
@@ -282,7 +283,7 @@ void DxDrawingFrameBase::TooltipOnMouseActivity()
 
 void DxDrawingFrameBase::ShowToolTip()
 {
-	_RPT0(_CRT_WARN, "YEAH!\n");
+//	_RPT0(_CRT_WARN, "YEAH!\n");
 
 	//UTF8StringHelper tooltipText(tooltip);
 	//if (platformObject)
@@ -311,7 +312,7 @@ void DxDrawingFrameBase::ShowToolTip()
 void DxDrawingFrameBase::HideToolTip()
 {
 	toolTipShown = false;
-	_RPT0(_CRT_WARN, "NUH!\n");
+//	_RPT0(_CRT_WARN, "NUH!\n");
 
 	if (tooltipWindow)
 	{
@@ -342,7 +343,7 @@ LRESULT DxDrawingFrameBase::WindowProc(
 	switch (message)
 	{
 #if 1 //def GMPI_HOST_POINTER_SUPPORT
-	case WM_MBUTTONDOWN:
+		case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_MOUSEMOVE:
 		case WM_LBUTTONDOWN:
@@ -803,6 +804,9 @@ void DxDrawingFrameBase::CreateDevice()
 	// Comment out first to test lower versions.
 	D3D_FEATURE_LEVEL d3dLevels[] = 
 	{
+#if	ENABLE_HDR_SUPPORT
+		D3D_FEATURE_LEVEL_11_1,
+#endif
 		D3D_FEATURE_LEVEL_11_0,
 		D3D_FEATURE_LEVEL_10_1,
 		D3D_FEATURE_LEVEL_10_0,
@@ -815,52 +819,27 @@ void DxDrawingFrameBase::CreateDevice()
 	ComPtr<ID3D11Device> D3D11Device;
 	
 	HRESULT r = DXGI_ERROR_UNSUPPORTED;
-#if 1 // Disable for D2D software-renderer.
+
+	// Create Hardware device.
 	do {
-	r = D3D11CreateDevice(nullptr,
-		D3D_DRIVER_TYPE_HARDWARE,
-		nullptr,
-		flags,
-		d3dLevels, sizeof(d3dLevels) / sizeof(d3dLevels[0]),
-		D3D11_SDK_VERSION,
-		D3D11Device.GetAddressOf(),
-		&currentDxFeatureLevel,
-		nullptr);
-
-//		CLEAR_BITS(flags, D3D11_CREATE_DEVICE_DEBUG);
-
-	} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
-
-#endif
-	if (DXGI_ERROR_UNSUPPORTED == r)
-	{
 		r = D3D11CreateDevice(nullptr,
-			D3D_DRIVER_TYPE_WARP,
+			D3D_DRIVER_TYPE_HARDWARE,
 			nullptr,
 			flags,
-			nullptr, 0,
+			d3dLevels, sizeof(d3dLevels) / sizeof(d3dLevels[0]),
 			D3D11_SDK_VERSION,
 			D3D11Device.GetAddressOf(),
 			&currentDxFeatureLevel,
 			nullptr);
-	}
 
-	// query for the device object’s IDXGIDevice interface
-	ComPtr<IDXGIDevice> dxdevice;
-	D3D11Device.As(&dxdevice);
+			// Clear D3D11_CREATE_DEVICE_DEBUG
+			((flags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
 
-	// Retrieve the display adapter
-	ComPtr<IDXGIAdapter> adapter;
-	dxdevice->GetAdapter(adapter.GetAddressOf());
-
-	// adapter’s parent object is the DXGI factory
-	// 
-	ComPtr<IDXGIFactory2> factory; // Minimum supported client: Windows 8 and Platform Update for Windows 7 
-	adapter->GetParent(__uuidof(factory), reinterpret_cast<void **>(factory.GetAddressOf()));
+		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 
 	bool DX_support_sRGB;
 	{
-		/* !! only good for detecting indows 7 !!
+		/* !! only good for detecting Windows 7 !!
 		Applications not manifested for Windows 8.1 or Windows 10 will return the Windows 8 OS version value (6.2).
 		Once an application is manifested for a given operating system version,
 		GetVersionEx will always return the version that the application is manifested for
@@ -873,7 +852,176 @@ void DxDrawingFrameBase::CreateDevice()
 
 		DX_support_sRGB =
 			((osvi.dwMajorVersion > 6) ||
-			((osvi.dwMajorVersion == 6) && (osvi.dwMinorVersion > 1))); // Win7 = V6.1
+				((osvi.dwMajorVersion == 6) && (osvi.dwMinorVersion > 1))); // Win7 = V6.1
+	}
+
+	// Support for HDR displays.
+#if	ENABLE_HDR_SUPPORT
+	float whiteMult{ 1.0f };
+#endif
+	{
+		// query for the device object’s IDXGIDevice interface
+		ComPtr<IDXGIDevice> dxdevice;
+		D3D11Device.As(&dxdevice);
+
+		// Retrieve the display adapter
+		ComPtr<IDXGIAdapter> adapter;
+		dxdevice->GetAdapter(adapter.GetAddressOf());
+
+		UINT i = 0;
+		ComPtr<IDXGIOutput> currentOutput;
+		ComPtr<IDXGIOutput> bestOutput;
+		int bestIntersectArea = -1;
+
+		while (adapter->EnumOutputs(i, currentOutput.ReleaseAndGetAddressOf()) != DXGI_ERROR_NOT_FOUND)
+		{
+			getWindowHandle();
+
+			// get bounds of window having handle: getWindowHandle()
+			RECT m_windowBounds;
+			GetWindowRect(getWindowHandle(), &m_windowBounds);
+
+			// Get the retangle bounds of the app window
+			gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+
+			// Get the rectangle bounds of current output
+			DXGI_OUTPUT_DESC desc;
+			auto hr = currentOutput->GetDesc(&desc);
+			RECT desktopRect = desc.DesktopCoordinates;
+			gmpi::drawing::RectL outputRect = { desktopRect.left, desktopRect.top, desktopRect.right, desktopRect.bottom };
+
+			// Compute the intersection
+			const auto commonRect = intersectRect(appWindowRect, outputRect);
+			const int intersectArea = getWidth(commonRect) * getHeight(commonRect);
+			if (intersectArea > bestIntersectArea)
+			{
+				bestOutput = currentOutput;
+				bestIntersectArea = intersectArea;
+			}
+
+			i++;
+		}
+
+		// Having determined the output (display) upon which the app is primarily being 
+		// rendered, retrieve the HDR capabilities of that display by checking the color space.
+		ComPtr<IDXGIOutput6> output6;
+		auto hr = bestOutput.As(&output6);
+
+		if (output6)
+		{
+			DXGI_OUTPUT_DESC1 desc1;
+			hr = output6->GetDesc1(&desc1);
+
+			if (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709)
+			{
+				_RPT0(_CRT_WARN, "SDR Display\n");
+			}
+			else
+			{
+				_RPT0(_CRT_WARN, "HDR Display\n");
+			}
+
+			uint32_t numPathArrayElements{};
+			uint32_t numModeArrayElements{};
+
+			GetDisplayConfigBufferSizes(
+				QDC_ONLY_ACTIVE_PATHS,
+				&numPathArrayElements,
+				&numModeArrayElements
+			);
+
+			std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
+			std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+
+			pathInfo.resize(numPathArrayElements);
+			modeInfo.resize(numModeArrayElements);
+
+			QueryDisplayConfig(
+				QDC_ONLY_ACTIVE_PATHS,
+				&numPathArrayElements,
+				pathInfo.data(),
+				&numModeArrayElements,
+				modeInfo.data(),
+				nullptr
+			);
+
+			DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
+			white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+			white_level.header.size = sizeof(white_level);
+			for (int pathIdx = 0; pathIdx < numPathArrayElements; ++pathIdx)
+			{
+				white_level.header.adapterId = pathInfo[pathIdx].targetInfo.adapterId;
+				white_level.header.id = pathInfo[pathIdx].targetInfo.id;
+
+				if (DisplayConfigGetDeviceInfo(&white_level.header) == ERROR_SUCCESS)
+				{
+#if	ENABLE_HDR_SUPPORT // proper HDR rendering
+					{
+						// divide by 1000 to get nits, divide by reference nits (80) to get a factor
+						whiteMult = white_level.SDRWhiteLevel / 1000.f;
+//						DrawingFactory.whiteMult = whiteMult;
+					}
+#else // fall back to 8-bit rendering and ignore HDR
+					{
+						const auto whiteMultiplier = white_level.SDRWhiteLevel / 1000.f;
+						DX_support_sRGB = DX_support_sRGB && whiteMultiplier == 1.0f; // workarround HDR issues by reverting to 8-bit colour
+					}
+#endif
+				}
+			}
+		}
+	}
+
+	if (m_disable_gpu)
+	{
+		// release hardware device
+		D3D11Device = nullptr;
+		r = DXGI_ERROR_UNSUPPORTED;
+	}
+
+	// fallback to software rendering.
+	if (DXGI_ERROR_UNSUPPORTED == r)
+	{
+		do {
+		r = D3D11CreateDevice(nullptr,
+			D3D_DRIVER_TYPE_WARP,
+			nullptr,
+			flags,
+			nullptr, 0,
+			D3D11_SDK_VERSION,
+			D3D11Device.GetAddressOf(),
+			&currentDxFeatureLevel,
+			nullptr);
+
+			// Clear D3D11_CREATE_DEVICE_DEBUG
+			((flags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
+
+		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
+	}
+
+	// query for the device object’s IDXGIDevice interface
+	ComPtr<IDXGIDevice> dxdevice;
+	D3D11Device.As(&dxdevice);
+
+	// Retrieve the display adapter
+	ComPtr<IDXGIAdapter> adapter;
+	dxdevice->GetAdapter(adapter.GetAddressOf());
+
+	// adapter’s parent object is the DXGI factory
+	ComPtr<IDXGIFactory2> factory; // Minimum supported client: Windows 8 and Platform Update for Windows 7 
+	adapter->GetParent(__uuidof(factory), reinterpret_cast<void **>(factory.GetAddressOf()));
+
+	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
+	// Software renderer has no device memory, yet does support float pixels anyhow.
+	if (!m_disable_gpu)
+	{
+		DXGI_ADAPTER_DESC adapterDesc{};
+		adapter->GetDesc(&adapterDesc);
+
+		const auto dedicatedRamMB = adapterDesc.DedicatedVideoMemory / 0x100000;
+
+		// Intel HD Graphics on my Kogan has 128MB.
+		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
 	}
 
 	/* NOTES:
@@ -887,6 +1035,7 @@ void DxDrawingFrameBase::CreateDevice()
 			assuming the underlying Device does as well.
 	*/
 
+	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
 	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
 	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
 
@@ -942,12 +1091,7 @@ void DxDrawingFrameBase::CreateDevice()
 		DX_support_sRGB = false;
 	}
 
-	DrawingFactory.setSrgbSupport(DX_support_sRGB);
-
-	/* Channel9 HDR support
-	get IDXGISwapChain4 interface
-	sc->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709)
-	*/
+	DrawingFactory.setSrgbSupport(DX_support_sRGB, whiteMult);
 
 	// Creating the Direct2D Device
 	ComPtr<ID2D1Device> device;

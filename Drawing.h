@@ -693,12 +693,13 @@ public:
 		return ret;
 	}
 
+    // Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
 	BitmapPixels lockPixels(int32_t flags = (int32_t) gmpi::drawing::BitmapLockFlags::Read)
 	{
-		BitmapPixels temp;
-		get()->lockPixels(temp.put(), flags);
-		temp.init();
-		return temp;
+        BitmapPixels ret;
+        get()->lockPixels(ret.put());
+		ret.init();
+        return ret;
 	}
 };
 
@@ -722,20 +723,6 @@ public:
 class BitmapBrush : public Brush, public Resource<gmpi::drawing::api::IBitmapBrush>
 {
 public:
-	//void setExtendModeX(gmpi::drawing::ExtendMode extendModeX)
-	//{
-	//	Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeX(extendModeX);
-	//}
-
-	//void setExtendModeY(gmpi::drawing::ExtendMode extendModeY)
-	//{
-	//	Resource<gmpi::drawing::api::IBitmapBrush>::get()->setExtendModeY(extendModeY);
-	//}
-
-	//void setInterpolationMode(gmpi::drawing::BitmapInterpolationMode interpolationMode)
-	//{
-	//	Resource<gmpi::drawing::api::IBitmapBrush>::get()->setInterpolationMode(interpolationMode);
-	//}
 
 protected:
 	gmpi::drawing::api::IBrush* getDerived() override
@@ -809,69 +796,68 @@ protected:
 	}
 };
 
-template <class interfaceType = gmpi::drawing::api::IGeometrySink>
-class GeometrySink : public gmpi::IWrapper<interfaceType>
+class GeometrySink : public gmpi::IWrapper<gmpi::drawing::api::IGeometrySink>
 {
 public:
 	void beginFigure(Point startPoint, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
-		gmpi::IWrapper<interfaceType>::get()->beginFigure((gmpi::drawing::Point)startPoint, figureBegin);
+		get()->beginFigure((gmpi::drawing::Point)startPoint, figureBegin);
 	}
 
 	void beginFigure(float x, float y, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
-        gmpi::IWrapper<interfaceType>::get()->beginFigure({x, y}, figureBegin);
+        get()->beginFigure({x, y}, figureBegin);
 	}
 
 	void addLines(Point* points, uint32_t pointsCount)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addLines(points, pointsCount);
+		get()->addLines(points, pointsCount);
 	}
 
 	void addBeziers(BezierSegment* beziers, uint32_t beziersCount)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addBeziers(beziers, beziersCount);
+		get()->addBeziers(beziers, beziersCount);
 	}
 
 	void endFigure(gmpi::drawing::FigureEnd figureEnd = gmpi::drawing::FigureEnd::Closed)
 	{
-		gmpi::IWrapper<interfaceType>::get()->endFigure(figureEnd);
+		get()->endFigure(figureEnd);
 	}
 
 	gmpi::ReturnCode close()
 	{
-		return gmpi::IWrapper<interfaceType>::get()->close();
+		return get()->close();
 	}
 
 	void addLine(Point point)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addLine(point);
+		get()->addLine(point);
 	}
 
 	void addBezier(BezierSegment bezier)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addBezier(&bezier);
+		get()->addBezier(&bezier);
 	}
 
 	void addQuadraticBezier(QuadraticBezierSegment bezier)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addQuadraticBezier(&bezier);
+		get()->addQuadraticBezier(&bezier);
 	}
 
 	void addQuadraticBeziers(QuadraticBezierSegment* beziers, uint32_t beziersCount)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addQuadraticBeziers(beziers, beziersCount);
+		get()->addQuadraticBeziers(beziers, beziersCount);
 	}
 
 	void addArc(ArcSegment arc)
 	{
-		gmpi::IWrapper<interfaceType>::get()->addArc(&arc);
+		get()->addArc(&arc);
 	}
 
 	void setFillMode(gmpi::drawing::FillMode fillMode)
 	{
-		gmpi::IWrapper<interfaceType>::get()->setFillMode(fillMode);
-		gmpi::IWrapper<interfaceType>::get()->release();
+		get()->setFillMode(fillMode);
+		get()->release();
 	}
 };
 
@@ -882,7 +868,7 @@ class StrokeStyle : public Resource<gmpi::drawing::api::IStrokeStyle>
 class PathGeometry : public Resource<gmpi::drawing::api::IPathGeometry>
 {
 public:
-	GeometrySink< gmpi::drawing::api::IGeometrySink> open()
+	GeometrySink open()
 	{
 		GeometrySink temp;
 		get()->open((gmpi::drawing::api::IGeometrySink**) temp.put());
@@ -1355,17 +1341,17 @@ public:
 		Resource<BASE_INTERFACE>::get()->drawGeometry(geometry.get(), brush.get(), strokeWidth, nullptr);
 	}
 
-	void drawGeometry(PathGeometry geometry, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawGeometry(PathGeometry& geometry, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		Resource<BASE_INTERFACE>::get()->drawGeometry(geometry.get(), brush.get(), strokeWidth, strokeStyle.get());
 	}
 
-	void fillGeometry(PathGeometry geometry, Brush& brush, Brush& opacityBrush)
+	void fillGeometry(PathGeometry& geometry, Brush& brush, Brush& opacityBrush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillGeometry(geometry.get(), brush.get(), opacityBrush.get());
 	}
 
-	void fillGeometry(PathGeometry geometry, Brush& brush)
+	void fillGeometry(PathGeometry& geometry, Brush& brush)
 	{
 		Resource<BASE_INTERFACE>::get()->fillGeometry(geometry.get(), brush.get(), nullptr);
 	}

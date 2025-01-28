@@ -35,11 +35,11 @@ class shared_ptr
 public:
 	shared_ptr(){}
 
-	explicit shared_ptr(wrappedObjT* newobj) : obj(0)
+	explicit shared_ptr(wrappedObjT* newobj)
 	{
 		assign(newobj);
 	}
-	shared_ptr(const shared_ptr<wrappedObjT>& value) : obj(0)
+	shared_ptr(const shared_ptr<wrappedObjT>& value)
 	{
 		assign(value.obj);
 	}

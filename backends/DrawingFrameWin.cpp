@@ -856,9 +856,7 @@ void DxDrawingFrameBase::CreateDevice()
 	}
 
 	// Support for HDR displays.
-#if	ENABLE_HDR_SUPPORT
 	float whiteMult{ 1.0f };
-#endif
 	{
 		// query for the device object’s IDXGIDevice interface
 		ComPtr<IDXGIDevice> dxdevice;
@@ -886,7 +884,7 @@ void DxDrawingFrameBase::CreateDevice()
 
 			// Get the rectangle bounds of current output
 			DXGI_OUTPUT_DESC desc;
-			auto hr = currentOutput->GetDesc(&desc);
+			/*auto hr =*/ currentOutput->GetDesc(&desc);
 			RECT desktopRect = desc.DesktopCoordinates;
 			gmpi::drawing::RectL outputRect = { desktopRect.left, desktopRect.top, desktopRect.right, desktopRect.bottom };
 
@@ -948,7 +946,7 @@ void DxDrawingFrameBase::CreateDevice()
 			DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
 			white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
 			white_level.header.size = sizeof(white_level);
-			for (int pathIdx = 0; pathIdx < numPathArrayElements; ++pathIdx)
+			for (uint32_t pathIdx = 0; pathIdx < numPathArrayElements; ++pathIdx)
 			{
 				white_level.header.adapterId = pathInfo[pathIdx].targetInfo.adapterId;
 				white_level.header.id = pathInfo[pathIdx].targetInfo.id;

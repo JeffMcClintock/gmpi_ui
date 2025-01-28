@@ -31,7 +31,7 @@
 
 #pragma warning(disable : 4996) // "codecvt deprecated in C++17"
 
-#define ENABLE_HDR_SUPPORT 1
+#define ENABLE_HDR_SUPPORT 0 // need to fix Scope3 drawing it's background on a bitmap.
 
 namespace gmpi
 {
@@ -903,7 +903,9 @@ public:
     void setSrgbSupport(bool s, float whiteMult)
     {
         info.DX_support_sRGB = s;
-		info.whiteMult = whiteMult;
+#if	ENABLE_HDR_SUPPORT
+        info.whiteMult = whiteMult;
+#endif
     }
             
     ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override

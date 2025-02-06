@@ -697,7 +697,7 @@ public:
 	BitmapPixels lockPixels(int32_t flags = (int32_t) gmpi::drawing::BitmapLockFlags::Read)
 	{
         BitmapPixels ret;
-        get()->lockPixels(ret.put());
+        get()->lockPixels(ret.put(), flags);
 		ret.init();
         return ret;
 	}

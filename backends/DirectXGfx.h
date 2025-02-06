@@ -31,7 +31,7 @@
 
 #pragma warning(disable : 4996) // "codecvt deprecated in C++17"
 
-#define ENABLE_HDR_SUPPORT 0 // need to fix Scope3 drawing it's background on a bitmap.
+#define ENABLE_HDR_SUPPORT 1 // need to fix Scope3 drawing it's background on a bitmap.
 
 namespace gmpi
 {

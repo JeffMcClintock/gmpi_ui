@@ -1,8 +1,7 @@
 #pragma once
 
 /*
-#include "modules/se_sdk3_hosting/DrawingFrame_win32.h"
-using namespace GmpiGuiHosting;
+#include "backends/DrawingFrameWin.h"
 */
 
 #if defined(_WIN32) // skip compilation on macOS
@@ -11,19 +10,15 @@ using namespace GmpiGuiHosting;
 #include <string>
 #include <memory>
 #include <chrono>
+#include <dxgi1_6.h>
 #include <d3d11_1.h>
 #include "DirectXGfx.h"
 #include "helpers/Timer.h"
 #include "DrawingFrameCommon.h"
 
-namespace SynthEdit2
-{
-	class IPresenter;
-}
-
-//namespace GmpiGuiHosting
 namespace gmpi
 {
+
 namespace hosting
 {
 	class UpdateRegionWinGdi
@@ -50,16 +45,27 @@ namespace hosting
 		}
 	};
 
+
+
+	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
+	struct tempSharedD2DBase
+	{
+		directx::ComPtr<::IDXGISwapChain2> swapChain;
+		directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
+		bool firstPresent = false;
+		bool reentrant = false;
+	};
+
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
 	class DxDrawingFrameBase :
 		public DrawingFrameCommon,
+		public tempSharedD2DBase,
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
 		public gmpi::api::IDialogHost,
 		public gmpi::TimerClient
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
-		bool firstPresent = false;
 		UpdateRegionWinGdi updateRegion_native;
 		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
 		inline static bool m_disable_gpu = false;
@@ -68,9 +74,6 @@ namespace hosting
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
 
 		gmpi::drawing::SizeL swapChainSize = {};
-
-		ID2D1DeviceContext* mpRenderTarget = {};
-		IDXGISwapChain1* m_swapChain = {};
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
 		gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> gmpi_gui_client; // usually a ContainerView at the topmost level
@@ -87,7 +90,6 @@ namespace hosting
 		HWND tooltipWindow;
 		static const int toolTiptimerInit = 40; // x/60 Hz
 		std::wstring toolTipText;
-		bool reentrant;
 		bool lowDpiMode = {};
 		bool isTrackingMouse = false;
 		gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
@@ -97,11 +99,8 @@ namespace hosting
 		gmpi::directx::Factory DrawingFactory;
 
 		DxDrawingFrameBase() :
-			mpRenderTarget(nullptr)
-			,m_swapChain(nullptr)
-			, toolTipShown(false)
+			 toolTipShown(false)
 			, tooltipWindow(0)
-			, reentrant(false)
 			, DrawingFactory(nullptr)
 		{
 		}
@@ -128,19 +127,14 @@ namespace hosting
 		// to help re-create device when lost.
 		void ReleaseDevice()
 		{
-			if (mpRenderTarget)
-				mpRenderTarget->Release();
-			if (m_swapChain)
-				m_swapChain->Release();
-
-			mpRenderTarget = nullptr;
-			m_swapChain = nullptr;
+			d2dDeviceContext = nullptr;
+			swapChain = nullptr;
 		}
 
 		void ResizeSwapChainBitmap()
 		{
-			mpRenderTarget->SetTarget(nullptr);
-			if (S_OK == m_swapChain->ResizeBuffers(0,
+			d2dDeviceContext->SetTarget(nullptr);
+			if (S_OK == swapChain->ResizeBuffers(0,
 				0, 0,
 				DXGI_FORMAT_UNKNOWN,
 				0))

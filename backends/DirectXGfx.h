@@ -37,6 +37,112 @@ namespace gmpi
 {
 namespace directx
 {
+    // Helper for managing lifetime of Direct2D interface pointers
+    template<class wrappedObjT>
+    class ComPtr
+    {
+        mutable wrappedObjT* obj = {};
+
+    public:
+        ComPtr() {}
+
+        explicit ComPtr(wrappedObjT* newobj)
+        {
+            Assign(newobj);
+        }
+        ComPtr(const ComPtr<wrappedObjT>& value)
+        {
+            Assign(value.obj);
+        }
+        // Attach object without incrementing ref count. For objects created with new.
+        void Attach(wrappedObjT* newobj)
+        {
+            wrappedObjT* old = obj;
+            obj = newobj;
+
+            if (old)
+            {
+                old->Release();
+            }
+        }
+
+        ~ComPtr()
+        {
+            if (obj)
+            {
+                obj->Release();
+            }
+        }
+        inline operator wrappedObjT* ()
+        {
+            return obj;
+        }
+        const wrappedObjT* operator=(wrappedObjT* value)
+        {
+            Assign(value);
+            return value;
+        }
+        ComPtr<wrappedObjT>& operator=(ComPtr<wrappedObjT>& value)
+        {
+            Assign(value.get());
+            return *this;
+        }
+        bool operator==(const wrappedObjT* other) const
+        {
+            return obj == other;
+        }
+        bool operator==(const ComPtr<wrappedObjT>& other) const
+        {
+            return obj == other.obj;
+        }
+        wrappedObjT* operator->() const
+        {
+            return obj;
+        }
+
+        wrappedObjT*& get()
+        {
+            return obj;
+        }
+
+        wrappedObjT** getAddressOf()
+        {
+            assert(obj == 0); // Free it before you re-use it!
+            return &obj;
+        }
+        wrappedObjT** put()
+        {
+            if (obj)
+            {
+                obj->Release();
+                obj = {};
+            }
+
+            return &obj;
+        }
+
+        void** put_void()
+        {
+            return (void**)put();
+        }
+
+        bool isNull() const
+        {
+            return obj == nullptr;
+        }
+
+    private:
+        // Attach object and increment ref count.
+        inline void Assign(wrappedObjT* newobj)
+        {
+            Attach(newobj);
+            if (newobj)
+            {
+                newobj->AddRef();
+            }
+        }
+    };
+
 inline void SafeRelease(IUnknown* object)
 {
     if (object)

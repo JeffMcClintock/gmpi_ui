@@ -4,7 +4,7 @@
 #include <list>
 
 /*
-This class provides a programmable timer for creating animation effects.
+This class provides a programable timer for creating animation effects.
 NOTE: all instances of the module share the same timer, and therefore the same timer interval.
 */
 namespace gmpi

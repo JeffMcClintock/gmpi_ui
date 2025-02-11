@@ -532,12 +532,12 @@ LRESULT DxDrawingFrameBase::WindowProc(
 
 void DxDrawingFrameBase::OnSize(UINT width, UINT height)
 {
-	assert(m_swapChain);
-	assert(mpRenderTarget);
+	assert(swapChain);
+	assert(d2dDeviceContext);
 
-	mpRenderTarget->SetTarget(nullptr);
+	d2dDeviceContext->SetTarget(nullptr);
 
-	if (S_OK == m_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
+	if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
 	{
 		CreateDeviceSwapChainBitmap();
 	}
@@ -653,7 +653,7 @@ void DxDrawingFrameBase::OnPaint()
 	{
 		//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
 
-		if (!mpRenderTarget) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
+		if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
 		{
 			CreateDevice();
 		}
@@ -742,7 +742,7 @@ void DxDrawingFrameBase::OnPaint()
 		if (firstPresent)
 		{
 			firstPresent = false;
-			const auto hr = m_swapChain->Present(1, 0);
+			const auto hr = swapChain->Present(1, 0);
 			if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
 			{
 				// DXGI_ERROR_INVALID_CALL 0x887A0001L
@@ -773,7 +773,7 @@ void DxDrawingFrameBase::OnPaint()
 */
 					// Present(0... improves framerate only from 60 -> 64 FPS, so must be blocking a little with "1".
 //				auto timeA = std::chrono::steady_clock::now();
-				hr = m_swapChain->Present1(1, 0, &presetParameters);
+				hr = swapChain->Present1(1, 0, &presetParameters);
 				//auto elapsed = std::chrono::steady_clock::now() - timeA;
 				//presentTimeMs = (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 //				}
@@ -1076,15 +1076,19 @@ void DxDrawingFrameBase::CreateDevice()
 
 	for (int x = 0 ; x < 2 ;++x)
 	{
+		gmpi::directx::ComPtr<::IDXGISwapChain1> swapChain1;
 		auto swapchainresult = factory->CreateSwapChainForHwnd(D3D11Device.Get(),
 			getWindowHandle(),
 			DX_support_sRGB ? &props : &propsFallback,
 			nullptr,
 			nullptr,
-			&m_swapChain);
+			swapChain1.getAddressOf());
 
 		if (swapchainresult == S_OK)
+		{
+			swapChain1->QueryInterface(swapChain.getAddressOf()); // convert to IDXGISwapChain2
 			break;
+		}
 
 		DX_support_sRGB = false;
 	}
@@ -1097,7 +1101,7 @@ void DxDrawingFrameBase::CreateDevice()
 		device.GetAddressOf());
 
 	// and context.
-	device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, &mpRenderTarget);
+	device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, d2dDeviceContext.getAddressOf());
 
 	float dpiX, dpiY;
 
@@ -1111,7 +1115,7 @@ void DxDrawingFrameBase::CreateDevice()
 		DrawingFactory.getD2dFactory()->GetDesktopDpi(&dpiX, &dpiY);
 	}
 
-	mpRenderTarget->SetDpi(dpiX, dpiY);
+	d2dDeviceContext->SetDpi(dpiX, dpiY);
 
 	DipsToWindow = makeScale(dpiX / 96.0f, dpiY / 96.0f); // was dpiScaleInverse
 	WindowToDips = DipsToWindow;
@@ -1127,11 +1131,11 @@ void DxDrawingFrameBase::CreateDevice()
 
 	if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
 	{
-		context.reset(new gmpi::directx::GraphicsContext(mpRenderTarget, &DrawingFactory));
+		context.reset(new gmpi::directx::GraphicsContext(d2dDeviceContext, &DrawingFactory));
 	}
 	else
 	{
-		context.reset(new gmpi::directx::GraphicsContext_Win7(mpRenderTarget, &DrawingFactory));
+		context.reset(new gmpi::directx::GraphicsContext_Win7(d2dDeviceContext, &DrawingFactory));
 	}
 }
 
@@ -1140,7 +1144,7 @@ void DxDrawingFrameBase::CreateDeviceSwapChainBitmap()
 //	_RPT0(_CRT_WARN, "\n\nCreateDeviceSwapChainBitmap()\n");
 
 	ComPtr<IDXGISurface> surface;
-	m_swapChain->GetBuffer(0, // buffer index
+	swapChain->GetBuffer(0, // buffer index
 		__uuidof(surface),
 		reinterpret_cast<void **>(surface.GetAddressOf()));
 
@@ -1154,7 +1158,7 @@ void DxDrawingFrameBase::CreateDeviceSwapChainBitmap()
 		);
 
 	ComPtr<ID2D1Bitmap1> bitmap;
-	mpRenderTarget->CreateBitmapFromDxgiSurface(surface.Get(),
+	d2dDeviceContext->CreateBitmapFromDxgiSurface(surface.Get(),
 		props2,
 		bitmap.GetAddressOf());
 
@@ -1165,7 +1169,7 @@ void DxDrawingFrameBase::CreateDeviceSwapChainBitmap()
 //_RPT2(_CRT_WARN, "%x B[%f,%f]\n", this, bitmapsize.width, bitmapsize.height);
 
 	// Now attach Device Context to swapchain bitmap.
-	mpRenderTarget->SetTarget(bitmap.Get());
+	d2dDeviceContext->SetTarget(bitmap.Get());
 
 	// Initial present() moved here in order to ensure it happens before first Timer() tries to draw anything.
 //	HRESULT hr = m_swapChain->Present(0, 0);
@@ -1184,7 +1188,7 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 	const auto width = right - left;
 	const auto height = bottom - top;
 
-	if (mpRenderTarget && (swapChainSize.width != width || swapChainSize.height != height))
+	if (d2dDeviceContext && (swapChainSize.width != width || swapChainSize.height != height))
 	{
 		SetWindowPos(
 			windowHandle
@@ -1212,8 +1216,8 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 			Height = (r.bottom - r.top) / 2;
 		}
 */
-		mpRenderTarget->SetTarget(nullptr);
-		if (S_OK == m_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
+		d2dDeviceContext->SetTarget(nullptr);
+		if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
 		{
 			CreateDeviceSwapChainBitmap();
 		}

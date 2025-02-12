@@ -129,11 +129,15 @@ LRESULT CALLBACK DrawingFrameWindowProc(
 }
 
 // copied from MP_GetDllHandle
-HMODULE local_GetDllHandle_randomshit()
+HMODULE local44_GetDllHandle_randomshit()
 {
 	HMODULE hmodule = 0;
-	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&local_GetDllHandle_randomshit, &hmodule);
+	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&local44_GetDllHandle_randomshit, &hmodule);
 	return (HMODULE)hmodule;
+}
+HMODULE tempSharedD2DBase::getDllHandle()
+{
+	return local44_GetDllHandle_randomshit();
 }
 
 bool registeredWindowClass = false;
@@ -149,14 +153,14 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		registeredWindowClass = true;
 		OleInitialize(0);
 
-		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIGUI%p", local_GetDllHandle_randomshit());
+		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIGUI%p", getDllHandle());
 
 		windowClass.style = CS_GLOBALCLASS;// | CS_DBLCLKS;//|CS_OWNDC; // add Private-DC constant 
 
 		windowClass.lpfnWndProc = DrawingFrameWindowProc;
 		windowClass.cbClsExtra = 0;
 		windowClass.cbWndExtra = 0;
-		windowClass.hInstance = local_GetDllHandle_randomshit();
+		windowClass.hInstance = getDllHandle();
 		windowClass.hIcon = 0;
 
 		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
@@ -190,14 +194,14 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 
 	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		parentWnd, NULL, local_GetDllHandle_randomshit(), NULL);
+		parentWnd, NULL, getDllHandle(), NULL);
 
 	if (windowHandle)
 	{
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
 		//		RegisterDragDrop(windowHandle, new CDropTarget(this));
 
-		CreateRenderTarget();
+		CreateSwapPanel();
 
 		initTooltip();
 
@@ -234,7 +238,7 @@ void DxDrawingFrameBase::initTooltip()
 {
 	if (tooltipWindow == nullptr && getWindowHandle())
 	{
-		auto instanceHandle = local_GetDllHandle_randomshit();
+		auto instanceHandle = getDllHandle();
 		{
 			TOOLINFO ti{};
 
@@ -655,7 +659,7 @@ void DxDrawingFrameBase::OnPaint()
 
 		if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
 		{
-			CreateDevice();
+			CreateSwapPanel();
 		}
 
 		{
@@ -791,7 +795,7 @@ void DxDrawingFrameBase::OnPaint()
 	reentrant = false;
 }
 
-void DxDrawingFrameBase::CreateDevice()
+void DxDrawingFrameBase::CreateSwapPanel()
 {
 	ReleaseDevice();
 
@@ -1093,7 +1097,6 @@ void DxDrawingFrameBase::CreateDevice()
 		DX_support_sRGB = false;
 	}
 
-	DrawingFactory.setSrgbSupport(DX_support_sRGB, whiteMult);
 
 	// Creating the Direct2D Device
 	ComPtr<ID2D1Device> device;
@@ -1117,6 +1120,7 @@ void DxDrawingFrameBase::CreateDevice()
 
 	d2dDeviceContext->SetDpi(dpiX, dpiY);
 
+	DrawingFactory.setSrgbSupport(DX_support_sRGB, whiteMult);
 	DipsToWindow = makeScale(dpiX / 96.0f, dpiY / 96.0f); // was dpiScaleInverse
 	WindowToDips = DipsToWindow;
 	WindowToDips = invert(WindowToDips);
@@ -1176,11 +1180,6 @@ void DxDrawingFrameBase::CreateDeviceSwapChainBitmap()
 	firstPresent = true;
 
 	InvalidateRect(getWindowHandle(), nullptr, false);
-}
-
-void DxDrawingFrameBase::CreateRenderTarget()
-{
-	CreateDevice();
 }
 
 void DrawingFrame::reSize(int left, int top, int right, int bottom)
@@ -1645,7 +1644,7 @@ int32_t DrawingFrameBase::FindResourceU(const char * resourceName, const char * 
 
 	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		parentWnd, NULL, local_GetDllHandle_randomshit(), &createParams);// NULL);
+		parentWnd, NULL, getDllHandle(), &createParams);// NULL);
 
 	if (windowHandle)
 	{

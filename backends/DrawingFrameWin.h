@@ -45,15 +45,27 @@ namespace hosting
 		}
 	};
 
-
-
 	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
 	struct tempSharedD2DBase
 	{
 		directx::ComPtr<::IDXGISwapChain2> swapChain;
 		directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
-		bool firstPresent = false;
+		gmpi::drawing::SizeL swapChainSize = {};
+		inline static bool m_disable_gpu = false;
 		bool reentrant = false;
+		bool lowDpiMode = {};
+		bool firstPresent = false;
+
+		// override these please.
+		virtual HWND getWindowHandle() = 0;
+
+		// to help re-create device when lost.
+		void ReleaseDevice()
+		{
+			d2dDeviceContext = nullptr;
+			swapChain = nullptr;
+		}
+		HMODULE getDllHandle();
 	};
 
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
@@ -68,12 +80,9 @@ namespace hosting
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 		UpdateRegionWinGdi updateRegion_native;
 		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
-		inline static bool m_disable_gpu = false;
 
 	protected:
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
-
-		gmpi::drawing::SizeL swapChainSize = {};
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
 		gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> gmpi_gui_client; // usually a ContainerView at the topmost level
@@ -90,7 +99,6 @@ namespace hosting
 		HWND tooltipWindow;
 		static const int toolTiptimerInit = 40; // x/60 Hz
 		std::wstring toolTipText;
-		bool lowDpiMode = {};
 		bool isTrackingMouse = false;
 		gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 
@@ -124,13 +132,6 @@ namespace hosting
 			WPARAM wParam,
 			LPARAM lParam);
 
-		// to help re-create device when lost.
-		void ReleaseDevice()
-		{
-			d2dDeviceContext = nullptr;
-			swapChain = nullptr;
-		}
-
 		void ResizeSwapChainBitmap()
 		{
 			d2dDeviceContext->SetTarget(nullptr);
@@ -147,7 +148,7 @@ namespace hosting
 			}
 		}
 
-		void CreateDevice();
+		void CreateSwapPanel();
 		void CreateDeviceSwapChainBitmap();
 
 		void setFallbackHost(gmpi::api::IUnknown* paramHost)
@@ -155,15 +156,13 @@ namespace hosting
 			parameterHost = paramHost;
 		}
 
-		void AddView(/*gmpi::api::IUnknown* paramHost,*/ gmpi::api::IUnknown* pcontainerView)
+		void attachClient(gmpi::api::IUnknown* gfx)
 		{
-//			parameterHost = paramHost;
-
-			pcontainerView->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
-			pcontainerView->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
+			gfx->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
+			gfx->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
 			
 			// legacy
-			pcontainerView->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
+			gfx->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
 #ifdef GMPI_HOST_POINTER_SUPPORT
 			pcontainerView->queryInterface(&gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.put());
 			pcontainerView->queryInterface(&gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.put());
@@ -183,8 +182,6 @@ namespace hosting
 		}
 
 		void OnPaint();
-		virtual HWND getWindowHandle() = 0;
-		void CreateRenderTarget();
 #if 0
 		// Inherited via IMpUserInterfaceHost2
 		int32_t pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice = 0) override;
@@ -304,6 +301,7 @@ namespace hosting
 	// This is used in VST3. Native HWND window frame.
 	class DrawingFrame : public DxDrawingFrameBase
 	{
+	protected:
 		HWND windowHandle = {};
 		HWND parentWnd = {};
 

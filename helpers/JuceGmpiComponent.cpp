@@ -126,7 +126,7 @@ public:
 
 #ifdef _WIN32
 
-class JuceDrawingFrameBase : public gmpi::hosting::DrawingFrame
+class JuceDrawingFrameBase : public gmpi::hosting::DxDrawingFrameBase
 {
 	juce::HWNDComponent& juceComponent;
 
@@ -343,7 +343,7 @@ static bool registeredWindowClass = false;
 static WNDCLASS windowClass;
 static wchar_t gClassName[100];
 
-void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
+void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 {
 	// while constructing editor, JUCE main window is a small fixed size, so no point querying it. easier to just pass in required size.
 	RECT r{ 0, 0, width ,height };
@@ -379,18 +379,18 @@ void JuceDrawingFrameBase::open(void* parentWnd, int width, int height)
 	int style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;// | WS_OVERLAPPEDWINDOW;
 	int extended_style = 0;
 
-	const auto windowHandle = CreateWindowEx(extended_style, gClassName, L"",
+	const auto lwindowHandle = CreateWindowEx(extended_style, gClassName, L"",
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		(HWND)parentWnd, NULL, local_GetDllHandle_randomshit(), NULL);
+		(HWND)pparentWnd, NULL, local_GetDllHandle_randomshit(), NULL);
 
-	if (windowHandle)
+	if (lwindowHandle)
 	{
-		juceComponent.setHWND(windowHandle);
+		juceComponent.setHWND(lwindowHandle);
 
-		SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
+		SetWindowLongPtr(lwindowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
 		//		RegisterDragDrop(windowHandle, new CDropTarget(this));
 
-		CreateRenderTarget();
+		CreateSwapPanel();
 
 		initTooltip();
 
@@ -409,7 +409,7 @@ struct GmpiComponent::Pimpl
         const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
         ::ReleaseDC(hwnd, hdc);
 
-        JuceDrawingFrameBase.AddView(static_cast<gmpi::api::IDrawingClient*>(&proxy));
+        JuceDrawingFrameBase.attachClient(static_cast<gmpi::api::IDrawingClient*>(&proxy));
 
         JuceDrawingFrameBase.open(
             hwnd,

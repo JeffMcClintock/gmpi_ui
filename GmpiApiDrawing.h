@@ -205,18 +205,24 @@ struct Color
     float g{};
     float b{};
     float a{};
+
+    auto operator<=>(const Color&) const = default;
 };
 
 struct Point
 {
     float x{};
     float y{};
+
+    auto operator<=>(const Point&) const = default;
 };
 
 struct PointL
 {
     int32_t x{};
     int32_t y{};
+
+    auto operator<=>(const PointL&) const = default;
 };
 
 struct Rect
@@ -225,6 +231,8 @@ struct Rect
     float top{};
     float right{};
     float bottom{};
+
+    auto operator<=>(const Rect&) const = default;
 };
 
 struct RectL
@@ -233,24 +241,32 @@ struct RectL
     int32_t top{};
     int32_t right{};
     int32_t bottom{};
+
+    auto operator<=>(const RectL&) const = default;
 };
 
 struct Size
 {
     float width{};
     float height{};
+
+    auto operator<=>(const Size&) const = default;
 };
 
 struct SizeU
 {
     uint32_t width{};
     uint32_t height{};
+
+    auto operator<=>(const SizeU&) const = default;
 };
 
 struct SizeL
 {
     int32_t width{};
     int32_t height{};
+
+    auto operator<=>(const SizeL&) const = default;
 };
 
 struct Matrix3x2
@@ -261,6 +277,8 @@ struct Matrix3x2
     float _22{ 1.f };
     float _31{};
     float _32{};
+
+    auto operator<=>(const Matrix3x2&) const = default;
 };
 
 struct BitmapProperties

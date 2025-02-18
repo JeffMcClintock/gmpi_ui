@@ -122,6 +122,54 @@ inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
     };
 }
 
+inline Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
+{
+	return {
+		lhs._11 * rhs._11 + lhs._12 * rhs._21,
+		lhs._11 * rhs._12 + lhs._12 * rhs._22,
+		lhs._21 * rhs._11 + lhs._22 * rhs._21,
+		lhs._21 * rhs._12 + lhs._22 * rhs._22,
+		lhs._31 * rhs._11 + lhs._32 * rhs._21 + rhs._31,
+		lhs._31 * rhs._12 + lhs._32 * rhs._22 + rhs._32
+	};
+}
+
+inline Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
+{
+	lhs = lhs * rhs;
+	return lhs;
+}
+
+inline Point operator*(Point point, Matrix3x2 transform)
+{
+	return {
+		point.x * transform._11 + point.y * transform._21 + transform._31,
+		point.x * transform._12 + point.y * transform._22 + transform._32
+	};
+}
+
+inline Point& operator*=(Point& lhs, Matrix3x2 rhs)
+{
+	lhs = lhs * rhs;
+	return lhs;
+}
+
+inline Rect operator*(Rect rect, Matrix3x2 transform)
+{
+	return {
+		rect.left * transform._11 + rect.top * transform._21 + transform._31,
+		rect.left * transform._12 + rect.top * transform._22 + transform._32,
+		rect.right * transform._11 + rect.bottom * transform._21 + transform._31,
+		rect.right * transform._12 + rect.bottom * transform._22 + transform._32
+	};
+}
+
+inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
+{
+	lhs = lhs * rhs;
+	return lhs;
+}
+
 inline Matrix3x2 invert(const Matrix3x2& transform)
 {
 	double det = transform._11 * (transform._22);

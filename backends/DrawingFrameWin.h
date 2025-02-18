@@ -48,6 +48,10 @@ namespace hosting
 	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
 	struct tempSharedD2DBase
 	{
+		gmpi::drawing::Matrix3x2 viewTransform;
+		gmpi::drawing::Matrix3x2 DipsToWindow;
+		gmpi::drawing::Matrix3x2 WindowToDips;
+
 		directx::ComPtr<::IDXGISwapChain2> swapChain;
 		directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
 		gmpi::drawing::SizeL swapChainSize = {};
@@ -91,9 +95,6 @@ namespace hosting
 
 		// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
 		std::vector<gmpi::drawing::RectL> backBufferDirtyRects;
-		gmpi::drawing::Matrix3x2 viewTransform;
-		gmpi::drawing::Matrix3x2 DipsToWindow;
-		gmpi::drawing::Matrix3x2 WindowToDips;
 		int toolTiptimer = 0;
 		bool toolTipShown;
 		HWND tooltipWindow;

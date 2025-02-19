@@ -141,207 +141,7 @@ public:
 	{
 		return (HWND)juceComponent.getHWND();
 	}
-
-#if 0
-	LRESULT WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
-	{
-		switch (message)
-		{
-#if 1 //def GMPI_HOST_POINTER_SUPPORT
-		case WM_MBUTTONDOWN:
-		case WM_MBUTTONUP:
-		case WM_MOUSEMOVE:
-		case WM_LBUTTONDOWN:
-		case WM_LBUTTONUP:
-		case WM_RBUTTONDOWN:
-		case WM_RBUTTONUP:
-		{
-			Point p{ static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)) };
-			p = transformPoint(WindowToDips, p);
-
-			// Cubase sends spurious mouse move messages when transport running.
-			// This prevents tooltips working.
-			if (message == WM_MOUSEMOVE)
-			{
-				if (cubaseBugPreviousMouseMove.x == p.x && cubaseBugPreviousMouseMove.y == p.y)
-				{
-					return TRUE;
-				}
-				cubaseBugPreviousMouseMove = p;
-			}
-			else
-			{
-				cubaseBugPreviousMouseMove = Point(-1, -1);
-			}
-
-			TooltipOnMouseActivity();
-
-			int32_t eventFlags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-
-			switch (message)
-			{
-			case WM_MBUTTONDOWN:
-			case WM_LBUTTONDOWN:
-			case WM_RBUTTONDOWN:
-				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
-				break;
-			}
-
-			switch (message)
-			{
-			case WM_LBUTTONUP:
-			case WM_LBUTTONDOWN:
-				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
-				break;
-			case WM_RBUTTONDOWN:
-			case WM_RBUTTONUP:
-				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
-				break;
-			case WM_MBUTTONDOWN:
-			case WM_MBUTTONUP:
-				eventFlags |= gmpi::interaction::GG_POINTER_FLAG_THIRDBUTTON;
-				break;
-			}
-
-			if (GetKeyState(VK_SHIFT) < 0)
-			{
-				eventFlags |= gmpi::interaction::GG_POINTER_KEY_SHIFT;
-			}
-			if (GetKeyState(VK_CONTROL) < 0)
-			{
-				eventFlags |= gmpi::interaction::GG_POINTER_KEY_CONTROL;
-			}
-			if (GetKeyState(VK_MENU) < 0)
-			{
-				eventFlags |= gmpi::interaction::GG_POINTER_KEY_ALT;
-			}
-
-			gmpi::ReturnCode r{};
-			if (inputClient)
-			{
-				switch (message)
-				{
-				case WM_MOUSEMOVE:
-				{
-					r = inputClient->onPointerMove(p, eventFlags);
-				}
-				break;
-
-				case WM_LBUTTONDOWN:
-				case WM_RBUTTONDOWN:
-				case WM_MBUTTONDOWN:
-					r = inputClient->onPointerDown(p, eventFlags);
-					break;
-
-				case WM_MBUTTONUP:
-				case WM_RBUTTONUP:
-				case WM_LBUTTONUP:
-					r = inputClient->onPointerUp(p, eventFlags);
-					break;
-				}
-			}
-		}
-		break;
-#endif
-
-		case WM_NCACTIVATE:
-			//if( wParam == FALSE ) // USER CLICKED AWAY
-			//	goto we_re_done;
-			break;
-			/*
-				case WM_WINDOWPOSCHANGING:
-				{
-					LPWINDOWPOS wp = (LPWINDOWPOS)lParam;
-				}
-				break;
-			*/
-		case WM_ACTIVATE:
-		{
-			/*
-			//HFONT hFont = CreateFont(18, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_OUTLINE_PRECIS,
-			//	CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, VARIABLE_PITCH, TEXT("Courier New"));
-
-			SendMessage(child,      // Handle of edit control
-			WM_SETFONT,         // Message to change the font
-			(WPARAM)dialogFont,      // handle of the font
-			MAKELPARAM(TRUE, 0) // Redraw text
-			);
-
-			::SetWindowPos(hwndDlg, 0, dialogX, dialogY, dialogW, dialogH, SWP_NOZORDER);
-			::SetWindowPos(child, 0, 0, 0, dialogW, dialogH, SWP_NOZORDER);
-			::SetWindowText(child, dialogEditText);
-			::SetFocus(child);
-			dialogReturnValue = 1;
-			// Select all.
-			#ifdef WIN32
-			SendMessage(child, EM_SETSEL, (WPARAM)0, (LPARAM)-1);
-			#else
-			SendMessage(child, EM_SETSEL, 0, MAKELONG(0, -1));
-			#endif
-			*/
-		}
-		break;
-
-		/*
-	case WM_COMMAND:
-		switch( LOWORD(wParam) )
-		{
-		case IDOK:
-		goto we_re_done;
-		break;
-
-		case IDCANCEL:
-		dialogReturnValue = 0;
-		EndDialog(hwndDlg, dialogReturnValue); // seems to call back here and exit at "we_re_done"
-		return TRUE;
-		}
-		break;
-		*/
-
-		case WM_PAINT:
-		{
-			OnPaint();
-			//		return ::DefWindowProc(windowHandle, message, wParam, lParam); // clear update rect.
-		}
-		break;
-
-		default:
-			return DefWindowProc(hwnd, message, wParam, lParam);
-
-			//we_re_done:
-			//	if( !GetDlgItemText(hwndDlg, IDC_EDIT1, dialogEditText, sizeof(dialogEditText) / sizeof(dialogEditText[0])) )
-			//		*dialogEditText = 0;
-			//	EndDialog(hwndDlg, dialogReturnValue);
-
-		}
-		return TRUE;
-	}
-#endif
 };
-
-#if 0
-LRESULT CALLBACK DrawingFrameWindowProc(HWND hwnd,
-	UINT message,
-	WPARAM wParam,
-	LPARAM lParam)
-{
-	auto drawingFrame = (JuceDrawingFrameBase*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
-	if (drawingFrame)
-	{
-		return drawingFrame->WindowProc(hwnd, message, wParam, lParam);
-	}
-
-	return DefWindowProc(hwnd, message, wParam, lParam);
-}
-
-// copied from MP_GetDllHandle
-HMODULE local_GetDllHandle_randomshit()
-{
-	HMODULE hmodule = 0;
-	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&local_GetDllHandle_randomshit, &hmodule);
-	return (HMODULE)hmodule;
-}
-#endif
 
 static bool registeredWindowClass = false;
 static WNDCLASS windowClass;
@@ -402,19 +202,38 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
 		(HWND)pparentWnd, NULL, getDllHandle(), NULL);
 
-	if (lwindowHandle)
+	if (!lwindowHandle)
+		return;
+
+	juceComponent.setHWND(lwindowHandle);
+
+	SetWindowLongPtr(lwindowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameBase*>(this));
+	//		RegisterDragDrop(windowHandle, new CDropTarget(this));
+
+	CreateSwapPanel();
+
+	initTooltip();
+
+	if (drawingClient)
 	{
-		juceComponent.setHWND(lwindowHandle);
+		const auto scale = getRasterizationScale();
 
-		SetWindowLongPtr(lwindowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameBase*>(this));
-		//		RegisterDragDrop(windowHandle, new CDropTarget(this));
+		const drawing::Size available{
+			static_cast<float>((r.right - r.left) * scale),
+			static_cast<float>((r.bottom - r.top) * scale)
+		};
 
-		CreateSwapPanel();
-
-		initTooltip();
-
-		startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+		drawing::Size desired{};
+#ifdef GMPI_HOST_POINTER_SUPPORT
+		gmpi_gui_client->measure(available, &desired);
+		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
+#endif
+		drawingClient->measure(&available, &desired);
+		const drawing::Rect finalRect{ 0, 0, available.width, available.height };
+		drawingClient->arrange(&finalRect);
 	}
+
+	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
 }
 
 struct GmpiComponent::Pimpl

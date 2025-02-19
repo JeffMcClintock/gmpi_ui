@@ -153,7 +153,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		registeredWindowClass = true;
 		OleInitialize(0);
 
-		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIGUI%p", getDllHandle());
+		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIUI%p", getDllHandle());
 
 		windowClass.style = CS_GLOBALCLASS;// | CS_DBLCLKS;//|CS_OWNDC; // add Private-DC constant 
 
@@ -196,26 +196,33 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
 		parentWnd, NULL, getDllHandle(), NULL);
 
-	if (windowHandle)
+	if (!windowHandle)
+		return;
+
+	SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
+	//		RegisterDragDrop(windowHandle, new CDropTarget(this));
+
+	CreateSwapPanel();
+
+	// calcViewTransform();
+
+	initTooltip();
+
+	//int dpiX, dpiY;
+	//{
+	//	HDC hdc = ::GetDC(windowHandle);
+	//	dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+	//	dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+	//	::ReleaseDC(windowHandle, hdc);
+	//}
+
+	if (drawingClient)
 	{
-		SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
-		//		RegisterDragDrop(windowHandle, new CDropTarget(this));
-
-		CreateSwapPanel();
-
-		initTooltip();
-
-		int dpiX, dpiY;
-		{
-			HDC hdc = ::GetDC(windowHandle);
-			dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
-			dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
-			::ReleaseDC(windowHandle, hdc);
-		}
+		const auto scale = getRasterizationScale();
 
 		const drawing::Size available{
-			static_cast<float>(((r.right - r.left) * 96) / dpiX),
-			static_cast<float>(((r.bottom - r.top) * 96) / dpiY)
+			static_cast<float>((r.right - r.left) * scale),
+			static_cast<float>((r.bottom - r.top) * scale)
 		};
 
 		drawing::Size desired{};
@@ -223,15 +230,19 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		gmpi_gui_client->measure(available, &desired);
 		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
 #endif
-		if(drawingClient)
-		{
-			drawingClient->measure(&available, &desired);
-			const drawing::Rect finalRect{ 0, 0, available.width, available.height };
-			drawingClient->arrange(&finalRect);
-		}
-		// starting Timer latest to avoid first event getting 'in-between' other init events.
-		startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+		drawingClient->measure(&available, &desired);
+		const drawing::Rect finalRect{ 0, 0, available.width, available.height };
+		drawingClient->arrange(&finalRect);
 	}
+
+	// starting Timer latest to avoid first event getting 'in-between' other init events.
+	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+}
+
+float DxDrawingFrameBase::getRasterizationScale()
+{
+	const auto dpiX = GetDpiForWindow(getWindowHandle());
+	return dpiX / 96.f;
 }
 
 void DxDrawingFrameBase::initTooltip()
@@ -1667,6 +1678,4 @@ int32_t DrawingFrameBase::FindResourceU(const char * resourceName, const char * 
 
 		initTooltip();
 	}
-*
-*
 */

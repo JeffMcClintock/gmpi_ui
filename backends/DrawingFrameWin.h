@@ -62,6 +62,7 @@ namespace hosting
 
 		// override these please.
 		virtual HWND getWindowHandle() = 0;
+		virtual float getRasterizationScale() = 0; // DPI scaling
 
 		// to help re-create device when lost.
 		void ReleaseDevice()
@@ -297,6 +298,7 @@ namespace hosting
 		bool onTimer() override;
 		virtual void autoScrollStart() {}
 		virtual void autoScrollStop() {}
+		float getRasterizationScale() override; // DPI scaling
 	};
 
 	// This is used in VST3. Native HWND window frame.

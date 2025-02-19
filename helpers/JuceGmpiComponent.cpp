@@ -118,10 +118,6 @@ public:
 	}
 };
 
-static bool registeredWindowClass = false;
-static WNDCLASS windowClass;
-static wchar_t gClassName[100];
-
 LRESULT CALLBACK DrawingFrameWindowProc(
 	HWND hwnd,
 	UINT message,
@@ -142,48 +138,13 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 	// while constructing editor, JUCE main window is a small fixed size, so no point querying it. easier to just pass in required size.
 	RECT r{ 0, 0, width ,height };
 
-	if (!registeredWindowClass)
-	{
-		registeredWindowClass = true;
-		OleInitialize(0);
-
-		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIGUI%p", getDllHandle());
-
-		windowClass.style = CS_GLOBALCLASS;// | CS_DBLCLKS;//|CS_OWNDC; // add Private-DC constant 
-
-		windowClass.lpfnWndProc = DrawingFrameWindowProc;
-		windowClass.cbClsExtra = 0;
-		windowClass.cbWndExtra = 0;
-		windowClass.hInstance = getDllHandle();
-		windowClass.hIcon = 0;
-
-		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-#if DEBUG_DRAWING
-		windowClass.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-#else
-		windowClass.hbrBackground = 0;
-#endif
-		windowClass.lpszMenuName = 0;
-		windowClass.lpszClassName = gClassName;
-		RegisterClass(&windowClass);
-
-		//		bSwapped_mouse_buttons = GetSystemMetrics(SM_SWAPBUTTON) > 0;
-	}
-
-	int style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;// | WS_OVERLAPPEDWINDOW;
-	int extended_style = 0;
-
-	const auto lwindowHandle = CreateWindowEx(extended_style, gClassName, L"",
-		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		(HWND)pparentWnd, NULL, getDllHandle(), NULL);
+	const auto windowClass = gmpi::hosting::RegisterWindowsClass(getDllHandle(), DrawingFrameWindowProc);
+	const auto lwindowHandle = gmpi::hosting::CreateHostingWindow(getDllHandle(), windowClass, (HWND)pparentWnd, r, (LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameBase*>(this));
 
 	if (!lwindowHandle)
 		return;
 
 	juceComponent.setHWND(lwindowHandle);
-
-	SetWindowLongPtr(lwindowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameBase*>(this));
-	//		RegisterDragDrop(windowHandle, new CDropTarget(this));
 
 	CreateSwapPanel();
 

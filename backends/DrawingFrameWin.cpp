@@ -17,8 +17,50 @@ using namespace D2D1;
 
 namespace gmpi
 {
-namespace hosting //GmpiGuiHosting
+namespace hosting
 {
+
+std::wstring RegisterWindowsClass(HINSTANCE dllHandle, WNDPROC windowProc)
+{
+	static WNDCLASS windowClass{};
+	static wchar_t gClassName[20] = {};
+
+	if (!windowClass.lpfnWndProc)
+	{
+		::OleInitialize(0);
+
+		swprintf(gClassName, std::size(gClassName), L"GMPIUI%p", dllHandle);
+
+		windowClass.style = CS_GLOBALCLASS;
+		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+		windowClass.hInstance = dllHandle;
+		windowClass.lpfnWndProc = windowProc;
+		windowClass.lpszClassName = gClassName;
+
+		RegisterClass(&windowClass);
+	}
+
+	return gClassName;
+}
+
+HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWND parentWnd, RECT r, LONG_PTR userData)
+{
+	int style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;// | WS_OVERLAPPEDWINDOW;
+	int extended_style = 0;
+
+	const auto windowHandle = CreateWindowEx(extended_style, windowClass.c_str(), L"",
+		style, 0, 0, r.right - r.left, r.bottom - r.top,
+		parentWnd, NULL, dllHandle, NULL);
+
+	if (windowHandle)
+	{
+		SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264) userData);
+		// RegisterDragDrop(windowHandle, new CDropTarget(this));
+	}
+
+	return windowHandle;
+}
+
 void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)
 {
 	rects.clear();
@@ -140,42 +182,8 @@ HMODULE tempSharedD2DBase::getDllHandle()
 	return local44_GetDllHandle_randomshit();
 }
 
-bool registeredWindowClass = false;
-WNDCLASS windowClass;
-wchar_t gClassName[100];
-
 void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize)
 {
-	parentWnd = (HWND)pParentWnd;
-
-	if (!registeredWindowClass)
-	{
-		registeredWindowClass = true;
-		OleInitialize(0);
-
-		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIUI%p", getDllHandle());
-
-		windowClass.style = CS_GLOBALCLASS;// | CS_DBLCLKS;//|CS_OWNDC; // add Private-DC constant 
-
-		windowClass.lpfnWndProc = DrawingFrameWindowProc;
-		windowClass.cbClsExtra = 0;
-		windowClass.cbWndExtra = 0;
-		windowClass.hInstance = getDllHandle();
-		windowClass.hIcon = 0;
-
-		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-#if DEBUG_DRAWING
-		windowClass.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-#else
-		windowClass.hbrBackground = 0;
-#endif
-		windowClass.lpszMenuName = 0;
-		windowClass.lpszClassName = gClassName;
-		RegisterClass(&windowClass);
-
-		//		bSwapped_mouse_buttons = GetSystemMetrics(SM_SWAPBUTTON) > 0;
-	}
-
 	RECT r{};
 	if (overrideSize)
 	{
@@ -189,32 +197,17 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		GetClientRect(parentWnd, &r);
 	}
 
-	int style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;// | WS_OVERLAPPEDWINDOW;
-	int extended_style = 0;
+	parentWnd = (HWND)pParentWnd;
 
-	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
-		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		parentWnd, NULL, getDllHandle(), NULL);
+	const auto windowClass = gmpi::hosting::RegisterWindowsClass(getDllHandle(), DrawingFrameWindowProc);
+	windowHandle = gmpi::hosting::CreateHostingWindow(getDllHandle(), windowClass, parentWnd, r, (LONG_PTR) this);
 
 	if (!windowHandle)
 		return;
 
-	SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
-	//		RegisterDragDrop(windowHandle, new CDropTarget(this));
-
 	CreateSwapPanel();
 
-	// calcViewTransform();
-
 	initTooltip();
-
-	//int dpiX, dpiY;
-	//{
-	//	HDC hdc = ::GetDC(windowHandle);
-	//	dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
-	//	dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
-	//	::ReleaseDC(windowHandle, hdc);
-	//}
 
 	if (drawingClient)
 	{

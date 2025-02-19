@@ -21,6 +21,10 @@ namespace gmpi
 
 namespace hosting
 {
+	// utility functions
+	std::wstring RegisterWindowsClass(HINSTANCE dllHandle, WNDPROC windowProc);
+	HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWND parentWnd, RECT r, LONG_PTR userData);
+
 	class UpdateRegionWinGdi
 	{
 		HRGN hRegion = 0;

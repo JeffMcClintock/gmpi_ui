@@ -74,8 +74,8 @@ namespace hosting
 
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
 	class DxDrawingFrameBase :
-		public DrawingFrameCommon,
 		public tempSharedD2DBase,
+		public DrawingFrameCommon,
 		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
 		public gmpi::api::IDialogHost,

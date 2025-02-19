@@ -142,6 +142,7 @@ public:
 		return (HWND)juceComponent.getHWND();
 	}
 
+#if 0
 	LRESULT WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		switch (message)
@@ -315,8 +316,10 @@ public:
 		}
 		return TRUE;
 	}
+#endif
 };
 
+#if 0
 LRESULT CALLBACK DrawingFrameWindowProc(HWND hwnd,
 	UINT message,
 	WPARAM wParam,
@@ -338,10 +341,26 @@ HMODULE local_GetDllHandle_randomshit()
 	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&local_GetDllHandle_randomshit, &hmodule);
 	return (HMODULE)hmodule;
 }
+#endif
 
 static bool registeredWindowClass = false;
 static WNDCLASS windowClass;
 static wchar_t gClassName[100];
+
+LRESULT CALLBACK DrawingFrameWindowProc(
+	HWND hwnd,
+	UINT message,
+	WPARAM wParam,
+	LPARAM lParam)
+{
+	auto drawingFrame = (gmpi::hosting::DxDrawingFrameBase*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+	if (drawingFrame)
+	{
+		return drawingFrame->WindowProc(hwnd, message, wParam, lParam);
+	}
+
+	return DefWindowProc(hwnd, message, wParam, lParam);
+}
 
 void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 {
@@ -353,14 +372,14 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 		registeredWindowClass = true;
 		OleInitialize(0);
 
-		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIGUI%p", local_GetDllHandle_randomshit());
+		swprintf(gClassName, sizeof(gClassName) / sizeof(gClassName[0]), L"GMPIGUI%p", getDllHandle());
 
 		windowClass.style = CS_GLOBALCLASS;// | CS_DBLCLKS;//|CS_OWNDC; // add Private-DC constant 
 
 		windowClass.lpfnWndProc = DrawingFrameWindowProc;
 		windowClass.cbClsExtra = 0;
 		windowClass.cbWndExtra = 0;
-		windowClass.hInstance = local_GetDllHandle_randomshit();
+		windowClass.hInstance = getDllHandle();
 		windowClass.hIcon = 0;
 
 		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
@@ -381,13 +400,13 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 
 	const auto lwindowHandle = CreateWindowEx(extended_style, gClassName, L"",
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		(HWND)pparentWnd, NULL, local_GetDllHandle_randomshit(), NULL);
+		(HWND)pparentWnd, NULL, getDllHandle(), NULL);
 
 	if (lwindowHandle)
 	{
 		juceComponent.setHWND(lwindowHandle);
 
-		SetWindowLongPtr(lwindowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
+		SetWindowLongPtr(lwindowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameBase*>(this));
 		//		RegisterDragDrop(windowHandle, new CDropTarget(this));
 
 		CreateSwapPanel();

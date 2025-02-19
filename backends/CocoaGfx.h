@@ -970,18 +970,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         return ReturnCode::Ok;
     }
     
-    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-    {
-        *returnInterface = 0;
-        if ( *iid == drawing::api::IFactory::guid || *iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = reinterpret_cast<drawing::api::IFactory*>(this);
-            addRef();
-            return ReturnCode::Ok;
-        }
-        return ReturnCode::NoSupport;
-    }
-
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -1115,16 +1104,15 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == drawing::api::ISolidColorBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = this;
-			addRef();
-			return ReturnCode::Ok;
-		}
+
+        GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
+
 		return ReturnCode::NoSupport;
 	}
 
-	GMPI_REFCOUNT;
+    GMPI_REFCOUNT;
 };
 
 class Gradient
@@ -1373,13 +1361,12 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == drawing::api::IRadialGradientBrush::guid || *iid == drawing::api::IBrush::guid || *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = this;
-			addRef();
-			return ReturnCode::Ok;
-		}
-		return ReturnCode::NoSupport;
+
+        GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::IRadialGradientBrush);
+
+        return ReturnCode::NoSupport;
 	}
 
 	// IResource
@@ -2451,13 +2438,8 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-		if (*iid == drawing::api::IBitmapRenderTarget::guid)
-		{
-			// non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
-			*returnInterface = reinterpret_cast<drawing::api::IBitmapRenderTarget*>(this);
-			addRef();
-			return ReturnCode::Ok;
-		}
+
+        GMPI_QUERYINTERFACE(drawing::api::IBitmapRenderTarget);
 
 		return GraphicsContext::queryInterface(iid, returnInterface);
 	}

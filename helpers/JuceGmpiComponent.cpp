@@ -56,19 +56,8 @@ public:
 	{
 		*returnInterface = nullptr;
 
-		if (*iid == IDrawingClient::guid || *iid == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = static_cast<IDrawingClient*>(this);
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-
-		if (iid == /*gmpi::interaction::*/&IInputClient::guid)
-		{
-			*returnInterface = static_cast<IInputClient*>(this);
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
+		GMPI_QUERYINTERFACE(IDrawingClient);
+		GMPI_QUERYINTERFACE(IInputClient);
 
 #ifdef GMPI_HOST_POINTER_SUPPORT
 		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI3)

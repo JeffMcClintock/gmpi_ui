@@ -250,32 +250,10 @@ namespace hosting
 		{
 			*returnInterface = {};
 
-			if (*iid == IDrawingHost::guid)
-			{
-				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-				*returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
-				addRef();
-				return gmpi::ReturnCode::Ok;
-			}
-			if (*iid == IInputHost::guid)
-			{
-				// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-				*returnInterface = reinterpret_cast<void*>(static_cast<IInputHost*>(this));
-				addRef();
-				return gmpi::ReturnCode::Ok;
-			}
-			if (*iid == IDialogHost::guid)
-			{
-				*returnInterface = reinterpret_cast<void*>(static_cast<IDialogHost*>(this));
-				addRef();
-				return gmpi::ReturnCode::Ok;
-			}
-			if (*iid == gmpi::api::IUnknown::guid)
-			{
-				*returnInterface = this;
-				addRef();
-				return gmpi::ReturnCode::Ok;
-			}
+			GMPI_QUERYINTERFACE(IDrawingHost);
+			GMPI_QUERYINTERFACE(IInputHost);
+			GMPI_QUERYINTERFACE(IDialogHost);
+			GMPI_QUERYINTERFACE(IInputHost);
 
 			if (parameterHost)
 			{

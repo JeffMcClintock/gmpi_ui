@@ -556,12 +556,11 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::IBitmapBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = this;
-            addRef();
-            return ReturnCode::Ok;
-        }
+
+        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::IBitmapBrush);
+
         return ReturnCode::NoSupport;
     }
 
@@ -610,12 +609,11 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::ISolidColorBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = this;
-            addRef();
-            return ReturnCode::Ok;
-        }
+
+        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
+
         return ReturnCode::NoSupport;
     }
 
@@ -680,12 +678,11 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::ISolidColorBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = this;
-            addRef();
-            return ReturnCode::Ok;
-        }
+
+        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
+
         return ReturnCode::NoSupport;
     }
 
@@ -734,12 +731,11 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::ILinearGradientBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = this;
-            addRef();
-            return ReturnCode::Ok;
-        }
+
+        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::ILinearGradientBrush);
+
         return ReturnCode::NoSupport;
     }
 
@@ -799,12 +795,11 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        if (*iid == drawing::api::IRadialGradientBrush::guid || /**iid == drawing::api::IBrush::guid ||*/ *iid == drawing::api::IResource::guid || *iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = this;
-            addRef();
-            return ReturnCode::Ok;
-        }
+
+        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::IRadialGradientBrush);
+
         return ReturnCode::NoSupport;
     }
 
@@ -1062,7 +1057,6 @@ public:
 
     ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
 
-//    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override {
 		*returnInterface = {};
 		GMPI_QUERYINTERFACE(drawing::api::IFactory)

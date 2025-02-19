@@ -12,31 +12,6 @@
 using namespace gmpi;
 using namespace gmpi::drawing;
 
-namespace gmpi
-{
-namespace interaction
-{
-	// TODO niceify
-	enum GG_POINTER_FLAGS {
-		GG_POINTER_FLAG_NONE = 0,
-		GG_POINTER_FLAG_NEW = 0x01,					// Indicates the arrival of a new pointer.
-		GG_POINTER_FLAG_INCONTACT = 0x04,
-		GG_POINTER_FLAG_FIRSTBUTTON = 0x10,
-		GG_POINTER_FLAG_SECONDBUTTON = 0x20,
-		GG_POINTER_FLAG_THIRDBUTTON = 0x40,
-		GG_POINTER_FLAG_FOURTHBUTTON = 0x80,
-		GG_POINTER_FLAG_CONFIDENCE = 0x00000400,	// Confidence is a suggestion from the source device about whether the pointer represents an intended or accidental interaction.
-		GG_POINTER_FLAG_PRIMARY = 0x00002000,	// First pointer to contact surface. Mouse is usually Primary.
-
-		GG_POINTER_SCROLL_HORIZ = 0x00008000,	// Mouse Wheel is scrolling horizontal.
-
-		GG_POINTER_KEY_SHIFT = 0x00010000,	// Modifer key - <SHIFT>.
-		GG_POINTER_KEY_CONTROL = 0x00020000,	// Modifer key - <CTRL> or <Command>.
-		GG_POINTER_KEY_ALT = 0x00040000,	// Modifer key - <ALT> or <Option>.
-	};
-}
-}
-
 class JuceComponentProxy : public gmpi::api::IDrawingClient, public gmpi::api::IInputClient
 {
 	class GmpiComponent* component = {};

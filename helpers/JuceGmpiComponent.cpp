@@ -110,7 +110,7 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 
 	juceComponent.setHWND(lwindowHandle);
 
-	CreateSwapPanel();
+	CreateSwapPanel(DrawingFactory.getD2dFactory());
 
 	initTooltip();
 

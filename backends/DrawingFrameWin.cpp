@@ -205,7 +205,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 	if (!windowHandle)
 		return;
 
-	CreateSwapPanel();
+	CreateSwapPanel(DrawingFactory.getD2dFactory());
 
 	initTooltip();
 
@@ -230,8 +230,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 
 float DxDrawingFrameBase::getRasterizationScale()
 {
-	const auto dpiX = GetDpiForWindow(getWindowHandle());
-	return dpiX / 96.f;
+	return GetDpiForWindow(getWindowHandle()) / 96.f;
 }
 
 void DxDrawingFrameBase::initTooltip()
@@ -343,7 +342,6 @@ LRESULT DxDrawingFrameBase::WindowProc(
 
 	switch (message)
 	{
-#if 1
 		case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_MOUSEMOVE:
@@ -505,7 +503,6 @@ LRESULT DxDrawingFrameBase::WindowProc(
 		if(inputClient)
 			inputClient->OnKeyPress((wchar_t) wParam);
 		break;
-#endif
 
 	case WM_PAINT:
 	{
@@ -618,7 +615,7 @@ void DxDrawingFrameBase::OnPaint()
 
 		if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
 		{
-			CreateSwapPanel();
+			CreateSwapPanel(DrawingFactory.getD2dFactory());
 		}
 
 		{
@@ -736,7 +733,7 @@ void DxDrawingFrameBase::OnPaint()
 	reentrant = false;
 }
 
-void DxDrawingFrameBase::CreateSwapPanel()
+void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 {
 	ReleaseDevice();
 
@@ -1038,43 +1035,39 @@ void DxDrawingFrameBase::CreateSwapPanel()
 		DX_support_sRGB = false;
 	}
 
-
 	// Creating the Direct2D Device
 	ComPtr<ID2D1Device> device;
-	DrawingFactory.getD2dFactory()->CreateDevice(dxdevice.Get(),
+	d2dFactory->CreateDevice(dxdevice.Get(),
 		device.GetAddressOf());
 
 	// and context.
 	device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, d2dDeviceContext.getAddressOf());
 
-	float dpiX, dpiY;
-
 	// disable DPI for testing.
-	if (lowDpiMode)
-	{
-		dpiX = dpiY = 96.0f;
-	}
-	else
-	{
-		DrawingFactory.getD2dFactory()->GetDesktopDpi(&dpiX, &dpiY);
-	}
+	const float dpiScale = lowDpiMode ? 1.0f : getRasterizationScale();
 
-	d2dDeviceContext->SetDpi(dpiX, dpiY);
-
-	DrawingFactory.setSrgbSupport(DX_support_sRGB, whiteMult);
-	DipsToWindow = makeScale(dpiX / 96.0f, dpiY / 96.0f); // was dpiScaleInverse
-	WindowToDips = DipsToWindow;
-	WindowToDips = invert(WindowToDips);
+	d2dDeviceContext->SetDpi(96.0f * dpiScale, 96.0f * dpiScale);
 
 	// A little jagged on small fonts
 	//	mpRenderTarget->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE); // "The quality of rendering grayscale text is comparable to ClearType but is much faster."}
 
 	CreateDeviceSwapChainBitmap();
 
-	drawing::api::IBitmapPixels::PixelFormat pixelFormat;
-	DrawingFactory.getPlatformPixelFormat(&pixelFormat);
+	DipsToWindow = makeScale(dpiScale, dpiScale);
+	WindowToDips = invert(DipsToWindow);
 
-	if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
+	// customisation point.
+	OnSwapChainCreated(DX_support_sRGB, whiteMult);
+}
+
+void DxDrawingFrameBase::OnSwapChainCreated(bool DX_support_sRGB, float whiteMult)
+{
+	DrawingFactory.setSrgbSupport(DX_support_sRGB, whiteMult);
+
+//	drawing::api::IBitmapPixels::PixelFormat pixelFormat;
+//	DrawingFactory.getPlatformPixelFormat(&pixelFormat);
+
+	if (DX_support_sRGB) //pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
 	{
 		context.reset(new gmpi::directx::GraphicsContext(d2dDeviceContext, &DrawingFactory));
 	}
@@ -1084,7 +1077,7 @@ void DxDrawingFrameBase::CreateSwapPanel()
 	}
 }
 
-void DxDrawingFrameBase::CreateDeviceSwapChainBitmap()
+void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 {
 //	_RPT0(_CRT_WARN, "\n\nCreateDeviceSwapChainBitmap()\n");
 

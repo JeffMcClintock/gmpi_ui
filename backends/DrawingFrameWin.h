@@ -68,6 +68,10 @@ namespace hosting
 		virtual HWND getWindowHandle() = 0;
 		virtual float getRasterizationScale() = 0; // DPI scaling
 
+		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
+		void CreateDeviceSwapChainBitmap();
+		virtual void OnSwapChainCreated(bool DX_support_sRGB, float whiteMult) = 0;
+
 		// to help re-create device when lost.
 		void ReleaseDevice()
 		{
@@ -128,6 +132,8 @@ namespace hosting
 			WPARAM wParam,
 			LPARAM lParam);
 
+		void OnSwapChainCreated(bool DX_support_sRGB, float whiteMult) override;
+
 		void ResizeSwapChainBitmap()
 		{
 			d2dDeviceContext->SetTarget(nullptr);
@@ -143,9 +149,6 @@ namespace hosting
 				ReleaseDevice();
 			}
 		}
-
-		void CreateSwapPanel();
-		void CreateDeviceSwapChainBitmap();
 
 		void setFallbackHost(gmpi::api::IUnknown* paramHost)
 		{

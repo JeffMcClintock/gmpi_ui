@@ -2438,9 +2438,13 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-
-        GMPI_QUERYINTERFACE(drawing::api::IBitmapRenderTarget);
-
+        if (*iid == drawing::api::IBitmapRenderTarget::guid)
+        {
+            // non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
+            *returnInterface = reinterpret_cast<drawing::api::IBitmapRenderTarget*>(this);
+            addRef();
+            return ReturnCode::Ok;
+        }
 		return GraphicsContext::queryInterface(iid, returnInterface);
 	}
 

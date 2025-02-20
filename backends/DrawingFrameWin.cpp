@@ -219,10 +219,6 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		};
 
 		drawing::Size desired{};
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		gmpi_gui_client->measure(available, &desired);
-		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
-#endif
 		drawingClient->measure(&available, &desired);
 		const drawing::Rect finalRect{ 0, 0, available.width, available.height };
 		drawingClient->arrange(&finalRect);
@@ -341,16 +337,13 @@ LRESULT DxDrawingFrameBase::WindowProc(
 	LPARAM lParam)
 {
 	if(
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		!gmpi_gui_client &&
-#endif
 		!drawingClient
 		)
 		return DefWindowProc(hwnd, message, wParam, lParam);
 
 	switch (message)
 	{
-#if 1 //def GMPI_HOST_POINTER_SUPPORT
+#if 1
 		case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_MOUSEMOVE:
@@ -567,15 +560,11 @@ void DxDrawingFrameBase::OnSize(UINT width, UINT height)
 		static_cast<float>(((height) * 96) / dpiY)
 	};
 
-#ifdef GMPI_HOST_POINTER_SUPPORT
-	gmpi_gui_client->arrange({0, 0, available.width, available.height });
-#else
 	if (drawingClient)
 	{
 		const gmpi::drawing::Rect r{ 0, 0, available.width, available.height };
 		drawingClient->arrange(&r);
 	}
-#endif
 }
 
 // Ideally this is called at 60Hz so we can draw as fast as practical, but without blocking to wait for Vsync all the time (makes host unresponsive).
@@ -583,37 +572,8 @@ bool DxDrawingFrameBase::onTimer()
 {
 	auto hwnd = getWindowHandle();
 	if (hwnd == nullptr
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		|| gmpi_gui_client == nullptr
-#endif
 		)
 		return true;
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-
-	// Tooltips
-	if (toolTiptimer-- == 0 && !toolTipShown)
-	{
-		POINT P;
-		GetCursorPos(&P);
-
-		// Check mouse in window and not captured.
-		if (WindowFromPoint(P) == hwnd && GetCapture() != hwnd)
-		{
-			ScreenToClient(hwnd, &P);
-
-			const auto point = WindowToDips.TransformPoint(Point(static_cast<float>(P.x), static_cast<float>(P.y)));
-
-			gmpi_sdk::MpString text;
-			gmpi_gui_client->getToolTip(point, &text);
-			if (!text.str().empty())
-			{
-				toolTipText = JmUnicodeConversions::Utf8ToWstring(text.str());
-				ShowToolTip();
-			}
-		}
-	}
-#endif
 
 	if (frameUpdateClient)
 	{
@@ -651,12 +611,7 @@ void DxDrawingFrameBase::OnPaint()
 
 	auto& dirtyRects = updateRegion_native.getUpdateRects();
 	if (
-		(
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		gmpi_gui_client ||
-#endif
-			drawingClient
-		)
+		drawingClient
 		&& !dirtyRects.empty())
 	{
 		//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
@@ -686,9 +641,6 @@ void DxDrawingFrameBase::OnPaint()
 
 				graphics.pushAxisAlignedClip(temp);
 
-#ifdef GMPI_HOST_POINTER_SUPPORT
-				gmpi_gui_client->onRender(context.get());
-#endif
 				if (drawingClient)
 					drawingClient->render(context.get());
 
@@ -696,21 +648,6 @@ void DxDrawingFrameBase::OnPaint()
 			}
 
 			// Print OS Version.
-#if 0 //def _DEBUG
-			{
-				OSVERSIONINFO osvi;
-				memset(&osvi, 0, sizeof(osvi));
-
-				osvi.dwOSVersionInfoSize = sizeof(osvi);
-				GetVersionEx(&osvi);
-
-				char versionString[100];
-				sprintf(versionString, "OS Version %d.%d", (int)osvi.dwMajorVersion, (int)osvi.dwMinorVersion);
-
-				auto brsh = graphics.CreateSolidColorBrush(Colors::Black);
-				graphics.drawTextU(versionString, graphics.GetFactory().CreateTextFormat(12), drawing::Rect(2.0f, 2.0f, 200, 200), brsh);
-			}
-#endif
 
 			// Print Frame Rate
 	//		const bool displayFrameRate = true;
@@ -1527,83 +1464,6 @@ gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::
 {
 	return gmpi::ReturnCode::NoSupport;
 }
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-
-void DrawingFrameBase::invalidateMeasure()
-{
-}
-
-int32_t DrawingFrameBase::createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu)
-{
-	auto nativeRect = DipsToWindow.transformRect(*rect);
-	*returnMenu = new GmpiGuiHosting::PGCC_PlatformMenu(getWindowHandle(), &nativeRect, DipsToWindow._22);
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::createPlatformTextEdit(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformText** returnTextEdit)
-{
-	auto nativeRect = DipsToWindow.transformRect(*rect);
-	*returnTextEdit = new GmpiGuiHosting::PGCC_PlatformTextEntry(getWindowHandle(), &nativeRect, DipsToWindow._22);
-
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog)
-{
-	*returnFileDialog = new Gmpi_Win_FileDialog(dialogType, getWindowHandle());
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog)
-{
-	*returnDialog = new Gmpi_Win_OkCancelDialog(dialogType, getWindowHandle());
-	return gmpi::ReturnCode::Ok;
-}
-#endif
-
-#if 0
-int32_t DrawingFrameBase::pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::createPinIterator(gmpi::api::IPinIterator** returnIterator)
-{
-	return gmpi::MP_FAIL;
-}
-
-int32_t DrawingFrameBase::getHandle(int32_t & returnValue)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::sendMessageToAudio(int32_t id, int32_t size, const void * messageData)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::ClearResourceUris()
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::RegisterResourceUri(const char * resourceName, const char * resourceType, gmpi::IString* returnString)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::OpenUri(const char * fullUri, gmpi::IProtectedFile2** returnStream)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t DrawingFrameBase::FindResourceU(const char * resourceName, const char * resourceType, gmpi::IString* returnString)
-{
-	return gmpi::ReturnCode::Ok;
-}
-#endif
-
 } //namespace
 } //namespace
 

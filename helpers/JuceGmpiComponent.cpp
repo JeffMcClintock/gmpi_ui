@@ -55,33 +55,8 @@ public:
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = nullptr;
-
 		GMPI_QUERYINTERFACE(IDrawingClient);
 		GMPI_QUERYINTERFACE(IInputClient);
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI3)
-		{
-			*returnInterface = static_cast<IMpGraphics3*>(this);
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-
-		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI2)
-		{
-			*returnInterface = static_cast<IMpGraphics2*>(this);
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-
-		if (iid == gmpi::interaction::SE_IID_GRAPHICS_MPGUI)
-		{
-			*returnInterface = static_cast<IMpGraphics*>(this);
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-#endif
-
 		return gmpi::ReturnCode::NoSupport;
 	}
 	GMPI_REFCOUNT_NO_DELETE;
@@ -149,10 +124,6 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 		};
 
 		drawing::Size desired{};
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		gmpi_gui_client->measure(available, &desired);
-		gmpi_gui_client->arrange({ 0, 0, available.width, available.height });
-#endif
 		drawingClient->measure(&available, &desired);
 		const drawing::Rect finalRect{ 0, 0, available.width, available.height };
 		drawingClient->arrange(&finalRect);

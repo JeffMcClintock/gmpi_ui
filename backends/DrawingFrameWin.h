@@ -93,11 +93,6 @@ namespace hosting
 	protected:
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
 
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> gmpi_gui_client; // usually a ContainerView at the topmost level
-		gmpi::shared_ptr<gmpi_gui_api::IMpKeyClient> gmpi_key_client;
-#endif
-
 		// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
 		std::vector<gmpi::drawing::RectL> backBufferDirtyRects;
 		int toolTiptimer = 0;
@@ -122,11 +117,6 @@ namespace hosting
 		virtual ~DxDrawingFrameBase()
 		{
 			stopTimer();
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-			// Free GUI objects first so they can release fonts etc before releasing factorys.
-			gmpi_gui_client = nullptr;
-#endif
 
 			ReleaseDevice();
 		}
@@ -169,18 +159,6 @@ namespace hosting
 			
 			// legacy
 			gfx->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
-#ifdef GMPI_HOST_POINTER_SUPPORT
-			pcontainerView->queryInterface(&gmpi_gui_api::IMpGraphics3::guid, gmpi_gui_client.put());
-			pcontainerView->queryInterface(&gmpi_gui_api::IMpKeyClient::guid, gmpi_key_client.put());
-#endif
-
-#if 0
-			gmpi::shared_ptr<gmpi::api::IUserInterface2> pinHost;
-			gmpi_gui_client->queryInterface(&gmpi::MP_IID_GUI_PLUGIN2, pinHost.put());
-
-			if(pinHost)
-				pinHost->setHost(static_cast<gmpi_gui::IMpGraphicsHost*>(this));
-#endif
 			if (drawingClient)
 			{
 				drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
@@ -188,47 +166,15 @@ namespace hosting
 		}
 
 		void OnPaint();
-#if 0
-		// Inherited via IMpUserInterfaceHost2
-		int32_t pinTransmit(int32_t pinId, int32_t size, const void * data, int32_t voice = 0) override;
-		int32_t createPinIterator(gmpi::api::IPinIterator** returnIterator) override;
-		int32_t getHandle(int32_t & returnValue) override;
-		int32_t sendMessageToAudio(int32_t id, int32_t size, const void * messageData) override;
-		int32_t ClearResourceUris() override;
-		int32_t RegisterResourceUri(const char * resourceName, const char * resourceType, gmpi::IString* returnString) override;
-		int32_t OpenUri(const char * fullUri, gmpi::IProtectedFile2** returnStream) override;
-		int32_t FindResourceU(const char * resourceName, const char * resourceType, gmpi::IString* returnString) override;
-		int32_t LoadPresetFile_DEPRECATED(const char* presetFilePath) override
-		{
-//			Presenter()->LoadPresetFile(presetFilePath);
-			return gmpi::MP_FAIL;
-		}
-#endif
+
 		// IMpGraphicsHost
 		virtual void invalidateRect(const gmpi::drawing::Rect * invalidRect) override;
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		virtual void invalidateMeasure() override;
-		int32_t setCapture() override;
-		int32_t getCapture(int32_t & returnValue) override;
-		int32_t releaseCapture() override;
-		gmpi::ReturnCode GetDrawingFactory(gmpi::drawing::IFactory** returnFactory) override
-		{
-			*returnFactory = &DrawingFactory;
-			return gmpi::ReturnCode::Ok;
-		}
-#endif
 		gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
 		{
 			*returnFactory = &DrawingFactory;
 			return gmpi::ReturnCode::Ok;
 		}
-#ifdef GMPI_HOST_POINTER_SUPPORT
 
-		int32_t createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override;
-		int32_t createPlatformTextEdit(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override;
-		int32_t createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override;
-		int32_t createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override;
-#endif
 		// IInputHost
 		gmpi::ReturnCode setCapture() override;
 		gmpi::ReturnCode getCapture(bool& returnValue) override;
@@ -244,7 +190,6 @@ namespace hosting
 		gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
 		gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;
 
-#if 1//def GMPI_HOST_POINTER_SUPPORT
 		// IUnknown methods
 		gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 		{
@@ -264,13 +209,6 @@ namespace hosting
 		}
 
 		GMPI_REFCOUNT_NO_DELETE;
-
-#ifdef GMPI_HOST_POINTER_SUPPORT
-		auto getClient() {
-			return gmpi_gui_client;
-		}
-#endif
-#endif
 
 		void initTooltip();
 		void TooltipOnMouseActivity();

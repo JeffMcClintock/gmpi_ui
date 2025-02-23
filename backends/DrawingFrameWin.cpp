@@ -12,7 +12,7 @@ using namespace std;
 using namespace gmpi;
 using namespace gmpi::drawing;
 
-using namespace Microsoft::WRL;
+//using namespace Microsoft::WRL;
 using namespace D2D1;
 
 namespace gmpi
@@ -738,92 +738,66 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	ReleaseDevice();
 
 	// Create a Direct3D Device
-	UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+	UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #ifdef _DEBUG
 	// you must explicity install DX debug support for this to work.
-	flags |= D3D11_CREATE_DEVICE_DEBUG;
+	creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
-	// Comment out first to test lower versions.
-	D3D_FEATURE_LEVEL d3dLevels[] = 
+
+	D3D_FEATURE_LEVEL featureLevels[] = 
 	{
-#if	ENABLE_HDR_SUPPORT
 		D3D_FEATURE_LEVEL_11_1,
-#endif
 		D3D_FEATURE_LEVEL_11_0,
 		D3D_FEATURE_LEVEL_10_1,
 		D3D_FEATURE_LEVEL_10_0,
-		D3D_FEATURE_LEVEL_9_3,
-		D3D_FEATURE_LEVEL_9_2, // flip SUPPORTED on my PC
-		D3D_FEATURE_LEVEL_9_1, // NO flip
 	};
 
-	D3D_FEATURE_LEVEL currentDxFeatureLevel;
-	ComPtr<ID3D11Device> D3D11Device;
+	D3D_FEATURE_LEVEL supportedFeatureLevel;
+	gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
 	
-	HRESULT r = DXGI_ERROR_UNSUPPORTED;
-
 	// Create Hardware device.
+    HRESULT r = DXGI_ERROR_UNSUPPORTED;
 	do {
 		r = D3D11CreateDevice(nullptr,
 			D3D_DRIVER_TYPE_HARDWARE,
-			nullptr,
-			flags,
-			d3dLevels, sizeof(d3dLevels) / sizeof(d3dLevels[0]),
+        	0,
+			creationFlags,
+			featureLevels,
+			std::size(featureLevels),
 			D3D11_SDK_VERSION,
-			D3D11Device.GetAddressOf(),
-			&currentDxFeatureLevel,
+			d3dDevice.put(),
+			&supportedFeatureLevel,
 			nullptr);
 
 			// Clear D3D11_CREATE_DEVICE_DEBUG
-			((flags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
+			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
 
 		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 
-	bool DX_support_sRGB;
-	{
-		/* !! only good for detecting Windows 7 !!
-		Applications not manifested for Windows 8.1 or Windows 10 will return the Windows 8 OS version value (6.2).
-		Once an application is manifested for a given operating system version,
-		GetVersionEx will always return the version that the application is manifested for
-		*/
-		OSVERSIONINFO osvi;
-		memset(&osvi, 0, sizeof(osvi));
+    // Get the Direct3D device.
+    auto dxgiDevice = d3dDevice.as<::IDXGIDevice>();
 
-		osvi.dwOSVersionInfoSize = sizeof(osvi);
-		GetVersionEx(&osvi);
-
-		DX_support_sRGB =
-			((osvi.dwMajorVersion > 6) ||
-				((osvi.dwMajorVersion == 6) && (osvi.dwMinorVersion > 1))); // Win7 = V6.1
-	}
+    // Get the DXGI adapter.
+    gmpi::directx::ComPtr< ::IDXGIAdapter > dxgiAdapter;
+    dxgiDevice->GetAdapter(dxgiAdapter.put());
 
 	// Support for HDR displays.
+    bool DX_support_sRGB{true};
 	float whiteMult{ 1.0f };
+
 	{
-		// query for the device object’s IDXGIDevice interface
-		ComPtr<IDXGIDevice> dxdevice;
-		D3D11Device.As(&dxdevice);
-
-		// Retrieve the display adapter
-		ComPtr<IDXGIAdapter> adapter;
-		dxdevice->GetAdapter(adapter.GetAddressOf());
-
 		UINT i = 0;
-		ComPtr<IDXGIOutput> currentOutput;
-		ComPtr<IDXGIOutput> bestOutput;
+		gmpi::directx::ComPtr<IDXGIOutput> currentOutput;
+		gmpi::directx::ComPtr<IDXGIOutput> bestOutput;
 		int bestIntersectArea = -1;
-
-		while (adapter->EnumOutputs(i, currentOutput.ReleaseAndGetAddressOf()) != DXGI_ERROR_NOT_FOUND)
-		{
-			getWindowHandle();
 
 			// get bounds of window having handle: getWindowHandle()
 			RECT m_windowBounds;
 			GetWindowRect(getWindowHandle(), &m_windowBounds);
-
-			// Get the retangle bounds of the app window
 			gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
 
+        while (dxgiAdapter->EnumOutputs(i, currentOutput.put()) != DXGI_ERROR_NOT_FOUND)
+        {
 			// Get the rectangle bounds of current output
 			DXGI_OUTPUT_DESC desc;
 			/*auto hr =*/ currentOutput->GetDesc(&desc);
@@ -831,8 +805,8 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 			gmpi::drawing::RectL outputRect = { desktopRect.left, desktopRect.top, desktopRect.right, desktopRect.bottom };
 
 			// Compute the intersection
-			const auto commonRect = intersectRect(appWindowRect, outputRect);
-			const int intersectArea = getWidth(commonRect) * getHeight(commonRect);
+			const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
+			const int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
 			if (intersectArea > bestIntersectArea)
 			{
 				bestOutput = currentOutput;
@@ -844,13 +818,12 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 
 		// Having determined the output (display) upon which the app is primarily being 
 		// rendered, retrieve the HDR capabilities of that display by checking the color space.
-		ComPtr<IDXGIOutput6> output6;
-		auto hr = bestOutput.As(&output6);
+		auto output6 = bestOutput.as<IDXGIOutput6>();
 
 		if (output6)
 		{
 			DXGI_OUTPUT_DESC1 desc1;
-			hr = output6->GetDesc1(&desc1);
+			auto hr = output6->GetDesc1(&desc1);
 
 			if (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709)
 			{
@@ -888,7 +861,7 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 			DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
 			white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
 			white_level.header.size = sizeof(white_level);
-			for (uint32_t pathIdx = 0; pathIdx < numPathArrayElements; ++pathIdx)
+            for (uint32_t pathIdx = 0; pathIdx < numPathArrayElements; ++pathIdx)
 			{
 				white_level.header.adapterId = pathInfo[pathIdx].targetInfo.adapterId;
 				white_level.header.id = pathInfo[pathIdx].targetInfo.id;
@@ -899,7 +872,6 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 					{
 						// divide by 1000 to get nits, divide by reference nits (80) to get a factor
 						whiteMult = white_level.SDRWhiteLevel / 1000.f;
-//						DrawingFactory.whiteMult = whiteMult;
 					}
 #else // fall back to 8-bit rendering and ignore HDR
 					{
@@ -915,7 +887,7 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	if (m_disable_gpu)
 	{
 		// release hardware device
-		D3D11Device = nullptr;
+		d3dDevice = nullptr;
 		r = DXGI_ERROR_UNSUPPORTED;
 	}
 
@@ -926,37 +898,25 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		r = D3D11CreateDevice(nullptr,
 			D3D_DRIVER_TYPE_WARP,
 			nullptr,
-			flags,
+			creationFlags,
 			nullptr, 0,
 			D3D11_SDK_VERSION,
-			D3D11Device.GetAddressOf(),
-			&currentDxFeatureLevel,
+			d3dDevice.put(),
+			&supportedFeatureLevel,
 			nullptr);
 
 			// Clear D3D11_CREATE_DEVICE_DEBUG
-			((flags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
+			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
 
 		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 	}
-
-	// query for the device object’s IDXGIDevice interface
-	ComPtr<IDXGIDevice> dxdevice;
-	D3D11Device.As(&dxdevice);
-
-	// Retrieve the display adapter
-	ComPtr<IDXGIAdapter> adapter;
-	dxdevice->GetAdapter(adapter.GetAddressOf());
-
-	// adapter’s parent object is the DXGI factory
-	ComPtr<IDXGIFactory2> factory; // Minimum supported client: Windows 8 and Platform Update for Windows 7 
-	adapter->GetParent(__uuidof(factory), reinterpret_cast<void **>(factory.GetAddressOf()));
 
 	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
 	// Software renderer has no device memory, yet does support float pixels anyhow.
 	if (!m_disable_gpu)
 	{
 		DXGI_ADAPTER_DESC adapterDesc{};
-		adapter->GetDesc(&adapterDesc);
+		dxgiAdapter->GetDesc(&adapterDesc);
 
 		const auto dedicatedRamMB = adapterDesc.DedicatedVideoMemory / 0x100000;
 
@@ -964,16 +924,6 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
 	}
 
-	/* NOTES:
-		DXGI_FORMAT_R10G10B10A2_UNORM - fails in CreateBitmapFromDxgiSurface() don't supprt direct2d says channel9.
-		DXGI_FORMAT_R16G16B16A16_FLOAT - 'tends to take up far too much memoryand bandwidth at HD resolutions' - Stack Overlow.
-
-		DXGI ERROR: IDXGIFactory::CreateSwapChain:
-			Flip model swapchains (DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL and DXGI_SWAP_EFFECT_FLIP_DISCARD)
-			only support the following Formats:
-			(DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R10G10B10A2_UNORM),
-			assuming the underlying Device does as well.
-	*/
 
 	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
 	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
@@ -981,7 +931,7 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 
 	{
 		UINT driverSrgbSupport = 0;
-		auto hr = D3D11Device->CheckFormatSupport(bestFormat, &driverSrgbSupport);
+		auto hr = d3dDevice->CheckFormatSupport(bestFormat, &driverSrgbSupport);
 
 		const UINT srgbflags = D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_BLENDABLE;
 
@@ -991,73 +941,100 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		}
 	}
 
-	DX_support_sRGB &= D3D_FEATURE_LEVEL_11_0 <= currentDxFeatureLevel;
+	DX_support_sRGB &= D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
 
-	DXGI_SWAP_CHAIN_DESC1 props {};
-	props.SampleDesc.Count = 1;
-	props.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	props.BufferCount = 2;
-	props.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;	// Best. Efficient flip.
-	props.Format = bestFormat;
-	props.Scaling = DXGI_SCALING_NONE; // prevents annoying stretching effect when resizing window.
+    // Get the DXGI factory.
+    gmpi::directx::ComPtr<::IDXGIFactory2> dxgiFactory;
+    dxgiAdapter->GetParent(__uuidof(dxgiFactory), dxgiFactory.put_void());
+
+	DXGI_SWAP_CHAIN_DESC1 swapChainDesc{};
+    swapChainDesc.Format = DX_support_sRGB ? bestFormat : fallbackFormat;
+	swapChainDesc.SampleDesc.Count = 1; // Don't use multi-sampling.
+	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	swapChainDesc.BufferCount = 2;
+	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+	swapChainDesc.Scaling = DXGI_SCALING_NONE; // prevents annoying stretching effect when resizing window. HWNDs only.
 
 	if (lowDpiMode)
 	{
 		RECT temprect;
 		GetClientRect(getWindowHandle(), &temprect);
 
-		props.Width = (temprect.right - temprect.left) / 2;
-		props.Height = (temprect.bottom - temprect.top) / 2;
-		props.Scaling = DXGI_SCALING_STRETCH;
+		swapChainDesc.Width = (temprect.right - temprect.left) / 2;
+		swapChainDesc.Height = (temprect.bottom - temprect.top) / 2;
+		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
 	}
 
-	auto propsFallback = props;
-	propsFallback.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;	// Less efficient blit.
-	propsFallback.Format = fallbackFormat;
-	propsFallback.Scaling = DXGI_SCALING_STRETCH;
+	// customization point.
+	gmpi::directx::ComPtr<::IDXGISwapChain1> swapChain1;
+	auto swapchainresult = createNativeSwapChain(
+		dxgiFactory.get(),
+		d3dDevice.get(),
+		&swapChainDesc,
+		swapChain1.put()
+	);
 
-	for (int x = 0 ; x < 2 ;++x)
-	{
-		gmpi::directx::ComPtr<::IDXGISwapChain1> swapChain1;
-		auto swapchainresult = factory->CreateSwapChainForHwnd(D3D11Device.Get(),
-			getWindowHandle(),
-			DX_support_sRGB ? &props : &propsFallback,
-			nullptr,
-			nullptr,
-			swapChain1.getAddressOf());
+    if (FAILED(swapchainresult))
+    {
+        assert(false);
 
-		if (swapchainresult == S_OK)
-		{
-			swapChain1->QueryInterface(swapChain.getAddressOf()); // convert to IDXGISwapChain2
-			break;
-		}
+        // Handle the error appropriately
+        if (swapchainresult == DXGI_ERROR_INVALID_CALL)
+        {
+            OutputDebugString(L"DXGI_ERROR_INVALID_CALL: The method call is invalid.\n");
+        }
+        else
+        {
+            // Handle other potential errors
+            OutputDebugString(L"Failed to create swap chain.\n");
+        }
 
-		DX_support_sRGB = false;
-	}
+        return;
+    }
+
+	swapChain1->QueryInterface(swapChain.getAddressOf());
 
 	// Creating the Direct2D Device
-	ComPtr<ID2D1Device> device;
-	d2dFactory->CreateDevice(dxdevice.Get(),
-		device.GetAddressOf());
+    gmpi::directx::ComPtr<::ID2D1Device> d2dDevice;
+    d2dFactory->CreateDevice(dxgiDevice.get(), d2dDevice.put());
 
 	// and context.
-	device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, d2dDeviceContext.getAddressOf());
+    d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, d2dDeviceContext.put());
 
 	// disable DPI for testing.
 	const float dpiScale = lowDpiMode ? 1.0f : getRasterizationScale();
 
-	d2dDeviceContext->SetDpi(96.0f * dpiScale, 96.0f * dpiScale);
-
-	// A little jagged on small fonts
-	//	mpRenderTarget->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE); // "The quality of rendering grayscale text is comparable to ClearType but is much faster."}
+    d2dDeviceContext->SetDpi(dpiScale * 96.f, dpiScale * 96.f);
 
 	CreateDeviceSwapChainBitmap();
 
-	DipsToWindow = makeScale(dpiScale, dpiScale);
-	WindowToDips = invert(DipsToWindow);
+ 	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
+	WindowToDips = gmpi::drawing::invert(DipsToWindow);
+
+	// if we're reverting to 8-bit colour HDR white-mult is N/A.
+	if(!DX_support_sRGB)
+		whiteMult = 1.0f;
 
 	// customisation point.
 	OnSwapChainCreated(DX_support_sRGB, whiteMult);
+}
+
+HRESULT DxDrawingFrameBase::createNativeSwapChain
+(
+	IDXGIFactory2* factory,
+	ID3D11Device* d3dDevice,
+	DXGI_SWAP_CHAIN_DESC1* desc,
+	IDXGISwapChain1** returnSwapChain
+)
+{
+	return factory->CreateSwapChainForHwnd(
+		d3dDevice,
+		getWindowHandle(),
+		desc,
+		nullptr,
+		nullptr,
+		returnSwapChain
+	);
 }
 
 void DxDrawingFrameBase::OnSwapChainCreated(bool DX_support_sRGB, float whiteMult)
@@ -1081,10 +1058,10 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 {
 //	_RPT0(_CRT_WARN, "\n\nCreateDeviceSwapChainBitmap()\n");
 
-	ComPtr<IDXGISurface> surface;
+	gmpi::directx::ComPtr<IDXGISurface> surface;
 	swapChain->GetBuffer(0, // buffer index
 		__uuidof(surface),
-		reinterpret_cast<void **>(surface.GetAddressOf()));
+		surface.put_void());
 
 	// Get the swapchain pixel format.
 	DXGI_SURFACE_DESC sufaceDesc;
@@ -1095,10 +1072,10 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 		PixelFormat(sufaceDesc.Format, D2D1_ALPHA_MODE_IGNORE)
 		);
 
-	ComPtr<ID2D1Bitmap1> bitmap;
-	d2dDeviceContext->CreateBitmapFromDxgiSurface(surface.Get(),
+	gmpi::directx::ComPtr<ID2D1Bitmap1> bitmap;
+	d2dDeviceContext->CreateBitmapFromDxgiSurface(surface.get(),
 		props2,
-		bitmap.GetAddressOf());
+		bitmap.put());
 
 	const auto bitmapsize = bitmap->GetSize();
 	swapChainSize.width = static_cast<int32_t>(bitmapsize.width);
@@ -1107,7 +1084,7 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 //_RPT2(_CRT_WARN, "%x B[%f,%f]\n", this, bitmapsize.width, bitmapsize.height);
 
 	// Now attach Device Context to swapchain bitmap.
-	d2dDeviceContext->SetTarget(bitmap.Get());
+	d2dDeviceContext->SetTarget(bitmap.get());
 
 	// Initial present() moved here in order to ensure it happens before first Timer() tries to draw anything.
 //	HRESULT hr = m_swapChain->Present(0, 0);

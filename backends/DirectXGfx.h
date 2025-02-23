@@ -131,6 +131,17 @@ namespace directx
             return obj == nullptr;
         }
 
+        template<typename I>
+        ComPtr<I> as()
+        {
+            ComPtr<I> returnInterface;
+            if (obj)
+            {
+                obj->QueryInterface(__uuidof(I), returnInterface.put_void());
+            }
+            return returnInterface;
+        }
+
     private:
         // Attach object and increment ref count.
         inline void Assign(wrappedObjT* newobj)

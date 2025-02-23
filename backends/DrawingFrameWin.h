@@ -67,6 +67,13 @@ namespace hosting
 		// override these please.
 		virtual HWND getWindowHandle() = 0;
 		virtual float getRasterizationScale() = 0; // DPI scaling
+		virtual HRESULT createNativeSwapChain
+		(
+			IDXGIFactory2* factory,
+			ID3D11Device* d3dDevice,
+			DXGI_SWAP_CHAIN_DESC1* desc,
+			IDXGISwapChain1** returnSwapChain
+		) = 0;
 
 		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 		void CreateDeviceSwapChainBitmap();
@@ -131,6 +138,14 @@ namespace hosting
 			UINT message,
 			WPARAM wParam,
 			LPARAM lParam);
+
+		HRESULT createNativeSwapChain
+		(
+			IDXGIFactory2* factory,
+			ID3D11Device* d3dDevice,
+			DXGI_SWAP_CHAIN_DESC1* desc,
+			IDXGISwapChain1** returnSwapChain
+		) override;
 
 		void OnSwapChainCreated(bool DX_support_sRGB, float whiteMult) override;
 

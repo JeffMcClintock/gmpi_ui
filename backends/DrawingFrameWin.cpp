@@ -909,6 +909,8 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
 
 		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
+
+		dxgiDevice = d3dDevice.as<::IDXGIDevice>();
 	}
 
 	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.

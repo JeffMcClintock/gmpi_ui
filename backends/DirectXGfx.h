@@ -589,9 +589,10 @@ class SolidColorBrush final : public drawing::api::ISolidColorBrush
 {
     ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
     drawing::api::IFactory* factory_ = {};
+    float whiteMult = 1.0f;
 
 public:
-    SolidColorBrush(ID2D1SolidColorBrush* b, drawing::api::IFactory *factory) : native_(b), factory_(factory) {}
+    SolidColorBrush(ID2D1SolidColorBrush* b, drawing::api::IFactory *factory, float pWhiteMult) : native_(b), factory_(factory), whiteMult(pWhiteMult){}
 
     ~SolidColorBrush()
     {
@@ -606,7 +607,16 @@ public:
 
     ReturnCode setColor(const drawing::Color* color) override
     {
-        native()->SetColor((D2D1::ColorF*) color);
+        const D2D1_COLOR_F c
+        {
+            color->r * whiteMult,
+            color->g * whiteMult,
+            color->b * whiteMult,
+            color->a
+        };
+
+        native()->SetColor(c);
+
         return ReturnCode::Ok;
     }
 
@@ -1096,10 +1106,12 @@ protected:
 
     drawing::api::IFactory* factory{};
     std::vector<drawing::Rect> clipRectStack;
+    float whiteMult = 1.0f; // cached for speed.
 
-    GraphicsContext_base(drawing::api::IFactory* pfactory, ID2D1DeviceContext* deviceContext = {}) :
+    GraphicsContext_base(drawing::api::IFactory* pfactory, ID2D1DeviceContext* deviceContext = {}, float pwhiteMult = 1.0f) :
         context_(deviceContext)
         , factory(pfactory)
+		, whiteMult(pwhiteMult)
     {
         if(context_)
             context_->AddRef();
@@ -1110,12 +1122,6 @@ protected:
         r.bottom = r.right = defaultClipBounds;
         clipRectStack.push_back(r);
     }
-
-    //// for BitmapRenderTarget which populates context in it's constructor
-    //GraphicsContext_base(drawing::api::IFactory* pfactory) :
-    //    factory(pfactory)
-    //{
-    //}
 
 public:
     virtual ~GraphicsContext_base()
@@ -1304,7 +1310,7 @@ public:
 class GraphicsContext final : public GraphicsContext_base
 {
 public:
-    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) : GraphicsContext_base(pfactory, deviceContext) {}
+    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory, float whiteMult) : GraphicsContext_base(pfactory, deviceContext, whiteMult) {}
 
     GMPI_REFCOUNT_NO_DELETE;
 };

@@ -884,14 +884,48 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		}
 	}
 
-	if (m_disable_gpu)
+	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
+	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
+	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
+
+	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
+	// Software renderer has no device memory, yet does support float pixels anyhow.
+	if (!m_disable_gpu)
+	{
+		DXGI_ADAPTER_DESC adapterDesc{};
+		dxgiAdapter->GetDesc(&adapterDesc);
+
+		const auto dedicatedRamMB = adapterDesc.DedicatedVideoMemory / 0x100000;
+
+		// Intel HD Graphics on my Kogan has 128MB.
+		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
+	}
+
+	{
+		UINT driverSrgbSupport = 0;
+		auto hr = d3dDevice->CheckFormatSupport(bestFormat, &driverSrgbSupport);
+
+		const UINT srgbflags = D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_BLENDABLE;
+
+		if (SUCCEEDED(hr))
+		{
+			DX_support_sRGB &= ((driverSrgbSupport & srgbflags) == srgbflags);
+		}
+
+		DX_support_sRGB &= D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
+	}
+
+	const bool useSoftwareRenderer = (!DX_support_sRGB && Fallback_Software == m_fallbackStrategy) || m_disable_gpu;
+	const bool useDeepColor = DX_support_sRGB || useSoftwareRenderer;
+
+	if (useSoftwareRenderer)
 	{
 		// release hardware device
 		d3dDevice = nullptr;
 		r = DXGI_ERROR_UNSUPPORTED;
 	}
 
-	// fallback to software rendering.
+	// If hardware swapchain failed or we choose to, fallback to software rendering.
 	if (DXGI_ERROR_UNSUPPORTED == r)
 	{
 		do {
@@ -913,44 +947,12 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		dxgiDevice = d3dDevice.as<::IDXGIDevice>();
 	}
 
-	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
-	// Software renderer has no device memory, yet does support float pixels anyhow.
-	if (!m_disable_gpu)
-	{
-		DXGI_ADAPTER_DESC adapterDesc{};
-		dxgiAdapter->GetDesc(&adapterDesc);
-
-		const auto dedicatedRamMB = adapterDesc.DedicatedVideoMemory / 0x100000;
-
-		// Intel HD Graphics on my Kogan has 128MB.
-		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
-	}
-
-
-	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
-	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
-	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
-
-	{
-		UINT driverSrgbSupport = 0;
-		auto hr = d3dDevice->CheckFormatSupport(bestFormat, &driverSrgbSupport);
-
-		const UINT srgbflags = D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_BLENDABLE;
-
-		if (SUCCEEDED(hr))
-		{
-			DX_support_sRGB &= ((driverSrgbSupport & srgbflags) == srgbflags);
-		}
-	}
-
-	DX_support_sRGB &= D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
-
     // Get the DXGI factory.
     gmpi::directx::ComPtr<::IDXGIFactory2> dxgiFactory;
     dxgiAdapter->GetParent(__uuidof(dxgiFactory), dxgiFactory.put_void());
 
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc{};
-    swapChainDesc.Format = DX_support_sRGB ? bestFormat : fallbackFormat;
+    swapChainDesc.Format = useDeepColor ? bestFormat : fallbackFormat;
 	swapChainDesc.SampleDesc.Count = 1; // Don't use multi-sampling.
 	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	swapChainDesc.BufferCount = 2;
@@ -1014,11 +1016,11 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	WindowToDips = gmpi::drawing::invert(DipsToWindow);
 
 	// if we're reverting to 8-bit colour HDR white-mult is N/A.
-	if(!DX_support_sRGB)
+	if(!useDeepColor)
 		whiteMult = 1.0f;
 
 	// customisation point.
-	OnSwapChainCreated(DX_support_sRGB, whiteMult);
+	OnSwapChainCreated(useDeepColor, whiteMult);
 }
 
 HRESULT DxDrawingFrameBase::createNativeSwapChain
@@ -1039,16 +1041,13 @@ HRESULT DxDrawingFrameBase::createNativeSwapChain
 	);
 }
 
-void DxDrawingFrameBase::OnSwapChainCreated(bool DX_support_sRGB, float whiteMult)
+void DxDrawingFrameBase::OnSwapChainCreated(bool useDeepColor, float whiteMult)
 {
-	DrawingFactory.setSrgbSupport(DX_support_sRGB, whiteMult);
+	DrawingFactory.setSrgbSupport(useDeepColor, whiteMult);
 
-//	drawing::api::IBitmapPixels::PixelFormat pixelFormat;
-//	DrawingFactory.getPlatformPixelFormat(&pixelFormat);
-
-	if (DX_support_sRGB) //pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
+	if (useDeepColor)
 	{
-		context.reset(new gmpi::directx::GraphicsContext(d2dDeviceContext, &DrawingFactory));
+		context.reset(new gmpi::directx::GraphicsContext(d2dDeviceContext, &DrawingFactory, whiteMult));
 	}
 	else
 	{

@@ -923,13 +923,21 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 		{
 			*returnSolidColorBrush = nullptr;
 
+			const D2D1_COLOR_F c
+			{
+				color->r * whiteMult,
+				color->g * whiteMult,
+				color->b * whiteMult,
+				color->a
+			};
+
 			ID2D1SolidColorBrush* b = nullptr;
-			HRESULT hr = context_->CreateSolidColorBrush(*(D2D1_COLOR_F*)color, &b);
+			HRESULT hr = context_->CreateSolidColorBrush(c, &b);
 
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.attach(new SolidColorBrush(b, factory));
+				b2.attach(new SolidColorBrush(b, factory, whiteMult));
 
 				b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 			}
@@ -941,16 +949,26 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 		{
 			*returnGradientstopCollection = nullptr;
 
-			HRESULT hr = 0;
+			std::vector<D2D1_GRADIENT_STOP> stops(gradientstopsCount);
+			for (uint32_t i = 0; i < gradientstopsCount; ++i)
+			{
+				stops[i].color = D2D1::ColorF(
+					gradientstops[i].color.r * whiteMult,
+					gradientstops[i].color.g * whiteMult,
+					gradientstops[i].color.b * whiteMult,
+					gradientstops[i].color.a
+				);
+				stops[i].position = gradientstops[i].position;
+			}
 
 			ID2D1GradientStopCollection1* native2 = nullptr;
 
-			hr = context_->CreateGradientStopCollection(
-				(D2D1_GRADIENT_STOP*)gradientstops,
-				gradientstopsCount,
+			HRESULT hr = context_->CreateGradientStopCollection(
+				stops.data(),
+				static_cast<UINT32>(stops.size()),
 				D2D1_COLOR_SPACE_SRGB,
 				D2D1_COLOR_SPACE_SRGB,
-				D2D1_BUFFER_PRECISION_8BPC_UNORM_SRGB, // Buffer precision. D2D1_BUFFER_PRECISION_16BPC_FLOAT seems the same
+				D2D1_BUFFER_PRECISION_16BPC_FLOAT, // the same in 8-bit, correct in HDR
 				D2D1_EXTEND_MODE_CLAMP,
 				D2D1_COLOR_INTERPOLATION_MODE_STRAIGHT,
 				&native2);

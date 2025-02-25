@@ -52,6 +52,8 @@ namespace hosting
 	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
 	struct tempSharedD2DBase
 	{
+		enum { FallBack_8bit, Fallback_Software };
+
 		gmpi::drawing::Matrix3x2 viewTransform;
 		gmpi::drawing::Matrix3x2 DipsToWindow;
 		gmpi::drawing::Matrix3x2 WindowToDips;
@@ -60,6 +62,7 @@ namespace hosting
 		directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
 		gmpi::drawing::SizeL swapChainSize = {};
 		inline static bool m_disable_gpu = false;
+		inline static int m_fallbackStrategy = Fallback_Software;
 		bool reentrant = false;
 		bool lowDpiMode = {};
 		bool firstPresent = false;
@@ -77,7 +80,7 @@ namespace hosting
 
 		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 		void CreateDeviceSwapChainBitmap();
-		virtual void OnSwapChainCreated(bool DX_support_sRGB, float whiteMult) = 0;
+		virtual void OnSwapChainCreated(bool useDeepColor, float whiteMult) = 0;
 
 		// to help re-create device when lost.
 		void ReleaseDevice()
@@ -147,7 +150,7 @@ namespace hosting
 			IDXGISwapChain1** returnSwapChain
 		) override;
 
-		void OnSwapChainCreated(bool DX_support_sRGB, float whiteMult) override;
+		void OnSwapChainCreated(bool useDeepColor, float whiteMult) override;
 
 		void ResizeSwapChainBitmap()
 		{

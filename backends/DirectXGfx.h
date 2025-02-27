@@ -362,6 +362,7 @@ public:
         if (!alphaPremultiplied)
             premultiplyAlpha();
 
+        // !! mayby just delete old native bitmap and let Bitmap class automatically recreate from WIX bitmap on demand
         if (nativeBitmap_)
         {
 #if 1
@@ -503,7 +504,6 @@ public:
 
     void applyPreMultiplyCorrection();
 
-//	ReturnCode getFactory(drawing::api::IFactory** pfactory) override;
     ReturnCode getFactory(drawing::api::IFactory** returnFactory) override;
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmap);
@@ -1012,7 +1012,10 @@ public:
 
     gmpi::directx::DxFactoryInfo& getInfo() { return info; }
 
-    // for diagnostics only.
+    auto getWicFactory()
+	{
+		return info.pIWICFactory;
+	}
     auto getDirectWriteFactory()
     {
         return info.writeFactory;
@@ -1074,8 +1077,6 @@ public:
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
-    IWICBitmap* CreateDiBitmapFromNative(ID2D1Bitmap* D2D_Bitmap);
-
     ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) override;
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override {
@@ -1102,7 +1103,7 @@ public:
 class GraphicsContext_base : public drawing::api::IDeviceContext
 {
 protected:
-    ID2D1DeviceContext* context_{};
+    gmpi::directx::ComPtr<ID2D1DeviceContext> context_;
 
     drawing::api::IFactory* factory{};
     std::vector<drawing::Rect> clipRectStack;
@@ -1113,9 +1114,6 @@ protected:
         , factory(pfactory)
 		, whiteMult(pwhiteMult)
     {
-        if(context_)
-            context_->AddRef();
-
         const float defaultClipBounds = 100000.0f;
         drawing::Rect r;
         r.top = r.left = -defaultClipBounds;
@@ -1124,11 +1122,7 @@ protected:
     }
 
 public:
-    virtual ~GraphicsContext_base()
-    {
-        if(context_)
-            context_->Release();
-    }
+    virtual ~GraphicsContext_base(){}
 
     ID2D1DeviceContext* native()
     {
@@ -1315,27 +1309,25 @@ public:
     GMPI_REFCOUNT_NO_DELETE;
 };
 
+// helper function
+void createBitmapRenderTarget(
+    UINT width
+    , UINT height
+    , bool isCpuReadable
+    , ID2D1DeviceContext* outerDeviceContext
+    , ID2D1Factory1* d2dFactory
+    , IWICImagingFactory* wicFactory
+    , gmpi::directx::ComPtr<IWICBitmap>& returnWicBitmap
+    , gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
+);
+
 class BitmapRenderTarget final : public GraphicsContext_base // emulated by careful layout: public IBitmapRenderTarget
 {
-    ID2D1BitmapRenderTarget* nativeBitmapRenderTarget = {};
+    gmpi::directx::ComPtr<IWICBitmap> wicBitmap;
 
 public:
-    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, drawing::api::IFactory* pfactory) :
-        GraphicsContext_base(pfactory)
-    {
-        /* auto hr = */ g->native()->CreateCompatibleRenderTarget(*(D2D1_SIZE_F*)desiredSize, &nativeBitmapRenderTarget);
-        nativeBitmapRenderTarget->QueryInterface(IID_ID2D1DeviceContext, (void**)&context_);
-
-        clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
-    }
-
-    ~BitmapRenderTarget()
-    {
-        if(nativeBitmapRenderTarget)
-        {
-            nativeBitmapRenderTarget->Release();
-        }
-    }
+    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, drawing::api::IFactory* pfactory);
+    ~BitmapRenderTarget(){}
 
     // HACK, to be ABI compatible with IBitmapRenderTarget we need this virtual function,
     // and it needs to be in the vtable right after all virtual functions of GraphicsContext

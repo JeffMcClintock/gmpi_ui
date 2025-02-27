@@ -651,6 +651,148 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			return gmpi::ReturnCode::Ok;
 		}
 
+		ID2D1Bitmap* bitmapToNative(
+			ID2D1DeviceContext* nativeContext
+			, gmpi::directx::ComPtr<ID2D1Bitmap>& nativeBitmap		// GPU bitmap, created from WIC bitmap or a GPU bitmap render target..
+			, gmpi::directx::ComPtr<IWICBitmap>& diBitmap			// WIC bitmap, usually loaded from disk, or created by CPU.
+			, float whiteMult										// HDR white level scaling.
+			, ID2D1Factory1* direct2dFactory
+			, IWICImagingFactory* wicFactory
+		)
+		{
+			if (nativeBitmap)
+			{
+				return nativeBitmap.get();
+			}
+
+			if (!diBitmap)
+				return nullptr;
+
+			if (whiteMult == 1.0f)
+			{
+				try
+				{
+					// Convert to D2D format and cache.
+					auto hr = nativeContext->CreateBitmapFromWicBitmap(
+						diBitmap,
+						nativeBitmap.put()
+					);
+
+					assert(hr == 0); // Common failure is bitmap too big for D2D.
+				}
+				catch (...)
+				{
+					_RPT0(0, "Bitmap::GetNativeBitmap() - CreateBitmapFromWicBitmap() failed. Bitmap too big for D2D?\n");
+				}
+			}
+			else // HDR. produces corrupt bitmaps. Not sure why.
+			{
+				nativeContext->Flush(); // has an effect on corruption. not sure where to put this.
+				// https://walbourn.github.io/windows-imaging-component-and-windows-8/
+
+				gmpi::drawing::SizeU bitmapSize{};
+				diBitmap->GetSize(&bitmapSize.width, &bitmapSize.height);
+
+				// Create a WIC bitmap to draw on.
+				gmpi::directx::ComPtr<IWICBitmap> diBitmap_HDR_;
+				HRESULT hr = wicFactory->CreateBitmap(
+					static_cast<UINT>(bitmapSize.width)
+					, static_cast<UINT>(bitmapSize.height)
+					, GUID_WICPixelFormat64bppPRGBAHalf
+					, WICBitmapNoCache
+					, diBitmap_HDR_.put()
+				);
+
+				if (!SUCCEEDED(hr))
+					return {};
+
+				// Create a WIC render target.
+				D2D1_RENDER_TARGET_PROPERTIES renderTargetProperties = D2D1::RenderTargetProperties(
+					D2D1_RENDER_TARGET_TYPE_DEFAULT,
+					D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN)
+					//						D2D1::PixelFormat(DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED)
+				);
+
+				gmpi::directx::ComPtr<ID2D1RenderTarget> pWICRenderTarget;
+				hr = direct2dFactory->CreateWicBitmapRenderTarget(
+					diBitmap_HDR_,
+					renderTargetProperties,
+					pWICRenderTarget.put()
+				);
+
+				// Create a device context from the WIC render target.
+				auto pDeviceContext = pWICRenderTarget.as<ID2D1DeviceContext>();
+
+				if (!SUCCEEDED(hr))
+					return {};
+
+				// Convert original image to D2D format
+				gmpi::directx::ComPtr<ID2D1Bitmap> pSourceBitmap;
+				hr = pDeviceContext->CreateBitmapFromWicBitmap(
+					diBitmap,
+					pSourceBitmap.getAddressOf()
+				);
+
+				// create whitescale effect
+				// White level scale is used to multiply the color values in the image; this allows the user
+				// to adjust the brightness of the image on an HDR display.
+				gmpi::directx::ComPtr<ID2D1Effect> m_whiteScaleEffect;
+				pDeviceContext->CreateEffect(CLSID_D2D1ColorMatrix, m_whiteScaleEffect.getAddressOf());
+
+				// SDR white level scaling is performing by multiplying RGB color values in linear gamma.
+				// We implement this with a Direct2D matrix effect.
+				D2D1_MATRIX_5X4_F matrix = D2D1::Matrix5x4F(
+					whiteMult, 0, 0, 0,  // [R] Multiply each color channel
+					0, whiteMult, 0, 0,  // [G] by the scale factor in 
+					0, 0, whiteMult, 0,  // [B] linear gamma space.
+					0, 0, 0, 1,		 // [A] Preserve alpha values.
+					0, 0, 0, 0);	 //     No offset.
+
+				m_whiteScaleEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, matrix);
+
+				// increase the bit-depth of the filter, else it does a shitty 8-bit conversion. Which results in serious degredation of the image.
+				if (nativeContext->IsBufferPrecisionSupported(D2D1_BUFFER_PRECISION_16BPC_FLOAT))
+				{
+					auto hr = m_whiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_16BPC_FLOAT);
+				}
+				else if (nativeContext->IsBufferPrecisionSupported(D2D1_BUFFER_PRECISION_32BPC_FLOAT))
+				{
+					auto hr = m_whiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_32BPC_FLOAT);
+				}
+
+				if (!SUCCEEDED(hr))
+					return {};
+
+				// Set the effect input.
+				m_whiteScaleEffect->SetInput(0, pSourceBitmap.get());
+
+				// Begin drawing on the device context.
+				pDeviceContext->BeginDraw();
+
+				// Draw the effect onto the device context.
+				pDeviceContext->DrawImage(m_whiteScaleEffect.get());
+
+				// Flush the device context to ensure all drawing commands are completed. testing
+				hr = pDeviceContext->Flush();
+				// End drawing.
+				hr = pDeviceContext->EndDraw();
+
+				nativeContext->Flush(); // has an effect on corruption. not sure where to put this.
+
+				if (!SUCCEEDED(hr))
+					return {};
+
+				hr = nativeContext->CreateBitmapFromWicBitmap(
+					diBitmap_HDR_,
+					nativeBitmap.put()
+				);
+			}
+
+			nativeContext->Flush(); // has an effect on HDR corruption. not sure where to put this.
+
+			return nativeBitmap.get();
+		}
+
 		gmpi::ReturnCode Bitmap::lockPixels(gmpi::drawing::api::IBitmapPixels** returnInterface, int32_t flags)
 		{
 			*returnInterface = nullptr;
@@ -716,66 +858,24 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 
 		ID2D1Bitmap* Bitmap::getNativeBitmap(ID2D1DeviceContext* nativeContext)
 		{
-			// Check for loss of surface.
-			if (nativeContext != nativeContext_ && diBitmap_ != nullptr)
+			// Check for loss of surface. If so invalidate device-bitmap
+			if (nativeContext != nativeContext_)
 			{
-				if (nativeBitmap_)
-				{
-					nativeBitmap_->Release();
-					nativeBitmap_ = nullptr;
-				}
-
 				nativeContext_ = nativeContext;
-#if 0 //defined(_DEBUG)
-				// moved failure to cheCking error code on CreateBitmapFromWicBitmap()
-				{
-					auto maxSize = nativeContext_->GetMaximumBitmapSize();
-					UINT imageW, imageH;
-					diBitmap_->GetSize(&imageW, &imageH);
-
-					if (imageW > maxSize || imageH > maxSize)
-					{
-						assert(false); // IMAGE TOO BIG!
-						return nullptr;
-					}
-				}
-#endif
-				drawing::api::IBitmapPixels::PixelFormat pixelFormat;
-				factory->getPlatformPixelFormat(&pixelFormat);
-
-				D2D1_BITMAP_PROPERTIES props;
-				props.dpiX = props.dpiY = 96;
-				if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
-				{
-					props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB; // no good with DXGI_FORMAT_R16G16B16A16_FLOAT: nativeContext_->GetPixelFormat().format;
-				}
-				else
-				{
-					props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM; // no good with DXGI_FORMAT_R16G16B16A16_FLOAT: nativeContext_->GetPixelFormat().format;
-				}
-				props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-
-				try
-				{
-					// Convert to D2D format and cache.
-					auto hr = nativeContext_->CreateBitmapFromWicBitmap(
-						diBitmap_,
-						&props, //NULL,
-						&nativeBitmap_
-					);
-
-					if (hr) // Common failure is bitmap too big for D2D.
-					{
-						return nullptr;
-					}
-				}
-				catch (...)
-				{
-					return nullptr;
-				}
+				nativeBitmap_ = nullptr;
+				assert(diBitmap_); // Is this a GPU-only bitmap?
 			}
 
-			return nativeBitmap_;
+			auto& lfactory = static_cast<Factory_base&>(*factory);
+
+			return bitmapToNative(
+				nativeContext
+				, nativeBitmap_
+				, diBitmap_
+				, lfactory.getWhiteMult()
+				, lfactory.getFactory()
+				, lfactory.getWicFactory()
+			);
 		}
 
 		Bitmap::Bitmap(drawing::api::IFactory* pfactory, IWICBitmap* diBitmap) :

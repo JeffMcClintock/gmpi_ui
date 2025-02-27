@@ -460,12 +460,22 @@ public:
     GMPI_REFCOUNT;
 };
 
+// helper function.
+ID2D1Bitmap* bitmapToNative(
+    ID2D1DeviceContext* nativeContext
+    , gmpi::directx::ComPtr<ID2D1Bitmap>& nativeBitmap		// GPU bitmap, created from WIC bitmap or a GPU bitmap render target..
+    , gmpi::directx::ComPtr<IWICBitmap>& diBitmap			// WIC bitmap, usually loaded from disk, or created by CPU.
+    , float whiteMult										// HDR white level scaling.
+    , ID2D1Factory1* direct2dFactory
+    , IWICImagingFactory* wicFactory
+);
+
 class Bitmap final : public drawing::api::IBitmap
 {
 public:
-    ID2D1Bitmap* nativeBitmap_;
+    gmpi::directx::ComPtr<ID2D1Bitmap> nativeBitmap_;
+    gmpi::directx::ComPtr<IWICBitmap> diBitmap_;
     ID2D1DeviceContext* nativeContext_;
-    IWICBitmap* diBitmap_ = {};
     drawing::api::IFactory* factory;
 #ifdef _DEBUG
     std::string debugFilename;
@@ -477,20 +487,9 @@ public:
         , nativeContext_(nativeContext)
         , factory(pfactory)
     {
-        nativeBitmap->AddRef();
     }
 
-    ~Bitmap()
-    {
-        if (nativeBitmap_)
-        {
-            nativeBitmap_->Release();
-        }
-        if (diBitmap_)
-        {
-            diBitmap_->Release();
-        }
-    }
+    ~Bitmap(){}
 
     ID2D1Bitmap* getNativeBitmap(ID2D1DeviceContext* nativeContext);
 
@@ -1024,6 +1023,11 @@ public:
     {
         return info.m_pDirect2dFactory;
     }
+
+	auto getWhiteMult()
+	{
+		return info.whiteMult;
+	}
 
     void setSrgbSupport(bool s, float whiteMult)
     {

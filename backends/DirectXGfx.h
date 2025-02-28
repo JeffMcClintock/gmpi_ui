@@ -465,7 +465,6 @@ ID2D1Bitmap* bitmapToNative(
     ID2D1DeviceContext* nativeContext
     , gmpi::directx::ComPtr<ID2D1Bitmap>& nativeBitmap		// GPU bitmap, created from WIC bitmap or a GPU bitmap render target..
     , gmpi::directx::ComPtr<IWICBitmap>& diBitmap			// WIC bitmap, usually loaded from disk, or created by CPU.
-    , float whiteMult										// HDR white level scaling.
     , ID2D1Factory1* direct2dFactory
     , IWICImagingFactory* wicFactory
 );
@@ -588,10 +587,9 @@ class SolidColorBrush final : public drawing::api::ISolidColorBrush
 {
     ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
     drawing::api::IFactory* factory_ = {};
-    float whiteMult = 1.0f;
 
 public:
-    SolidColorBrush(ID2D1SolidColorBrush* b, drawing::api::IFactory *factory, float pWhiteMult) : native_(b), factory_(factory), whiteMult(pWhiteMult){}
+    SolidColorBrush(ID2D1SolidColorBrush* b, drawing::api::IFactory *factory) : native_(b), factory_(factory){}
 
     ~SolidColorBrush()
     {
@@ -606,16 +604,7 @@ public:
 
     ReturnCode setColor(const drawing::Color* color) override
     {
-        const D2D1_COLOR_F c
-        {
-            color->r * whiteMult,
-            color->g * whiteMult,
-            color->b * whiteMult,
-            color->a
-        };
-
-        native()->SetColor(c);
-
+        native()->SetColor(*reinterpret_cast<const D2D1_COLOR_F*>(color));
         return ReturnCode::Ok;
     }
 
@@ -995,9 +984,6 @@ struct DxFactoryInfo
     std::vector<std::string> supportedFontFamilies;
     std::map<std::wstring, std::wstring> GdiFontConversions;
     bool DX_support_sRGB = true;
-#if	ENABLE_HDR_SUPPORT
-    float whiteMult = 1.0f;
-#endif
 };
 
 class Factory_base : public drawing::api::IFactory
@@ -1024,17 +1010,9 @@ public:
         return info.m_pDirect2dFactory;
     }
 
-	auto getWhiteMult()
-	{
-		return info.whiteMult;
-	}
-
-    void setSrgbSupport(bool s, float whiteMult)
+    void setSrgbSupport(bool s)
     {
         info.DX_support_sRGB = s;
-#if	ENABLE_HDR_SUPPORT
-        info.whiteMult = whiteMult;
-#endif
     }
             
     ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
@@ -1111,12 +1089,10 @@ protected:
 
     drawing::api::IFactory* factory{};
     std::vector<drawing::Rect> clipRectStack;
-    float whiteMult = 1.0f; // cached for speed.
 
-    GraphicsContext_base(drawing::api::IFactory* pfactory, ID2D1DeviceContext* deviceContext = {}, float pwhiteMult = 1.0f) :
+    GraphicsContext_base(drawing::api::IFactory* pfactory, ID2D1DeviceContext* deviceContext = {}) :
         context_(deviceContext)
         , factory(pfactory)
-		, whiteMult(pwhiteMult)
     {
         const float defaultClipBounds = 100000.0f;
         drawing::Rect r;
@@ -1308,7 +1284,7 @@ public:
 class GraphicsContext final : public GraphicsContext_base
 {
 public:
-    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory, float whiteMult) : GraphicsContext_base(pfactory, deviceContext, whiteMult) {}
+    GraphicsContext(ID2D1DeviceContext* deviceContext, drawing::api::IFactory* pfactory) : GraphicsContext_base(pfactory, deviceContext) {}
 
     GMPI_REFCOUNT_NO_DELETE;
 };

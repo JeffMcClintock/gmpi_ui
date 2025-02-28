@@ -58,8 +58,14 @@ namespace hosting
 		gmpi::drawing::Matrix3x2 DipsToWindow;
 		gmpi::drawing::Matrix3x2 WindowToDips;
 
+		// HDR support. Above swapChain so these get released first.
+		gmpi::directx::ComPtr<ID2D1Effect> hdrWhiteScaleEffect;
+		gmpi::directx::ComPtr<ID2D1BitmapRenderTarget> hdrRenderTarget;
+		gmpi::directx::ComPtr<ID2D1Bitmap> hdrBitmap;
+
 		directx::ComPtr<::IDXGISwapChain2> swapChain;
 		directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
+
 		gmpi::drawing::SizeL swapChainSize = {};
 		inline static bool m_disable_gpu = false;
 		inline static int m_fallbackStrategy = Fallback_Software;
@@ -80,11 +86,18 @@ namespace hosting
 
 		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 		void CreateDeviceSwapChainBitmap();
-		virtual void OnSwapChainCreated(bool useDeepColor, float whiteMult) = 0;
+		virtual void OnSwapChainCreated(bool useDeepColor) = 0;
 
 		// to help re-create device when lost.
 		void ReleaseDevice()
 		{
+			if (hdrWhiteScaleEffect)
+			{
+				hdrWhiteScaleEffect->SetInput(0, nullptr);
+				hdrWhiteScaleEffect = nullptr;
+			}
+			hdrBitmap = nullptr;
+			hdrRenderTarget = nullptr;
 			d2dDeviceContext = nullptr;
 			swapChain = nullptr;
 		}
@@ -102,7 +115,7 @@ namespace hosting
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 		UpdateRegionWinGdi updateRegion_native;
-		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
+//		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
 
 	protected:
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
@@ -150,7 +163,7 @@ namespace hosting
 			IDXGISwapChain1** returnSwapChain
 		) override;
 
-		void OnSwapChainCreated(bool useDeepColor, float whiteMult) override;
+		void OnSwapChainCreated(bool useDeepColor) override;
 
 		void ResizeSwapChainBitmap()
 		{

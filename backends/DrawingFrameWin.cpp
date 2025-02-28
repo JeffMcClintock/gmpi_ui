@@ -618,8 +618,38 @@ void DxDrawingFrameBase::OnPaint()
 			CreateSwapPanel(DrawingFactory.getD2dFactory());
 		}
 
+		gmpi::directx::ComPtr <ID2D1DeviceContext> deviceContext;
+
+		gmpi::directx::ComPtr<ID2D1Bitmap> pSourceBitmap;
+		if (hdrWhiteScaleEffect) // draw onto intermediate buffer, then pass that through an effect to scale white.
 		{
-			Graphics graphics(context.get());
+			d2dDeviceContext->BeginDraw();
+			deviceContext = hdrRenderTarget.as<ID2D1DeviceContext>();
+		}
+		else // draw directly on the swapchain bitmap.
+		{
+			deviceContext = d2dDeviceContext;
+		}
+
+		gmpi::directx::GraphicsContext_base* lcontext{};
+
+		gmpi::directx::GraphicsContext context1(deviceContext.get(), &DrawingFactory);
+		gmpi::directx::GraphicsContext_Win7 context2(deviceContext.get(), &DrawingFactory);
+
+		drawing::api::IBitmapPixels::PixelFormat returnPixelFormat{};
+		DrawingFactory.getPlatformPixelFormat(&returnPixelFormat);
+
+		if (drawing::api::IBitmapPixels::PixelFormat::kBGRA_SRGB == returnPixelFormat)
+		{
+			lcontext = &context1;
+		}
+		else
+		{
+			lcontext = &context2;
+		}
+
+		{
+			Graphics graphics(lcontext);// context.get());
 
 			graphics.beginDraw();
 			graphics.setTransform(viewTransform);
@@ -639,7 +669,7 @@ void DxDrawingFrameBase::OnPaint()
 				graphics.pushAxisAlignedClip(temp);
 
 				if (drawingClient)
-					drawingClient->render(context.get());
+					drawingClient->render(lcontext);// context.get());
 
 				graphics.popAxisAlignedClip();
 			}
@@ -678,6 +708,16 @@ void DxDrawingFrameBase::OnPaint()
 			}
 
 			/*const auto r =*/ graphics.endDraw();
+		}
+
+		// draw the filtered intermediate buffer onto the swapchain.
+		if (hdrWhiteScaleEffect)
+		{
+			// Draw the effect output to the screen
+			const D2D1_RECT_F destRect = D2D1::RectF(0, 0, static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
+			d2dDeviceContext->DrawImage(hdrWhiteScaleEffect.get());
+
+			d2dDeviceContext->EndDraw();
 		}
 
 		// Present the backbuffer (if it has some new content)
@@ -1019,8 +1059,45 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	if(!useDeepColor)
 		whiteMult = 1.0f;
 
+	// create a filter to adjust the white level for HDR displays.
+	hdrWhiteScaleEffect = nullptr;
+	if (whiteMult != 1.0f)
+	{
+		// create whitescale effect
+		// White level scale is used to multiply the color values in the image; this allows the user
+		// to adjust the brightness of the image on an HDR display.
+		d2dDeviceContext->CreateEffect(CLSID_D2D1ColorMatrix, hdrWhiteScaleEffect.put());
+
+		// SDR white level scaling is performing by multiplying RGB color values in linear gamma.
+		// We implement this with a Direct2D matrix effect.
+		D2D1_MATRIX_5X4_F matrix = D2D1::Matrix5x4F(
+			whiteMult, 0, 0, 0,  // [R] Multiply each color channel
+			0, whiteMult, 0, 0,  // [G] by the scale factor in 
+			0, 0, whiteMult, 0,  // [B] linear gamma space.
+			0, 0, 0, 1,		 // [A] Preserve alpha values.
+			0, 0, 0, 0);	 //     No offset.
+
+		hdrWhiteScaleEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, matrix);
+
+		// increase the bit-depth of the filter, else it does a shitty 8-bit conversion. Which results in serious degredation of the image.
+		if (d2dDeviceContext->IsBufferPrecisionSupported(D2D1_BUFFER_PRECISION_16BPC_FLOAT))
+		{
+			auto hr = hdrWhiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_16BPC_FLOAT);
+		}
+
+		// create additional buffer to draw on
+		//DXGI_SWAP_CHAIN_DESC desc;
+		//swapChain1->GetDesc(&desc);
+
+		const D2D1_SIZE_F desiredSize = D2D1::SizeF(static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
+
+		d2dDeviceContext->CreateCompatibleRenderTarget(desiredSize, hdrRenderTarget.put());
+		hdrRenderTarget->GetBitmap(hdrBitmap.put());
+		hdrWhiteScaleEffect->SetInput(0, hdrBitmap.get());
+	}
+
 	// customisation point.
-	OnSwapChainCreated(useDeepColor, whiteMult);
+	OnSwapChainCreated(useDeepColor);
 }
 
 HRESULT DxDrawingFrameBase::createNativeSwapChain
@@ -1041,18 +1118,9 @@ HRESULT DxDrawingFrameBase::createNativeSwapChain
 	);
 }
 
-void DxDrawingFrameBase::OnSwapChainCreated(bool useDeepColor, float whiteMult)
+void DxDrawingFrameBase::OnSwapChainCreated(bool useDeepColor)
 {
-	DrawingFactory.setSrgbSupport(useDeepColor, whiteMult);
-
-	if (useDeepColor)
-	{
-		context.reset(new gmpi::directx::GraphicsContext(d2dDeviceContext, &DrawingFactory, whiteMult));
-	}
-	else
-	{
-		context.reset(new gmpi::directx::GraphicsContext_Win7(d2dDeviceContext, &DrawingFactory));
-	}
+	DrawingFactory.setSrgbSupport(useDeepColor);
 }
 
 void tempSharedD2DBase::CreateDeviceSwapChainBitmap()

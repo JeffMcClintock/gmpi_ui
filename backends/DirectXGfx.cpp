@@ -663,26 +663,38 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			{
 				try
 				{
+					// images loaded from disk or created on CPU are 8-bit.
+					// Images from createCompatibleREnderTarget might be 16-bit. ref: 'use8bit'
+					WICPixelFormatGUID pixelFormat{};
+					diBitmap->GetPixelFormat(&pixelFormat);
+
+					WICPixelFormatGUID formatGuid;
+					diBitmap->GetPixelFormat(&formatGuid);
+
+					HRESULT hr{};
+
 					D2D1_BITMAP_PROPERTIES props;
 					props.dpiX = props.dpiY = 96;
-//					if (factory->getPlatformPixelFormat() == GmpiDrawing_API::IMpBitmapPixels::kBGRA_SRGB) //  graphics->SupportSRGB())
+					if (std::memcmp(&formatGuid, &GUID_WICPixelFormat32bppPBGRA, sizeof(formatGuid)) == 0)
 					{
-						// we must specify sRGB format to get correct gamma correction. Otherwise D2D will assume linear space.
 						props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+						props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+						// window-7 more uses DXGI_FORMAT_B8G8R8A8_UNORM, not implemented yet.
+
+						hr = nativeContext->CreateBitmapFromWicBitmap(
+							diBitmap,
+							&props,
+							nativeBitmap.put()
+						);
 					}
-					//else
-					//{
-					//	props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-					//}
-					props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-
-
-					// Convert to D2D format and cache.
-					auto hr = nativeContext->CreateBitmapFromWicBitmap(
-						diBitmap,
-						&props,
-						nativeBitmap.put()
-					);
+					else
+					{
+						// half-float pixels. default format should be fine.
+						hr = nativeContext->CreateBitmapFromWicBitmap(
+							diBitmap,
+							nativeBitmap.put()
+						);
+					}
 
 					assert(hr == 0); // Common failure is bitmap too big for D2D.
 				}
@@ -864,7 +876,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			if (isCpuReadable) // TODO !!! wrong gamma.
 			{
 				// Create a WIC render target. Modifyable by CPU (lock pixels). More expensive.
-				const bool use8bit = false;
+				const bool use8bit = true; // note 16 bit giving completely weird results, 8-bit giving wrong gamma but consistent w SE 1.5.
 
 				// Create a WIC bitmap to draw on.
 				[[maybe_unused]] auto hr =

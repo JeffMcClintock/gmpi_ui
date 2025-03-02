@@ -459,7 +459,7 @@ namespace gmpi
 		{
 			IWICBitmap* wicBitmap{};
 			auto hr = info.pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
-	// nuh	auto hr = pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppBGRA, WICBitmapCacheOnLoad, &wicBitmap);
+		// nuh auto hr =   pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppBGRA, WICBitmapCacheOnLoad, &wicBitmap);
 
 			if (hr == 0)
 			{
@@ -659,27 +659,37 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			, IWICImagingFactory* wicFactory
 		)
 		{
-			if (nativeBitmap)
+			if (!nativeBitmap && diBitmap)
 			{
-				return nativeBitmap.get();
-			}
+				try
+				{
+					D2D1_BITMAP_PROPERTIES props;
+					props.dpiX = props.dpiY = 96;
+//					if (factory->getPlatformPixelFormat() == GmpiDrawing_API::IMpBitmapPixels::kBGRA_SRGB) //  graphics->SupportSRGB())
+					{
+						// we must specify sRGB format to get correct gamma correction. Otherwise D2D will assume linear space.
+						props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+					}
+					//else
+					//{
+					//	props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+					//}
+					props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
 
-			if (!diBitmap)
-				return nullptr;
 
-			try
-			{
-				// Convert to D2D format and cache.
-				auto hr = nativeContext->CreateBitmapFromWicBitmap(
-					diBitmap,
-					nativeBitmap.put()
-				);
+					// Convert to D2D format and cache.
+					auto hr = nativeContext->CreateBitmapFromWicBitmap(
+						diBitmap,
+						&props,
+						nativeBitmap.put()
+					);
 
-				assert(hr == 0); // Common failure is bitmap too big for D2D.
-			}
-			catch (...)
-			{
-				_RPT0(0, "Bitmap::GetNativeBitmap() - CreateBitmapFromWicBitmap() failed. Bitmap too big for D2D?\n");
+					assert(hr == 0); // Common failure is bitmap too big for D2D.
+				}
+				catch (...)
+				{
+					_RPT0(0, "Bitmap::GetNativeBitmap() - CreateBitmapFromWicBitmap() failed. Bitmap too big for D2D?\n");
+				}
 			}
 
 			return nativeBitmap.get();
@@ -689,59 +699,12 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 		{
 			*returnInterface = nullptr;
 
-			// If image was not loaded from a WicBitmap (i.e. was created from device context), then need to write it to WICBitmap first.
-			if (diBitmap_ == nullptr)
+			// GPU-only bitpmaps can't be locked.
+			if (!diBitmap_)
 			{
-				if (!nativeBitmap_)
-				{
-					return gmpi::ReturnCode::Fail;
-				}
-
-				return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented fully.
-			}
-#if 0
-				const auto size = nativeBitmap_->GetPixelSize();
-				D2D1_BITMAP_PROPERTIES1 props = {};
-				props.pixelFormat = nativeBitmap_->GetPixelFormat();
-				nativeBitmap_->GetDpi(&props.dpiX, &props.dpiY);
-				props.bitmapOptions = D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-
-				HRESULT res;
-				ID2D1Bitmap1* tempBitmap = {};
-				res = nativeContext_->CreateBitmap(size, nullptr, 0, props, &tempBitmap);
-
-				D2D1_POINT_2U destPoint = {};
-				D2D1_RECT_U srcRect = {0,0,size.width, size.height};
-				res = tempBitmap->CopyFromBitmap(&destPoint, nativeBitmap_, &srcRect);
-
-				{
-					D2D1_MAPPED_RECT map;
-					tempBitmap->Map(D2D1_MAP_OPTIONS_READ, &map);
-
-// move to factory					res = pIWICFactory->CreateBitmap(size.width, size.height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &diBitmap_); // pre-muliplied alpha
-
-//					diBitmap_->CopyPixels()
-
-					tempBitmap->Unmap();
-				}
-
-				tempBitmap->Release();
-
-				return gmpi::ReturnCode::Fail; // creating WIC from D2DBitmap not implemented.
-/*
-				assert(nativeBitmap_);
-*/
-// clean this up				diBitmap_ = factory->CreateDiBitmapFromNative(nativeBitmap_);
-			}
-/*
-			if (!nativeBitmap_)
-			{
-				// need to access native bitmap already to lazy-load it. Only can be done from RenderContext.
-				assert(false && "Can't lock pixels before native bitmap created in onRender()");
 				return gmpi::ReturnCode::Fail;
 			}
-*/
-#endif
+
 			gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 			b2.attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));
 

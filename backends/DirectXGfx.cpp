@@ -595,6 +595,13 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 #endif
 					gmpi::shared_ptr<gmpi::drawing::api::IBitmap> b2;
 					b2.attach(bitmap);
+
+					// on Windows 7, leave image as-is
+//					if (getPlatformPixelFormat() == GmpiDrawing_API::IMpBitmapPixels::kBGRA_SRGB)
+					{
+						bitmap->applyPreMultiplyCorrection();
+					}
+
 					b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
 				}
 			}
@@ -677,6 +684,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 					props.dpiX = props.dpiY = 96;
 					if (std::memcmp(&formatGuid, &GUID_WICPixelFormat32bppPBGRA, sizeof(formatGuid)) == 0)
 					{
+						// 8-bit formats
 						props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
 						props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
 						// window-7 more uses DXGI_FORMAT_B8G8R8A8_UNORM, not implemented yet.
@@ -687,13 +695,17 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 							nativeBitmap.put()
 						);
 					}
-					else
+					else if(std::memcmp(&formatGuid, &GUID_WICPixelFormat64bppPRGBAHalf, sizeof(formatGuid)) == 0)
 					{
 						// half-float pixels. default format should be fine.
 						hr = nativeContext->CreateBitmapFromWicBitmap(
 							diBitmap,
 							nativeBitmap.put()
 						);
+					}
+					else
+					{
+						assert(false); // TODO. Add support for other formats.
 					}
 
 					assert(hr == 0); // Common failure is bitmap too big for D2D.
@@ -876,22 +888,21 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			if (isCpuReadable) // TODO !!! wrong gamma.
 			{
 				// Create a WIC render target. Modifyable by CPU (lock pixels). More expensive.
-				const bool use8bit = true; // note 16 bit giving completely weird results, 8-bit giving wrong gamma but consistent w SE 1.5.
+				const bool use8bit = false; // 8-bit giving wrong gamma but consistent w SE 1.5. 16-bit much nicer and constistant colors with GPU rendering.
 
 				// Create a WIC bitmap to draw on.
 				[[maybe_unused]] auto hr =
 					wicFactory->CreateBitmap(
 						width
 						, height
-						, use8bit ? GUID_WICPixelFormat32bppPBGRA : GUID_WICPixelFormat128bppPRGBAFloat //GUID_WICPixelFormat64bppPRGBAHalf // GUID_WICPixelFormat128bppPRGBAFloat // GUID_WICPixelFormat64bppPRGBAHalf // GUID_WICPixelFormat128bppPRGBAFloat
-						, use8bit ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad //WICBitmapNoCache
+						, use8bit ? GUID_WICPixelFormat32bppPBGRA : GUID_WICPixelFormat64bppPRGBAHalf //GUID_WICPixelFormat128bppRGBAFloat //GUID_WICPixelFormat64bppPRGBAHalf // GUID_WICPixelFormat128bppPRGBAFloat // GUID_WICPixelFormat64bppPRGBAHalf // GUID_WICPixelFormat128bppPRGBAFloat
+						, use8bit ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
 						, returnWicBitmap.put()
 					);
 
 				D2D1_RENDER_TARGET_PROPERTIES renderTargetProperties = D2D1::RenderTargetProperties(
 					D2D1_RENDER_TARGET_TYPE_DEFAULT,
-					D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN)
-					//D2D1::PixelFormat(DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED)
+					D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN) //use8bit ? D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN) : D2D1::PixelFormat(DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED)
 				);
 
 				gmpi::directx::ComPtr<ID2D1RenderTarget> wikBitmapRenderTarget;
@@ -901,11 +912,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 					wikBitmapRenderTarget.put()
 				);
 
-				// wikBitmapRenderTarget->QueryInterface(IID_ID2D1DeviceContext, (void**)&context_);
-				// hr = wikBitmapRenderTarget->QueryInterface(IID_PPV_ARGS(&context_));
 				returnContext = wikBitmapRenderTarget.as<ID2D1DeviceContext>();
-
-				//context_->AddRef(); //?????
 			}
 			else
 			{

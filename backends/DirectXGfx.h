@@ -324,26 +324,24 @@ inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
 
 class BitmapPixels final : public drawing::api::IBitmapPixels
 {
-    bool alphaPremultiplied;
-    IWICBitmap* bitmap;
+    gmpi::directx::ComPtr<IWICBitmap> bitmap;
+    gmpi::directx::ComPtr<IWICBitmapLock> pBitmapLock;
+    bool alphaPremultiplied{};
     UINT bytesPerRow{};
     BYTE* ptr{};
-    IWICBitmapLock* pBitmapLock;
-    ID2D1Bitmap* nativeBitmap_;
-    int flags;
+    int flags{};
     IBitmapPixels::PixelFormat pixelFormat = kBGRA; // default to non-SRGB Win7 (not tested)
 
 public:
     BitmapPixels(ID2D1Bitmap* nativeBitmap, IWICBitmap* inBitmap, bool _alphaPremultiplied, int32_t pflags)
     {
-        nativeBitmap_ = nativeBitmap;
         assert(inBitmap);
 
-        UINT w, h;
+        UINT w{}, h{};
         inBitmap->GetSize(&w, &h);
 
         {
-            WICPixelFormatGUID formatGuid;
+            WICPixelFormatGUID formatGuid{};
             inBitmap->GetPixelFormat(&formatGuid);
 
             // premultiplied BGRA (default)
@@ -353,19 +351,16 @@ public:
             }
         }
 
-        bitmap = nullptr;
-        pBitmapLock = nullptr;
         WICRect rcLock = { 0, 0, (INT)w, (INT)h };
         flags = pflags;
 
-        if (0 <= inBitmap->Lock(&rcLock, flags, &pBitmapLock))
+        if (0 <= inBitmap->Lock(&rcLock, flags, pBitmapLock.put()))
         {
             pBitmapLock->GetStride(&bytesPerRow);
-            UINT bufferSize;
+            UINT bufferSize{};
             pBitmapLock->GetDataPointer(&bufferSize, &ptr);
 
             bitmap = inBitmap;
-            bitmap->AddRef();
 
             alphaPremultiplied = _alphaPremultiplied;
             if (!alphaPremultiplied)
@@ -381,27 +376,6 @@ public:
     {
         if (!alphaPremultiplied)
             premultiplyAlpha();
-
-        // !! mayby just delete old native bitmap and let Bitmap class automatically recreate from WIX bitmap on demand
-        if (nativeBitmap_)
-        {
-#if 1
-            if (0 != (flags & (int32_t) drawing::BitmapLockFlags::Write))
-            {
-                D2D1_RECT_U r;
-                r.left = r.top = 0;
-                bitmap->GetSize(&r.right, &r.bottom);
-
-                nativeBitmap_->CopyFromMemory(&r, ptr, bytesPerRow);
-            }
-#else
-            nativeBitmap_->Release();
-            nativeBitmap_ = nullptr;
-#endif
-        }
-
-        SafeRelease(pBitmapLock);
-        SafeRelease(bitmap);
     }
 
     ReturnCode getAddress(uint8_t** returnAddress) override
@@ -449,7 +423,6 @@ public:
         }
     }
 
-    //-----------------------------------------------------------------------------
     void unpremultiplyAlpha()
     {
         UINT w, h;
@@ -1064,7 +1037,7 @@ public:
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override
     {
-        *returnStrokeStyle = nullptr;
+        *returnStrokeStyle = {};
 
         const D2D1_STROKE_STYLE_PROPERTIES nativeProperties
         {
@@ -1077,7 +1050,7 @@ public:
             strokeStyleProperties->dashOffset
 		};
 
-        ID2D1StrokeStyle* b = nullptr;
+        ID2D1StrokeStyle* b{};
         auto r = info.d2dFactory->CreateStrokeStyle(&nativeProperties, dashes, dashesCount, &b);
 
         if (r == S_OK)
@@ -1242,7 +1215,7 @@ public:
     template <typename T>
     ReturnCode make_wrapped(gmpi::api::IUnknown* object, const gmpi::api::Guid& iid, T** returnObject)
     {
-        *returnObject = nullptr;
+        *returnObject = {};
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
         b2.attach(object);
         return b2->queryInterface(&iid, reinterpret_cast<void**>(returnObject));
@@ -1258,14 +1231,14 @@ public:
 
     ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, /*const drawing::BitmapBrushProperties* bitmapBrushProperties, */const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
     {
-        *returnBitmapBrush = nullptr;
+        *returnBitmapBrush = {};
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
         b2.attach(new BitmapBrush(factory, context_, bitmap, /*bitmapBrushProperties, */brushProperties));
         return b2->queryInterface(&drawing::api::IBitmapBrush::guid, reinterpret_cast<void **>(returnBitmapBrush));
     }
     ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
     {
-        *returnRadialGradientBrush = nullptr;
+        *returnRadialGradientBrush = {};
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
         b2.attach(new RadialGradientBrush(factory, context_, radialGradientBrushProperties, brushProperties, gradientstopCollection));
         return b2->queryInterface(&drawing::api::IRadialGradientBrush::guid, reinterpret_cast<void **>(returnRadialGradientBrush));
@@ -1371,7 +1344,7 @@ public:
 
     ReturnCode createSolidColorBrush(const drawing::Color* color, const drawing::BrushProperties* brushProperties, drawing::api::ISolidColorBrush** returnSolidColorBrush) override
     {
-        *returnSolidColorBrush = nullptr;
+        *returnSolidColorBrush = {};
         gmpi::shared_ptr<gmpi::api::IUnknown> b;
         b.attach(new SolidColorBrush_Win7(context_, color, factory));
         return b->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));

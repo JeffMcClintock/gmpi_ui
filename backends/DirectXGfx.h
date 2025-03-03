@@ -469,8 +469,9 @@ ID2D1Bitmap* bitmapToNative(
     , IWICImagingFactory* wicFactory
 );
 
-// helper function.
+// helper functions.
 gmpi::directx::ComPtr<IWICBitmap> loadWicBitmap(IWICImagingFactory* WICFactory, IWICBitmapDecoder* pDecoder);
+void applyPreMultiplyCorrection(IWICBitmap* bitmap);
 
 class Bitmap final : public drawing::api::IBitmap
 {
@@ -502,8 +503,6 @@ public:
     }
 
     ReturnCode lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t flags) override;
-
-    void applyPreMultiplyCorrection();
 
     ReturnCode getFactory(drawing::api::IFactory** returnFactory) override;
 

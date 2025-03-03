@@ -589,7 +589,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				// on Windows 7, leave image as-is
 //					if (getPlatformPixelFormat() == GmpiDrawing_API::IMpBitmapPixels::kBGRA_SRGB)
 				{
-					bitmap->applyPreMultiplyCorrection();
+					applyPreMultiplyCorrection(wicBitmap.get());
 				}
 
 				b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
@@ -746,30 +746,26 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 			, factory(pfactory)
 		{
 			diBitmap->AddRef();
-
-			// on Windows 7, leave image as-is
-			drawing::api::IBitmapPixels::PixelFormat pixelFormat;
-			factory->getPlatformPixelFormat(&pixelFormat);
-
-			if (pixelFormat == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB)
-			{
-				applyPreMultiplyCorrection();
-			}
 		}
 
-		// WIX premultiplies images automatically on load, but wrong (assumes linear not SRGB space). Fix it.
-		void Bitmap::applyPreMultiplyCorrection()
+		// WIX currently not premultiplying correctly, so redo it respecting gamma.
+		void applyPreMultiplyCorrection(IWICBitmap* bitmap)
 		{
-			drawing::Bitmap bitmap;
-			*bitmap.put() = this;
-			addRef(); // MESSY, fix. drawing::Bitmap dosn't incremnet ref count.
+			gmpi::directx::ComPtr<IWICBitmapLock> lock;
 
-			auto pixelsSource = bitmap.lockPixels((int32_t) gmpi::drawing::BitmapLockFlags::ReadWrite);
-			auto imageSize = bitmap.getSize();
-			size_t totalPixels = imageSize.height * pixelsSource.getBytesPerRow() / sizeof(uint32_t);
-			uint8_t* sourcePixels = pixelsSource.getAddress();
+			// get the full rect of the image
+			WICRect rcLock = { 0, 0, 0, 0 };
+			bitmap->GetSize((UINT*) &rcLock.Width, (UINT*) &rcLock.Height);
+			bitmap->Lock(&rcLock, WICBitmapLockRead|WICBitmapLockWrite, lock.put());
 
-			// WIX currently not premultiplying correctly, so redo it respecting gamma.
+			uint8_t* sourcePixels{};
+			UINT stride{};
+			UINT bufferSize{};
+			lock->GetDataPointer(&bufferSize, &sourcePixels);
+			lock->GetStride(&stride);
+
+			size_t totalPixels = rcLock.Height * stride / sizeof(uint32_t);
+
 			constexpr float over255 = 1.0f / 255.0f;
 			for (size_t i = 0; i < totalPixels; ++i)
 			{

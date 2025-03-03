@@ -1,6 +1,7 @@
 #ifdef _WIN32 // skip compilation on macOS
 
 #include <sstream>
+#include <optional>
 #include "./DirectXGfx.h"
 #include "d2d1helper.h"
 
@@ -8,7 +9,7 @@ namespace gmpi
 {
 	namespace directx
 	{
-		inline std::wstring Utf8ToWstring(std::string_view str)
+		std::wstring Utf8ToWstring(std::string_view str)
 		{
 			std::wstring res;
 			const size_t size = MultiByteToWideChar(
@@ -33,7 +34,7 @@ namespace gmpi
 
 			return res;
 		};
-		inline std::string WStringToUtf8(const std::wstring& p_cstring)
+		std::string WStringToUtf8(std::wstring_view p_cstring)
 		{
 			std::string res;
 
@@ -64,6 +65,11 @@ namespace gmpi
 			return res;
 		}
 
+		inline gmpi::ReturnCode toReturnCode(HRESULT r)
+		{
+			return r == 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+		}
+
 		gmpi::ReturnCode Geometry::open(drawing::api::IGeometrySink** returnGeometrySink)
 		{
 			ID2D1GeometrySink* sink{};
@@ -78,24 +84,22 @@ namespace gmpi
 				b2->queryInterface(&drawing::api::IGeometrySink::guid, reinterpret_cast<void**>(returnGeometrySink));
 			}
 
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+			return toReturnCode(hr);
 		}
 
-		gmpi::ReturnCode TextFormat::getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
+		gmpi::drawing::FontMetrics getFontMetricsHelper(IDWriteTextFormat* textFormat)
 		{
-			IDWriteFontCollection *collection;
-			IDWriteFontFamily *family;
-			IDWriteFontFace *fontface;
-			IDWriteFont *font;
+			gmpi::directx::ComPtr<IDWriteFontCollection> collection;
+			gmpi::directx::ComPtr<IDWriteFontFace> fontface;
 			WCHAR nameW[255];
-			UINT32 index;
-			BOOL exists;
-			HRESULT hr;
+			UINT32 index{};
+			BOOL exists{};
+			HRESULT hr{};
 
-			hr = native()->GetFontCollection(&collection);
+			hr = textFormat->GetFontCollection(collection.put());
 			//	ok(hr == S_OK, "got 0x%08x\n", hr);
 
-			hr = native()->GetFontFamilyName(nameW, sizeof(nameW) / sizeof(WCHAR));
+			hr = textFormat->GetFontFamilyName(nameW, std::size(nameW));
 			//	ok(hr == S_OK, "got 0x%08x\n", hr);
 
 			hr = collection->FindFamilyName(nameW, &index, &exists);
@@ -104,78 +108,83 @@ namespace gmpi
 				index = 0;
 			}
 
-			hr = collection->GetFontFamily(index, &family);
-			//	ok(hr == S_OK, "got 0x%08x\n", hr);
-			collection->Release();
+			{
+				gmpi::directx::ComPtr<IDWriteFontFamily> family;
+				hr = collection->GetFontFamily(index, family.put());
+				//	ok(hr == S_OK, "got 0x%08x\n", hr);
 
-			hr = family->GetFirstMatchingFont(
-				native()->GetFontWeight(),
-				native()->GetFontStretch(),
-				native()->GetFontStyle(),
-				&font);
-			//	ok(hr == S_OK, "got 0x%08x\n", hr);
+				gmpi::directx::ComPtr<IDWriteFont> font;
+				hr = family->GetFirstMatchingFont(
+					textFormat->GetFontWeight(),
+					textFormat->GetFontStretch(),
+					textFormat->GetFontStyle(),
+					font.put());
+				//	ok(hr == S_OK, "got 0x%08x\n", hr);
 
-			hr = font->CreateFontFace(&fontface);
-			//	ok(hr == S_OK, "got 0x%08x\n", hr);
-
-			font->Release();
-			family->Release();
+				hr = font->CreateFontFace(fontface.put());
+				//	ok(hr == S_OK, "got 0x%08x\n", hr);
+			}
 
 			DWRITE_FONT_METRICS metrics;
 			fontface->GetMetrics(&metrics);
-			fontface->Release();
 
 			// Sizes returned must always be in DIPs.
-			float emsToDips = native()->GetFontSize() / metrics.designUnitsPerEm;
+			const float emsToDips = textFormat->GetFontSize() / metrics.designUnitsPerEm;
 
-			returnFontMetrics->ascent = emsToDips * metrics.ascent;
-			returnFontMetrics->descent = emsToDips * metrics.descent;
-			returnFontMetrics->lineGap = emsToDips * metrics.lineGap;
-			returnFontMetrics->capHeight = emsToDips * metrics.capHeight;
-			returnFontMetrics->xHeight = emsToDips * metrics.xHeight;
-			returnFontMetrics->underlinePosition = emsToDips * metrics.underlinePosition;
-			returnFontMetrics->underlineThickness = emsToDips * metrics.underlineThickness;
-			returnFontMetrics->strikethroughPosition = emsToDips * metrics.strikethroughPosition;
-			returnFontMetrics->strikethroughThickness = emsToDips * metrics.strikethroughThickness;
+			return gmpi::drawing::FontMetrics{
+				emsToDips * metrics.ascent,
+				emsToDips * metrics.descent,
+				emsToDips * metrics.lineGap,
+				emsToDips * metrics.capHeight,
+				emsToDips * metrics.xHeight,
+				emsToDips * metrics.underlinePosition,
+				emsToDips * metrics.underlineThickness,
+				emsToDips * metrics.strikethroughPosition,
+				emsToDips * metrics.strikethroughThickness
+			};
+		}
 
+		gmpi::ReturnCode TextFormat::getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
+		{
+			*returnFontMetrics = getFontMetricsHelper(native());
 			return gmpi::ReturnCode::Ok;
 		}
 
-		gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
+		gmpi::drawing::Size getTextExtentHelper(IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping)
 		{
-			const auto widestring = Utf8ToWstring({ utf8String, static_cast<size_t>(stringLength) });
+			const auto widestring = Utf8ToWstring(s);
 
-			IDWriteFactory* writeFactory = 0;
+			gmpi::directx::ComPtr<IDWriteFactory> writeFactory;
 			auto hr = DWriteCreateFactory(
 				DWRITE_FACTORY_TYPE_SHARED,
 				__uuidof(writeFactory),
-				reinterpret_cast<::IUnknown **>(&writeFactory)
+				reinterpret_cast<::IUnknown**>(writeFactory.put())
 			);
 
-			IDWriteTextLayout* pTextLayout_ = 0;
+			IDWriteTextLayout* pTextLayout_{};
 
 			hr = writeFactory->CreateTextLayout(
 				widestring.data(),      // The string to be laid out and formatted.
 				(UINT32)widestring.size(),  // The length of the string.
-				native(),  // The text format to apply to the string (contains font information, etc).
+				textFormat,     // The text format to apply to the string (contains font information, etc).
 				100000,         // The width of the layout box.
-				100000,        // The height of the layout box.
-				&pTextLayout_  // The IDWriteTextLayout interface pointer.
+				100000,         // The height of the layout box.
+				&pTextLayout_   // The IDWriteTextLayout interface pointer.
 			);
 
 			DWRITE_TEXT_METRICS textMetrics;
 			pTextLayout_->GetMetrics(&textMetrics);
 
-			returnSize->height = textMetrics.height;
-			returnSize->width = textMetrics.widthIncludingTrailingWhitespace;
-
-			if (!useLegacyBaseLineSnapping)
+			return
 			{
-				returnSize->height -= topAdjustment;
-			}
+				textMetrics.widthIncludingTrailingWhitespace,
+				useLegacyBaseLineSnapping ? textMetrics.height : textMetrics.height - topAdjustment
+			};
+		}
 
-			SafeRelease(pTextLayout_);
-			SafeRelease(writeFactory);
+		gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
+		{
+			*returnSize = getTextExtentHelper(native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, useLegacyBaseLineSnapping);
 			return gmpi::ReturnCode::Ok;
 		}
 
@@ -186,23 +195,28 @@ namespace gmpi
 		{
 		}
 
-		Factory::Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
+		void initFactoryHelper(
+			  IDWriteFactory** writeFactory
+			, IWICImagingFactory** wWICFactory
+			, ID2D1Factory1** direct2dFactory
+			, std::vector<std::string>& supportedFontFamilies
+			, std::vector<std::wstring>& supportedFontFamiliesLowerCase
+		)
 		{
 			{
 				D2D1_FACTORY_OPTIONS o;
 #ifdef _DEBUG
-				o.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;// D2D1_DEBUG_LEVEL_WARNING; // Need to install special stuff. https://msdn.microsoft.com/en-us/library/windows/desktop/ee794278%28v=vs.85%29.aspx?f=255&MSPPError=-2147217396 
+				o.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION; // Need to install special stuff. https://msdn.microsoft.com/en-us/library/windows/desktop/ee794278%28v=vs.85%29.aspx?f=255&MSPPError=-2147217396 
 #else
 				o.debugLevel = D2D1_DEBUG_LEVEL_NONE;
 #endif
-//				auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&m_pDirect2dFactory);
-				auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&info.m_pDirect2dFactory);
+				auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)direct2dFactory);
 
 #ifdef _DEBUG
 				if (FAILED(rs))
 				{
 					o.debugLevel = D2D1_DEBUG_LEVEL_NONE; // fallback
-					rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)&info.m_pDirect2dFactory);
+					rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, (void**)direct2dFactory);
 				}
 #endif
 				if (FAILED(rs))
@@ -210,25 +224,25 @@ namespace gmpi
 					_RPT1(_CRT_WARN, "D2D1CreateFactory FAIL %d\n", rs);
 					return;  // Fail.
 				}
-				//		_RPT2(_CRT_WARN, "D2D1CreateFactory OK %d : %x\n", rs, m_pDirect2dFactory);
+				//		_RPT2(_CRT_WARN, "D2D1CreateFactory OK %d : %x\n", rs, *direct2dFactory);
 			}
 
-			info.writeFactory = nullptr;
+			*writeFactory = nullptr;
 
 			auto hr = DWriteCreateFactory(
 				DWRITE_FACTORY_TYPE_SHARED, // no improvment to glitching DWRITE_FACTORY_TYPE_ISOLATED
-				__uuidof(info.writeFactory),
-				reinterpret_cast<::IUnknown**>(&info.writeFactory)
+				__uuidof(*writeFactory),
+				reinterpret_cast<::IUnknown**>(writeFactory)
 			);
 
-			info.pIWICFactory = nullptr;
+			*wWICFactory = nullptr;
 
 			hr = CoCreateInstance(
 				CLSID_WICImagingFactory,
 				NULL,
 				CLSCTX_INPROC_SERVER,
 				IID_IWICImagingFactory,
-				(LPVOID*)&info.pIWICFactory
+				(LPVOID*)wWICFactory
 			);
 
 			// Cache font family names
@@ -236,7 +250,7 @@ namespace gmpi
 				// TODO IDWriteFontSet is improved API, GetSystemFontSet()
 
 				IDWriteFontCollection* fonts = nullptr;
-				info.writeFactory->GetSystemFontCollection(&fonts, TRUE);
+				(*writeFactory)->GetSystemFontCollection(&fonts, TRUE);
 
 				auto count = fonts->GetFontFamilyCount();
 
@@ -256,10 +270,10 @@ namespace gmpi
 						wchar_t name[64];
 						names->GetString(nameIndex, name, sizeof(name) / sizeof(name[0]));
 
-						info.supportedFontFamilies.push_back(WStringToUtf8(name));
+						supportedFontFamilies.push_back(WStringToUtf8(name));
 
 						std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
-						info.supportedFontFamiliesLowerCase.push_back(name);
+						supportedFontFamiliesLowerCase.push_back(name);
 					}
 
 					names->Release();
@@ -268,25 +282,17 @@ namespace gmpi
 
 				fonts->Release();
 			}
-#if 0
-			// test matrix rotation calc
-			for (int rot = 0; rot < 8; ++rot)
-			{
-				const float angle = (rot / 8.f) * 2.f * 3.14159274101257324219f;
-				auto test = drawing::Matrix3x2::Rotation(angle, { 23, 7 });
-				auto test2 = D2D1::Matrix3x2F::Rotation(angle * 180.f / 3.14159274101257324219f, { 23, 7 });
-
-				_RPTN(0, "\nangle=%f\n", angle);
-				_RPTN(0, "%f, %f\n", test._11, test._12);
-				_RPTN(0, "%f, %f\n", test._21, test._22);
-				_RPTN(0, "%f, %f\n", test._31, test._32);
 		}
 
-			// test matrix scaling
-			const auto test = drawing::Matrix3x2::Scale({ 3, 5 }, { 7, 9 });
-			const auto test2 = D2D1::Matrix3x2F::Scale({ 3, 5 }, { 7, 9 });
-			const auto breakpointer = test._11 + test2._11;
-#endif
+		Factory::Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
+		{
+			initFactoryHelper(
+				  &info.writeFactory
+				, &info.pIWICFactory
+				, &info.m_pDirect2dFactory
+				, info.supportedFontFamilies
+				, info.supportedFontFamiliesLowerCase
+			);
 		}
 
 		Factory::~Factory()
@@ -299,8 +305,6 @@ namespace gmpi
 		gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
 		{
 			*pathGeometry = nullptr;
-			//*pathGeometry = new GmpiGuiHosting::PathGeometry();
-			//return gmpi::ReturnCode::Ok;
 
 			ID2D1PathGeometry* d2d_geometry = nullptr;
 			HRESULT hr = info.m_pDirect2dFactory->CreatePathGeometry(&d2d_geometry);
@@ -313,7 +317,7 @@ namespace gmpi
 				b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 			}
 
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+			return toReturnCode(hr);
 		}
 
 		gmpi::ReturnCode Factory_base::createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat)
@@ -345,12 +349,12 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.attach(new gmpi::directx::TextFormat(/*&stringConverter,*/ dwTextFormat));
+				b2.attach(new gmpi::directx::TextFormat(dwTextFormat));
 
 				b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 			}
 
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+			return toReturnCode(hr);
 		}
 
 		// 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
@@ -574,9 +578,6 @@ namespace gmpi
 
 			auto wicBitmap = loadWicBitmap(info.pIWICFactory, pDecoder.get());
 
-			/*
-D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feature level D3D_FEATURE_LEVEL_11_0, the Width (value = 32) must be between 1 and 16384, inclusively. The Height (value = 60000) must be between 1 and 16384, inclusively. And, the ArraySize (value = 1) must be between 1 and 2048, inclusively. [ STATE_CREATION ERROR #101: CREATETEXTURE2D_INVALIDDIMENSIONS]
-			*/
 			if (wicBitmap)
 			{
 				auto bitmap = new Bitmap(this, wicBitmap);
@@ -595,7 +596,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
 			}
 
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+			return toReturnCode(hr);
 		}
 
 		gmpi::ReturnCode GraphicsContext_base::drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle)
@@ -813,7 +814,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 			}
 
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+			return toReturnCode(hr);
 		}
 
 		gmpi::ReturnCode GraphicsContext_base::createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection)
@@ -840,7 +841,7 @@ D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feat
 				wrapper->queryInterface(&drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
 			}
 
-			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
+			return toReturnCode(hr);
 		}
 
 		// todo : integer size?

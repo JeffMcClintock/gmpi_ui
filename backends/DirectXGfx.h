@@ -37,6 +37,10 @@ namespace gmpi
 {
 namespace directx
 {
+    // helpers for wide strings
+    std::wstring Utf8ToWstring(std::string_view str);
+    std::string WStringToUtf8(std::wstring_view p_cstring);
+
     // Helper for managing lifetime of Direct2D interface pointers
     template<class wrappedObjT>
     class ComPtr
@@ -203,9 +207,11 @@ public:
     }
 };
 
+gmpi::drawing::FontMetrics getFontMetricsHelper(IDWriteTextFormat* textFormat);
+gmpi::drawing::Size getTextExtentHelper(IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping);
+
 class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>
 {
-//    std::wstring_convert<std::codecvt_utf8<wchar_t>>* stringConverter = {}; // constructed once is much faster.
     bool useLegacyBaseLineSnapping = true;
     float topAdjustment = {};
     float fontMetrics_ascent = {};
@@ -225,9 +231,8 @@ class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWrite
     }
 
 public:
-    TextFormat(/*std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter,*/ IDWriteTextFormat* native) :
+    TextFormat(IDWriteTextFormat* native) :
         GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>(native)
-//        , stringConverter(pstringConverter)
     {
         CalculateTopAdjustment();
     }
@@ -987,6 +992,14 @@ struct DxFactoryInfo
     std::map<std::wstring, std::wstring> GdiFontConversions;
     bool DX_support_sRGB = true;
 };
+
+void initFactoryHelper(
+    IDWriteFactory** writeFactory
+    , IWICImagingFactory** wWICFactory
+    , ID2D1Factory1** direct2dFactory
+    , std::vector<std::string>& supportedFontFamilies
+    , std::vector<std::wstring>& supportedFontFamiliesLowerCase
+);
 
 class Factory_base : public drawing::api::IFactory
 {

@@ -485,13 +485,50 @@ namespace gmpi
 			return gmpi::ReturnCode::Ok;
 		}
 
+		gmpi::directx::ComPtr<IWICBitmap> loadWicBitmap(IWICImagingFactory* WICFactory, IWICBitmapDecoder* pDecoder)
+		{
+			gmpi::directx::ComPtr<IWICBitmapFrameDecode> pSource;
+
+			// 2.Retrieve a frame from the image and store the frame in an IWICBitmapFrameDecode object.
+			auto hr = pDecoder->GetFrame(0, pSource.put());
+
+			gmpi::directx::ComPtr<IWICFormatConverter> pConverter;
+			if (hr == 0)
+			{
+				// 3.The bitmap must be converted to a format that Direct2D can use.
+				hr = WICFactory->CreateFormatConverter(pConverter.put());
+			}
+			if (hr == 0)
+			{
+				hr = pConverter->Initialize(
+					pSource,
+					GUID_WICPixelFormat32bppPBGRA, //Premultiplied
+					WICBitmapDitherTypeNone,
+					NULL,
+					0.f,
+					WICBitmapPaletteTypeCustom
+				);
+			}
+
+			gmpi::directx::ComPtr<IWICBitmap> wicBitmap;
+			if (hr == 0)
+			{
+				hr = WICFactory->CreateBitmapFromSource(
+					pConverter,
+					WICBitmapCacheOnLoad,
+					wicBitmap.put());
+			}
+
+			return wicBitmap;
+		}
+
 		gmpi::ReturnCode Factory_base::loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap)
 		{
 			*returnBitmap = nullptr;
 
 			HRESULT hr{};
-			IWICBitmapDecoder* pDecoder{};
-			IWICStream* pIWICStream{};
+			gmpi::directx::ComPtr<IWICBitmapDecoder> pDecoder;
+			gmpi::directx::ComPtr<IWICStream> pIWICStream;
 
 			// is this an in-memory resource?
 			std::string uriString(uri);
@@ -517,7 +554,7 @@ namespace gmpi
 						pIWICStream,                   // The stream to use to create the decoder
 						NULL,                          // Do not prefer a particular vendor
 						WICDecodeMetadataCacheOnLoad,  // Cache metadata when needed
-						&pDecoder);                    // Pointer to the decoder
+						pDecoder.put());               // Pointer to the decoder
 				}
 			}
 			else
@@ -531,87 +568,33 @@ namespace gmpi
 					NULL,
 					GENERIC_READ,
 					WICDecodeMetadataCacheOnLoad,
-					&pDecoder
+					pDecoder.put()
 				);
 			}
 
-			IWICBitmapFrameDecode *pSource = NULL;
-			if (hr == 0)
-			{
-				// 2.Retrieve a frame from the image and store the frame in an IWICBitmapFrameDecode object.
-				hr = pDecoder->GetFrame(0, &pSource);
-			}
+			auto wicBitmap = loadWicBitmap(info.pIWICFactory, pDecoder.get());
 
-			IWICFormatConverter *pConverter = NULL;
-			if (hr == 0)
-			{
-				// 3.The bitmap must be converted to a format that Direct2D can use.
-				hr = info.pIWICFactory->CreateFormatConverter(&pConverter);
-			}
-			if (hr == 0)
-			{
-				hr = pConverter->Initialize(
-					pSource,
-					GUID_WICPixelFormat32bppPBGRA, //Premultiplied
-					WICBitmapDitherTypeNone,
-					NULL,
-					0.f,
-					WICBitmapPaletteTypeCustom
-				);
-			}
-
-			IWICBitmap* wicBitmap = nullptr;
-			if (hr == 0)
-			{
-				hr = info.pIWICFactory->CreateBitmapFromSource(
-					pConverter,
-					WICBitmapCacheOnLoad,
-					&wicBitmap);
-			}
 			/*
 D3D11 ERROR: ID3D11Device::CreateTexture2D: The Dimensions are invalid. For feature level D3D_FEATURE_LEVEL_11_0, the Width (value = 32) must be between 1 and 16384, inclusively. The Height (value = 60000) must be between 1 and 16384, inclusively. And, the ArraySize (value = 1) must be between 1 and 2048, inclusively. [ STATE_CREATION ERROR #101: CREATETEXTURE2D_INVALIDDIMENSIONS]
 			*/
-			if (hr == 0)
+			if (wicBitmap)
 			{
-				// I've removed this as the max size can vary depending on hardware.
-				// So we need to have a robust check elsewhere anyhow.
-
-#if 0
-				UINT width, height;
-
-				wicBitmap->GetSize(&width, &height);
-
-				const int maxDirectXImageSize = 16384; // TODO can be smaller. Query hardware.
-				if (width > maxDirectXImageSize || height > maxDirectXImageSize)
-				{
-					hr = E_FAIL; // fail, too big for DirectX.
-				}
-				else
-#endif
-				{
-					auto bitmap = new Bitmap(this, wicBitmap);
+				auto bitmap = new Bitmap(this, wicBitmap);
 #ifdef _DEBUG
-					bitmap->debugFilename = uri;
+				bitmap->debugFilename = uri;
 #endif
-					gmpi::shared_ptr<gmpi::drawing::api::IBitmap> b2;
-					b2.attach(bitmap);
+				gmpi::shared_ptr<gmpi::drawing::api::IBitmap> b2;
+				b2.attach(bitmap);
 
-					// on Windows 7, leave image as-is
+				// on Windows 7, leave image as-is
 //					if (getPlatformPixelFormat() == GmpiDrawing_API::IMpBitmapPixels::kBGRA_SRGB)
-					{
-						bitmap->applyPreMultiplyCorrection();
-					}
-
-					b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
+				{
+					bitmap->applyPreMultiplyCorrection();
 				}
+
+				b2->queryInterface(&drawing::api::IBitmap::guid, (void**)returnBitmap);
 			}
 
-			SafeRelease(pDecoder);
-			SafeRelease(pSource);
-			SafeRelease(pConverter);
-			SafeRelease(wicBitmap);
-			SafeRelease(pIWICStream);
-			
 			return hr == 0 ? (gmpi::ReturnCode::Ok) : (gmpi::ReturnCode::Fail);
 		}
 

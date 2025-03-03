@@ -469,6 +469,9 @@ ID2D1Bitmap* bitmapToNative(
     , IWICImagingFactory* wicFactory
 );
 
+// helper function.
+gmpi::directx::ComPtr<IWICBitmap> loadWicBitmap(IWICImagingFactory* WICFactory, IWICBitmapDecoder* pDecoder);
+
 class Bitmap final : public drawing::api::IBitmap
 {
 public:

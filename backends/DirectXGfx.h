@@ -37,6 +37,12 @@ namespace gmpi
 {
 namespace directx
 {
+    // helper for return codes
+    inline gmpi::ReturnCode toReturnCode(HRESULT r)
+    {
+        return r == 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
+    }
+
     // helpers for wide strings
     std::wstring Utf8ToWstring(std::string_view str);
     std::string WStringToUtf8(std::wstring_view p_cstring);
@@ -309,6 +315,13 @@ public:
     GMPI_REFCOUNT;
 };
 #endif
+
+inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
+{
+    const int t = (int)a * (int)b;
+    return (uint8_t)((t + 1 + (t >> 8)) >> 8); // fast way to divide by 255
+}
+
 class BitmapPixels final : public drawing::api::IBitmapPixels
 {
     bool alphaPremultiplied;
@@ -407,12 +420,6 @@ public:
     {
         *returnPixelFormat = pixelFormat;
         return ReturnCode::Ok;
-    }
-
-    inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
-    {
-        int t = (int)a * (int)b;
-        return (uint8_t)((t + 1 + (t >> 8)) >> 8); // fast way to divide by 255
     }
 
     void premultiplyAlpha()
@@ -986,9 +993,10 @@ public:
 
 struct DxFactoryInfo
 {
-    ID2D1Factory1* m_pDirect2dFactory = {};
-    IDWriteFactory* writeFactory = {};
-    IWICImagingFactory* pIWICFactory = {};
+    gmpi::directx::ComPtr<ID2D1Factory1> d2dFactory;
+    gmpi::directx::ComPtr<IDWriteFactory> writeFactory;
+    gmpi::directx::ComPtr<IWICImagingFactory> wicFactory;
+
     std::vector<std::wstring> supportedFontFamiliesLowerCase;
     std::vector<std::string> supportedFontFamilies;
     std::map<std::wstring, std::wstring> GdiFontConversions;
@@ -996,9 +1004,9 @@ struct DxFactoryInfo
 };
 
 void initFactoryHelper(
-    IDWriteFactory** writeFactory
-    , IWICImagingFactory** wWICFactory
-    , ID2D1Factory1** direct2dFactory
+      gmpi::directx::ComPtr<IDWriteFactory>& writeFactory
+    , gmpi::directx::ComPtr<IWICImagingFactory>& wicFactory
+    , gmpi::directx::ComPtr<ID2D1Factory1>& direct2dFactory
     , std::vector<std::string>& supportedFontFamilies
     , std::vector<std::wstring>& supportedFontFamiliesLowerCase
 );
@@ -1024,7 +1032,7 @@ public:
 
     auto getWicFactory()
 	{
-		return info.pIWICFactory;
+		return info.wicFactory;
 	}
     auto getDirectWriteFactory()
     {
@@ -1032,7 +1040,7 @@ public:
     }
     auto getFactory()
     {
-        return info.m_pDirect2dFactory;
+        return info.d2dFactory;
     }
 
     void setSrgbSupport(bool s)
@@ -1048,7 +1056,7 @@ public:
 
     ID2D1Factory1* getD2dFactory()
     {
-        return info.m_pDirect2dFactory;
+        return info.d2dFactory;
     }
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, drawing::api::ITextFormat** returnTextFormat) override;
@@ -1070,7 +1078,7 @@ public:
 		};
 
         ID2D1StrokeStyle* b = nullptr;
-        auto r = info.m_pDirect2dFactory->CreateStrokeStyle(&nativeProperties, dashes, dashesCount, &b);
+        auto r = info.d2dFactory->CreateStrokeStyle(&nativeProperties, dashes, dashesCount, &b);
 
         if (r == S_OK)
         {
@@ -1103,7 +1111,6 @@ class Factory : public Factory_base
 
 public:
     Factory(gmpi::api::IUnknown* pfallback);
-    ~Factory();
 };
 
 class GraphicsContext_base : public drawing::api::IDeviceContext

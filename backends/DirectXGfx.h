@@ -29,10 +29,6 @@
 #include "../Drawing.h"
 #include "RefCountMacros.h"
 
-#pragma warning(disable : 4996) // "codecvt deprecated in C++17"
-
-#define ENABLE_HDR_SUPPORT 1 // need to fix Scope3 drawing it's background on a bitmap.
-
 namespace gmpi
 {
 namespace directx
@@ -322,10 +318,63 @@ inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
     return (uint8_t)((t + 1 + (t >> 8)) >> 8); // fast way to divide by 255
 }
 
+inline void premultiplyAlpha(IWICBitmapLock* bitmapLock)
+{
+    uint8_t* pixel{};
+    UINT bufferSize{};
+    UINT bytesPerRow{};
+	bitmapLock->GetStride(&bytesPerRow);
+    bitmapLock->GetDataPointer(&bufferSize, &pixel);
+
+	const auto height = bufferSize / bytesPerRow;
+    const auto totalPixels = height * bytesPerRow / sizeof(uint32_t);
+
+    for (int i = 0; i < totalPixels; ++i)
+    {
+        if (pixel[3] == 0)
+        {
+            pixel[0] = 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+        }
+        else
+        {
+            pixel[0] = fast8bitScale(pixel[0], pixel[3]);
+            pixel[1] = fast8bitScale(pixel[1], pixel[3]);
+            pixel[2] = fast8bitScale(pixel[2], pixel[3]);
+        }
+
+        pixel += sizeof(uint32_t);
+    }
+}
+
+inline void unpremultiplyAlpha(IWICBitmapLock* bitmapLock)
+{
+    uint8_t* pixel{};
+    UINT bufferSize{};
+    UINT bytesPerRow{};
+    bitmapLock->GetStride(&bytesPerRow);
+    bitmapLock->GetDataPointer(&bufferSize, &pixel);
+
+    const auto height = bufferSize / bytesPerRow;
+    const auto totalPixels = height * bytesPerRow / sizeof(uint32_t);
+
+    for (int i = 0; i < totalPixels; ++i)
+    {
+        if (pixel[3] != 0)
+        {
+            pixel[0] = (uint32_t)(pixel[0] * 255) / pixel[3];
+            pixel[1] = (uint32_t)(pixel[1] * 255) / pixel[3];
+            pixel[2] = (uint32_t)(pixel[2] * 255) / pixel[3];
+        }
+        pixel += sizeof(uint32_t);
+    }
+}
+
 class BitmapPixels final : public drawing::api::IBitmapPixels
 {
     gmpi::directx::ComPtr<IWICBitmap> bitmap;
-    gmpi::directx::ComPtr<IWICBitmapLock> pBitmapLock;
+    gmpi::directx::ComPtr<IWICBitmapLock> bitmapLock;
     bool alphaPremultiplied{};
     UINT bytesPerRow{};
     BYTE* ptr{};
@@ -354,17 +403,17 @@ public:
         WICRect rcLock = { 0, 0, (INT)w, (INT)h };
         flags = pflags;
 
-        if (0 <= inBitmap->Lock(&rcLock, flags, pBitmapLock.put()))
+        if (0 <= inBitmap->Lock(&rcLock, flags, bitmapLock.put()))
         {
-            pBitmapLock->GetStride(&bytesPerRow);
+            bitmapLock->GetStride(&bytesPerRow);
             UINT bufferSize{};
-            pBitmapLock->GetDataPointer(&bufferSize, &ptr);
+            bitmapLock->GetDataPointer(&bufferSize, &ptr);
 
             bitmap = inBitmap;
 
             alphaPremultiplied = _alphaPremultiplied;
             if (!alphaPremultiplied)
-                unpremultiplyAlpha();
+                unpremultiplyAlpha(bitmapLock.get());
         }
         else
         {
@@ -375,7 +424,7 @@ public:
     ~BitmapPixels()
     {
         if (!alphaPremultiplied)
-            premultiplyAlpha();
+            premultiplyAlpha(bitmapLock.get());
     }
 
     ReturnCode getAddress(uint8_t** returnAddress) override
@@ -394,53 +443,6 @@ public:
     {
         *returnPixelFormat = pixelFormat;
         return ReturnCode::Ok;
-    }
-
-    void premultiplyAlpha()
-    {
-        UINT w, h;
-        bitmap->GetSize(&w, &h);
-        int totalPixels = h * bytesPerRow / sizeof(uint32_t);
-
-        uint8_t* pixel = ptr;
-
-        for (int i = 0; i < totalPixels; ++i)
-        {
-            if (pixel[3] == 0)
-            {
-                pixel[0] = 0;
-                pixel[1] = 0;
-                pixel[2] = 0;
-            }
-            else
-            {
-                pixel[0] = fast8bitScale(pixel[0], pixel[3]);
-                pixel[1] = fast8bitScale(pixel[1], pixel[3]);
-                pixel[2] = fast8bitScale(pixel[2], pixel[3]);
-            }
-
-            pixel += sizeof(uint32_t);
-        }
-    }
-
-    void unpremultiplyAlpha()
-    {
-        UINT w, h;
-        bitmap->GetSize(&w, &h);
-        int totalPixels = h * bytesPerRow / sizeof(uint32_t);
-
-        uint8_t* pixel = ptr;
-
-        for (int i = 0; i < totalPixels; ++i)
-        {
-            if (pixel[3] != 0)
-            {
-                pixel[0] = (uint32_t)(pixel[0] * 255) / pixel[3];
-                pixel[1] = (uint32_t)(pixel[1] * 255) / pixel[3];
-                pixel[2] = (uint32_t)(pixel[2] * 255) / pixel[3];
-            }
-            pixel += sizeof(uint32_t);
-        }
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmapPixels);
@@ -617,12 +619,6 @@ public:
 
     GMPI_REFCOUNT;
 };
-
-// Windows7 has less support for sRGB
-inline drawing::Color colorWithoutGammaAdjustment(drawing::Color)
-{
-    return drawing::Color{};
-}
 
 class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
 {
@@ -1350,7 +1346,6 @@ public:
         return b->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
     }
 
-    //ReturnCode createGradientStopCollection(const drawing::api::MP1_GRADIENT_STOP* gradientStops, uint32_t gradientStopsCount, /* drawing::api::MP1_GAMMA colorInterpolationGamma, drawing::api::MP1_EXTEND_MODE extendMode,*/ drawing::api::IGradientstopCollection** gradientStopCollection) override
     ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection) override
     {
         // Adjust gradient gamma.
@@ -1363,9 +1358,6 @@ public:
             auto& dest = stops[i];
             dest.position = srce.position;
             dest.color.a = srce.color.a;
-            //dest.color.r = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.r));
-            //dest.color.g = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.g));
-            //dest.color.b = se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(srce.color.b));
 
             constexpr float c = 1.0f / 255.0f;
             dest.color.r = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.r));

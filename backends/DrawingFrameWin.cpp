@@ -908,7 +908,7 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 
 				if (DisplayConfigGetDeviceInfo(&white_level.header) == ERROR_SUCCESS)
 				{
-#if	ENABLE_HDR_SUPPORT // proper HDR rendering
+#if	1 //ENABLE_HDR_SUPPORT // proper HDR rendering
 					{
 						// divide by 1000 to get nits, divide by reference nits (80) to get a factor
 						whiteMult = white_level.SDRWhiteLevel / 1000.f;

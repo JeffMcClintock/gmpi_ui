@@ -208,13 +208,14 @@ public:
 };
 
 gmpi::drawing::FontMetrics getFontMetricsHelper(IDWriteTextFormat* textFormat);
-gmpi::drawing::Size getTextExtentHelper(IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping);
+gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping);
 
 class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>
 {
     bool useLegacyBaseLineSnapping = true;
     float topAdjustment = {};
     float fontMetrics_ascent = {};
+    IDWriteFactory* writeFactory{};
 
     void CalculateTopAdjustment()
     {
@@ -231,8 +232,9 @@ class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWrite
     }
 
 public:
-    TextFormat(IDWriteTextFormat* native) :
+    TextFormat(IDWriteFactory* pwriteFactory, IDWriteTextFormat* native) :
         GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>(native)
+        , writeFactory(pwriteFactory)
     {
         CalculateTopAdjustment();
     }
@@ -1001,6 +1003,14 @@ void initFactoryHelper(
     , std::vector<std::wstring>& supportedFontFamiliesLowerCase
 );
 
+std::wstring fontMatchHelper(
+      IDWriteFactory* writeFactory
+    , std::map<std::wstring, std::wstring>& GdiFontConversions
+    , std::wstring fontName
+    , drawing::FontWeight fontWeight
+    , float fontSize
+);
+
 class Factory_base : public drawing::api::IFactory
 {
 protected:
@@ -1040,7 +1050,6 @@ public:
     {
         return info.m_pDirect2dFactory;
     }
-    std::wstring fontMatch(std::wstring fontName, drawing::FontWeight fontWeight, float fontSize);
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, drawing::api::ITextFormat** returnTextFormat) override;
     ReturnCode createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnBitmap) override;

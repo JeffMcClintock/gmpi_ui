@@ -150,30 +150,23 @@ namespace gmpi
 			return gmpi::ReturnCode::Ok;
 		}
 
-		gmpi::drawing::Size getTextExtentHelper(IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping)
+		gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping)
 		{
 			const auto widestring = Utf8ToWstring(s);
 
-			gmpi::directx::ComPtr<IDWriteFactory> writeFactory;
-			auto hr = DWriteCreateFactory(
-				DWRITE_FACTORY_TYPE_SHARED,
-				__uuidof(writeFactory),
-				reinterpret_cast<::IUnknown**>(writeFactory.put())
-			);
+			gmpi::directx::ComPtr<IDWriteTextLayout> textLayout;
 
-			IDWriteTextLayout* pTextLayout_{};
-
-			hr = writeFactory->CreateTextLayout(
+			auto hr = writeFactory->CreateTextLayout(
 				widestring.data(),      // The string to be laid out and formatted.
 				(UINT32)widestring.size(),  // The length of the string.
 				textFormat,     // The text format to apply to the string (contains font information, etc).
 				100000,         // The width of the layout box.
 				100000,         // The height of the layout box.
-				&pTextLayout_   // The IDWriteTextLayout interface pointer.
+				textLayout.put()   // The IDWriteTextLayout interface pointer.
 			);
 
 			DWRITE_TEXT_METRICS textMetrics;
-			pTextLayout_->GetMetrics(&textMetrics);
+			textLayout->GetMetrics(&textMetrics);
 
 			return
 			{
@@ -184,7 +177,7 @@ namespace gmpi
 
 		gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
 		{
-			*returnSize = getTextExtentHelper(native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, useLegacyBaseLineSnapping);
+			*returnSize = getTextExtentHelper(writeFactory, native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, useLegacyBaseLineSnapping);
 			return gmpi::ReturnCode::Ok;
 		}
 
@@ -330,7 +323,13 @@ namespace gmpi
 
 			if (std::find(info.supportedFontFamiliesLowerCase.begin(), info.supportedFontFamiliesLowerCase.end(), lowercaseName) == info.supportedFontFamiliesLowerCase.end())
 			{
-				fontFamilyNameW = fontMatch(fontFamilyNameW, fontWeight, fontSize);
+				fontFamilyNameW = fontMatchHelper(
+					  info.writeFactory
+					, info.GdiFontConversions
+					, fontFamilyNameW
+					, fontWeight
+					, fontSize
+				);
 			}
 
 			IDWriteTextFormat* dwTextFormat = nullptr;
@@ -349,7 +348,7 @@ namespace gmpi
 			if (hr == 0)
 			{
 				gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-				b2.attach(new gmpi::directx::TextFormat(dwTextFormat));
+				b2.attach(new gmpi::directx::TextFormat(info.writeFactory, dwTextFormat));
 
 				b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 			}
@@ -358,19 +357,23 @@ namespace gmpi
 		}
 
 		// 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
-		std::wstring Factory_base::fontMatch(std::wstring fontFamilyNameW, gmpi::drawing::FontWeight fontWeight, float fontSize)
+		std::wstring fontMatchHelper(
+			  IDWriteFactory* writeFactory
+			, std::map<std::wstring, std::wstring>& GdiFontConversions
+			, std::wstring fontFamilyNameW
+			, gmpi::drawing::FontWeight fontWeight
+			, float fontSize
+		)
 		{
-			auto it = info.GdiFontConversions.find(fontFamilyNameW);
-			if (it != info.GdiFontConversions.end())
+			if (auto it = GdiFontConversions.find(fontFamilyNameW); it != GdiFontConversions.end())
 			{
 				return (*it).second;
 			}
 
-			IDWriteGdiInterop* interop = nullptr;
-			info.writeFactory->GetGdiInterop(&interop);
+			gmpi::directx::ComPtr<IDWriteGdiInterop> interop;
+			writeFactory->GetGdiInterop(interop.put());
 
-			LOGFONT lf;
-			memset(&lf, 0, sizeof(LOGFONT));   // Clear out structure.
+			LOGFONT lf{};
 			lf.lfHeight = (LONG) -fontSize;
 			lf.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
 			const wchar_t* actual_facename = fontFamilyNameW.c_str();
@@ -383,7 +386,6 @@ namespace gmpi
 
 			if (fontFamilyNameW == L"sans-serif")
 			{
-				//		actual_facename = _L"Helvetica");
 				actual_facename = L"Arial"; // available on all version of windows
 				lf.lfPitchAndFamily = DEFAULT_PITCH | FF_SWISS;
 			}
@@ -405,14 +407,10 @@ namespace gmpi
 				actual_facename = L"Courier New";
 				lf.lfPitchAndFamily = DEFAULT_PITCH | FF_MODERN;
 			}
-			wcscpy_s(lf.lfFaceName, 32, actual_facename);
-			/*
-			if ((p_desc->flags & TTL_UNDERLINE) != 0)
-			{
-			lf.lfUnderline = 1;
-			}
-			*/
-			if (fontWeight > gmpi::drawing::FontWeight::SemiBold)
+
+			wcscpy_s(lf.lfFaceName, std::size(lf.lfFaceName), actual_facename);
+
+			if ((int) fontWeight > (int) gmpi::drawing::FontWeight::SemiBold)
 			{
 				lf.lfWeight = FW_BOLD;
 			}
@@ -424,16 +422,16 @@ namespace gmpi
 				}
 			}
 
-			IDWriteFont* font = nullptr;
-			auto hr = interop->CreateFontFromLOGFONT(&lf, &font);
+			gmpi::directx::ComPtr<IDWriteFont> font;
+			auto hr = interop->CreateFontFromLOGFONT(&lf, font.put());
 
 			if (font && hr == 0)
 			{
-				IDWriteFontFamily* family = nullptr;
-				font->GetFontFamily(&family);
+				gmpi::directx::ComPtr<IDWriteFontFamily> family;
+				font->GetFontFamily(family.put());
 
-				IDWriteLocalizedStrings* names = nullptr;
-				family->GetFamilyNames(&names);
+				gmpi::directx::ComPtr<IDWriteLocalizedStrings> names;
+				family->GetFamilyNames(names.put());
 
 				BOOL exists;
 				unsigned int nameIndex;
@@ -441,21 +439,14 @@ namespace gmpi
 				if (exists)
 				{
 					wchar_t name[64];
-					names->GetString(nameIndex, name, sizeof(name) / sizeof(name[0]));
+					names->GetString(nameIndex, name, std::size(name));
 					std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c));});
 
-					//						supportedFontFamiliesLowerCase.push_back(name);
-					info.GdiFontConversions.insert(std::pair<std::wstring, std::wstring>(fontFamilyNameW, name));
+					GdiFontConversions.insert(std::pair<std::wstring, std::wstring>(fontFamilyNameW, name));
 					fontFamilyNameW = name;
 				}
-
-				names->Release();
-				family->Release();
-
-				font->Release();
 			}
 
-			interop->Release();
 			return fontFamilyNameW;
 		}
 

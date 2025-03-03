@@ -20,14 +20,12 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-//#include <codecvt>
 #include <map>
 #include <d2d1_2.h>
 #include <dwrite.h>
 #include <Wincodec.h>
 
 #include "../Drawing.h"
-#include "RefCountMacros.h"
 
 namespace gmpi
 {

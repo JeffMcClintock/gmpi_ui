@@ -41,6 +41,19 @@ namespace directx
     std::wstring Utf8ToWstring(std::string_view str);
     std::string WStringToUtf8(std::wstring_view p_cstring);
 
+    // Direct2D context tailored to devices without sRGB high-color support. i.e. Windows 7.
+    inline D2D1_COLOR_F toNativeWin7(const drawing::Color* c)
+    {
+        constexpr float k = 1.0f / 255.0f;
+        return D2D1_COLOR_F
+        {
+            k * static_cast<float>(drawing::linearPixelToSRGB(c->r)),
+            k * static_cast<float>(drawing::linearPixelToSRGB(c->g)),
+            k * static_cast<float>(drawing::linearPixelToSRGB(c->b)),
+            c->a
+        };
+    }
+
     // Helper for managing lifetime of Direct2D interface pointers
     template<class wrappedObjT>
     class ComPtr
@@ -295,20 +308,6 @@ public:
     GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
     GMPI_REFCOUNT;
 };
-#if 0
-class Resource final : public GmpiDXWrapper<drawing::api::IResource, ID2D1Resource>
-{
-public:
-    ReturnCode getFactory(drawing::api::IFactory** returnGetFactory) override
-    {
-        const auto r = native()->getFactory((D2D1_GET_FACTORY) returnGetFactory);
-        return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
-    }
-
-    GMPI_QUERYINTERFACE_METHOD(drawing::api::IResource);
-    GMPI_REFCOUNT;
-};
-#endif
 
 inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
 {
@@ -626,17 +625,9 @@ class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
 public:
     SolidColorBrush_Win7(ID2D1RenderTarget* context, const drawing::Color* color, drawing::api::IFactory* factory) : factory_(factory)
     {
-        constexpr float c = 1.0f / 255.0f;
+        const auto nativeColor = toNativeWin7(color);
 
-        const drawing::Color modified
-        {
-            c * static_cast<float>(drawing::linearPixelToSRGB(color->r)),
-            c * static_cast<float>(drawing::linearPixelToSRGB(color->g)),
-            c * static_cast<float>(drawing::linearPixelToSRGB(color->b)),
-            color->a
-        };
-
-        /*HRESULT hr =*/ context->CreateSolidColorBrush(*(D2D1_COLOR_F*)&modified, (ID2D1SolidColorBrush**) &native_);
+        /*HRESULT hr =*/ context->CreateSolidColorBrush(nativeColor, (ID2D1SolidColorBrush**) &native_);
     }
 
     ~SolidColorBrush_Win7()
@@ -653,17 +644,8 @@ public:
     // IMPORTANT: Virtual functions must 100% match simulated interface (drawing::api::ISolidColorBrush)
     ReturnCode setColor(const drawing::Color* color) override
     {
-        constexpr float c = 1.0f / 255.0f;
-
-        const drawing::Color modified
-        {
-            c * static_cast<float>(drawing::linearPixelToSRGB(color->r)),
-            c * static_cast<float>(drawing::linearPixelToSRGB(color->g)),
-            c * static_cast<float>(drawing::linearPixelToSRGB(color->b)),
-            color->a
-        };
-
-        nativeSolidColorBrush()->SetColor((D2D1::ColorF*) &modified);
+        const auto nativeColor = toNativeWin7(color);
+        nativeSolidColorBrush()->SetColor(&nativeColor);
         return ReturnCode::Ok;
     }
 
@@ -1328,7 +1310,6 @@ public:
     GMPI_REFCOUNT;
 };
 
-// Direct2D context tailored to devices without sRGB high-color support. i.e. Windows 7.
 class GraphicsContext_Win7 : public GraphicsContext_base
 {
 public:
@@ -1355,31 +1336,17 @@ public:
             auto& srce = gradientstops[i];
             auto& dest = stops[i];
             dest.position = srce.position;
-            dest.color.a = srce.color.a;
 
-            constexpr float c = 1.0f / 255.0f;
-            dest.color.r = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.r));
-            dest.color.g = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.g));
-            dest.color.b = c * static_cast<float>(drawing::linearPixelToSRGB(srce.color.b));
+            (*(D2D1_COLOR_F*) &dest.color) = toNativeWin7(&srce.color);
         }
 
         return GraphicsContext_base::createGradientstopCollection(stops.data(), gradientstopsCount, extendMode, returnGradientstopCollection);
     }
 
-    ReturnCode clear(const drawing::Color* clearColor) override
+    ReturnCode clear(const drawing::Color* color) override
     {
-        constexpr float c = 1.0f / 255.0f;
-
-        const drawing::Color modified
-        {
-            c * static_cast<float>(drawing::linearPixelToSRGB(clearColor->r)),
-            c * static_cast<float>(drawing::linearPixelToSRGB(clearColor->g)),
-            c * static_cast<float>(drawing::linearPixelToSRGB(clearColor->b)),
-            clearColor->a
-        };
-
-        context_->Clear((D2D1_COLOR_F*)&modified);
-
+        const auto native = toNativeWin7((const drawing::Color*)color);
+        context_->Clear(&native);
         return ReturnCode::Ok;
     }
     GMPI_REFCOUNT;

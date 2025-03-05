@@ -151,7 +151,7 @@ gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTex
 
 	gmpi::directx::ComPtr<IDWriteTextLayout> textLayout;
 
-	auto hr = writeFactory->CreateTextLayout(
+	[[maybe_unused]] auto hr = writeFactory->CreateTextLayout(
 		widestring.data(),      // The string to be laid out and formatted.
 		(UINT32)widestring.size(),  // The length of the string.
 		textFormat,     // The text format to apply to the string (contains font information, etc).
@@ -172,7 +172,7 @@ gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTex
 
 gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
 {
-	*returnSize = getTextExtentHelper(writeFactory, native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, useLegacyBaseLineSnapping);
+	*returnSize = getTextExtentHelper(writeFactory, native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, false);
 	return gmpi::ReturnCode::Ok;
 }
 
@@ -184,11 +184,11 @@ Factory_base::Factory_base(DxFactoryInfo& pinfo, gmpi::api::IUnknown* pfallback)
 }
 
 void initFactoryHelper(
-		gmpi::directx::ComPtr<IDWriteFactory>& writeFactory
+	  gmpi::directx::ComPtr<IDWriteFactory>& writeFactory
 	, gmpi::directx::ComPtr<IWICImagingFactory>& wicFactory
 	, gmpi::directx::ComPtr<ID2D1Factory1>& direct2dFactory
 	, std::vector<std::string>& supportedFontFamilies
-	, std::vector<std::wstring>& supportedFontFamiliesLowerCase
+	, std::unordered_map<std::string, fontScaling>& availableFonts
 )
 {
 	{
@@ -254,10 +254,12 @@ void initFactoryHelper(
 				wchar_t name[64];
 				names->GetString(nameIndex, name, std::size(name));
 
+				const std::wstring CaseSensitiveFontName(name);
+
 				supportedFontFamilies.push_back(WStringToUtf8(name));
 
 				std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
-				supportedFontFamiliesLowerCase.push_back(name);
+				availableFonts[WStringToUtf8(name)] = fontScaling{ CaseSensitiveFontName , 0.0f, 0.0f};
 			}
 		}
 	}
@@ -266,11 +268,11 @@ void initFactoryHelper(
 Factory::Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
 {
 	initFactoryHelper(
-			info.writeFactory
+		  info.writeFactory
 		, info.wicFactory
 		, info.d2dFactory
 		, info.supportedFontFamilies
-		, info.supportedFontFamiliesLowerCase
+		, info.availableFonts
 	);
 }
 
@@ -292,23 +294,77 @@ gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeome
 	return toReturnCode(hr);
 }
 
-gmpi::ReturnCode Factory_base::createTextFormat(const char* fontFamilyName, /* void* unused fontCollection ,*/ gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, /* void* unused2 localeName, */ gmpi::drawing::api::ITextFormat** textFormat)
+gmpi::ReturnCode Factory_base::createTextFormat(
+	const char* fontFamilyName
+	, gmpi::drawing::FontWeight fontWeight
+	, gmpi::drawing::FontStyle fontStyle
+	, gmpi::drawing::FontStretch fontStretch
+	, float fontSize
+	, int32_t fontFlags
+	, gmpi::drawing::api::ITextFormat** textFormat
+)
 {
 	*textFormat = {};
 
-	auto fontFamilyNameW = Utf8ToWstring(fontFamilyName);
-	std::wstring lowercaseName(fontFamilyNameW);
-	std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
+	std::string lowercaseNameU(fontFamilyName);
+	std::transform(lowercaseNameU.begin(), lowercaseNameU.end(), lowercaseNameU.begin(), [](char c) { return static_cast<char>(std::tolower(c)); });
 
-	if (std::find(info.supportedFontFamiliesLowerCase.begin(), info.supportedFontFamiliesLowerCase.end(), lowercaseName) == info.supportedFontFamiliesLowerCase.end())
+	// find the font, or return nothing.
+	std::wstring fontFamilyNameW;
+
+	auto it = info.availableFonts.find(lowercaseNameU);
+	if (it == info.availableFonts.end())
 	{
+		// font name not found but maybe it's a GDI font?
 		fontFamilyNameW = fontMatchHelper(
-				info.writeFactory
+			  info.writeFactory
 			, info.GdiFontConversions
-			, fontFamilyNameW
+			, fontFamilyName
 			, fontWeight
-			, fontSize
 		);
+
+		if(fontFamilyNameW.empty())
+			return gmpi::ReturnCode::Fail;
+	}
+	else
+	{
+		fontFamilyNameW = it->second.systemFontName;
+	}
+
+	auto& fontScalingInfo = it->second;
+
+	// Cache font scaling info.
+	if (fontScalingInfo.bodyHeight == 0.0f)
+	{
+		constexpr float referenceFontSize = 32.0f;
+
+		gmpi::directx::ComPtr<IDWriteTextFormat> referenceTextFormat;
+
+		[[maybe_unused]] auto hr = info.writeFactory->CreateTextFormat(
+			fontFamilyNameW.c_str(),
+			NULL,
+			(DWRITE_FONT_WEIGHT)fontWeight,
+			(DWRITE_FONT_STYLE)fontStyle,
+			(DWRITE_FONT_STRETCH)fontStretch,
+			referenceFontSize,
+			L"", //locale
+			referenceTextFormat.put()
+		);
+
+		const auto referenceMetrics = getFontMetricsHelper(referenceTextFormat.get());
+		fontScalingInfo.bodyHeight = referenceFontSize / calcBodyHeight(referenceMetrics);
+		fontScalingInfo.capHeight  = referenceFontSize / referenceMetrics.capHeight;
+	}
+
+	// Scale cell height according to metrics
+	float scaledFontSize = fontSize;
+	if ((fontFlags & (int32_t)gmpi::drawing::FontFlags::BodyHeight) != 0)
+	{
+		scaledFontSize *= fontScalingInfo.bodyHeight;
+	}
+	else if ((fontFlags & (int32_t)gmpi::drawing::FontFlags::CapHeight) != 0)
+	{
+		scaledFontSize *= fontScalingInfo.capHeight;
 	}
 
 	IDWriteTextFormat* dwTextFormat{};
@@ -319,7 +375,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(const char* fontFamilyName, /* v
 		(DWRITE_FONT_WEIGHT)fontWeight,
 		(DWRITE_FONT_STYLE)fontStyle,
 		(DWRITE_FONT_STRETCH)fontStretch,
-		fontSize,
+		scaledFontSize,
 		L"", //locale
 		&dwTextFormat
 	);
@@ -337,25 +393,27 @@ gmpi::ReturnCode Factory_base::createTextFormat(const char* fontFamilyName, /* v
 
 // 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
 std::wstring fontMatchHelper(
-		IDWriteFactory* writeFactory
-	, std::map<std::wstring, std::wstring>& GdiFontConversions
-	, std::wstring fontFamilyNameW
+	  IDWriteFactory* writeFactory
+	, std::map<std::string, std::wstring>& GdiFontConversions
+	, std::string fontName // should be lowercase already.
 	, gmpi::drawing::FontWeight fontWeight
-	, float fontSize
 )
 {
-	if (auto it = GdiFontConversions.find(fontFamilyNameW); it != GdiFontConversions.end())
+	if (auto it = GdiFontConversions.find(fontName); it != GdiFontConversions.end())
 	{
 		return (*it).second;
 	}
 
+	auto fontFamilyNameW = Utf8ToWstring(fontName);
+	const wchar_t* actual_facename = fontFamilyNameW.c_str();
+
 	gmpi::directx::ComPtr<IDWriteGdiInterop> interop;
 	writeFactory->GetGdiInterop(interop.put());
 
+	LONG fontSize{ -12 };
 	LOGFONT lf{};
-	lf.lfHeight = (LONG) -fontSize;
+	lf.lfHeight = fontSize;
 	lf.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
-	const wchar_t* actual_facename = fontFamilyNameW.c_str();
 
 	if (fontFamilyNameW == L"serif")
 	{
@@ -419,14 +477,14 @@ std::wstring fontMatchHelper(
 		{
 			wchar_t name[64];
 			names->GetString(nameIndex, name, std::size(name));
-			std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c));});
 
-			GdiFontConversions.insert(std::pair<std::wstring, std::wstring>(fontFamilyNameW, name));
-			fontFamilyNameW = name;
+			GdiFontConversions.insert({ fontName, name });
+			return name;
 		}
 	}
 
-	return fontFamilyNameW;
+	GdiFontConversions.insert({ fontName, {} }); // insert a blank to save going through all this next time.
+	return {};
 }
 
 gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
@@ -591,7 +649,7 @@ gmpi::ReturnCode GraphicsContext_base::drawTextU(const char* utf8String, uint32_
 
 	// Don't draw bounding box padding that some fonts have above ascent.
 	auto adjusted = *layoutRect;
-	if (!DxTextFormat->getUseLegacyBaseLineSnapping())
+//	if (!DxTextFormat->getUseLegacyBaseLineSnapping())
 	{
 		adjusted.top -= DxTextFormat->getTopAdjustment();
 

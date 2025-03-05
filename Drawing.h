@@ -637,11 +637,6 @@ public:
 	{
 		return get()->setLineSpacing(lineSpacing, baseline);
 	}
-
-	gmpi::ReturnCode setImprovedVerticalBaselineSnapping()
-	{
-		return get()->setLineSpacing(gmpi::drawing::api::ITextFormat::ImprovedVerticalBaselineSnapping, 0.0f);
-	}
 };
 
 class BitmapPixels : public gmpi::IWrapper<gmpi::drawing::api::IBitmapPixels>
@@ -954,25 +949,11 @@ public:
 
 class Factory : public gmpi::IWrapper<gmpi::drawing::api::IFactory>
 {
-	std::unordered_map<std::string, std::pair<float, float>> availableFonts; // font family name, body-size, cap-height.
-	gmpi::shared_ptr<gmpi::drawing::api::IFactory> factory2;
-
 public:
 	PathGeometry createPathGeometry()
 	{
 		PathGeometry temp;
 		get()->createPathGeometry(temp.put());
-		return temp;
-	}
-
-	// createTextformat creates fonts of the size you specify (according to the font file).
-	// Note that this will result in different fonts having different bounding boxes and vertical alignment. See createTextformat2 for a solution to this.
-	// Dont forget to call TextFormat::setImprovedVerticalBaselineSnapping() to get consistant results on macOS
-
-	TextFormat createTextFormat(float fontSize = 12, const char* TextFormatfontFamilyName = "Arial", gmpi::drawing::FontWeight fontWeight = gmpi::drawing::FontWeight::Normal, gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal)
-	{
-		TextFormat temp;
-		get()->createTextFormat(TextFormatfontFamilyName/* , nullptr fontCollection */, fontWeight, fontStyle, fontStretch, fontSize/* , nullptr localeName */, temp.put());
 		return temp;
 	}
 
@@ -999,124 +980,54 @@ public:
 		}
 	};
 
-	// createTextFormat2 scales the bounding box of the font, so that it is always the same height as Arial.
-	// This is useful if you’re drawing text in a box(e.g.a Text - Entry’ module). The text will always have nice vertical alignment,
-	// even when the font 'falls back' to a font with different metrics.
-	TextFormat createTextFormat2(
+	// createTextFormat by default scales the bounding box of the font, so that it is always the same height as Arial.
+	// This is useful if you’re drawing text in a box(e.g.a Text - Entry module). The text will always have nice vertical alignment,
+	// even when the font 'falls back' to a font with different metrics. use FontFlags::SystemHeight for legacy behaviour
+	TextFormat createTextFormat(
 		float bodyHeight = 12.0f,
 		FontStack fontStack = {},
 		gmpi::drawing::FontWeight fontWeight = gmpi::drawing::FontWeight::Regular,
 		gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal,
 		gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal,
-		bool digitsOnly = false
+		gmpi::drawing::FontFlags flags = gmpi::drawing::FontFlags::BodyHeight
 	)
 	{
-		// "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif (test each)
+		assert(bodyHeight > 0.0f);
+
 		const char* fallBackFontFamilyName = "Arial";
 
-		if (!factory2)
-		{
-			if (gmpi::ReturnCode::Ok == get()->queryInterface(&gmpi::drawing::api::IFactory::guid, (void**) factory2.put())) //TODO should queryInterface take void**? or better to pass IUnknown** ??
-			{
-				assert(availableFonts.empty());
-
-				availableFonts.insert({ fallBackFontFamilyName, {0.0f, 0.0f} });
-
-				for (int32_t i = 0; true; ++i)
-				{
-					gmpi::ReturnString fontFamilyName;
-					if (gmpi::ReturnCode::Ok != factory2->getFontFamilyName(i, &fontFamilyName))
-					{
-						break;
-					}
-
-					if (fontFamilyName.str() != fallBackFontFamilyName)
-					{
-						availableFonts.insert({ fontFamilyName.str(), {0.0f, 0.0f} });
-					}
-				}
-			}
-			else
-			{
-				// Legacy SE. We don't know what fonts are available.
-				// Fake it by putting font name on list, even though we have no idea what actual font host will return.
-				// This will achieve same behaviour as before.
-				if(!fontStack.fontFamilies_.empty())
-				{
-					availableFonts.insert({ fontStack.fontFamilies_[0], {0.0f, 0.0f} });
-				}
-			}
-		}
-
-		const float referenceFontSize = 32.0f;
-
-		TextFormat temp;
+		TextFormat returnTextFormat;
 		for (const auto fontFamilyName : fontStack.fontFamilies_)
 		{
-			auto family_it = availableFonts.find(fontFamilyName);
-			if (family_it == availableFonts.end())
-			{
-				continue;
-			}
-
-			// Cache font scaling info.
-			if (family_it->second.first == 0.0f)
-			{
-				TextFormat referenceTextFormat;
-
-				get()->createTextFormat(
-					fontFamilyName,						// usually Arial
-					//nullptr /* fontCollection */,
-					fontWeight,
-					fontStyle,
-					fontStretch,
-					referenceFontSize,
-					//nullptr /* localeName */,
-					referenceTextFormat.put()
-				);
-
-				gmpi::drawing::FontMetrics referenceMetrics;
-				referenceTextFormat.getFontMetrics(&referenceMetrics);
-
-				family_it->second.first = referenceFontSize / calcBodyHeight(referenceMetrics);
-				family_it->second.second = referenceFontSize / referenceMetrics.capHeight;
-			}
-
-			const float& bodyHeightScale = family_it->second.first;
-			const float& capHeightScale = family_it->second.second;
-
-			// Scale cell height according to meterics
-			const float fontSize = bodyHeight * (digitsOnly ? capHeightScale : bodyHeightScale);
-
-			// create actual textformat.
-			assert(fontSize > 0.0f);
 			get()->createTextFormat(
 				fontFamilyName,
-				//nullptr /* fontCollection */,
 				fontWeight,
 				fontStyle,
 				fontStretch,
-				fontSize,
-				//nullptr /* localeName */,
-				temp.put()
+				bodyHeight,
+				(int32_t) flags,
+				returnTextFormat.put()
 			);
 
-			if(!temp) // should never happen unless font size is 0 (rogue module or global.txt style)
+			if (returnTextFormat)
 			{
-				return temp; // return null font. Else get into fallback recursion loop.
+				return returnTextFormat;
 			}
-
-			break;
 		}
 
-		// Failure for any reason results in fallback.
-		if (!temp)
-		{
-			return createTextFormat2(bodyHeight, fallBackFontFamilyName, fontWeight, fontStyle, fontStretch, digitsOnly);
-		}
+		// fallback to Arial
+		get()->createTextFormat(
+			fallBackFontFamilyName,
+			fontWeight,
+			fontStyle,
+			fontStretch,
+			bodyHeight,
+			(int32_t) flags,
+			returnTextFormat.put()
+		);
 
-		temp.setImprovedVerticalBaselineSnapping();
-		return temp;
+		assert(returnTextFormat); // should never happen unless font size is 0 (rogue module or global.txt style)
+		return returnTextFormat;
 	}
 
 	Bitmap createImage(int32_t width = 32, int32_t height = 32)

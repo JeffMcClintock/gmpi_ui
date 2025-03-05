@@ -230,7 +230,6 @@ public:
     drawing::ParagraphAlignment paragraphAlignment;
     drawing::WordWrapping wordWrapping = drawing::WordWrapping::Wrap;
     float fontSize;
-    bool useLegacyBaseLineSnapping = true;
 
     // Cache some constants to make snap calculation faster.
     float topAdjustment = {}; // Mac includes extra space at top in font bounding box.
@@ -462,27 +461,13 @@ public:
         returnSize->width = r.width;
         returnSize->height = r.height;// - topAdjustment;
 
-        if (!useLegacyBaseLineSnapping)
-        {
-            returnSize->height -= topAdjustment;
-        }
+//      if (!useLegacyBaseLineSnapping)
+        returnSize->height -= topAdjustment;
     }
 	
     ReturnCode setLineSpacing(float lineSpacing, float baseline) override
     {
-        // Hack, reuse this method to enable legacy-mode.
-		if (static_cast<float>(ITextFormat::ImprovedVerticalBaselineSnapping) == lineSpacing)
-        {
-            useLegacyBaseLineSnapping = false;
-            return ReturnCode::Ok;
-        }
-
         return ReturnCode::NoSupport;
-    }
-
-    bool getUseLegacyBaseLineSnapping() const
-    {
-        return useLegacyBaseLineSnapping;
     }
 
 	GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
@@ -913,7 +898,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** pathGeometry) override;
 
-    ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, drawing::api::ITextFormat** textFormat) override;
+    ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, drawing::api::ITextFormat** textFormat) override;
 
     ReturnCode createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap) override;
 
@@ -1766,7 +1751,7 @@ public:
 		//                float shiftUp = testLineHeightMultiplier * fontMetrics.bodyHeight();
 
 				// macOS draws extra padding at top of text bounds. Compensate for it.
-		if (!textformat->getUseLegacyBaseLineSnapping())
+//		if (!textformat->getUseLegacyBaseLineSnapping())
 		{
 			bounds.origin.y -= textformat->topAdjustment;
 			bounds.size.height += textformat->topAdjustment;

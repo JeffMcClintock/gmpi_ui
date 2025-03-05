@@ -224,7 +224,6 @@ gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTex
 
 class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>
 {
-    bool useLegacyBaseLineSnapping = true;
     float topAdjustment = {};
     float fontMetrics_ascent = {};
     IDWriteFactory* writeFactory{};
@@ -276,13 +275,6 @@ public:
 
     ReturnCode setLineSpacing(float lineSpacing, float baseline) override
     {
-        // Hack, reuse this method to enable legacy-mode.
-        if (static_cast<float>(ITextFormat::ImprovedVerticalBaselineSnapping) == lineSpacing)
-        {
-            useLegacyBaseLineSnapping = false;
-            return ReturnCode::Ok;
-        }
-
         // For the default method, spacing depends solely on the content. For uniform spacing, the specified line height overrides the content.
         DWRITE_LINE_SPACING_METHOD method = lineSpacing < 0.0f ? DWRITE_LINE_SPACING_METHOD_DEFAULT : DWRITE_LINE_SPACING_METHOD_UNIFORM;
         const auto r = native()->SetLineSpacing(method, fabsf(lineSpacing), baseline);
@@ -297,11 +289,6 @@ public:
     float getAscent() const
     {
         return fontMetrics_ascent;
-    }
-
-    bool getUseLegacyBaseLineSnapping() const
-    {
-        return useLegacyBaseLineSnapping;
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
@@ -816,22 +803,17 @@ class Geometry final : public drawing::api::IPathGeometry
 {
     friend class GraphicsContext;
 
-    ID2D1PathGeometry* geometry_;
+    gmpi::directx::ComPtr<ID2D1PathGeometry> geometry_;
 
 public:
-    Geometry(ID2D1PathGeometry* context) : geometry_(context)
-    {}
-    ~Geometry()
+    Geometry(ID2D1PathGeometry* geom)
     {
-        if (geometry_)
-        {
-            geometry_->Release();
-        }
+		geometry_.Attach(geom);
     }
 
     ID2D1PathGeometry* native()
     {
-        return geometry_;
+        return geometry_.get();
     }
 
     ReturnCode open(drawing::api::IGeometrySink** returnGeometrySink) override;
@@ -869,15 +851,22 @@ public:
     GMPI_REFCOUNT;
 };
 
+struct fontScaling
+{
+    std::wstring systemFontName; // mixed-case
+    float bodyHeight{};
+    float capHeight{};
+};
+
 struct DxFactoryInfo
 {
     gmpi::directx::ComPtr<ID2D1Factory1> d2dFactory;
     gmpi::directx::ComPtr<IDWriteFactory> writeFactory;
     gmpi::directx::ComPtr<IWICImagingFactory> wicFactory;
 
-    std::vector<std::wstring> supportedFontFamiliesLowerCase;
-    std::vector<std::string> supportedFontFamilies;
-    std::map<std::wstring, std::wstring> GdiFontConversions;
+    std::unordered_map<std::string, fontScaling> availableFonts; // lowercase name mapping to scaling information.
+    std::vector<std::string> supportedFontFamilies;              // actual system font names, mixed case.
+    std::map<std::string, std::wstring> GdiFontConversions;
     bool DX_support_sRGB = true;
 };
 
@@ -886,15 +875,14 @@ void initFactoryHelper(
     , gmpi::directx::ComPtr<IWICImagingFactory>& wicFactory
     , gmpi::directx::ComPtr<ID2D1Factory1>& direct2dFactory
     , std::vector<std::string>& supportedFontFamilies
-    , std::vector<std::wstring>& supportedFontFamiliesLowerCase
+	, std::unordered_map<std::string, fontScaling>& availableFonts
 );
 
 std::wstring fontMatchHelper(
       IDWriteFactory* writeFactory
-    , std::map<std::wstring, std::wstring>& GdiFontConversions
-    , std::wstring fontName
+    , std::map<std::string, std::wstring>& GdiFontConversions
+    , std::string fontName
     , drawing::FontWeight fontWeight
-    , float fontSize
 );
 
 class Factory_base : public drawing::api::IFactory
@@ -937,7 +925,7 @@ public:
         return info.d2dFactory;
     }
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
-    ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, drawing::api::ITextFormat** returnTextFormat) override;
+    ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags, drawing::api::ITextFormat** returnTextFormat) override;
     ReturnCode createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override

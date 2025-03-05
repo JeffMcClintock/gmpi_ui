@@ -80,6 +80,13 @@ enum class FontStyle : int32_t
     Italic  = 2,
 };
 
+enum class FontFlags : int32_t
+{
+    BodyHeight = 0,   // height specifies the body-height of the font
+    CapHeight = 1,    // height specifies the cap-height of the font
+    SystemHeight = 2, // height is interpreted by the OS, results in uneven heights between different fonts.
+};
+
 enum class TextAlignment : int32_t
 {
     Leading  = 0,
@@ -405,11 +412,7 @@ struct DECLSPEC_NOVTABLE ITextFormat : gmpi::api::IUnknown
     virtual gmpi::ReturnCode getFontMetrics(FontMetrics* returnFontMetrics) = 0;
 
 	// For the default method use lineSpacing=-1 (spacing depends solely on the content). For uniform spacing, the specified line height overrides the content.
-	// Can also be used to enable legacy-mode for cross-platform vertical font snapping by
-	// passing lineSpacing = gmpi::drawing::ITextFormat::LegacyVerticalBaselineSnapping
     virtual gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) = 0;
-
-	enum {ImprovedVerticalBaselineSnapping = -512};
 
     // {ED903255-3FE0-4CE4-8CD1-97D72D51B7CB}
     inline static const gmpi::api::Guid guid =
@@ -643,7 +646,7 @@ struct DECLSPEC_NOVTABLE IBitmapRenderTarget : IDeviceContext
 struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode createPathGeometry(IPathGeometry** returnPathGeometry) = 0;
-    virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, ITextFormat** returnTextFormat) = 0;
+    virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, int32_t fontFlags, ITextFormat** returnTextFormat) = 0;
     virtual gmpi::ReturnCode createImage(int32_t width, int32_t height, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode loadImageU(const char* uri, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;

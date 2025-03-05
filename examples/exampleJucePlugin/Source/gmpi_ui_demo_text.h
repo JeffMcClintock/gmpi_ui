@@ -42,9 +42,9 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 
 	for (auto& option : options)
 	{
-		gmpi::drawing::Factory::FontStack stack{ std::vector<std::string>{"Segoe"} };
+		gmpi::drawing::Factory::FontStack stack{ {"Segoe"} }; // non-existant font name, will fallback to Arial
 
-		auto font = g.getFactory().createTextFormat2(textheight, stack, option.weight, option.style, option.stretch);
+		auto font = g.getFactory().createTextFormat(textheight, stack, option.weight, option.style, option.stretch);
 
 		const auto textSize = font.getTextExtentU(option.name);
 		textRect.right = textRect.left + textSize.width + 1;
@@ -77,7 +77,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 	{
 		const auto text = "One spring morning at four o'clock the first cuckoo arrived in the valley of the Moomins. He perched on the blue roof of Moomin house and cuckooed 8 times - rather hoarsely to be sure, for it was still a bit early in the spring.\n   Then he flew away to the east.\n   Moomintroll woke up and lay a long time looking at the ceiling before he realised where he was. He had slept a hundred nights and a hundred days, and his dreams still thronged about his head trying to coax him back to sleep.";
 
-		auto font = g.getFactory().createTextFormat2(14);
+		auto font = g.getFactory().createTextFormat(14);
 
 		textRect.left = margin;
 		textRect.right = size.width / 2.0f;
@@ -91,7 +91,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 	{
 		const auto text = (const char*) u8"Color emoji: 絵文字 🦑 😀"; // note: on Windows you need to save your source code as "UTF8 with signature"
 
-		auto font = g.getFactory().createTextFormat2(14);
+		auto font = g.getFactory().createTextFormat(14);
 		const auto textSize = font.getTextExtentU(text);
 
 		textRect.left = textRect.right + margin;
@@ -114,7 +114,7 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		};
 
 		const float boxHeight = 28.0f;
-		auto font = g.getFactory().createTextFormat2(14);
+		auto font = g.getFactory().createTextFormat(14);
 
         gmpi::drawing::Rect alignmentRect{textRect.left, textRect.top, textRect.right, textRect.top + boxHeight};
 		auto boxBrush = g.createSolidColorBrush(gmpi::drawing::Colors::Blue);

@@ -474,10 +474,6 @@ struct DECLSPEC_NOVTABLE IBrush : IResource
 // INTERFACE 'IBitmapBrush'
 struct DECLSPEC_NOVTABLE IBitmapBrush : IBrush
 {
-    //virtual gmpi::ReturnCode setExtendModeX(ExtendMode extendModeX) = 0;
-    //virtual gmpi::ReturnCode setExtendModeY(ExtendMode extendModeY) = 0;
-    //virtual gmpi::ReturnCode setInterpolationMode(BitmapInterpolationMode bitmapInterpolationMode) = 0;
-
     // {10E6068D-75D7-4C36-89AD-1C8878E70988}
     inline static const gmpi::api::Guid guid =
     { 0x10E6068D, 0x75D7, 0x4C36, { 0x89, 0xAD, 0x1C, 0x88, 0x78, 0xE7, 0x09, 0x88} };
@@ -486,8 +482,7 @@ struct DECLSPEC_NOVTABLE IBitmapBrush : IBrush
 // INTERFACE 'ISolidColorBrush'
 struct DECLSPEC_NOVTABLE ISolidColorBrush : IBrush
 {
-    virtual gmpi::ReturnCode setColor(const Color* color) = 0;
-//	virtual Color getColor() = 0; // !!!ERROR !!! RETURNING A STRUCT
+    virtual void setColor(const Color* color) = 0;
 
     // {BB3FD251-47A0-4273-90AB-A5CDC88F57B9}
     inline static const gmpi::api::Guid guid =
@@ -521,7 +516,6 @@ struct DECLSPEC_NOVTABLE IRadialGradientBrush : IBrush
 // INTERFACE 'IStrokeStyle'
 struct DECLSPEC_NOVTABLE IStrokeStyle : IResource
 {
-
     // {27D19BF3-9DB2-49CC-A8EE-28E0716EA8B6}
     inline static const gmpi::api::Guid guid =
     { 0x27D19BF3, 0x9DB2, 0x49CC, { 0xA8, 0xEE, 0x28, 0xE0, 0x71, 0x6E, 0xA8, 0xB6} };

@@ -24,7 +24,6 @@
 #include <d2d1_2.h>
 #include <dwrite.h>
 #include <Wincodec.h>
-
 #include "../Drawing.h"
 
 namespace gmpi
@@ -505,22 +504,25 @@ public:
     GMPI_REFCOUNT;
 };
 
-// never instansiated or inherited, just used to simulate a common ancestor for all brushes, that can quickly C cast to get hold of the D2D brush.
-struct Brush : public gmpi::api::IUnknown
+struct Brush
 {
-    ID2D1Brush* native_ = {};
+    gmpi::directx::ComPtr<ID2D1Brush> native_;
+    drawing::api::IFactory* factory_ = {};
 
     auto native() -> ID2D1Brush* const
     {
-        return native_;
+        return native_.get();
     }
 };
 
-class BitmapBrush final : public drawing::api::IBitmapBrush
-{
-    ID2D1BitmapBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-    drawing::api::IFactory* factory_ = {};
+// a imaginary common ancestor for all brushes, that can quickly cast to get hold of the D2D brush.
+// only works so long as all bushes are derived *first* from 'Brush'.
+// Then we can pretend for the purpose of getting the native brush that all brushes are BrushCommon
+struct BrushCommon : public Brush, public drawing::api::IBrush
+{};
 
+class BitmapBrush final : public Brush, public drawing::api::IBitmapBrush
+{
 public:
     BitmapBrush(
         drawing::api::IFactory* factory,
@@ -528,8 +530,9 @@ public:
         const drawing::api::IBitmap* bitmap,
         const drawing::BrushProperties* brushProperties
     )
-        : factory_(factory)
     {
+        factory_ = factory;
+
         auto bm = ((Bitmap*)bitmap);
         auto nativeBitmap = bm->getNativeBitmap(context);
 
@@ -540,60 +543,46 @@ public:
             D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
         };
 
-        [[maybe_unused]] const auto hr = context->CreateBitmapBrush(nativeBitmap, &bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)&native_);
+        [[maybe_unused]] const auto hr = context->CreateBitmapBrush(nativeBitmap, &bitmapBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, (ID2D1BitmapBrush**)native_.put());
         assert(hr == 0);
     }
 
-    ~BitmapBrush()
+    // IResource
+    ReturnCode getFactory(drawing::api::IFactory** factory) override
     {
-        if (native_)
-            native_->Release();
+        *factory = factory_;
+        return ReturnCode::Ok;
     }
 
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-
         // GMPI_QUERYINTERFACE(drawing::api::IBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         GMPI_QUERYINTERFACE(drawing::api::IBitmapBrush);
-
         return ReturnCode::NoSupport;
-    }
-
-    // IResource
-    ReturnCode getFactory(drawing::api::IFactory** factory) override
-    {
-        *factory = factory_;
-        return ReturnCode::Ok;
     }
 
     GMPI_REFCOUNT;
 };
 
-class SolidColorBrush final : public drawing::api::ISolidColorBrush
+class SolidColorBrush : public Brush, public drawing::api::ISolidColorBrush
 {
-    ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-    drawing::api::IFactory* factory_ = {};
-
 public:
-    SolidColorBrush(ID2D1SolidColorBrush* b, drawing::api::IFactory *factory) : native_(b), factory_(factory){}
-
-    ~SolidColorBrush()
+	SolidColorBrush(drawing::api::IFactory* factory, ID2D1RenderTarget* context, const drawing::Color* color)
     {
-        if (native_)
-            native_->Release();
+        factory_ = factory;
+        context->CreateSolidColorBrush(*(D2D1_COLOR_F*)color, (ID2D1SolidColorBrush**) native_.put());
     }
 
-    ID2D1SolidColorBrush* native()
+    ID2D1SolidColorBrush* mynative()
     {
-        return (ID2D1SolidColorBrush*)native_;
+        return (ID2D1SolidColorBrush*) native_.get();
     }
 
-    ReturnCode setColor(const drawing::Color* color) override
+    void setColor(const drawing::Color* color) override
     {
-        native()->SetColor(*reinterpret_cast<const D2D1_COLOR_F*>(color));
-        return ReturnCode::Ok;
+        mynative()->SetColor(*reinterpret_cast<const D2D1_COLOR_F*>(color));
     }
 
     // IResource
@@ -606,110 +595,61 @@ public:
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-
         // GMPI_QUERYINTERFACE(drawing::api::IBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
-
         return ReturnCode::NoSupport;
     }
 
     GMPI_REFCOUNT;
 };
 
-class SolidColorBrush_Win7 final : public drawing::api::ISolidColorBrush
+class SolidColorBrush_Win7 final : public SolidColorBrush
 {
-    ID2D1SolidColorBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-    drawing::api::IFactory* factory_ = {};
-
 public:
-    SolidColorBrush_Win7(ID2D1RenderTarget* context, const drawing::Color* color, drawing::api::IFactory* factory) : factory_(factory)
+    SolidColorBrush_Win7(drawing::api::IFactory* factory, ID2D1RenderTarget* context, const drawing::Color* color) : SolidColorBrush(factory, context, color)
     {
         const auto nativeColor = toNativeWin7(color);
-
-        /*HRESULT hr =*/ context->CreateSolidColorBrush(nativeColor, (ID2D1SolidColorBrush**) &native_);
+        context->CreateSolidColorBrush(nativeColor, (ID2D1SolidColorBrush**)native_.put());
     }
 
-    ~SolidColorBrush_Win7()
-    {
-        if (native_)
-            native_->Release();
-    }
-
-    inline ID2D1SolidColorBrush* nativeSolidColorBrush()
-    {
-        return (ID2D1SolidColorBrush*)native_;
-    }
-
-    // IMPORTANT: Virtual functions must 100% match simulated interface (drawing::api::ISolidColorBrush)
-    ReturnCode setColor(const drawing::Color* color) override
+    void setColor(const drawing::Color* color) override
     {
         const auto nativeColor = toNativeWin7(color);
-        nativeSolidColorBrush()->SetColor(&nativeColor);
-        return ReturnCode::Ok;
+        mynative()->SetColor(&nativeColor);
     }
-
-    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-    {
-        *returnInterface = {};
-
-        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
-        GMPI_QUERYINTERFACE(drawing::api::IResource);
-        GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
-
-        return ReturnCode::NoSupport;
-    }
-
-    // IResource
-    ReturnCode getFactory(drawing::api::IFactory** factory) override
-    {
-        *factory = factory_;
-        return ReturnCode::Ok;
-    }
-    GMPI_REFCOUNT;
 };
 
-class LinearGradientBrush final : public drawing::api::ILinearGradientBrush
+class LinearGradientBrush final : public Brush, public drawing::api::ILinearGradientBrush
 {
-    ID2D1LinearGradientBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-    drawing::api::IFactory* factory_ = {};
-
 public:
-    LinearGradientBrush(drawing::api::IFactory *factory, ID2D1RenderTarget* context, const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection)
-        : factory_(factory)
+    LinearGradientBrush(drawing::api::IFactory* factory, ID2D1RenderTarget* context, const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection)
     {
-        [[maybe_unused]] HRESULT hr = context->CreateLinearGradientBrush((D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientstopCollection*)gradientStopCollection)->native(), (ID2D1LinearGradientBrush **)&native_);
+        factory_ = factory;
+        [[maybe_unused]] HRESULT hr = context->CreateLinearGradientBrush((D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientstopCollection*)gradientStopCollection)->native(), (ID2D1LinearGradientBrush **)native_.put());
         assert(hr == 0);
     }
 
-    ~LinearGradientBrush()
+    ID2D1LinearGradientBrush* mynative()
     {
-        if (native_)
-            native_->Release();
-    }
-
-    inline ID2D1LinearGradientBrush* native()
-    {
-        return (ID2D1LinearGradientBrush*)native_;
+        return (ID2D1LinearGradientBrush*)native_.get();
     }
 
     void setStartPoint(drawing::Point startPoint) override
     {
-        native()->SetStartPoint(*reinterpret_cast<D2D1_POINT_2F*>(&startPoint));
+        mynative()->SetStartPoint(*reinterpret_cast<D2D1_POINT_2F*>(&startPoint));
     }
     void setEndPoint(drawing::Point endPoint) override
     {
-        native()->SetEndPoint(*reinterpret_cast<D2D1_POINT_2F*>(&endPoint));
+        mynative()->SetEndPoint(*reinterpret_cast<D2D1_POINT_2F*>(&endPoint));
     }
 
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-
         // GMPI_QUERYINTERFACE(drawing::api::IBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         GMPI_QUERYINTERFACE(drawing::api::ILinearGradientBrush);
-
         return ReturnCode::NoSupport;
     }
 
@@ -722,58 +662,47 @@ public:
     GMPI_REFCOUNT;
 };
 
-class RadialGradientBrush final : public drawing::api::IRadialGradientBrush
+class RadialGradientBrush final : public Brush, public drawing::api::IRadialGradientBrush
 {
-    ID2D1RadialGradientBrush* native_ = {}; // MUST be first so at same relative memory as Brush::native_
-    drawing::api::IFactory* factory_ = {};
-
 public:
-    RadialGradientBrush(drawing::api::IFactory *factory, ID2D1RenderTarget* context, const drawing::RadialGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, const drawing::api::IGradientstopCollection* gradientStopCollection)
-        : factory_(factory)
+    RadialGradientBrush(drawing::api::IFactory* factory, ID2D1RenderTarget* context, const drawing::RadialGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, const drawing::api::IGradientstopCollection* gradientStopCollection)
     {
-        [[maybe_unused]] HRESULT hr = context->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientstopCollection*)gradientStopCollection)->native(), (ID2D1RadialGradientBrush **)&native_);
+        factory_ = factory;
+        [[maybe_unused]] HRESULT hr = context->CreateRadialGradientBrush((D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*)linearGradientBrushProperties, (D2D1_BRUSH_PROPERTIES*)brushProperties, ((GradientstopCollection*)gradientStopCollection)->native(), (ID2D1RadialGradientBrush **)native_.put());
         assert(hr == 0);
     }
 
-    ~RadialGradientBrush()
+    inline ID2D1RadialGradientBrush* mynative()
     {
-        if (native_)
-            native_->Release();
-    }
-
-    inline ID2D1RadialGradientBrush* native()
-    {
-        return (ID2D1RadialGradientBrush*)native_;
+        return (ID2D1RadialGradientBrush*)native_.get();
     }
 
     void setCenter(drawing::Point center) override
     {
-        native()->SetCenter(*reinterpret_cast<D2D1_POINT_2F*>(&center));
+        mynative()->SetCenter(*reinterpret_cast<D2D1_POINT_2F*>(&center));
     }
 
     void setGradientOriginOffset(drawing::Point gradientOriginOffset) override
     {
-        native()->SetGradientOriginOffset(*reinterpret_cast<D2D1_POINT_2F*>(&gradientOriginOffset));
+        mynative()->SetGradientOriginOffset(*reinterpret_cast<D2D1_POINT_2F*>(&gradientOriginOffset));
     }
 
     void setRadiusX(float radiusX) override
     {
-        native()->SetRadiusX(radiusX);
+        mynative()->SetRadiusX(radiusX);
     }
 
     void setRadiusY(float radiusY) override
     {
-        native()->SetRadiusY(radiusY);
+        mynative()->SetRadiusY(radiusY);
     }
 
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-
         // GMPI_QUERYINTERFACE(drawing::api::IBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         GMPI_QUERYINTERFACE(drawing::api::IRadialGradientBrush);
-
         return ReturnCode::NoSupport;
     }
 
@@ -1097,43 +1026,72 @@ public:
 
     ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
-        context_->DrawRectangle(D2D1::RectF(rect->left, rect->top, rect->right, rect->bottom), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle) );
+        context_->DrawRectangle(
+            D2D1::RectF(rect->left, rect->top, rect->right, rect->bottom)
+            , static_cast<BrushCommon*>(brush)->native()
+            , strokeWidth, toNative(strokeStyle)
+        );
         return ReturnCode::Ok;
     }
 
     ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
     {
-        context_->FillRectangle((D2D1_RECT_F*)rect, ((Brush*)brush)->native());
+        context_->FillRectangle(
+            (D2D1_RECT_F*)rect
+            , static_cast<BrushCommon*>(brush)->native()
+        );
         return ReturnCode::Ok;
     }
 
     ReturnCode drawRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
-        context_->DrawRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+        context_->DrawRoundedRectangle(
+            (D2D1_ROUNDED_RECT*)roundedRect
+            , static_cast<BrushCommon*>(brush)->native()
+            , (FLOAT)strokeWidth
+            , toNative(strokeStyle)
+        );
         return ReturnCode::Ok;
     }
 
     ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
     {
-        context_->FillRoundedRectangle((D2D1_ROUNDED_RECT*)roundedRect, ((Brush*)brush)->native());
+        context_->FillRoundedRectangle(
+            (D2D1_ROUNDED_RECT*)roundedRect
+            , static_cast<BrushCommon*>(brush)->native()
+        );
         return ReturnCode::Ok;
     }
 
     ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
-        context_->DrawEllipse((D2D1_ELLIPSE*)ellipse, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+        context_->DrawEllipse(
+            (D2D1_ELLIPSE*)ellipse
+            , static_cast<BrushCommon*>(brush)->native()
+            , (FLOAT)strokeWidth
+            , toNative(strokeStyle)
+        );
         return ReturnCode::Ok;
     }
 
     ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
     {
-        context_->FillEllipse((D2D1_ELLIPSE*)ellipse, ((Brush*)brush)->native());
+        context_->FillEllipse(
+            (D2D1_ELLIPSE*)ellipse
+            , static_cast<BrushCommon*>(brush)->native()
+        );
         return ReturnCode::Ok;
     }
 
     ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
-        context_->DrawLine(*((D2D_POINT_2F*)&point0), *((D2D_POINT_2F*)&point1), ((Brush*)brush)->native(), strokeWidth, toNative(strokeStyle));
+        context_->DrawLine(
+            *((D2D_POINT_2F*)&point0)
+            , *((D2D_POINT_2F*)&point1)
+            , static_cast<BrushCommon*>(brush)->native()
+            , strokeWidth
+            , toNative(strokeStyle)
+        );
         return ReturnCode::Ok;
     }
 
@@ -1146,10 +1104,14 @@ public:
         ID2D1Brush* opacityBrushNative{};
         if (opacityBrush)
         {
-            opacityBrushNative = ((Brush*)brush)->native();
+            opacityBrushNative = static_cast<BrushCommon*>(brush)->native();
         }
 
-        context_->FillGeometry(d2d_geometry, ((Brush*)brush)->native(), opacityBrushNative);
+        context_->FillGeometry(
+            d2d_geometry
+            , static_cast<BrushCommon*>(brush)->native()
+            , opacityBrushNative
+        );
         return ReturnCode::Ok;
     }
 
@@ -1321,7 +1283,7 @@ public:
     {
         *returnSolidColorBrush = {};
         gmpi::shared_ptr<gmpi::api::IUnknown> b;
-        b.attach(new SolidColorBrush_Win7(context_, color, factory));
+        b.attach(new SolidColorBrush_Win7(factory, context_, color));
         return b->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
     }
 

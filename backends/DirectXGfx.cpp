@@ -572,7 +572,12 @@ gmpi::ReturnCode Factory_base::loadImageU(const char* uri, drawing::api::IBitmap
 gmpi::ReturnCode GraphicsContext_base::drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle)
 {
 	auto* d2d_geometry = ((gmpi::directx::Geometry*)pathGeometry)->native();
-	context_->DrawGeometry(d2d_geometry, ((Brush*)brush)->native(), (FLOAT)strokeWidth, toNative(strokeStyle));
+	context_->DrawGeometry(
+		d2d_geometry
+		, static_cast<BrushCommon*>(brush)->native()
+		, strokeWidth
+		, toNative(strokeStyle)
+	);
 	return gmpi::ReturnCode::Ok;
 }
 
@@ -581,7 +586,7 @@ gmpi::ReturnCode GraphicsContext_base::drawTextU(const char* utf8String, uint32_
 	const auto widestring = Utf8ToWstring({ utf8String, static_cast<size_t>(stringLength) });
 			
 	auto DxTextFormat = reinterpret_cast<const TextFormat*>(textFormat);
-	auto b = ((Brush*)brush)->native();
+	auto b = static_cast<BrushCommon*>(brush)->native();
 	auto tf = DxTextFormat->native();
 
 	// Don't draw bounding box padding that some fonts have above ascent.
@@ -773,18 +778,10 @@ gmpi::ReturnCode GraphicsContext_base::createSolidColorBrush(const drawing::Colo
 {
 	*returnSolidColorBrush = {};
 
-	ID2D1SolidColorBrush* b{};
-	HRESULT hr = context_->CreateSolidColorBrush(*(D2D1_COLOR_F*)color, &b);
+	gmpi::shared_ptr<gmpi::api::IUnknown> b;
+	b.attach(new SolidColorBrush(factory, context_.get(), color));
 
-	if (hr == 0)
-	{
-		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-		b2.attach(new SolidColorBrush(b, factory));
-
-		b2->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
-	}
-
-	return toReturnCode(hr);
+	return b->queryInterface(&drawing::api::ISolidColorBrush::guid, reinterpret_cast<void **>(returnSolidColorBrush));
 }
 
 gmpi::ReturnCode GraphicsContext_base::createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnGradientstopCollection)

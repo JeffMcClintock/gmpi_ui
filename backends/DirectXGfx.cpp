@@ -183,13 +183,7 @@ Factory_base::Factory_base(DxFactoryInfo& pinfo, gmpi::api::IUnknown* pfallback)
 {
 }
 
-void initFactoryHelper(
-	  gmpi::directx::ComPtr<IDWriteFactory>& writeFactory
-	, gmpi::directx::ComPtr<IWICImagingFactory>& wicFactory
-	, gmpi::directx::ComPtr<ID2D1Factory1>& direct2dFactory
-	, std::vector<std::string>& supportedFontFamilies
-	, std::unordered_map<std::string, fontScaling>& availableFonts
-)
+void initFactoryHelper(DxFactoryInfo& info)
 {
 	{
 		D2D1_FACTORY_OPTIONS o;
@@ -198,13 +192,13 @@ void initFactoryHelper(
 #else
 		o.debugLevel = D2D1_DEBUG_LEVEL_NONE;
 #endif
-		auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, direct2dFactory.put_void());
+		auto rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, info.d2dFactory.put_void());
 
 #ifdef _DEBUG
 		if (FAILED(rs))
 		{
 			o.debugLevel = D2D1_DEBUG_LEVEL_NONE; // fallback
-			rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, direct2dFactory.put_void());
+			rs = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &o, info.d2dFactory.put_void());
 		}
 #endif
 		if (FAILED(rs))
@@ -218,7 +212,7 @@ void initFactoryHelper(
 	auto hr = DWriteCreateFactory(
 		DWRITE_FACTORY_TYPE_SHARED, // no improvment to glitching DWRITE_FACTORY_TYPE_ISOLATED
 		__uuidof(IDWriteFactory),
-		reinterpret_cast<::IUnknown**>(writeFactory.put())
+		reinterpret_cast<::IUnknown**>(info.writeFactory.put())
 	);
 
 	hr = CoCreateInstance(
@@ -226,7 +220,7 @@ void initFactoryHelper(
 		NULL,
 		CLSCTX_INPROC_SERVER,
 		IID_IWICImagingFactory,
-		wicFactory.put_void()
+		info.wicFactory.put_void()
 	);
 
 	// Cache font family names
@@ -234,7 +228,7 @@ void initFactoryHelper(
 		// TODO IDWriteFontSet is improved API, GetSystemFontSet()
 
 		gmpi::directx::ComPtr<IDWriteFontCollection> fonts;
-		writeFactory->GetSystemFontCollection(fonts.put(), TRUE);
+		info.writeFactory->GetSystemFontCollection(fonts.put(), TRUE);
 
 		const auto count = fonts->GetFontFamilyCount();
 
@@ -256,10 +250,10 @@ void initFactoryHelper(
 
 				const std::wstring CaseSensitiveFontName(name);
 
-				supportedFontFamilies.push_back(WStringToUtf8(name));
+				info.supportedFontFamilies.push_back(WStringToUtf8(name));
 
 				std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
-				availableFonts[WStringToUtf8(name)] = fontScaling{ CaseSensitiveFontName , 0.0f, 0.0f};
+				info.availableFonts[WStringToUtf8(name)] = fontScaling{ CaseSensitiveFontName , 0.0f, 0.0f};
 			}
 		}
 	}
@@ -267,13 +261,7 @@ void initFactoryHelper(
 
 Factory::Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
 {
-	initFactoryHelper(
-		  info.writeFactory
-		, info.wicFactory
-		, info.d2dFactory
-		, info.supportedFontFamilies
-		, info.availableFonts
-	);
+	initFactoryHelper(info);
 }
 
 gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)
@@ -491,7 +479,6 @@ gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, gmpi::
 {
 	IWICBitmap* wicBitmap{};
 	auto hr = info.wicFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
-// nuh auto hr =   pIWICFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppBGRA, WICBitmapCacheOnLoad, &wicBitmap);
 
 	if (hr == 0)
 	{

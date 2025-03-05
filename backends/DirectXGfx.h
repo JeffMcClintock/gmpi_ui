@@ -870,13 +870,7 @@ struct DxFactoryInfo
     bool DX_support_sRGB = true;
 };
 
-void initFactoryHelper(
-      gmpi::directx::ComPtr<IDWriteFactory>& writeFactory
-    , gmpi::directx::ComPtr<IWICImagingFactory>& wicFactory
-    , gmpi::directx::ComPtr<ID2D1Factory1>& direct2dFactory
-    , std::vector<std::string>& supportedFontFamilies
-	, std::unordered_map<std::string, fontScaling>& availableFonts
-);
+void initFactoryHelper(DxFactoryInfo& info);
 
 std::wstring fontMatchHelper(
       IDWriteFactory* writeFactory

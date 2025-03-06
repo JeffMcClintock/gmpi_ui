@@ -1068,7 +1068,7 @@ public:
     }
 
     // IMPORTANT: Virtual functions much 100% match drawing::api::ISolidColorBrush to simulate inheritance.
-	ReturnCode setColor(const drawing::Color* pcolor) override
+	void setColor(const drawing::Color* pcolor) override
     {
         color = *pcolor;
         setNativeColor();
@@ -2445,7 +2445,7 @@ ReturnCode GraphicsContext::createCompatibleRenderTarget(drawing::Size desiredSi
 }
 
 
-inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, drawing::api::ITextFormat** textFormat)
+inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, drawing::api::ITextFormat** textFormat)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));

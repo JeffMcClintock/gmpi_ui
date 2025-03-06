@@ -1067,18 +1067,11 @@ public:
         [nativec_ release] ;
     }
 
-    // IMPORTANT: Virtual functions much 100% match drawing::api::ISolidColorBrush to simulate inheritance.
 	void setColor(const drawing::Color* pcolor) override
     {
         color = *pcolor;
         setNativeColor();
-		return ReturnCode::Ok;
     }
-
-//    drawing::Color getColor() override
- //   {
- //       return color;
-//    }
 
 	ReturnCode getFactory(drawing::api::IFactory** factory) override
     {

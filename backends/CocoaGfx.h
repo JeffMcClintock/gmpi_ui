@@ -698,18 +698,18 @@ public:
 struct FactoryInfo
 {
     std::vector<std::string> supportedFontFamilies;
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
+//    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
     NSColorSpace* gmpiColorSpace = {};
 };
 
 class Factory_base : public drawing::api::IFactory
 {
 protected:
-    FactoryInfo& info;
     gmpi::api::IUnknown* fallback{};
 
 public:
-        
+    FactoryInfo& info;
+
     Factory_base(FactoryInfo& pinfo, gmpi::api::IUnknown* pfallback) :
           info(pinfo)
         , fallback(pfallback)
@@ -821,7 +821,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 #endif
         {
             auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
-            gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
+            info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
                 
             if(temp)
                 CFRelease(temp);
@@ -899,7 +899,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
                 alpha : (CGFloat)color.a];
 #endif
         const CGFloat components[4] = {color.r, color.g, color.b, color.a};
-        return [NSColor colorWithColorSpace:gmpiColorSpace components:components count:4];
+        return [NSColor colorWithColorSpace:info.gmpiColorSpace components:components count:4];
             
 // I think this is wrong because it's saying that the gmpi color is in the screen's color space. Which is a crapshoot out of our control.
 // we need to supply our color in a known color space, then let the OS convert it to whatever unknown color-space the screen is using.
@@ -927,7 +927,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     // IMpFactory2
     ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnString) override
     {
-        if(supportedFontFamilies.empty())
+        if(info.supportedFontFamilies.empty())
         {
             NSFontManager* fontManager = [NSFontManager sharedFontManager];
 /*
@@ -946,16 +946,16 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 
             for( NSString* familyName in fontFamilies)
             {
-                supportedFontFamilies.push_back([familyName UTF8String]);
+                info.supportedFontFamilies.push_back([familyName UTF8String]);
             }
         }
             
-        if (fontIndex < 0 || fontIndex >= supportedFontFamilies.size())
+        if (fontIndex < 0 || fontIndex >= info.supportedFontFamilies.size())
         {
             return ReturnCode::Fail;
         }
 
-        returnString->setData(supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(supportedFontFamilies[fontIndex].size()));
+        returnString->setData(info.supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(info.supportedFontFamilies[fontIndex].size()));
         return ReturnCode::Ok;
     }
     
@@ -971,7 +971,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 
 class Factory : public Factory_base
 {
-    DxFactoryInfo concreteInfo;
+    FactoryInfo concreteInfo;
 
 public:
     Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
@@ -1144,7 +1144,7 @@ public:
 
 //                CFRelease(colorSpace);
 
-        native2 = [[NSGradient alloc]initWithColors:colors atLocations : locations2.data() colorSpace : factory->gmpiColorSpace];
+        native2 = [[NSGradient alloc]initWithColors:colors atLocations : locations2.data() colorSpace : factory->info.gmpiColorSpace];
     }
 
     virtual void drawGradient() const = 0;
@@ -2459,7 +2459,7 @@ ReturnCode GraphicsContext::createCompatibleRenderTarget(drawing::Size desiredSi
 }
 
 
-inline ReturnCode Factory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, drawing::api::ITextFormat** textFormat)
+inline ReturnCode Factory_base::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, drawing::api::ITextFormat** textFormat)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
@@ -2467,7 +2467,7 @@ inline ReturnCode Factory::createTextFormat(const char* fontFamilyName, drawing:
 	return b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 }
 
-inline ReturnCode Factory::createPathGeometry(drawing::api::IPathGeometry** pathGeometry)
+inline ReturnCode Factory_base::createPathGeometry(drawing::api::IPathGeometry** pathGeometry)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.attach(new PathGeometry());
@@ -2475,7 +2475,7 @@ inline ReturnCode Factory::createPathGeometry(drawing::api::IPathGeometry** path
 	return b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 }
 
-inline ReturnCode Factory::createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap)
+inline ReturnCode Factory_base::createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 
@@ -2485,7 +2485,7 @@ inline ReturnCode Factory::createImage(int32_t width, int32_t height, drawing::a
 	return bm->queryInterface(&drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 }
 
-inline ReturnCode Factory::loadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap)
+inline ReturnCode Factory_base::loadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 

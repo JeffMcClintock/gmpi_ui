@@ -234,7 +234,7 @@ public:
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
 #endif
     
-    gmpi::cocoa::DrawingFactory drawingFactory;
+    gmpi::cocoa::Factory drawingFactory;
     NSView* view;
     NSBitmapImageRep* backBuffer{}; // backing buffer with linear colorspace for correct blending.
     

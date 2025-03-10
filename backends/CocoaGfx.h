@@ -969,12 +969,16 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     GMPI_REFCOUNT_NO_DELETE;
 };
 
+inline void initFactoryHelper(FactoryInfo& info)
+{
+}
+
 class Factory : public Factory_base
 {
     FactoryInfo concreteInfo;
 
 public:
-    Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
+    Factory(gmpi::api::IUnknown* pfallback = {}) : Factory_base(concreteInfo, pfallback)
     {
         initFactoryHelper(info);
     }

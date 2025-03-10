@@ -699,7 +699,7 @@ struct FactoryInfo
 {
     std::vector<std::string> supportedFontFamilies;
 //    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
-    NSColorSpace* gmpiColorSpace = {};
+    NSColorSpace* gmpiColorSpace{};
 };
 
 class Factory_base : public drawing::api::IFactory
@@ -819,13 +819,6 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
             [window setColorSpace:nsColorSpace];
         }
 #endif
-        {
-            auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
-            info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
-                
-            if(temp)
-                CFRelease(temp);
-        }
 /* don't work
 
         const bool failed = (colorSpace != [[window colorSpace] CGColorSpace]);
@@ -971,6 +964,11 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 
 inline void initFactoryHelper(FactoryInfo& info)
 {
+    auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
+    info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
+        
+    if(temp)
+        CFRelease(temp);
 }
 
 class Factory : public Factory_base

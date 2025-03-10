@@ -34,7 +34,7 @@ namespace gmpi
 {
 namespace cocoa
 {
-class DrawingFactory;
+class Factory;
     
 // Conversion utilities.
     
@@ -694,15 +694,25 @@ public:
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IGradientstopCollection);
 };
 
-class DrawingFactory : public drawing::api::IFactory
+// shared beween SDK3 and GMPI-UI factorys
+struct FactoryInfo
 {
     std::vector<std::string> supportedFontFamilies;
-        
-public:
-//    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
     NSColorSpace* gmpiColorSpace = {};
+};
+
+class Factory_base : public drawing::api::IFactory
+{
+protected:
+    FactoryInfo& info;
+    gmpi::api::IUnknown* fallback{};
+
+public:
         
-    DrawingFactory()
+    Factory_base(FactoryInfo& pinfo, gmpi::api::IUnknown* pfallback) :
+          info(pinfo)
+        , fallback(pfallback)
     {
 #if 0
         int maxPixelDepth = 0;
@@ -959,13 +969,24 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     GMPI_REFCOUNT_NO_DELETE;
 };
 
+class Factory : public Factory_base
+{
+    DxFactoryInfo concreteInfo;
+
+public:
+    Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
+    {
+        initFactoryHelper(info);
+    }
+};
+
 class CocoaBrushBase
 {
 protected:
-    cocoa::DrawingFactory* factory_;
+    cocoa::Factory* factory_;
 
 public:
-    CocoaBrushBase(cocoa::DrawingFactory* pfactory) :
+    CocoaBrushBase(cocoa::Factory* pfactory) :
         factory_(pfactory)
     {}
 
@@ -993,7 +1014,7 @@ public:
     drawing::BrushProperties brushProperties_;
 
     BitmapBrush(
-        cocoa::DrawingFactory* factory,
+        cocoa::Factory* factory,
         const drawing::api::IBitmap* bitmap,
         const drawing::BrushProperties* brushProperties
     )
@@ -1036,7 +1057,7 @@ class SolidColorBrush : public drawing::api::ISolidColorBrush, public CocoaBrush
     }
 
 public:
-    SolidColorBrush(const drawing::Color* pcolor, cocoa::DrawingFactory* factory) : CocoaBrushBase(factory)
+    SolidColorBrush(const drawing::Color* pcolor, cocoa::Factory* factory) : CocoaBrushBase(factory)
         , color(*pcolor)
     {
         setNativeColor();
@@ -1099,7 +1120,7 @@ protected:
     NSGradient* native2 = {};
 
 public:
-    Gradient(cocoa::DrawingFactory* factory, const drawing::api::IGradientstopCollection* gradientStopCollection)
+    Gradient(cocoa::Factory* factory, const drawing::api::IGradientstopCollection* gradientStopCollection)
     {
         auto stops = static_cast<const GradientstopCollection*>(gradientStopCollection);
 
@@ -1187,7 +1208,7 @@ class LinearGradientBrush final : public drawing::api::ILinearGradientBrush, pub
 
 public:
     LinearGradientBrush(
-        cocoa::DrawingFactory* factory,
+        cocoa::Factory* factory,
         const drawing::LinearGradientBrushProperties* linearGradientBrushProperties,
         const drawing::BrushProperties* brushProperties,
         const drawing::api::IGradientstopCollection* gradientStopCollection) :
@@ -1288,7 +1309,7 @@ class RadialGradientBrush : public drawing::api::IRadialGradientBrush, public Co
     drawing::RadialGradientBrushProperties gradientProperties;
 
 public:
-    RadialGradientBrush(cocoa::DrawingFactory* factory, const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection) :
+    RadialGradientBrush(cocoa::Factory* factory, const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, const  drawing::api::IGradientstopCollection* gradientStopCollection) :
         CocoaBrushBase(factory)
         , Gradient(factory, gradientStopCollection)
         , gradientProperties(*radialGradientBrushProperties)
@@ -1543,7 +1564,7 @@ public:
 class GraphicsContext : public drawing::api::IDeviceContext
 {
 protected:
-	cocoa::DrawingFactory* factory;
+	cocoa::Factory* factory;
 	std::vector<drawing::Rect> clipRectStack;
 	NSAffineTransform* currentTransform;
 	NSView* view_;
@@ -1551,7 +1572,7 @@ protected:
 public:
     inline static int logicProFix = -1;
 
-	GraphicsContext(NSView* pview, cocoa::DrawingFactory* pfactory) :
+	GraphicsContext(NSView* pview, cocoa::Factory* pfactory) :
 		factory(pfactory)
 		, view_(pview)
 	{
@@ -2374,7 +2395,7 @@ class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout
 	NSImage* image = {};
 
 public:
-	BitmapRenderTarget(cocoa::DrawingFactory* pfactory, const drawing::Size* desiredSize) :
+	BitmapRenderTarget(cocoa::Factory* pfactory, const drawing::Size* desiredSize) :
 		GraphicsContext(nullptr, pfactory)
 	{
 		NSRect r = NSMakeRect(0.0, 0.0, desiredSize->width, desiredSize->height);
@@ -2438,7 +2459,7 @@ ReturnCode GraphicsContext::createCompatibleRenderTarget(drawing::Size desiredSi
 }
 
 
-inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, drawing::api::ITextFormat** textFormat)
+inline ReturnCode Factory::createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, drawing::api::ITextFormat** textFormat)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
@@ -2446,7 +2467,7 @@ inline ReturnCode DrawingFactory::createTextFormat(const char* fontFamilyName, d
 	return b2->queryInterface(&drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 }
 
-inline ReturnCode DrawingFactory::createPathGeometry(drawing::api::IPathGeometry** pathGeometry)
+inline ReturnCode Factory::createPathGeometry(drawing::api::IPathGeometry** pathGeometry)
 {
 	gmpi::shared_ptr<api::IUnknown> b2;
 	b2.attach(new PathGeometry());
@@ -2454,7 +2475,7 @@ inline ReturnCode DrawingFactory::createPathGeometry(drawing::api::IPathGeometry
 	return b2->queryInterface(&drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 }
 
-inline ReturnCode DrawingFactory::createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap)
+inline ReturnCode Factory::createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 
@@ -2464,7 +2485,7 @@ inline ReturnCode DrawingFactory::createImage(int32_t width, int32_t height, dra
 	return bm->queryInterface(&drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 }
 
-inline ReturnCode DrawingFactory::loadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap)
+inline ReturnCode Factory::loadImageU(const char* utf8Uri, drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 

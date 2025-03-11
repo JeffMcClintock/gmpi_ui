@@ -6,7 +6,7 @@
 
 #pragma warning(disable : 4100)
 
-namespace gmpi
+namespace se
 {
 namespace generic_graphics
 {
@@ -43,7 +43,7 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	GMPI_QUERYINTERFACE_METHOD(drawing::api::IStrokeStyle);
+	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IStrokeStyle);
 	GMPI_REFCOUNT;
 };
 
@@ -239,7 +239,7 @@ public:
 			if (i > 0)
 			{
 				//nsvg__cubicBezTo(p, px + ptanx, py + ptany, x - tanx, y - tany, x, y);
-                drawing::BezierSegment bs{{px + ptanx, py + ptany}, {x - tanx, y - tany}, {x, y}};
+                gmpi::drawing::BezierSegment bs{{px + ptanx, py + ptany}, {x - tanx, y - tany}, {x, y}};
 				addBezier(&bs);
 			}
 			px = x;
@@ -252,7 +252,7 @@ public:
 	void addBezier(const gmpi::drawing::BezierSegment* bezier) override
 	{
 		// Convert bezier to line segments.
-		agg::curve4_div bezierToLines;
+		se::agg::curve4_div bezierToLines;
 		bezierToLines.geometrySink = this;
 		bezierToLines.init(lastPoint.x, lastPoint.y, bezier->point1.x, bezier->point1.y, bezier->point2.x, bezier->point2.y, bezier->point3.x, bezier->point3.y);
 	}
@@ -265,14 +265,14 @@ public:
 		}
 	}
 
-	GMPI_QUERYINTERFACE_METHOD(drawing::api::IGeometrySink);
+	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IGeometrySink);
 	GMPI_REFCOUNT;
 };
 
 class GraphicsContext : public gmpi::drawing::api::IDeviceContext
 {
 protected:
-	std::vector<drawing::Rect> clipRectStack;
+	std::vector<gmpi::drawing::Rect> clipRectStack;
 
 public:
 	GraphicsContext()
@@ -288,74 +288,74 @@ public:
 	{
 	}
 
-    drawing::PathGeometry createRectangleGeometry(const gmpi::drawing::Rect* rect, bool filled = false)
+    gmpi::drawing::PathGeometry createRectangleGeometry(const gmpi::drawing::Rect* rect, bool filled = false)
 	{
 		// create geometry
-        drawing::Factory factory;
+        gmpi::drawing::Factory factory;
         getFactory(factory.put());
 
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
 
-        sink.beginFigure({rect->left, rect->top}, filled ? drawing::FigureBegin::Filled : drawing::FigureBegin::Hollow);
+        sink.beginFigure({rect->left, rect->top}, filled ? gmpi::drawing::FigureBegin::Filled : gmpi::drawing::FigureBegin::Hollow);
         sink.addLine({rect->left, rect->bottom});
         sink.addLine({rect->right, rect->bottom});
         sink.addLine({rect->right, rect->top});
 
-		sink.endFigure(drawing::FigureEnd::Closed);
+		sink.endFigure(gmpi::drawing::FigureEnd::Closed);
 		sink.close();
 
 		return geometry;
 	}
 
-    ReturnCode drawRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
+    gmpi::ReturnCode drawRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createRectangleGeometry(rect, false);
 		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
-        return ReturnCode::Ok;
+        return gmpi::ReturnCode::Ok;
 	}
 
-    ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
+    gmpi::ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createRectangleGeometry(rect);
 		fillGeometry(geometry.get(), brush, nullptr);
-        return ReturnCode::Ok;
+        return gmpi::ReturnCode::Ok;
 	}
 
-	ReturnCode clear(const drawing::Color* clearColor) override
+    gmpi::ReturnCode clear(const gmpi::drawing::Color* clearColor) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 	
-	ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+    gmpi::ReturnCode drawLine(gmpi::drawing::Point point0, gmpi::drawing::Point point1, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createLineGeometry(point0, point1);
 		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
-		return ReturnCode::Ok;
+		return gmpi::ReturnCode::Ok;
 	}
 	
-    drawing::PathGeometry createLineGeometry(gmpi::drawing::Point point0, gmpi::drawing::Point point1)
+    gmpi::drawing::PathGeometry createLineGeometry(gmpi::drawing::Point point0, gmpi::drawing::Point point1)
 	{
 		// create geometry
-        drawing::Factory factory;
+        gmpi::drawing::Factory factory;
 		getFactory(factory.put());
 
 		auto geometry = factory.createPathGeometry();
 		auto sink = geometry.open();
 
-		sink.beginFigure(point0, drawing::FigureBegin::Hollow);
+		sink.beginFigure(point0, gmpi::drawing::FigureBegin::Hollow);
 		sink.addLine(point1);
 
-		sink.endFigure(drawing::FigureEnd::Open);
+		sink.endFigure(gmpi::drawing::FigureEnd::Open);
 		sink.close();
 
 		return geometry;
 	}
 
-    drawing::PathGeometry createEllipseGeometry(const gmpi::drawing::Ellipse* ellipse)
+    gmpi::drawing::PathGeometry createEllipseGeometry(const gmpi::drawing::Ellipse* ellipse)
 	{
 		// create geometry
-        drawing::Factory factory;
+        gmpi::drawing::Factory factory;
         getFactory(factory.put());
 
         auto geometry = factory.createPathGeometry();
@@ -381,19 +381,19 @@ public:
 		}
 		}
 		*/
-        drawing::Size size{ellipse->radiusX, ellipse->radiusY};
+        gmpi::drawing::Size size{ellipse->radiusX, ellipse->radiusY};
 
-        drawing::Point topCenter{ellipse->point.x, ellipse->point.y - size.height};
-        drawing::Point bottomCenter{ellipse->point.x, ellipse->point.y + size.height};
+        gmpi::drawing::Point topCenter{ellipse->point.x, ellipse->point.y - size.height};
+        gmpi::drawing::Point bottomCenter{ellipse->point.x, ellipse->point.y + size.height};
 
-        sink.beginFigure(topCenter, drawing::FigureBegin::Filled);
-        drawing::ArcSegment firstHalf{bottomCenter, size};
-        drawing::ArcSegment secondHalf{topCenter, size};
+        sink.beginFigure(topCenter, gmpi::drawing::FigureBegin::Filled);
+        gmpi::drawing::ArcSegment firstHalf{bottomCenter, size};
+        gmpi::drawing::ArcSegment secondHalf{topCenter, size};
 
 		sink.addArc(firstHalf);
 		sink.addArc(secondHalf);
 
-		sink.endFigure(drawing::FigureEnd::Closed);
+		sink.endFigure(gmpi::drawing::FigureEnd::Closed);
 		sink.close();
 
 		/*
@@ -416,83 +416,83 @@ public:
 		return geometry;
 	}
 
-	ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override
+    gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, gmpi::drawing::api::ITextFormat* textFormat, const gmpi::drawing::Rect* layoutRect, gmpi::drawing::api::IBrush* defaultForegroundBrush, int32_t options) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
-	ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
+    gmpi::ReturnCode drawBitmap(gmpi::drawing::api::IBitmap* bitmap, const gmpi::drawing::Rect* destinationRectangle, float opacity, gmpi::drawing::BitmapInterpolationMode interpolationMode, const gmpi::drawing::Rect* sourceRectangle) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
-	ReturnCode setTransform(const drawing::Matrix3x2* transform) override
+    gmpi::ReturnCode setTransform(const gmpi::drawing::Matrix3x2* transform) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
-	ReturnCode getTransform(drawing::Matrix3x2* transform) override
+    gmpi::ReturnCode getTransform(gmpi::drawing::Matrix3x2* transform) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
 	//	gmpi::ReturnCode createBitmap(gmpi::drawing::api::MP1_SIZE_U size, const gmpi::drawing::api::MP1_BITMAP_PROPERTIES* bitmapProperties, gmpi::drawing::api::IBitmap** bitmap) override;
 
-	ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+    gmpi::ReturnCode createBitmapBrush(gmpi::drawing::api::IBitmap* bitmap, const gmpi::drawing::BrushProperties* brushProperties, gmpi::drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
-	ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
+    gmpi::ReturnCode createRadialGradientBrush(const gmpi::drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, gmpi::drawing::api::IGradientstopCollection* gradientstopCollection, gmpi::drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
-	ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override
+    gmpi::ReturnCode createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 	
-	ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+    gmpi::ReturnCode drawEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
 		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
-		return ReturnCode::Ok;
+		return gmpi::ReturnCode::Ok;
 	}
 
-	ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
+    gmpi::ReturnCode fillEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
 		fillGeometry(geometry.get(), brush, nullptr);
-		return ReturnCode::Ok;
+		return gmpi::ReturnCode::Ok;
 	}
 
-	ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
+    gmpi::ReturnCode pushAxisAlignedClip(const gmpi::drawing::Rect* clipRect) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
-	ReturnCode popAxisAlignedClip() override
+    gmpi::ReturnCode popAxisAlignedClip() override
 	{
 		clipRectStack.pop_back();
-		return ReturnCode::Ok;
+		return gmpi::ReturnCode::Ok;
 	}
 
-	ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
+    gmpi::ReturnCode getAxisAlignedClip(gmpi::drawing::Rect* returnClipRect) override
 	{
-		return ReturnCode::Fail;
+		return gmpi::ReturnCode::Fail;
 	}
 
-	ReturnCode beginDraw() override
+    gmpi::ReturnCode beginDraw() override
 	{
-		return ReturnCode::NoSupport;
+		return gmpi::ReturnCode::NoSupport;
 	}
 
-	ReturnCode endDraw() override
+    gmpi::ReturnCode endDraw() override
 	{
-		return ReturnCode::NoSupport;
+		return gmpi::ReturnCode::NoSupport;
 	}
 
-	GMPI_QUERYINTERFACE_METHOD(drawing::api::IDeviceContext);
+	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IDeviceContext);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 

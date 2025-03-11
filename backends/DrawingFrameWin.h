@@ -137,7 +137,6 @@ namespace hosting
 		DxDrawingFrameBase() :
 			 toolTipShown(false)
 			, tooltipWindow(0)
-			, DrawingFactory(nullptr)
 		{
 		}
 

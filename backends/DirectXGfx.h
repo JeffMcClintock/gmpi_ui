@@ -883,10 +883,9 @@ class Factory_base : public drawing::api::IFactory
 {
 protected:
     DxFactoryInfo& info;
-    gmpi::api::IUnknown* fallback{};
 
 public:
-    Factory_base(DxFactoryInfo& pinfo, gmpi::api::IUnknown* pfallback);
+    Factory_base(DxFactoryInfo& pinfo);
 
     gmpi::directx::DxFactoryInfo& getInfo() { return info; }
 
@@ -956,12 +955,6 @@ public:
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override {
 		*returnInterface = {};
 		GMPI_QUERYINTERFACE(drawing::api::IFactory)
-
-        if (fallback)
-        {
-            assert(false); // not required?
-			return fallback->queryInterface(iid, returnInterface);
-        }
 		return gmpi::ReturnCode::NoSupport;
 	}
 
@@ -973,7 +966,7 @@ class Factory : public Factory_base
     DxFactoryInfo concreteInfo;
 
 public:
-    Factory(gmpi::api::IUnknown* pfallback);
+    Factory();
 };
 
 class GraphicsContext_base : public drawing::api::IDeviceContext

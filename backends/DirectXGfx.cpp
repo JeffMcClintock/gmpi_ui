@@ -177,9 +177,8 @@ gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stri
 }
 
 // Create factory myself;
-Factory_base::Factory_base(DxFactoryInfo& pinfo, gmpi::api::IUnknown* pfallback) :
+Factory_base::Factory_base(DxFactoryInfo& pinfo) :
 	info(pinfo)
-	, fallback(pfallback)
 {
 }
 
@@ -259,7 +258,7 @@ void initFactoryHelper(DxFactoryInfo& info)
 	}
 }
 
-Factory::Factory(gmpi::api::IUnknown* pfallback) : Factory_base(concreteInfo, pfallback)
+Factory::Factory() : Factory_base(concreteInfo)
 {
 	initFactoryHelper(info);
 }

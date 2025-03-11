@@ -115,7 +115,6 @@ namespace hosting
 	{
 		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 		UpdateRegionWinGdi updateRegion_native;
-//		std::unique_ptr<gmpi::directx::GraphicsContext_base> context;
 
 	protected:
 		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;

@@ -957,8 +957,11 @@ public:
 		*returnInterface = {};
 		GMPI_QUERYINTERFACE(drawing::api::IFactory)
 
-		if (fallback)
+        if (fallback)
+        {
+            assert(false); // not required?
 			return fallback->queryInterface(iid, returnInterface);
+        }
 		return gmpi::ReturnCode::NoSupport;
 	}
 

@@ -1539,14 +1539,19 @@ public:
 	GMPI_REFCOUNT;
 };
 
+struct ContextInfo
+{
+	std::vector<gmpi::drawing::Rect> clipRectStack;
+    NSAffineTransform* currentTransform{};
+    NSView* view_{};
+};
+
 class GraphicsContext : public gmpi::drawing::api::IDeviceContext
 {
 protected:
-	cocoa::Factory* factory;
-	std::vector<gmpi::drawing::Rect> clipRectStack;
-	NSAffineTransform* currentTransform;
-	NSView* view_;
-    
+    cocoa::Factory* factory{};
+    ContextInfo info;
+
 public:
     inline static int logicProFix = -1;
 
@@ -1554,7 +1559,7 @@ public:
 		factory(pfactory)
 		, view_(pview)
 	{
-		currentTransform = [NSAffineTransform transform];
+		info.currentTransform = [NSAffineTransform transform];
     }
 
 	~GraphicsContext()
@@ -2343,24 +2348,7 @@ public:
 	{
 		return view_;
 	}
-	/*
-		int getQuartzYorigin()
-		{
-			const auto frameSize = [view_ frame];
-			return frameSize.size.height;
-		}
 
-		gmpi::ReturnCode CreateMesh(gmpi::drawing::api::IMesh** returnObject) override
-		{
-			*returnObject = nullptr;
-			return gmpi::ReturnCode::Fail;
-		}
-
-		void fillMesh(const gmpi::drawing::api::IMesh* mesh, const gmpi::drawing::api::IBrush* brush) override
-		{
-
-		}
-	*/
 	//	void InsetNewMethodHere(){}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IDeviceContext);
@@ -2370,7 +2358,7 @@ public:
 // https://stackoverflow.com/questions/10627557/mac-os-x-drawing-into-an-offscreen-nsgraphicscontext-using-cgcontextref-c-funct
 class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout public gmpi::drawing::api::IBitmapRenderTarget
 {
-	NSImage* image = {};
+	NSImage* image{};
 
 public:
 	BitmapRenderTarget(cocoa::Factory* pfactory, const gmpi::drawing::Size* desiredSize) :
@@ -2379,7 +2367,8 @@ public:
 		NSRect r = NSMakeRect(0.0, 0.0, desiredSize->width, desiredSize->height);
 		image = [[NSImage alloc]initWithSize:r.size];
 
-		clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
+        info.currentTransform = [NSAffineTransform transform];
+        info.clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
 	}
 
     gmpi::ReturnCode beginDraw() override
@@ -2394,7 +2383,7 @@ public:
 	gmpi::ReturnCode endDraw() override
 	{
 		auto r = GraphicsContext::endDraw();
-		[image unlockFocus] ;
+		[image unlockFocus];
 		return r;
 	}
 

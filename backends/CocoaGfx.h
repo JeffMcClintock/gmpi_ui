@@ -20,6 +20,8 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 #include <map>
+//#include <locale>
+#include <codecvt>
 #include "../Drawing.h"
 #include "../backends/Gfx_base.h"
 #define USE_BACKING_BUFFER 1
@@ -702,6 +704,15 @@ struct FactoryInfo
     NSColorSpace* gmpiColorSpace{};
 };
 
+inline void initFactoryHelper(FactoryInfo& info)
+{
+    auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
+    info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
+        
+    if(temp)
+        CFRelease(temp);
+}
+
 class Factory : public gmpi::drawing::api::IFactory
 {
 public:
@@ -709,6 +720,7 @@ public:
 
     Factory()
     {
+        initFactoryHelper(info);
     }
 #if 0
     void setBestColorSpace(NSWindow* window)
@@ -935,28 +947,6 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
     GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
 };
-
-inline void initFactoryHelper(FactoryInfo& info)
-{
-    auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
-    info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
-        
-    if(temp)
-        CFRelease(temp);
-}
-
-/*
-class Factory : public Factory_base
-{
-    FactoryInfo concreteInfo;
-
-public:
-    Factory() : Factory_base(concreteInfo)
-    {
-        initFactoryHelper(info);
-    }
-};
-*/
 
 class CocoaBrushBase
 {
@@ -1543,7 +1533,7 @@ struct ContextInfo
 {
 	std::vector<gmpi::drawing::Rect> clipRectStack;
     NSAffineTransform* currentTransform{};
-    NSView* view_{};
+    NSView* view{};
 };
 
 class GraphicsContext : public gmpi::drawing::api::IDeviceContext
@@ -1557,14 +1547,14 @@ public:
 
 	GraphicsContext(NSView* pview, cocoa::Factory* pfactory) :
 		factory(pfactory)
-		, view_(pview)
 	{
+        info.view = pview;
 		info.currentTransform = [NSAffineTransform transform];
     }
 
 	~GraphicsContext()
 	{
-        assert(clipRectStack.size() == 0);
+        assert(info.clipRectStack.size() == 0);
 	}
 
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override
@@ -1908,7 +1898,7 @@ public:
                     [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
                     
                     NSSize logicalsize = bounds.size;
-                    NSSize pysicalsize = [view_ convertRectToBacking:bounds].size;
+                    NSSize pysicalsize = [info.view convertRectToBacking:bounds].size;
                     
                     // Create a grayscale context for the mask
                     CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
@@ -2152,8 +2142,8 @@ public:
 		// Remove the current transformations by applying the inverse transform.
 		try
 		{
-			[currentTransform invert] ;
-			[currentTransform concat] ;
+			[info.currentTransform invert] ;
+			[info.currentTransform concat] ;
 		}
 		catch (...)
 		{
@@ -2170,16 +2160,16 @@ public:
 			transform->_32
 		};
 
-		[currentTransform setTransformStruct : transformStruct] ;
+		[info.currentTransform setTransformStruct : transformStruct] ;
 
-		[currentTransform concat] ;
+		[info.currentTransform concat] ;
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode getTransform(gmpi::drawing::Matrix3x2* transform) override
 	{
 		NSAffineTransformStruct
-			transformStruct = [currentTransform transformStruct];
+			transformStruct = [info.currentTransform transformStruct];
 
 		transform->_11 = transformStruct.m11;
 		transform->_12 = transformStruct.m12;
@@ -2299,10 +2289,10 @@ public:
         getTransform(&currentTransform);
         auto absClipRect = transformRect(currentTransform, *clipRect);
         
-        if (!clipRectStack.empty())
-            absClipRect = intersectRect(absClipRect, clipRectStack.back());
+        if (!info.clipRectStack.empty())
+            absClipRect = intersectRect(absClipRect, info.clipRectStack.back());
         
-        clipRectStack.push_back(absClipRect);
+        info.clipRectStack.push_back(absClipRect);
         
         // Save the current clipping region
         [NSGraphicsContext saveGraphicsState];
@@ -2314,7 +2304,7 @@ public:
 
 	gmpi::ReturnCode popAxisAlignedClip() override
 	{
-		clipRectStack.pop_back();
+        info.clipRectStack.pop_back();
 
 		// Restore the clipping region for further drawing
 		[NSGraphicsContext restoreGraphicsState] ;
@@ -2326,7 +2316,7 @@ public:
         gmpi::drawing::Matrix3x2 currentTransform;
 		getTransform(&currentTransform);
 		currentTransform = invert(currentTransform);
-		*returnClipRect = transformRect(currentTransform, clipRectStack.back());
+		*returnClipRect = transformRect(currentTransform, info.clipRectStack.back());
         return gmpi::ReturnCode::Ok;
 	}
 
@@ -2346,7 +2336,7 @@ public:
 
 	NSView* getNativeView()
 	{
-		return view_;
+		return info.view;
 	}
 
 	//	void InsetNewMethodHere(){}

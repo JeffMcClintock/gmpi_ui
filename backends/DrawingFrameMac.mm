@@ -713,7 +713,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     auto window = [self window];
     if(window)
     {
-        drawingFrame.drawingFactory.setBestColorSpace(window);
+//        drawingFrame.drawingFactory.setBestColorSpace(window);
         drawingFrame.open();
     }
 }

@@ -889,7 +889,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
 
     gmpi::ReturnCode createTextFormat(const char* fontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, gmpi::drawing::api::ITextFormat** textFormat) override;
 
-    gmpi::ReturnCode createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
+    gmpi::ReturnCode createImage(int32_t width, int32_t height, int32_t flags, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
 
     gmpi::ReturnCode loadImageU(const char* utf8Uri, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
 
@@ -2225,7 +2225,7 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
+	gmpi::ReturnCode createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
 
 	gmpi::ReturnCode drawRoundedRectangle(const gmpi::drawing::RoundedRect* roundedRect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
@@ -2407,7 +2407,7 @@ public:
 	GMPI_REFCOUNT;
 };
 
-gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
+gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 	b2.attach(new class BitmapRenderTarget(factory, &desiredSize));
@@ -2431,7 +2431,7 @@ inline gmpi::ReturnCode Factory::createPathGeometry(gmpi::drawing::api::IPathGeo
 	return b2->queryInterface(&gmpi::drawing::api::IPathGeometry::guid, reinterpret_cast<void**>(pathGeometry));
 }
 
-inline gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
+inline gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, int32_t flags, gmpi::drawing::api::IBitmap** returnDiBitmap)
 {
 	*returnDiBitmap = nullptr;
 

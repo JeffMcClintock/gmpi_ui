@@ -919,7 +919,7 @@ public:
     }
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags, drawing::api::ITextFormat** returnTextFormat) override;
-    ReturnCode createImage(int32_t width, int32_t height, drawing::api::IBitmap** returnBitmap) override;
+    ReturnCode createImage(int32_t width, int32_t height, int32_t flags, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override
     {
@@ -989,7 +989,7 @@ protected:
     }
 
 public:
-    virtual ~GraphicsContext_base(){}
+//    virtual ~GraphicsContext_base(){}
 
     ID2D1DeviceContext* native()
     {
@@ -1160,7 +1160,7 @@ public:
         return b2->queryInterface(&drawing::api::IRadialGradientBrush::guid, reinterpret_cast<void **>(returnRadialGradientBrush));
     }
 
-    ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
+    ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, int32_t flags, drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
 
     ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override;
 
@@ -1211,9 +1211,9 @@ public:
 
 // helper function
 void createBitmapRenderTarget(
-    UINT width
+      UINT width
     , UINT height
-    , bool isCpuReadable
+    , int32_t flags
     , ID2D1DeviceContext* outerDeviceContext
     , ID2D1Factory1* d2dFactory
     , IWICImagingFactory* wicFactory
@@ -1224,10 +1224,10 @@ void createBitmapRenderTarget(
 class BitmapRenderTarget final : public GraphicsContext_base // emulated by careful layout: public IBitmapRenderTarget
 {
     gmpi::directx::ComPtr<IWICBitmap> wicBitmap;
+    ID2D1DeviceContext* originalContext{};
 
 public:
-    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, drawing::api::IFactory* pfactory);
-    ~BitmapRenderTarget(){}
+    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory);
 
     // HACK, to be ABI compatible with IBitmapRenderTarget we need this virtual function,
     // and it needs to be in the vtable right after all virtual functions of GraphicsContext

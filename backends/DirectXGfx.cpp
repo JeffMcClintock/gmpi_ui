@@ -474,10 +474,32 @@ std::wstring fontMatchHelper(
 	return {};
 }
 
-gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, gmpi::drawing::api::IBitmap** returnDiBitmap)
+gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, int32_t flags, gmpi::drawing::api::IBitmap** returnDiBitmap)
 {
+	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
+	const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels;
+
+	// 8-bit giving wrong gamma but consistent w SE 1.5. 16-bit much nicer and consistant colors with GPU rendering.
+
+	GUID format{ GUID_WICPixelFormat64bppPRGBAHalf };
+
+	if (oneChannelMask)
+		format = GUID_WICPixelFormat8bppAlpha; // only eightBitPixels masks supported by D2D1
+	else if (eightBitPixels)
+		format = GUID_WICPixelFormat32bppPBGRA;
+
 	IWICBitmap* wicBitmap{};
-	auto hr = info.wicFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
+
+//	auto hr = info.wicFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
+
+	[[maybe_unused]] auto hr =
+		info.wicFactory->CreateBitmap(
+			width
+			, height
+			, format
+			, eightBitPixels ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
+			, &wicBitmap
+		);
 
 	if (hr == 0)
 	{
@@ -706,6 +728,14 @@ ID2D1Bitmap* bitmapToNative(
 					nativeBitmap.put()
 				);
 			}
+			else if (std::memcmp(&formatGuid, &GUID_WICPixelFormat8bppAlpha, sizeof(formatGuid)) == 0)
+			{
+				assert(false); // this is an 8-bit mask, not suitable for drawing directly on D2D context.
+				hr = nativeContext->CreateBitmapFromWicBitmap(
+					diBitmap,
+					nativeBitmap.put()
+				);
+			}
 			else
 			{
 				assert(false); // TODO. Add support for other formats.
@@ -793,8 +823,8 @@ void applyPreMultiplyCorrection(IWICBitmap* bitmap)
 
 		if (alpha != 255 && alpha != 0)
 		{
-			float AlphaNorm = alpha * over255;
-			float overAlphaNorm = 1.f / AlphaNorm;
+			const float AlphaNorm = alpha * over255;
+			const float overAlphaNorm = 1.f / AlphaNorm;
 
 			for (int j = 0; j < 3; ++j)
 			{
@@ -856,19 +886,19 @@ gmpi::ReturnCode GraphicsContext_base::createGradientstopCollection(const drawin
 }
 
 // todo : integer size?
-gmpi::ReturnCode GraphicsContext_base::createCompatibleRenderTarget(drawing::Size desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
+gmpi::ReturnCode GraphicsContext_base::createCompatibleRenderTarget(drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
 	*bitmapRenderTarget = {};
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-	b2.attach(new BitmapRenderTarget(this, &desiredSize, factory));
+	b2.attach(new BitmapRenderTarget(this, &desiredSize, flags, factory));
 	return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void **>(bitmapRenderTarget));
 }
 
 void createBitmapRenderTarget(
-		UINT width
+	  UINT width
 	, UINT height
-	, bool isCpuReadable
+	, int32_t flags
 	, ID2D1DeviceContext* outerDeviceContext
 	, ID2D1Factory1* d2dFactory
 	, IWICImagingFactory* wicFactory
@@ -876,18 +906,29 @@ void createBitmapRenderTarget(
 	, gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
 )
 {
-	if (isCpuReadable) // TODO !!! wrong gamma.
+	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
+	const bool lockAblePixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
+	const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels;
+
+	if (lockAblePixels) // pixels can be read by CPU
 	{
 		// Create a WIC render target. Modifyable by CPU (lock pixels). More expensive.
-		const bool use8bit = false; // 8-bit giving wrong gamma but consistent w SE 1.5. 16-bit much nicer and constistant colors with GPU rendering.
+		// 8-bit giving wrong gamma but consistent w SE 1.5. 16-bit much nicer and consistant colors with GPU rendering.
+
+		GUID format{ GUID_WICPixelFormat64bppPRGBAHalf };
+
+		if (oneChannelMask)
+			format = GUID_WICPixelFormat8bppAlpha; // only eightBitPixels masks supported by D2D1
+		else if (eightBitPixels)
+			format = GUID_WICPixelFormat32bppPBGRA;
 
 		// Create a WIC bitmap to draw on.
 		[[maybe_unused]] auto hr =
 			wicFactory->CreateBitmap(
 				width
 				, height
-				, use8bit ? GUID_WICPixelFormat32bppPBGRA : GUID_WICPixelFormat64bppPRGBAHalf //GUID_WICPixelFormat128bppRGBAFloat //GUID_WICPixelFormat64bppPRGBAHalf // GUID_WICPixelFormat128bppPRGBAFloat // GUID_WICPixelFormat64bppPRGBAHalf // GUID_WICPixelFormat128bppPRGBAFloat
-				, use8bit ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
+				, format
+				, eightBitPixels ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
 				, returnWicBitmap.put()
 			);
 
@@ -907,6 +948,8 @@ void createBitmapRenderTarget(
 	}
 	else
 	{
+		// not bothering with different formats here, since they can't be read by CPU ATM anyhow.
+
 		const D2D1_SIZE_F desiredSize = D2D1::SizeF(static_cast<float>(width), static_cast<float>(height));
 
 		// Create a render target on the GPU. Not modifyable by CPU.
@@ -916,17 +959,16 @@ void createBitmapRenderTarget(
 	}
 }
 
-BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, drawing::api::IFactory* pfactory) :
+BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory) :
 	GraphicsContext_base(pfactory)
+	, originalContext(g->native())
 {
-	const bool enableLockPixels = false; // TODO
-
 	auto& lfactory = static_cast<Factory_base&>(*factory);
 
 	createBitmapRenderTarget(
-			static_cast<UINT>(desiredSize->width)
+		  static_cast<UINT>(desiredSize->width)
 		, static_cast<UINT>(desiredSize->height)
-		, enableLockPixels
+		, flags
 		, g->native()
 		, lfactory.getFactory()
 		, lfactory.getWicFactory()
@@ -946,23 +988,17 @@ gmpi::ReturnCode BitmapRenderTarget::getBitmap(gmpi::drawing::api::IBitmap** ret
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 	if (wicBitmap)
 	{
-		// Flush the device context to ensure all drawing commands are completed. testing
-//hr = context_->Flush();
-		context_ = {};
-
-// TODO				b2.Attach(new Bitmap(factory.getInfo(), factory.getPlatformPixelFormat(), wicBitmap)); //temp factory about to go out of scope (when using a bitmap render target)
-
+		b2.attach(new Bitmap(factory, wicBitmap));
 		hr = S_OK;
 	}
-	else // if (wikBitmapRenderTarget)
+	else
 	{
 		gmpi::directx::ComPtr<ID2D1Bitmap> nativeBitmap;
 		hr = context_.as<ID2D1BitmapRenderTarget>()->GetBitmap(nativeBitmap.put());
 
 		if (hr == S_OK)
 		{
-//					b2.Attach(new Bitmap(factory.getInfo(), factory.getPlatformPixelFormat(), /*context_*/originalContext, nativeBitmap.get()));
-			b2.attach(new Bitmap(factory, context_, nativeBitmap));
+			b2.attach(new Bitmap(factory, originalContext, nativeBitmap));
 		}
 	}
 

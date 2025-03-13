@@ -447,7 +447,7 @@ public:
 		return gmpi::ReturnCode::Fail;
 	}
 
-    gmpi::ReturnCode createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override
+    gmpi::ReturnCode createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override
 	{
 		return gmpi::ReturnCode::Fail;
 	}

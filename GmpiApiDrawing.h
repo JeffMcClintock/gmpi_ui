@@ -114,6 +114,14 @@ enum class BitmapLockFlags : int32_t
     ReadWrite,
 };
 
+enum class BitmapRenderTargetFlags : int32_t
+{
+    None,
+    Mask = 1,
+    CpuReadable = 2,
+    EightBitPixels = 4,
+};
+
 enum class Gamma : int32_t
 {
     Gamma22 = 0,
@@ -624,7 +632,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     virtual gmpi::ReturnCode clear(const Color* clearColor) = 0;
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
-    virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
+    virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, int32_t flags, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
 
     // {F38EC187-BA04-4A63-B1D6-22D931E1F308}
     inline static const gmpi::api::Guid guid =
@@ -647,7 +655,7 @@ struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
 {
     virtual gmpi::ReturnCode createPathGeometry(IPathGeometry** returnPathGeometry) = 0;
     virtual gmpi::ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle, FontStretch fontStretch, float fontHeight, int32_t fontFlags, ITextFormat** returnTextFormat) = 0;
-    virtual gmpi::ReturnCode createImage(int32_t width, int32_t height, IBitmap** returnBitmap) = 0;
+    virtual gmpi::ReturnCode createImage(int32_t width, int32_t height, int32_t flags, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode loadImageU(const char* uri, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;

@@ -405,7 +405,7 @@ inline constexpr float SRGBPixelToLinear(uint8_t p)
 	return sRGB2Float[p];
 };
 
-inline constexpr Color colorFromArgb(uint8_t r, uint8_t g, uint8_t b, float a)
+inline constexpr Color colorFromArgb(uint8_t r, uint8_t g, uint8_t b, float a = 1.f)
 {
 	return
 	{
@@ -737,10 +737,10 @@ public:
 	}
 
     // Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
-	BitmapPixels lockPixels(int32_t flags = (int32_t) gmpi::drawing::BitmapLockFlags::Read)
+	BitmapPixels lockPixels(gmpi::drawing::BitmapLockFlags flags = gmpi::drawing::BitmapLockFlags::Read)
 	{
         BitmapPixels ret;
-        get()->lockPixels(ret.put(), flags);
+        get()->lockPixels(ret.put(), (int32_t) flags);
 		ret.init();
         return ret;
 	}
@@ -1030,17 +1030,17 @@ public:
 		return returnTextFormat;
 	}
 
-	Bitmap createImage(int32_t width = 32, int32_t height = 32)
+	Bitmap createImage(int32_t width = 32, int32_t height = 32, int32_t flags = 0)
 	{
 		Bitmap temp;
-		get()->createImage(width, height, temp.put());
+		get()->createImage(width, height, flags, temp.put());
 		return temp;
 	}
 
-	Bitmap createImage(gmpi::drawing::SizeU size)
+	Bitmap createImage(gmpi::drawing::SizeU size, int32_t flags = 0)
 	{
 		Bitmap temp;
-		get()->createImage(size.width, size.height, temp.put());
+		get()->createImage(size.width, size.height, flags, temp.put());
 		return temp;
 	}
 
@@ -1539,10 +1539,10 @@ public:
 		}
 	}
 
-	BitmapRenderTarget createCompatibleRenderTarget(Size desiredSize)
+	BitmapRenderTarget createCompatibleRenderTarget(Size desiredSize, int32_t flags = 0)
 	{
 		BitmapRenderTarget temp;
-		get()->createCompatibleRenderTarget(desiredSize, temp.put());
+		get()->createCompatibleRenderTarget(desiredSize, flags, temp.put());
 		return temp;
 	}
 };

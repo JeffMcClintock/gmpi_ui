@@ -62,6 +62,7 @@ protected:
 
 public:
 	gmpi::shared_ptr<gmpi::api::IInputHost> inputHost;
+	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	gmpi::shared_ptr<gmpi::api::IDrawingHost> drawingHost;
 
@@ -94,6 +95,7 @@ public:
 		inputHost = unknown.as<gmpi::api::IInputHost>();
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
 		drawingHost = unknown.as<gmpi::api::IDrawingHost>();
+		dialogHost = unknown.as<gmpi::api::IDialogHost>();
 
 		for (auto& p : pins)
 		{

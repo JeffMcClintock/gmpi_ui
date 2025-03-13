@@ -1292,7 +1292,7 @@ gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, gmpi:
 {
 	return gmpi::ReturnCode::NoSupport;
 }
-gmpi::ReturnCode DxDrawingFrameBase::createTextEdit(gmpi::api::IUnknown** returnTextEdit)
+gmpi::ReturnCode DxDrawingFrameBase::createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit)
 {
 	return gmpi::ReturnCode::NoSupport;
 }
@@ -1369,11 +1369,12 @@ class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
 
 public:
 	// Might need to apply DPI to Text size, like text-entry does.
-	GMPI_WIN_PopupMenu(HWND pParentWnd, float dpi = 1.0f) : hmenu(0)
+	GMPI_WIN_PopupMenu(HWND pParentWnd, const gmpi::drawing::Rect* r, float dpi = 1.0f) : hmenu(0)
 		, parentWnd(pParentWnd)
 		, align(TPM_LEFTALIGN)
 		, dpiScale(dpi)
 		, selectedId(-1)
+		, editrect_s(*r)
 	{
 		hmenu = CreatePopupMenu();
 		hmenus.push_back(hmenu);
@@ -1429,9 +1430,9 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* returnCallback) override
+	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* returnCallback) override
 	{
-		POINT nativePoint{(LONG)rect->left, (LONG)rect->top };
+		POINT nativePoint{(LONG)editrect_s.left, (LONG)editrect_s.top };
 		ClientToScreen(parentWnd, &nativePoint);
 
 		int flags = align | TPM_LEFTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD;
@@ -1485,16 +1486,16 @@ public:
 	GMPI_REFCOUNT;
 };
 
-gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(gmpi::api::IUnknown** returnMenu)
+gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu)
 {
-	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), DipsToWindow._22));
+	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), r, DipsToWindow._22));
 	contextMenu->addRef(); // add an extra refcount so i can own it after caller releases.
 
 	*returnMenu = contextMenu.get();
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DxDrawingFrameBase::createKeyListener(gmpi::api::IUnknown** returnKeyListener)
+gmpi::ReturnCode DxDrawingFrameBase::createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener)
 {
 	return gmpi::ReturnCode::NoSupport;
 }

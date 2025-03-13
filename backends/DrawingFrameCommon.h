@@ -11,7 +11,7 @@ public:
 
     gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
-    virtual gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) = 0; // shadow IDialogHost
+    virtual gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu) = 0; // shadow IDialogHost
 
     void doContextMenu(gmpi::drawing::Point point, int32_t flags);
 };

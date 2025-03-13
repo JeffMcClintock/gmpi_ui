@@ -19,6 +19,7 @@ public:
 
 	// New. Better
 	void startTimer(int periodMilliSeconds);
+	void startTimerHz(int rateHz);
 	void stopTimer();
 
 	// old. avoid.

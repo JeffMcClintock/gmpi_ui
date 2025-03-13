@@ -241,6 +241,12 @@ namespace gmpi
 			TimerManager::instance()->registerClient(this, periodMilliSeconds);
 		}
 
+		void TimerClient::startTimerHz(int rateHz)
+		{
+			const auto ms = 1000 / rateHz;
+			startTimer(ms);
+		}
+	
 		void TimerClient::setTimerIntervalMs(int periodMilliSeconds)
 		{
 			TimerManager::instance()->setInterval(periodMilliSeconds);

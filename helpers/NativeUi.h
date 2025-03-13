@@ -127,7 +127,7 @@ struct DECLSPEC_NOVTABLE IInputHost : gmpi::api::IUnknown
 	virtual ReturnCode getCapture(bool& returnValue) = 0;
 	virtual ReturnCode releaseCapture() = 0;
 
-	// keyboard
+	// keyboard, are these duplicating 'createKeyListener'?
 	virtual ReturnCode getFocus() = 0;
 	virtual ReturnCode releaseFocus() = 0;
 	
@@ -138,10 +138,10 @@ struct DECLSPEC_NOVTABLE IInputHost : gmpi::api::IUnknown
 
 struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 {
-	virtual ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) = 0;
-	virtual ReturnCode createKeyListener(gmpi::api::IUnknown** returnKeyListener) = 0;
-	virtual ReturnCode createPopupMenu(gmpi::api::IUnknown** returnPopupMenu) = 0;
-	virtual ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
+	virtual ReturnCode createTextEdit   (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) = 0;
+	virtual ReturnCode createPopupMenu  (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnPopupMenu) = 0;
+	virtual ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) = 0; // why here not IInputHost? becuase it is effectivly an invisible text-edit
+	virtual ReturnCode createFileDialog (int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 	virtual ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
@@ -164,7 +164,7 @@ struct DECLSPEC_NOVTABLE IPopupMenu : gmpi::api::IUnknown
 {
 	virtual ReturnCode addItem(const char* text, int32_t id, int32_t flags) = 0;
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
+	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
 // not async	virtual ReturnCode GetSelectedId() = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
@@ -225,7 +225,7 @@ struct DECLSPEC_NOVTABLE ITextEdit : gmpi::api::IUnknown
 //	virtual ReturnCode getText(IMpUnknown* returnString) = 0;
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
 	virtual ReturnCode setTextSize(float height) = 0;
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
+	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
 
 	// {90098F84-7F4C-4811-B01E-1376607CAC29}
 	inline static const gmpi::api::Guid guid =
@@ -245,7 +245,7 @@ public:
 
 struct DECLSPEC_NOVTABLE IKeyListener : gmpi::api::IUnknown
 {
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
+	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
 
 	// {10A5572C-A5AA-4AE3-A763-D78291F49C58}
 	inline static const gmpi::api::Guid guid =

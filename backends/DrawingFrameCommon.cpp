@@ -68,8 +68,10 @@ void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags
 	// Handle right-click on background. (right-click on objects is handled by object itself).
 	if (r == gmpi::ReturnCode::Unhandled && (flags & gmpi::api::GG_POINTER_FLAG_SECONDBUTTON) != 0 && inputClient)
 	{
+		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
+
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-		createPopupMenu(unknown.put());
+		createPopupMenu(&rect, unknown.put());
 
 		auto lcontextMenu = unknown.as<gmpi::api::IPopupMenu>();
 
@@ -77,8 +79,7 @@ void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags
 
 		r = inputClient->populateContextMenu(point, &sink);
 
-		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
-		lcontextMenu->showAsync(&rect,
+		lcontextMenu->showAsync(/*&rect,*/
 			new PopupMenuCallback(
 				[this](gmpi::ReturnCode res, int32_t commandId) -> void
 				{

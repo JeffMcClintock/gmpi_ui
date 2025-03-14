@@ -99,6 +99,17 @@ inline RectL unionRect(RectL a, RectL b)
 	};
 }
 
+inline Rect unionRect(Rect a, Rect b)
+{
+	return
+	{
+	(std::min)(a.left,   b.left),
+	(std::min)(a.top,    b.top),
+	(std::max)(a.right,  b.right),
+	(std::max)(a.bottom, b.bottom)
+	};
+}
+
 inline bool empty(const RectL& a)
 {
 	return getWidth(a) <= 0 || getHeight(a) <= 0;

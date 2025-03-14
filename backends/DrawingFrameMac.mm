@@ -87,13 +87,14 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClien
     NSPopUpButton* button;
     
     std::vector<NSMenu*> menuStack;
+    gmpi::drawing::Rect rect;
     
 public:
 
-    GMPI_MAC_PopupMenu(NSView* pview)
+    GMPI_MAC_PopupMenu(NSView* pview, gmpi::drawing::Rect prect) :
+    view(pview)
+    ,rect(prect)
     {
-        view = pview;
-
         eventhelper = [GMPI_EVENT_HELPER_CLASSNAME alloc];
         [eventhelper initWithClient : this];
  
@@ -180,13 +181,13 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* preturnCallback) override
+	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* preturnCallback) override
     {
         returnCallback = preturnCallback;
         
         [[button cell] setAltersStateOfSelectedItem:NO];
         [[button cell] attachPopUpWithFrame:NSMakeRect(0,0,1,1) inView:view];
-        [[button cell] performClickWithFrame:gmpiRectToViewRect(view.bounds, rect) inView:view];
+        [[button cell] performClickWithFrame:gmpiRectToViewRect(view.bounds, &rect) inView:view];
 
         return gmpi::ReturnCode::Ok;
     }
@@ -486,20 +487,20 @@ public:
     }
 
     // IDialogHost
-    gmpi::ReturnCode createTextEdit(gmpi::api::IUnknown** returnTextEdit) override
+    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override
     {
         return gmpi::ReturnCode::NoSupport;
     }
-    gmpi::ReturnCode createKeyListener(gmpi::api::IUnknown** returnKeyListener) override
+    gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu) override
     {
-        return gmpi::ReturnCode::NoSupport;
-    }
-    gmpi::ReturnCode createPopupMenu(gmpi::api::IUnknown** returnMenu) override
-    {
-        contextMenu.attach(new GMPI_MAC_PopupMenu(view));
+        contextMenu.attach(new GMPI_MAC_PopupMenu(view, *r));
         contextMenu->addRef();
         *returnMenu = contextMenu.get();
         return gmpi::ReturnCode::Ok;
+    }
+    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) override
+    {
+        return gmpi::ReturnCode::NoSupport;
     }
     gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override
     {

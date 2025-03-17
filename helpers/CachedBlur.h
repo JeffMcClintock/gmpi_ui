@@ -60,6 +60,7 @@ struct cachedBlur
                 // modify pixels here
 #if 0
                 {
+                    // half-float pixels.
                     auto pixel = (half*)data.getAddress();
                     ginARGB(pixel, imageSize.width, imageSize.height, 5);
                 }

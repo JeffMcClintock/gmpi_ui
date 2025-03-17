@@ -1516,6 +1516,11 @@ public:
 class BitmapRenderTarget : public Graphics_base<gmpi::drawing::api::IBitmapRenderTarget>
 {
 public:
+	BitmapRenderTarget() {}
+	
+	// define operator=
+	void operator=(const BitmapRenderTarget& other) { m_ptr = const_cast<gmpi::drawing::BitmapRenderTarget*>(&other)->get(); }
+
 	Bitmap getBitmap()
 	{
 		Bitmap temp;
@@ -1556,6 +1561,11 @@ public:
 		get()->createCompatibleRenderTarget(desiredSize, flags, temp.put());
 		return temp;
 	}
+
+	//BitmapRenderTarget createCompatibleRenderTarget(SizeU desiredSize, int32_t flags = 0)
+	//{
+	//	return createCompatibleRenderTarget(Size{ (float) desiredSize.width, (float) desiredSize.height }, flags);
+	//}
 };
 
 /*

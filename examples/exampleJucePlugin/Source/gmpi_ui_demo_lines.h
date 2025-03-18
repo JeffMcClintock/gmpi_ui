@@ -186,7 +186,7 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 //			auto bitmap = g.getFactory().loadImageU("C:\\SE\\gmpi_ui\\docs\\images\\GMPI_Icon.png");
 
 			{
-				auto pixels = bitmap.lockPixels((int32_t)gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
+				auto pixels = bitmap.lockPixels(gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
 				for (uint32_t py = 0; py < sz; ++py)
 				{
 					for (uint32_t px = 0; px < sz; ++px)
@@ -264,7 +264,7 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 			//			auto bitmap = g.getFactory().loadImageU("C:\\SE\\gmpi_ui\\docs\\images\\GMPI_Icon.png");
 
 			{
-				auto pixels = bitmap.lockPixels((int32_t)gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
+				auto pixels = bitmap.lockPixels(gmpi::drawing::BitmapLockFlags::Write);
 				for (uint32_t py = 0; py < sz; ++py)
 				{
 					for (uint32_t px = 0; px < sz; ++px)

@@ -50,7 +50,7 @@ namespace hosting
 	};
 
 	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
-	struct tempSharedD2DBase
+	struct tempSharedD2DBase : public gmpi::api::IDrawingHost
 	{
 		enum { FallBack_8bit, Fallback_Software };
 
@@ -75,7 +75,7 @@ namespace hosting
 
 		// override these please.
 		virtual HWND getWindowHandle() = 0;
-		virtual float getRasterizationScale() = 0; // DPI scaling
+//		virtual float getRasterizationScale() = 0; // IDrawingHost DPI scaling
 		virtual HRESULT createNativeSwapChain
 		(
 			IDXGIFactory2* factory,
@@ -108,7 +108,7 @@ namespace hosting
 	class DxDrawingFrameBase :
 		public tempSharedD2DBase,
 		public DrawingFrameCommon,
-		public gmpi::api::IDrawingHost,
+//		public gmpi::api::IDrawingHost,
 		public gmpi::api::IInputHost,
 		public gmpi::api::IDialogHost,
 		public gmpi::TimerClient
@@ -200,7 +200,8 @@ namespace hosting
 		void OnPaint();
 
 		// IMpGraphicsHost
-		virtual void invalidateRect(const gmpi::drawing::Rect * invalidRect) override;
+		void invalidateRect(const gmpi::drawing::Rect * invalidRect) override;
+		float getRasterizationScale() override; // DPI scaling
 		gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
 		{
 			*returnFactory = &DrawingFactory;
@@ -250,7 +251,6 @@ namespace hosting
 		bool onTimer() override;
 		virtual void autoScrollStart() {}
 		virtual void autoScrollStop() {}
-		float getRasterizationScale() override; // DPI scaling
 	};
 
 	// This is used in VST3. Native HWND window frame.

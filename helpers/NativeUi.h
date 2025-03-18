@@ -110,6 +110,7 @@ struct DECLSPEC_NOVTABLE IDrawingHost : gmpi::api::IUnknown
 	// TODO: sort out method name case.
 	// Get host's current skin's font information.
 	virtual void invalidateRect(const gmpi::drawing::Rect* invalidRect) = 0;
+	virtual float getRasterizationScale() = 0; // DPI scaling
 
 #if 0
 	virtual void invalidateMeasure() = 0;

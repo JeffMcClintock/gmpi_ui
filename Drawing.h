@@ -240,10 +240,18 @@ inline Matrix3x2 makeScale(
 inline Matrix3x2 makeScale(
 	float x,
 	float y,
-	Point center = Point()
+	Point center = {}
 )
 {
-    return makeScale(Size{x, y}, center);
+	return makeScale(Size{ x, y }, center);
+}
+
+inline Matrix3x2 makeScale(
+	float scale,
+	Point center = {}
+)
+{
+	return makeScale(Size{ scale, scale }, center);
 }
 
 inline Matrix3x2 makeRotation(

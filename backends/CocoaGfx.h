@@ -522,7 +522,8 @@ class Bitmap final : public gmpi::drawing::api::IBitmap
 public:
     NSImage* nativeBitmap_ = nullptr;
     NSBitmapImageRep* additiveBitmap_ = nullptr;
-
+    int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::EightBitPixels;
+    
     Bitmap(gmpi::drawing::api::IFactory* pfactory, const char* utf8Uri) :
         nativeBitmap_(nullptr)
         , factory(pfactory)
@@ -578,8 +579,15 @@ public:
 #endif
     }
 
-    Bitmap(gmpi::drawing::api::IFactory* pfactory, NSImage* native) : nativeBitmap_(native)
+    // from a bitmap render target
+    Bitmap(
+           gmpi::drawing::api::IFactory* pfactory
+           , NSImage* native
+           , int32_t pCreationFlags = (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels
+           )
+        : nativeBitmap_(native)
         , factory(pfactory)
+        , creationFlags(pCreationFlags)
     {
         //               _RPT1(0, "Bitmap() C: %d\n", this);
         [nativeBitmap_ retain] ;
@@ -1554,7 +1562,7 @@ public:
 
 	~GraphicsContext()
 	{
-        assert(info.clipRectStack.size() == 0);
+    // BitmapRenderTarget has one rect pushed. not sure if it should remove it in destructor?    assert(info.clipRectStack.size() == 0);
 	}
 
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override
@@ -2349,16 +2357,39 @@ public:
 class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout public gmpi::drawing::api::IBitmapRenderTarget
 {
 	NSImage* image{};
-
+    int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::EightBitPixels;
+    
 public:
-	BitmapRenderTarget(cocoa::Factory* pfactory, const gmpi::drawing::Size* desiredSize) :
+	BitmapRenderTarget(const gmpi::drawing::Size* size, int32_t flags, cocoa::Factory* pfactory) :
 		GraphicsContext(nullptr, pfactory)
+        ,creationFlags(flags)
 	{
-		NSRect r = NSMakeRect(0.0, 0.0, desiredSize->width, desiredSize->height);
-		image = [[NSImage alloc]initWithSize:r.size];
+        const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
+        const bool lockAblePixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
+        const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels;
 
+        NSSize s = NSMakeSize(size->width, size->height);
+        NSRect r = NSMakeRect(0.0, 0.0, s.width, s.height);
+        
+        if(oneChannelMask)
+        {
+            NSBitmapImageRep* bitmap =
+            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+            pixelsWide:s.width pixelsHigh:s.height bitsPerSample:8
+            samplesPerPixel:1 hasAlpha:NO isPlanar:NO
+            colorSpaceName:NSCalibratedWhiteColorSpace bytesPerRow:0
+            bitsPerPixel:8];
+            
+            image = [[NSImage alloc] initWithSize:s];
+            [image addRepresentation:bitmap];
+        }
+        else
+        {
+            image = [[NSImage alloc]initWithSize:s];
+        }
+        
         info.currentTransform = [NSAffineTransform transform];
-        info.clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
+        info.clipRectStack.push_back({ 0, 0, size->width, size->height });
 	}
 
     gmpi::ReturnCode beginDraw() override
@@ -2387,7 +2418,7 @@ public:
 	virtual gmpi::ReturnCode getBitmap(gmpi::drawing::api::IBitmap** returnBitmap)
 	{
 		gmpi::shared_ptr<gmpi::api::IUnknown> b;
-		b.attach(new Bitmap(factory, image));
+		b.attach(new Bitmap(factory, image, creationFlags));
 		return b->queryInterface(&gmpi::drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
 	}
 
@@ -2410,7 +2441,7 @@ public:
 gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-	b2.attach(new class BitmapRenderTarget(factory, &desiredSize));
+	b2.attach(new class BitmapRenderTarget(&desiredSize, flags, factory));
 
 	return b2->queryInterface(&gmpi::drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(bitmapRenderTarget));
 }
@@ -2493,43 +2524,62 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
 	, seBitmap(sebitmap)
 {
 	NSSize s = [*inBitmap_ size];
-	bytesPerRow = s.width * 4;
+    
+    int samplesPerPixel = 4;
+    auto hasAlpha = YES;
+    auto colorSpace = NSCalibratedRGBColorSpace;
+    const bool isMask = 0 != (flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
+    
+    if(isMask)
+    {
+        samplesPerPixel = 1;
+        hasAlpha = NO;
+        colorSpace = NSCalibratedWhiteColorSpace;
+    }
 
-	constexpr int bitsPerSample = 8;
-	constexpr int samplesPerPixel = 4;
-	constexpr int bitsPerPixel = bitsPerSample * samplesPerPixel;
-
-	auto initial_bitmap = [[NSBitmapImageRep alloc]initWithBitmapDataPlanes:nil
-		pixelsWide : s.width
-		pixelsHigh : s.height
-		bitsPerSample : bitsPerSample
-		samplesPerPixel : samplesPerPixel
-		hasAlpha : YES
-		isPlanar : NO
-		colorSpaceName : NSCalibratedRGBColorSpace
-		bitmapFormat : 0
-		bytesPerRow : bytesPerRow
-		bitsPerPixel : bitsPerPixel];
-
-	bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace : NSColorSpace.sRGBColorSpace];
-	[bitmap2 retain] ;
-
-	// Copy the image to the new imageRep (effectivly converts it to correct pixel format/brightness etc)
-	if (0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Read))
-	{
-		NSGraphicsContext* context;
-		context = [NSGraphicsContext graphicsContextWithBitmapImageRep : bitmap2];
-		[NSGraphicsContext saveGraphicsState] ;
-		[NSGraphicsContext setCurrentContext : context] ;
-		[*inBitmap_ drawAtPoint : NSZeroPoint fromRect : NSZeroRect operation : NSCompositingOperationCopy fraction : 1.0] ;
-
-		[NSGraphicsContext restoreGraphicsState] ;
-	}
+    {
+        bytesPerRow = s.width * samplesPerPixel;
+        
+        constexpr int bitsPerSample = 8;
+        const int bitsPerPixel = bitsPerSample * samplesPerPixel;
+        
+        auto initial_bitmap = [[NSBitmapImageRep alloc]initWithBitmapDataPlanes:nil
+                                                                    pixelsWide : s.width
+                                                                    pixelsHigh : s.height
+                                                                 bitsPerSample : bitsPerSample
+                                                               samplesPerPixel : samplesPerPixel
+                                                                      hasAlpha : hasAlpha
+                                                                      isPlanar : NO
+                                                                colorSpaceName : colorSpace
+                                                                  bitmapFormat : 0
+                                                                   bytesPerRow : bytesPerRow
+                                                                  bitsPerPixel : bitsPerPixel];
+        if(isMask)
+            bitmap2 = initial_bitmap; //[initial_bitmap bitmapImageRepByRetaggingWithColorSpace : NSColorSpace.sRGBColorSpace];
+       else
+            bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace : NSColorSpace.sRGBColorSpace];
+        
+        [bitmap2 retain] ;
+        
+        // Copy the image to the new imageRep (effectivly converts it to correct pixel format/brightness etc)
+        if (0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Read))
+        {
+            NSGraphicsContext* context;
+            context = [NSGraphicsContext graphicsContextWithBitmapImageRep : bitmap2];
+            [NSGraphicsContext saveGraphicsState] ;
+            [NSGraphicsContext setCurrentContext : context] ;
+            [*inBitmap_ drawAtPoint : NSZeroPoint fromRect : NSZeroRect operation : NSCompositingOperationCopy fraction : 1.0] ;
+            
+            [NSGraphicsContext restoreGraphicsState] ;
+        }
+    }
 }
 
 inline BitmapPixels::~BitmapPixels()
 {
-	if (0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Write))
+    const bool isMask = 0 != (flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
+
+	if (!isMask && 0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Write))
 	{
 		// scan for overbright pixels
 		bool hasOverbright = false;
@@ -2608,7 +2658,7 @@ inline BitmapPixels::~BitmapPixels()
 	}
 	else
 	{
-		[bitmap2 release] ;
+		[bitmap2 release];
 	}
 }
 } // namespace

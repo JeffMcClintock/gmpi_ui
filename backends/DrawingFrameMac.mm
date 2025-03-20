@@ -485,6 +485,11 @@ public:
     {
         return gmpi::ReturnCode::NoSupport;
     }
+    
+    float getRasterizationScale() override
+    {
+        return [[view window] backingScaleFactor];
+    }
 
     // IDialogHost
     gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override
@@ -663,6 +668,46 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
     
     gmpi::drawing::Point p{(float)localPoint.x, (float)localPoint.y};
     return p;
+}
+
+// Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
+#define GMPI_KEY_LISTENER_CLASS GMPI_KEY_LISTENER_VERSION_01
+
+//--------------------------------------------------------------------------------------------------------------
+@interface GMPI_KEY_LISTENER_CLASS : NSView {
+}
+
+- (id) initWithCallback: (int) x preferredSize: (NSSize) size;
+
+@end
+
+@implementation GMPI_KEY_LISTENER_CLASS
+
+- (id) initWithCallback: (int) x preferredSize: (NSSize) size
+{
+    self = [super initWithFrame: NSMakeRect (0, 0, size.width, size.height)];
+    if (self)
+    {
+    }
+    return self;
+}
+@end // implementation: GMPI_KEY_LISTENER_CLASS
+
+// without including objective-C headers, we need to create an key-listener NSView from C++.
+// here is the function here to return the view, using void* as return type.
+void* gmpi_ui_create_key_listener(void* parent, int width, int height)
+{
+    NSSize inPreferredSize{(CGFloat)width, (CGFloat)height};
+    
+    NSView* native = [[GMPI_KEY_LISTENER_CLASS alloc] initWithCallback:0 preferredSize:inPreferredSize];
+    
+    if(parent) // JUCE creates the view then *later* adds it to the parent. GMPI adds it here.
+    {
+        NSView* parentView = (NSView*) parent;
+        [parentView addSubview:native];
+    }
+    
+    return (void*) native;
 }
 
 // Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name

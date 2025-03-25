@@ -838,7 +838,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
         flags |= gmpi::interaction::GG_POINTER_KEY_SHIFT;
     }
     
-    if(([theEvent modifierFlags ] & NSEventModifierFlagControl /* was NSEventModifierFlagCommand*/ ) != 0)
+    if(([theEvent modifierFlags ] & NSEventModifierFlagControl) != 0)
     {
         flags |= gmpi::interaction::GG_POINTER_KEY_CONTROL;
     }

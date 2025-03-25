@@ -198,22 +198,11 @@ private: // need em?
 };
 
 // Helper for returning strings.
-class ReturnString : public gmpi::api::IString
+struct ReturnString : public api::IString
 {
 	std::string cppString;
 
-public:
-/*
-	MpString() {}
-	MpString(const std::string& other) : cppString(other)
-	{
-	}
-	MpString(const char* pData, int32_t pSize) : cppString(pData, pSize)
-	{
-	}
-*/
-
-	gmpi::ReturnCode setData(const char* data, int32_t size) override
+	ReturnCode setData(const char* data, int32_t size) override
 	{
 		if (size < 1)
 		{
@@ -223,7 +212,7 @@ public:
 		{
 			cppString.assign(data, static_cast<size_t>(size));
 		}
-		return gmpi::ReturnCode::Ok;
+		return ReturnCode::Ok;
 	}
 
 	int32_t getSize() override
@@ -235,6 +224,7 @@ public:
 		return cppString.data();
 	}
 
+#if 0
 	const char* c_str() const
 	{
 		return cppString.c_str();
@@ -244,7 +234,14 @@ public:
 	{
 		return cppString;
 	}
-	// identification and reference counting
+#endif
+
+	api::IString* get()
+	{
+		cppString.clear();
+		return static_cast<api::IString*>(this);
+	}
+
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IString);
 	GMPI_REFCOUNT_NO_DELETE;
 };

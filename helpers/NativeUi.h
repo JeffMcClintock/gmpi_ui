@@ -260,6 +260,10 @@ public:
 	virtual void onKeyUp(int32_t key, int32_t flags) = 0;
 	virtual void onLostFocus(ReturnCode result) = 0;
 
+	virtual void cut(gmpi::api::IString* returnString) = 0;
+	virtual void copy(gmpi::api::IString* returnString) = 0;
+	virtual void paste(const char* text, size_t size) = 0;
+
 	// {7CA3D452-8C5D-42D1-84BD-37D684B14F17}
 	inline static const gmpi::api::Guid guid =
 	{ 0x7ca3d452, 0x8c5d, 0x42d1, { 0x84, 0xbd, 0x37, 0xd6, 0x84, 0xb1, 0x4f, 0x17 } };

@@ -1356,6 +1356,129 @@ namespace privateStuff
 	}
 }
 
+namespace win32
+{
+
+LRESULT CALLBACK GenericWindowProc(
+	HWND hwnd,
+	UINT message,
+	WPARAM wParam,
+	LPARAM lParam)
+{
+	_RPTN(0, "GenericWindowProc(%d)\n", message);
+
+	if (auto client = (hasWindowProc*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA); client)
+	{
+		return client->WindowProc(hwnd, message, wParam, lParam);
+	}
+
+	return DefWindowProc(hwnd, message, wParam, lParam);
+}
+
+PlatformKeyListener::~PlatformKeyListener()
+{
+	_RPT0(0, "~PlatformKeyListener()\n");
+
+	::SendMessage(windowHandle, WM_CLOSE, 0, 0);
+}
+
+ReturnCode PlatformKeyListener::showAsync(gmpi::api::IUnknown* callback)
+{
+	callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
+
+	// Create an HWND, capture keystrokes etc.
+	static WNDCLASS windowClass{};
+	static wchar_t gClassName[20] = {};
+
+	const auto dllHandle = local44_GetDllHandle_randomshit();
+
+	if (!windowClass.lpfnWndProc)
+	{
+		::OleInitialize(0);
+
+		swprintf(gClassName, std::size(gClassName), L"GMPIKL%p", dllHandle);
+
+		windowClass.style = CS_GLOBALCLASS;
+		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+		windowClass.hInstance = dllHandle;
+		windowClass.lpfnWndProc = GenericWindowProc;
+		windowClass.lpszClassName = gClassName;
+
+		RegisterClass(&windowClass);
+	}
+
+	int style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
+	int extended_style = 0;
+
+	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
+		style, 0, 0, bounds.right - bounds.left, bounds.bottom - bounds.top,
+		parentWnd, NULL, dllHandle, NULL);
+
+	if (!windowHandle)
+		return gmpi::ReturnCode::Fail;
+
+	SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)static_cast<hasWindowProc*>(this));
+
+	::ShowWindow(windowHandle, SW_SHOWNORMAL);
+	::SetFocus(windowHandle);
+
+	return gmpi::ReturnCode::Ok;
+}
+
+LRESULT PlatformKeyListener::WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+	case WM_KILLFOCUS:
+	{
+		// Release the keyboard focus
+		if (callback2)
+		{
+			callback2->onLostFocus(gmpi::ReturnCode::Ok);
+		}
+		break;
+	}
+
+	case WM_KEYDOWN:
+	{
+		wchar_t key[2] = { 0 };
+		BYTE keyboardState[256];
+		GetKeyboardState(keyboardState);
+
+		// Translate the virtual-key code to a Unicode character
+		int result = ToUnicode(static_cast<UINT>(wParam), static_cast<UINT>((lParam >> 16) & 0xFF), keyboardState, key, 2, 0);
+
+		switch (wParam)
+		{
+		case VK_LEFT:
+			key[0] = 0x25;
+			break;
+		case VK_RIGHT:
+			key[0] = 0x27;
+			break;
+		case VK_DELETE:
+			key[0] = 0x7F;
+			break;
+
+		default:
+			// Handle other keys
+//			key = static_cast<wchar_t>(wParam);
+			break;
+		}
+
+		if (callback2)
+		{
+			callback2->onKeyDown(key[0], 0);
+		}
+		break;
+	}
+	break;
+	}
+
+	return DefWindowProc(hwnd, message, wParam, lParam);
+}
+} // namespace win32
+
 class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
 {
 	HMENU hmenu;
@@ -1497,7 +1620,8 @@ gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(const gmpi::drawing::Rect* 
 
 gmpi::ReturnCode DxDrawingFrameBase::createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener)
 {
-	return gmpi::ReturnCode::NoSupport;
+	*returnKeyListener = new gmpi::hosting::win32::PlatformKeyListener(getWindowHandle(), r);
+	return gmpi::ReturnCode::Ok;
 }
 
 gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)

@@ -271,6 +271,37 @@ namespace hosting
 		void reSize(int left, int top, int right, int bottom);
 		virtual void doClose() {}
 	};
+
+
+namespace win32
+{
+struct hasWindowProc
+{
+	virtual LRESULT WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) = 0;
+};
+
+class PlatformKeyListener : public gmpi::api::IKeyListener, hasWindowProc
+{
+	HWND parentWnd{};
+	HWND windowHandle{};
+	gmpi::drawing::Rect bounds{};
+	gmpi::api::IKeyListenerCallback* callback2{};
+
+	LRESULT WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) override;
+
+public:
+	PlatformKeyListener(HWND pParentWnd, const gmpi::drawing::Rect* r) :
+		parentWnd(pParentWnd)
+		, bounds(*r)
+	{}
+	~PlatformKeyListener();
+
+	ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IKeyListener);
+	GMPI_REFCOUNT;
+};
+} // namespace win32
 } // namespace.
 } // namespace.
 

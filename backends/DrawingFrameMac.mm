@@ -216,6 +216,32 @@ public:
     GMPI_REFCOUNT;
 };
 
+class GMPI_MAC_KeyListener : public gmpi::api::IKeyListener
+{
+    gmpi::drawing::Rect bounds{};
+    gmpi::api::IKeyListenerCallback* callback2{};
+    NSView* view{};
+    
+public:
+    GMPI_MAC_KeyListener(NSView* pview, const gmpi::drawing::Rect* r) :
+          view(pview)
+        , bounds(*r)
+    {}
+    
+    ~GMPI_MAC_KeyListener()
+    {
+    }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+    {
+        callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
+    }
+
+    GMPI_QUERYINTERFACE_METHOD(gmpi::api::IKeyListener);
+    GMPI_REFCOUNT;
+};
+
+
 class DrawingFrameCocoa :
     public DrawingFrameCommon,
     public gmpi::api::IDrawingHost,
@@ -505,7 +531,8 @@ public:
     }
     gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) override
     {
-        return gmpi::ReturnCode::NoSupport;
+        *returnKeyListener = new GMPI_MAC_KeyListener(view, r);
+        return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override
     {

@@ -216,43 +216,26 @@ public:
     GMPI_REFCOUNT;
 };
 
-
-
 // GMPI_MAC_KeyListener
-GMPI_MAC_KeyListener::GMPI_MAC_KeyListener(NSView* pview, const gmpi::drawing::Rect* r) :
-      view(pview)
-    , bounds(*r)
-{}
-    
-GMPI_MAC_KeyListener::~GMPI_MAC_KeyListener()
-{
-}
-
-gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback) override
-{
-    callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
-
-    keyListenerView = [[KeyListenerView alloc] initWithParent:parentView listener:keyListener];
-}
 
 @interface KeyListenerView : NSView
 {
-    gmpi::api::IKeyListener* keyListener;
+    gmpi::api::IKeyListenerCallback* callback;
 }
 
-- (id)initWithParent:(NSView*)parent listener:(gmpi::api::IKeyListener*)listener;
+- (id)initWithParent:(NSView*)parent callback:(gmpi::api::IKeyListenerCallback*)listener;
 - (void)keyDown:(NSEvent*)event;
 
 @end
 /////////////////////////////////////////////
 @implementation KeyListenerView
 
-- (id)initWithParent:(NSView*)parent listener:(gmpi::api::IKeyListener*)listener
+- (id)initWithParent:(NSView*)parent callback:(gmpi::api::IKeyListenerCallback*)pcallback
 {
     self = [super initWithFrame:NSMakeRect(0, 0, 40, 40)];
     if (self)
     {
-        keyListener = listener;
+        callback = pcallback;
         if (parent)
         {
             [parent addSubview:self];
@@ -263,7 +246,7 @@ gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback) 
 
 - (void)keyDown:(NSEvent*)event
 {
-    if (keyListener)
+    if (callback)
     {
         // Convert NSEvent to a format suitable for gmpi::api::IKeyListener
         // For simplicity, we'll just forward the key code and characters
@@ -272,7 +255,7 @@ gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback) 
         int32_t keyCode = [event keyCode];
 
         // Call the keyListener's method
-        keyListener->onKeyDown(utf8String, keyCode);
+        callback->onKeyDown(keyCode, 0);
     }
     else
     {
@@ -282,6 +265,23 @@ gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback) 
 
 @end
 //////////////////////////////////////////////////////////
+GMPI_MAC_KeyListener::GMPI_MAC_KeyListener(NSView* pview, const gmpi::drawing::Rect* r) :
+      parentView(pview)
+    , bounds(*r)
+{}
+    
+GMPI_MAC_KeyListener::~GMPI_MAC_KeyListener()
+{
+}
+
+gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback)
+{
+    callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
+
+    keyListenerView = [[KeyListenerView alloc] initWithParent:parentView callback:callback2];
+}
+
+
 
 class DrawingFrameCocoa :
     public DrawingFrameCommon,

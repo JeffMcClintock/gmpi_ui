@@ -9,8 +9,8 @@ class GMPI_MAC_KeyListener : public gmpi::api::IKeyListener
 {
     gmpi::drawing::Rect bounds{};
     gmpi::api::IKeyListenerCallback* callback2{};
-    NSView* view{};
-    KeyListenerView* keyListenerView{};
+    NSView* parentView{};
+    NSView* keyListenerView{};
 
 public:
     GMPI_MAC_KeyListener(NSView* pview, const gmpi::drawing::Rect* r);

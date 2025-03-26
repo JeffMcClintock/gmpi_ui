@@ -1,8 +1,8 @@
 #import <Cocoa/Cocoa.h>
-//#include "helpers/GraphicsRedrawClient.h"
 #include "GmpiSdkCommon.h"
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
+#include "DrawingFrameMac.h"
 
 struct EventHelperClient
 {
@@ -216,31 +216,72 @@ public:
     GMPI_REFCOUNT;
 };
 
-class GMPI_MAC_KeyListener : public gmpi::api::IKeyListener
+
+
+// GMPI_MAC_KeyListener
+GMPI_MAC_KeyListener::GMPI_MAC_KeyListener(NSView* pview, const gmpi::drawing::Rect* r) :
+      view(pview)
+    , bounds(*r)
+{}
+    
+GMPI_MAC_KeyListener::~GMPI_MAC_KeyListener()
 {
-    gmpi::drawing::Rect bounds{};
-    gmpi::api::IKeyListenerCallback* callback2{};
-    NSView* view{};
-    
-public:
-    GMPI_MAC_KeyListener(NSView* pview, const gmpi::drawing::Rect* r) :
-          view(pview)
-        , bounds(*r)
-    {}
-    
-    ~GMPI_MAC_KeyListener()
+}
+
+gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback) override
+{
+    callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
+
+    keyListenerView = [[KeyListenerView alloc] initWithParent:parentView listener:keyListener];
+}
+
+@interface KeyListenerView : NSView
+{
+    gmpi::api::IKeyListener* keyListener;
+}
+
+- (id)initWithParent:(NSView*)parent listener:(gmpi::api::IKeyListener*)listener;
+- (void)keyDown:(NSEvent*)event;
+
+@end
+/////////////////////////////////////////////
+@implementation KeyListenerView
+
+- (id)initWithParent:(NSView*)parent listener:(gmpi::api::IKeyListener*)listener
+{
+    self = [super initWithFrame:NSMakeRect(0, 0, 40, 40)];
+    if (self)
     {
+        keyListener = listener;
+        if (parent)
+        {
+            [parent addSubview:self];
+        }
     }
+    return self;
+}
 
-    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+- (void)keyDown:(NSEvent*)event
+{
+    if (keyListener)
     {
-        callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
+        // Convert NSEvent to a format suitable for gmpi::api::IKeyListener
+        // For simplicity, we'll just forward the key code and characters
+        NSString* characters = [event characters];
+        const char* utf8String = [characters UTF8String];
+        int32_t keyCode = [event keyCode];
+
+        // Call the keyListener's method
+        keyListener->onKeyDown(utf8String, keyCode);
     }
+    else
+    {
+        [super keyDown:event];
+    }
+}
 
-    GMPI_QUERYINTERFACE_METHOD(gmpi::api::IKeyListener);
-    GMPI_REFCOUNT;
-};
-
+@end
+//////////////////////////////////////////////////////////
 
 class DrawingFrameCocoa :
     public DrawingFrameCommon,

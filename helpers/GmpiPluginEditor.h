@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include "GmpiApiEditor.h"
 #include "RefCountMacros.h"
 #include "Common.h"
@@ -66,7 +67,7 @@ public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	gmpi::shared_ptr<gmpi::api::IDrawingHost> drawingHost;
 
-	std::unordered_map<int, PinBase*> pins;
+	std::map<int, PinBase*> pins;
 
 	virtual ~PluginEditor(){}
 
@@ -79,7 +80,7 @@ public:
 
 	void init(PinBase& pin)
 	{
-		const int nextId = pins.empty() ? 0 : pins.end()->first + 1;
+		const int nextId = pins.empty() ? 0 : pins.rbegin()->first + 1;
 		init(nextId, pin);
 	}
 

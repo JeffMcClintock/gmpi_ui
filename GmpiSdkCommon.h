@@ -130,7 +130,7 @@ public:
 		return returnInterface;
 	}
 
-	bool isNull()
+	bool isNull() const
 	{
 		return obj == nullptr;
 	}
@@ -224,7 +224,6 @@ struct ReturnString : public api::IString
 		return cppString.data();
 	}
 
-#if 0
 	const char* c_str() const
 	{
 		return cppString.c_str();
@@ -234,7 +233,6 @@ struct ReturnString : public api::IString
 	{
 		return cppString;
 	}
-#endif
 
 	api::IString* get()
 	{

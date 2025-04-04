@@ -10,13 +10,14 @@
 
 namespace gmpi
 {
-namespace editor
+namespace editor2
 {
 
 class PinBase
 {
 public:
 	int id{};
+	bool dirty{true};
 	gmpi::api::IEditorHost* host{};
 	std::function<void(PinBase*)> onUpdate;
 
@@ -31,6 +32,14 @@ public:
 template<typename T>
 class Pin : public PinBase
 {
+	friend class PluginEditorBase;
+
+	void setFromHost(int32_t voice, int32_t size, const void* data) override
+	{
+		dirty = true;
+		valueFromData(size, data, value);
+	}
+
 public:
 	T value{};
 
@@ -47,16 +56,9 @@ public:
 		}
 		return value;
 	}
-
-	void setFromHost(int32_t voice, int32_t size, const void* data) override
-	{
-		valueFromData(size, data, value);
-		if(onUpdate)
-			onUpdate(this);
-	}
 };
 
-class PluginEditorBase : public gmpi::api::IEditor
+class PluginEditorBase : public gmpi::api::IEditor, public gmpi::api::IEditor2_x
 {
 public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
@@ -102,8 +104,24 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode notifyPin(int32_t pinId, int32_t voice) override
+// obsolete
+ReturnCode notifyPin(int32_t pinId, int32_t voice) override
+{
+	return ReturnCode::NoSupport;
+}
+
+	// IEditor2_x
+	ReturnCode process() override
 	{
+		for (auto& p : pins)
+		{
+			if (p.second->dirty)
+			{
+				p.second->dirty = false;
+				if (p.second->onUpdate)
+					p.second->onUpdate(p.second);
+			}
+		}
 		return ReturnCode::Ok;
 	}
 };
@@ -114,6 +132,7 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);
+		GMPI_QUERYINTERFACE(gmpi::api::IEditor2_x);
 		return ReturnCode::NoSupport;
 	}
 	GMPI_REFCOUNT;
@@ -234,6 +253,7 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);
+		GMPI_QUERYINTERFACE(gmpi::api::IEditor2_x);
 		GMPI_QUERYINTERFACE(gmpi::api::IInputClient);
 		GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
 		return ReturnCode::NoSupport;

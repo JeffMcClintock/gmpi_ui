@@ -40,8 +40,6 @@ struct IDrawingClient : gmpi::api::IUnknown
 	// Second pass of layout.
 	virtual ReturnCode arrange(const gmpi::drawing::Rect* finalRect) = 0;
 
-	// TODO: getClipRect() ?
-
 	virtual ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
 
 	virtual ReturnCode getClipArea(drawing::Rect* returnRect) = 0;
@@ -110,11 +108,8 @@ struct DECLSPEC_NOVTABLE IDrawingHost : gmpi::api::IUnknown
 	// TODO: sort out method name case.
 	// Get host's current skin's font information.
 	virtual void invalidateRect(const gmpi::drawing::Rect* invalidRect) = 0;
-	virtual float getRasterizationScale() = 0; // DPI scaling
-
-#if 0
 	virtual void invalidateMeasure() = 0;
-#endif
+	virtual float getRasterizationScale() = 0; // DPI scaling
 
 	// {4E7EEF02-1F0B-4E10-AA44-DD54C0B1CBB0}
 	inline static const gmpi::api::Guid guid =

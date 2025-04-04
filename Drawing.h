@@ -66,6 +66,16 @@ inline int32_t getHeight(RectL r)
 	return r.bottom - r.top;
 }
 
+inline Size getSize(Rect r)
+{
+	return { getWidth(r), getHeight(r) };
+}
+
+inline SizeL getSize(RectL r)
+{
+	return { getWidth(r), getHeight(r) };
+}
+
 inline RectL intersectRect(RectL a, RectL b)
 {
 	return
@@ -224,7 +234,7 @@ inline Matrix3x2 makeTranslation(
 
 inline Matrix3x2 makeScale(
 	Size size,
-	Point center = Point()
+	Point center = {}
 )
 {
 	Matrix3x2 scale;

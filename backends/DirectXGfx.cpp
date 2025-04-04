@@ -612,6 +612,9 @@ gmpi::ReturnCode Factory_base::loadImageU(const char* uri, drawing::api::IBitmap
 		);
 	}
 
+	if(!pDecoder)
+		return gmpi::ReturnCode::Fail;
+
 	auto wicBitmap = loadWicBitmap(info.wicFactory, pDecoder.get());
 
 	if (wicBitmap)

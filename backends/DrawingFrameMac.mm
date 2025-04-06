@@ -1091,7 +1091,7 @@ void gmpi_onCloseNativeView(void* ptr)
 
 void resizeNativeView(void* ptr, int width, int height)
 {
-    auto view = (GMPI_VIEW_CLASS*) ptr;
+    auto view = /*(GMPI_VIEW_CLASS*)*/ (NSView*) ptr;
     auto r = [view frame];
     r.size.width = width;
     r.size.height = height;

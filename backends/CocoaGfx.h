@@ -58,7 +58,7 @@ inline NSRect NSRectFromRect(gmpi::drawing::Rect rect)
 	return NSMakeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
 }
         
-CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some cases.
+inline CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some cases.
 {
     CGMutablePathRef cgPath = CGPathCreateMutable();
     NSInteger n = [geometry elementCount];
@@ -90,7 +90,7 @@ CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some c
 }
         
 // helper
-void setNativePenStrokeStyle(NSBezierPath * path, gmpi::drawing::api::IStrokeStyle* strokeStyle)
+inline void setNativePenStrokeStyle(NSBezierPath * path, gmpi::drawing::api::IStrokeStyle* strokeStyle)
 {
     gmpi::drawing::CapStyle capstyle = strokeStyle == nullptr ? gmpi::drawing::CapStyle::Flat : ((se::generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.lineCap;
             
@@ -112,7 +112,7 @@ void setNativePenStrokeStyle(NSBezierPath * path, gmpi::drawing::api::IStrokeSty
     }
 }
     
-void applyDashStyleToPath(NSBezierPath* path, const gmpi::drawing::api::IStrokeStyle* strokeStyleIm, float strokeWidth)
+inline void applyDashStyleToPath(NSBezierPath* path, const gmpi::drawing::api::IStrokeStyle* strokeStyleIm, float strokeWidth)
 {
     gmpi::drawing::StrokeStyleProperties style;
 
@@ -2438,7 +2438,7 @@ public:
 	GMPI_REFCOUNT;
 };
 
-gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
+inline gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 	b2.attach(new class BitmapRenderTarget(&desiredSize, flags, factory));
@@ -2488,7 +2488,7 @@ inline gmpi::ReturnCode Factory::loadImageU(const char* utf8Uri, gmpi::drawing::
 	return gmpi::ReturnCode::Fail;
 }
 
-void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath) const
+inline void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath) const
 {
     [NSGraphicsContext saveGraphicsState];
 

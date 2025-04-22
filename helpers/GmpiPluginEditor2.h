@@ -21,12 +21,13 @@ public:
 	gmpi::api::IEditorHost* host{};
 	std::function<void(PinBase*)> onUpdate;
 
-	PinBase()
-	{
-		//_RPT0(_CRT_WARN, "PinBase() constructor\n");
-	}
+	PinBase();
 	virtual ~PinBase() {}
 	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
+	virtual void clearDirty()
+	{
+		dirty = false;
+	}
 };
 
 template<typename T>
@@ -43,10 +44,6 @@ class Pin : public PinBase
 public:
 	T value{};
 
-	Pin()
-	{
-		//_RPT0(_CRT_WARN, "Pin() constructor\n");
-	}
 	const T& operator=(const T& pvalue)
 	{
 		if (pvalue != value)
@@ -58,15 +55,59 @@ public:
 	}
 };
 
+template<typename T>
+class PolyPin : public PinBase
+{
+	friend class PluginEditorBase;
+
+	void setFromHost(int32_t voice, int32_t size, const void* data) override
+	{
+		dirty = true;
+		dirtyVoice[voice] = true;
+		valueFromData(size, data, value[voice]);
+	}
+	
+	void clearDirty() override
+	{
+		PinBase::clearDirty();
+		std::fill(std::begin(dirtyVoice), std::end(dirtyVoice), false);
+	}
+
+public:
+	T value[128]{};
+	bool dirtyVoice[128]{};
+
+	void set(int voice, const T& pvalue)
+	{
+		if (pvalue != value[voice])
+		{
+			value[voice] = pvalue;
+			host->setPin(id, voice, dataSize(pvalue), dataPtr(pvalue));
+		}
+	}
+};
+
 class PluginEditorBase : public gmpi::api::IEditor, public gmpi::api::IEditor2_x
 {
 public:
+	inline static thread_local PluginEditorBase* constructingEditor = nullptr;
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
+	gmpi::shared_ptr<gmpi::api::IEditorHost2_x> editorHost2;
+	
 	std::map<int, PinBase*> pins;
+
+	PluginEditorBase()
+	{
+		constructingEditor = this;
+	}
 
 	void init(int id, PinBase& pin)
 	{
 		assert(pins.find(id) == pins.end()); // init two pins with same id?
+		assert(pins.end() == std::find_if(pins.begin(), pins.end(), [&pin](const auto& pair) {
+			return pair.second == &pin;
+			}));
+
 		pin.id = id;
 		pins[id] = &pin;
 	}
@@ -82,6 +123,7 @@ public:
 	{
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
+		editorHost2 = unknown.as<gmpi::api::IEditorHost2_x>();
 
 		for (auto& p : pins)
 		{
@@ -117,9 +159,10 @@ ReturnCode notifyPin(int32_t pinId, int32_t voice) override
 		{
 			if (p.second->dirty)
 			{
-				p.second->dirty = false;
 				if (p.second->onUpdate)
 					p.second->onUpdate(p.second);
+
+				p.second->clearDirty();
 			}
 		}
 		return ReturnCode::Ok;
@@ -260,6 +303,14 @@ public:
 	}
 	GMPI_REFCOUNT;
 };
+
+PinBase::PinBase()
+{
+	// when contructing a pin, register it with the plugin editor.
+	if (PluginEditorBase::constructingEditor)
+		PluginEditorBase::constructingEditor->init(*this);
+}
+
 
 } // namespace gmpi
 } // namespace editor

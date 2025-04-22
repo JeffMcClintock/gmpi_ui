@@ -9,7 +9,10 @@
 #ifndef GraphicsRedrawClient2_h
 #define GraphicsRedrawClient2_h
 
+#include <string>
+#include <functional>
 #include "GmpiApiDrawing.h"
+#include "RefCountMacros.h"
 
 namespace gmpi
 {
@@ -265,5 +268,26 @@ public:
 };
 
 } // namespace api
+
+namespace sdk
+{
+struct TextEditCallback : public gmpi::api::ITextEditCallback
+{
+	std::function<void(ReturnCode)> callback = [](ReturnCode) {};
+	std::string text;
+
+	void onChanged(const char* ptext) override
+	{
+		text = ptext;
+	}
+	void onComplete(ReturnCode result)
+	{
+		callback(result);
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::ITextEditCallback);
+	GMPI_REFCOUNT_NO_DELETE;
+};
+}
 } // namespace gmpi
 #endif /* GraphicsRedrawClient_h */

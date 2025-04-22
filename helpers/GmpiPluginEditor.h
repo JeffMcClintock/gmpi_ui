@@ -20,10 +20,7 @@ public:
 	gmpi::api::IEditorHost* host{};
 	std::function<void(PinBase*)> onUpdate;
 
-	PinBase()
-	{
-		//_RPT0(_CRT_WARN, "PinBase() constructor\n");
-	}
+	PinBase();
 	virtual ~PinBase() {}
 	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
 };
@@ -61,10 +58,20 @@ class PluginEditorBase : public gmpi::api::IEditor
 public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	std::map<int, PinBase*> pins;
+	inline static thread_local PluginEditorBase* constructingEditor{};
+
+	PluginEditorBase()
+	{
+		constructingEditor = this;
+	}
 
 	void init(int id, PinBase& pin)
 	{
 		assert(pins.find(id) == pins.end()); // init two pins with same id?
+		assert(pins.end() == std::find_if(pins.begin(), pins.end(), [&pin](const auto& pair) {
+			return pair.second == &pin;
+			})); // init same pin twice?
+
 		pin.id = id;
 		pins[id] = &pin;
 	}
@@ -129,7 +136,6 @@ public:
 	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
 	gmpi::shared_ptr<gmpi::api::IDrawingHost> drawingHost;
 
-
 	virtual ~PluginEditor(){}
 
 	// IEditor
@@ -141,8 +147,6 @@ public:
 
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
 
-		// TODO:: None of these are provided by SynthEdit as a host
-//		phost->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
 		inputHost = unknown.as<gmpi::api::IInputHost>();
 		drawingHost = unknown.as<gmpi::api::IDrawingHost>();
 		dialogHost = unknown.as<gmpi::api::IDialogHost>();
@@ -190,7 +194,6 @@ public:
 		*returnRect = bounds;
 		return ReturnCode::Ok;
 	}
-
 
 	// IInputClient
 	ReturnCode hitTest(gmpi::drawing::Point point, int32_t flags) override
@@ -240,6 +243,13 @@ public:
 	}
 	GMPI_REFCOUNT;
 };
+
+inline PinBase::PinBase()
+{
+	// register with the plugin editor.
+	if (PluginEditorBase::constructingEditor)
+		PluginEditorBase::constructingEditor->init(*this);
+}
 
 } // namespace gmpi
 } // namespace editor

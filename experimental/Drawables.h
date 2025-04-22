@@ -286,6 +286,7 @@ void clear();
 		std::string path;
 
 		ScrollView(std::string path, GmpiDrawing::Rect pbounds);
+		~ScrollView();
 		void onAddedToParent() override;
 		void UpdateTransform();
 		GmpiDrawing::Rect ClipRect() const override { return bounds; }
@@ -479,6 +480,9 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 	struct RectangleMouseTarget : public Interactor, public Child
 	{
 		GmpiDrawing::Rect bounds = {};
+#ifdef _DEBUG
+		std::string debugName;
+#endif
 		RectangleMouseTarget(GmpiDrawing::Rect pbounds) : bounds(pbounds) {}
 
 		bool HitTest(GmpiDrawing::Point p) const override;

@@ -427,6 +427,8 @@ namespace gmpi_forms
 
 	bool ViewPort::onPointerMove(GmpiDrawing::Point p) const
 	{
+		_RPTN(0, "---------------ViewPort::onPointerMove( %f, %f)\n", p.x, p.y);
+
 		mousePoint = reverseTransform.TransformPoint(p);
 		const auto prevMouseOverObject = mouseOverObject;
 
@@ -439,22 +441,35 @@ namespace gmpi_forms
 			if (t->HitTest(mousePoint) && t->wantsClicks())
 			{
 				mouseOverObject = t;
-				t->onPointerMove(mousePoint);
 				break;
 			}
 		}
 
 		if (prevMouseOverObject != mouseOverObject)
 		{
+			const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
+			const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
+
+			_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);
+		}
+
+		if (prevMouseOverObject != mouseOverObject)
+		{
 			if (prevMouseOverObject)
+			{
 				prevMouseOverObject->setHover(false);
+			}
 
 			if (mouseOverObject)
 			{
 //				_RPTN(0, "SetHover(true) :%s\n", typeid (*mouseOverObject).name());
-
 				mouseOverObject->setHover(true);
 			}
+		}
+
+		if (mouseOverObject)
+		{
+			mouseOverObject->onPointerMove(mousePoint);
 		}
 
 		return mouseOverObject != nullptr;
@@ -527,7 +542,8 @@ namespace gmpi_forms
 		: bounds(pbounds),
 		path(ppath)
 	{
-//		e->reg(&scroll, path + "scroll");
+		_RPTN(0, "new ScrollView %x\n", this);
+		//		e->reg(&scroll, path + "scroll");
 		
 		scroll.add([this]()
 			{
@@ -536,6 +552,11 @@ namespace gmpi_forms
 				parent->Invalidate(bounds);
 			}
 		);
+	}
+
+	ScrollView::~ScrollView()
+	{
+		_RPTN(0, "~ScrollView %x\n", this);
 	}
 
 	void ScrollView::onAddedToParent()

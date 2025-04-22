@@ -102,6 +102,9 @@ namespace hosting
 			swapChain = nullptr;
 		}
 		HMODULE getDllHandle();
+
+		// IDrawingHost
+		void invalidateMeasure() override {}
 	};
 
 	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).

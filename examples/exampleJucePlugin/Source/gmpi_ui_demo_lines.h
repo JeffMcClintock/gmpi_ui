@@ -182,7 +182,7 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
         
 		{
 			uint32_t sz = 128;
-			auto bitmap = g.getFactory().createImage({ sz, sz });
+			auto bitmap = g.getFactory().createImage({ sz, sz }, (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels);
 //			auto bitmap = g.getFactory().loadImageU("C:\\SE\\gmpi_ui\\docs\\images\\GMPI_Icon.png");
 
 			{
@@ -260,7 +260,7 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		// tiled image fill
 		{
 			uint32_t sz = 128;
-			auto bitmap = g.getFactory().createImage({ sz, sz });
+			auto bitmap = g.getFactory().createImage({ sz, sz }, (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels);
 			//			auto bitmap = g.getFactory().loadImageU("C:\\SE\\gmpi_ui\\docs\\images\\GMPI_Icon.png");
 
 			{

@@ -1,4 +1,5 @@
 #pragma once
+// WARNING: This source file is duplicated in GMPI SDK and GMPI-UI SDK. keep them in sync.
 #ifndef _GMPI_SDK_COMMON_H_INCLUDED // ignore source file in multiple locations.
 #define _GMPI_SDK_COMMON_H_INCLUDED
 
@@ -30,19 +31,25 @@ namespace gmpi
 template<class wrappedObjT>
 class shared_ptr
 {
-	wrappedObjT* obj = {};
+	mutable wrappedObjT* obj{};
 
 public:
-	shared_ptr(){}
+	shared_ptr() noexcept = default;
 
 	explicit shared_ptr(wrappedObjT* newobj)
 	{
 		assign(newobj);
 	}
-	shared_ptr(const shared_ptr<wrappedObjT>& value)
+	shared_ptr(shared_ptr<wrappedObjT> const& value) noexcept // copy
 	{
 		assign(value.obj);
 	}
+	shared_ptr(shared_ptr<wrappedObjT>&& value) // move
+	{
+		attach(value.obj);
+		value.obj = {};
+	}
+
 	// Attach object without incrementing ref count. For objects created with new.
 	void attach(wrappedObjT* newobj)
 	{
@@ -57,9 +64,10 @@ public:
 
 	~shared_ptr()
 	{
-		if( obj )
+		if( auto temp = obj ; temp)
 		{
-			obj->release();
+			obj = nullptr;
+			temp->release();
 		}
 	}
 	operator wrappedObjT*( )
@@ -71,9 +79,14 @@ public:
 		assign(value);
 		return value;
 	}
-	shared_ptr<wrappedObjT>& operator=( shared_ptr<wrappedObjT>& value )
+	shared_ptr<wrappedObjT>& operator=( shared_ptr<wrappedObjT> const& value ) // copy 
 	{
 		assign(value.get());
+		return *this;
+	}
+	shared_ptr<wrappedObjT>& operator=(shared_ptr<wrappedObjT>&& value) // move
+	{
+		std::swap(obj, value.obj);
 		return *this;
 	}
 	bool operator==( const wrappedObjT* other ) const
@@ -89,7 +102,7 @@ public:
 		return obj;
 	}
 
-	wrappedObjT*& get()
+	wrappedObjT*& get() const
 	{
 		return obj;
 	}
@@ -113,11 +126,11 @@ public:
 		return reinterpret_cast<void**>(put());
 	}
 
-	gmpi::api::IUnknown** asIUnknownPtr()
-	{
-		assert(obj == 0); // Free it before you re-use it!
-		return reinterpret_cast<gmpi::api::IUnknown**>(&obj);
-	}
+	//void** asIUnknownPtr()
+	//{
+	//	assert(obj == 0); // Free it before you re-use it!
+	//	return reinterpret_cast<void**>(&obj);
+	//}
 
 	template<typename I>
 	shared_ptr<I> as()
@@ -139,10 +152,13 @@ private:
 	// Attach object and increment ref count.
 	void assign(wrappedObjT* newobj)
 	{
-		attach(newobj);
-		if( newobj )
+		if (newobj != obj) // skip self-asignment.
 		{
-			newobj->addRef();
+			attach(newobj);
+			if( newobj )
+			{
+				newobj->addRef();
+			}
 		}
 	}
 };
@@ -154,48 +170,6 @@ INTERFACE* as(api::IUnknown* com_object)
 	com_object->queryInterface(&INTERFACE::guid, (void**)&result);
 	return result;
 }
-
-// helper wraps an interface as a value-type
-// TODO: copy WINUI3 stype get(), put()
-template<class InterfaceClass>
-class IWrapper
-{
-protected:
-	mutable gmpi::shared_ptr<InterfaceClass> m_ptr;
-
-//?	IWrapper() {}
-	IWrapper(IWrapper const& other) : m_ptr(other.m_ptr) {}
-	IWrapper(IWrapper&& other) : m_ptr(std::move(other.m_ptr)) {}
-	void Copy(InterfaceClass* other) { m_ptr = other; }
-	void Move(IWrapper&& other) { m_ptr = std::move(other.m_ptr); }
-
-public:
-	IWrapper(/*gmpi::api::IUnknown* other*/) : m_ptr(nullptr)
-	{
-	}
-
-	// TODO copy winrt::com_ptr
-	inline InterfaceClass* get() const
-	{
-		return m_ptr.get();
-	}
-
-	InterfaceClass** put() noexcept
-	{
-		m_ptr = nullptr;
-		return m_ptr.getAddressOf();
-	}
-
-	explicit operator bool() {
-		return m_ptr != nullptr;
-	}
-
-private: // need em?
-	inline gmpi::api::IUnknown*& Unknown() { return m_ptr.get(); };
-	inline void** asIMpUnknownPtr() { return m_ptr.put(); };
-	inline bool isNull() { return m_ptr == nullptr; }
-	void setNull() { m_ptr = nullptr; }
-};
 
 // Helper for returning strings.
 struct ReturnString : public api::IString
@@ -234,11 +208,11 @@ struct ReturnString : public api::IString
 		return cppString;
 	}
 
-	api::IString* get()
-	{
-		cppString.clear();
-		return static_cast<api::IString*>(this);
-	}
+//	api::IString* get() // should be put()?????
+//	{
+//		cppString.clear();
+//		return static_cast<api::IString*>(this);
+//	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IString);
 	GMPI_REFCOUNT_NO_DELETE;

@@ -100,6 +100,7 @@ public:
 	{
 		constructingEditor = this;
 	}
+	virtual ~PluginEditorBase() {}
 
 	void init(int id, PinBase& pin)
 	{
@@ -190,7 +191,6 @@ public:
 	gmpi::shared_ptr<gmpi::api::IInputHost> inputHost;
 	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
 	gmpi::shared_ptr<gmpi::api::IDrawingHost> drawingHost;
-
 
 	virtual ~PluginEditor(){}
 

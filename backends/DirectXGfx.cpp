@@ -281,6 +281,18 @@ gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeome
 	return toReturnCode(hr);
 }
 
+ReturnCode Factory_base::createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget)
+{
+	*returnBitmapRenderTarget = {};
+
+	drawing::Size size2{ size.width, size.height };
+	flags |= (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
+
+	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
+	b2.attach(new BitmapRenderTarget(nullptr, &size2, flags, this));
+	return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(returnBitmapRenderTarget));
+}
+
 gmpi::ReturnCode Factory_base::createTextFormat(
 	const char* fontFamilyName
 	, gmpi::drawing::FontWeight fontWeight
@@ -783,7 +795,7 @@ ID2D1Bitmap* Bitmap::getNativeBitmap(ID2D1DeviceContext* nativeContext)
 
 	auto& lfactory = static_cast<Factory_base&>(*factory);
 
-	return bitmapToNative(
+	return bitmapToNative( // will just return nativeBitmap_ if it already exists
 		nativeContext
 		, nativeBitmap_
 		, diBitmap_
@@ -888,7 +900,7 @@ gmpi::ReturnCode GraphicsContext_base::createGradientstopCollection(const drawin
 	return toReturnCode(hr);
 }
 
-// todo : integer size?
+// todo : integer size? pixels or should it be DIPs
 gmpi::ReturnCode GraphicsContext_base::createCompatibleRenderTarget(drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget)
 {
 	*bitmapRenderTarget = {};
@@ -964,7 +976,7 @@ void createBitmapRenderTarget(
 
 BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory) :
 	GraphicsContext_base(pfactory)
-	, originalContext(g->native())
+	, originalContext(g ? g->native() : nullptr)
 {
 	auto& lfactory = static_cast<Factory_base&>(*factory);
 
@@ -972,7 +984,7 @@ BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::S
 		  static_cast<UINT>(desiredSize->width)
 		, static_cast<UINT>(desiredSize->height)
 		, flags
-		, g->native()
+		, originalContext
 		, lfactory.getFactory()
 		, lfactory.getWicFactory()
 		, wicBitmap

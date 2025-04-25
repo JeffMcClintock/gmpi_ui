@@ -32,7 +32,7 @@ protected:
 	// Uses co-ords relative to widget (needs offset applied before use) 
 	bool bitmapHitTestLocal(GmpiDrawing_API::MP1_POINT point)
 	{
-		if (bitmapMetadata_ == nullptr || !bitmap_)
+		if (bitmapMetadata_ == nullptr || !gmpi::drawing::AccessPtr::get(bitmap_))
 			return false;
 
 		// Hit Testing.
@@ -224,7 +224,7 @@ public:
 		auto lbitmap = getDrawBitmap();
 
 		// Draw "not loaded" graphic.
-		if (!lbitmap)
+		if (!gmpi::drawing::AccessPtr::get(lbitmap))
 		{
 			gmpi::drawing::Rect r(topLeft.width, topLeft.height, topLeft.width + 8, topLeft.height + 10);
 			auto brush = dc.createSolidColorBrush(gmpi::drawing::Colors::White);
@@ -337,7 +337,7 @@ public:
 
 	bool calcFrame(int frameNumber)
 	{
-		if (!bitmap_)
+		if (!gmpi::drawing::AccessPtr::get(bitmap_))
 			return false;
 
 		const auto oldDrawAt = drawAt;
@@ -350,7 +350,7 @@ public:
 
 	bool calcDrawAt(float animationPosition)
 	{
-		if (!bitmap_)
+		if (!gmpi::drawing::AccessPtr::get(bitmap_))
 			return false;
 
 		animationPosition = (std::min)((std::max)(animationPosition, 0.0f), 1.0f);
@@ -460,7 +460,7 @@ public:
 		{
 			bitmap_ = GetImage(guiHost, imageFile, textFile, &bitmapMetadata_);
 
-			if (bitmap_)
+			if (gmpi::drawing::AccessPtr::get(bitmap_))
 			{
 				auto imageSize = bitmap_.getSize();
 				last_frame_idx = (int)(((int)imageSize.height) / bitmapMetadata_->frameSize.height - 1);

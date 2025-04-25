@@ -470,7 +470,25 @@ public:
 
     ReturnCode getSizeU(drawing::SizeU* returnSize) override
     {
-        const auto r = diBitmap_->GetSize(&returnSize->width, &returnSize->height);
+        HRESULT r{ LONG_ERROR };
+
+        if (diBitmap_)
+        {
+            r = diBitmap_->GetSize(&returnSize->width, &returnSize->height);
+        }
+        else if (nativeBitmap_)
+        {
+            const auto sizeU = nativeBitmap_->GetPixelSize(); // ->GetSize(&returnSize->width, &returnSize->height);
+			returnSize->width = sizeU.width;
+			returnSize->height = sizeU.height;
+
+            r = S_OK;
+        }
+        else
+        {
+            *returnSize = {};
+        }
+
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
@@ -918,6 +936,7 @@ public:
         return info.d2dFactory;
     }
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
+    ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags, drawing::api::ITextFormat** returnTextFormat) override;
     ReturnCode createImage(int32_t width, int32_t height, int32_t flags, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;

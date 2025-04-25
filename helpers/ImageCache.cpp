@@ -50,9 +50,9 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 	// Search skins folders for image, and mark as in-use and imbeddable. Return plain bitmap or animated bitmap (with frame count etc).
 
 	gmpi::drawing::Bitmap image;
-	factory->loadImageU(uri, image.put()); // .LoadImageU(fullUri.c_str());
+	factory->loadImageU(uri, AccessPtr::put(image));
 
-	if (!image)
+	if (!AccessPtr::get(image))
 	{
 		return image;
 	}
@@ -69,9 +69,9 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 //		if (r == MP_OK)
 		{
 			gmpi::drawing::Bitmap maskImage;
-			factory->loadImageU(maskFilename.c_str(), maskImage.put());
+			factory->loadImageU(maskFilename.c_str(), AccessPtr::put(maskImage));
 
-			if (maskImage)
+			if (AccessPtr::get(maskImage))
 			{
 				auto pixelsSource = maskImage.lockPixels();
 				auto pixelsDest = image.lockPixels(gmpi::drawing::BitmapLockFlags::ReadWrite);
@@ -187,7 +187,8 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 
 void ImageCache::RegisterCustomImage(const char* imageIdentifier, gmpi::drawing::Bitmap bitmap)
 {
-	bitmaps_.push_back(ImageData(bitmap.getFactory(), imageIdentifier, bitmap, nullptr));
+	auto factory = bitmap.getFactory();
+	bitmaps_.push_back(ImageData(gmpi::drawing::AccessPtr::get(factory), imageIdentifier, bitmap, nullptr));
 }
 
 gmpi::drawing::Bitmap ImageCache::GetCustomImage(gmpi::drawing::api::IFactory* factory, const char* imageIdentifier)
@@ -203,7 +204,6 @@ gmpi::drawing::Bitmap ImageCache::GetCustomImage(gmpi::drawing::api::IFactory* f
 
 	return {};
 }
-
 
 // Need to keep track of clients so imagecache can be cleared BEFORE program exit (else WPF crashes).
 void ImageCache::RemoveClient()

@@ -117,9 +117,9 @@ enum class BitmapLockFlags : int32_t
 enum class BitmapRenderTargetFlags : int32_t
 {
     None,
-    Mask = 1,
+    Mask = 1,           // 1 plane 8-bit monochrome
     CpuReadable = 2,
-    EightBitPixels = 4,
+    EightBitPixels = 4, // sRGB, 8 bit per color
 };
 
 enum class Gamma : int32_t
@@ -461,7 +461,7 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IBitmap : IResource
 {
     virtual gmpi::ReturnCode getSizeU(SizeU* returnSizeU) = 0;
-    // Note: Not supported when Bitmap was created by IMpDeviceContext::createCompatibleRenderTarget()
+    // Note: Not supported when Bitmap was created on GPU
     virtual gmpi::ReturnCode lockPixels(IBitmapPixels** returnPixels, int32_t flags) = 0;
 
     // {EDF250B7-29FE-4FEC-8C6A-FBCB1F0A301A}
@@ -632,7 +632,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     virtual gmpi::ReturnCode clear(const Color* clearColor) = 0;
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
-    virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, int32_t flags, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ???
+    virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, int32_t flags, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ??? remove flags (use CpuRenderTarget instead)
 
     // {F38EC187-BA04-4A63-B1D6-22D931E1F308}
     inline static const gmpi::api::Guid guid =
@@ -660,6 +660,7 @@ struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
     virtual gmpi::ReturnCode getPlatformPixelFormat(IBitmapPixels::PixelFormat* returnPixelFormat) = 0;
+	virtual gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // ref: BitmapRenderTargetFlags
 
     // {D47DEB59-BBA2-4B52-AF12-7983330A8C8A}
     inline static const gmpi::api::Guid guid =

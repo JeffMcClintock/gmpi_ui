@@ -427,7 +427,7 @@ namespace gmpi_forms
 
 	bool ViewPort::onPointerMove(GmpiDrawing::Point p) const
 	{
-		_RPTN(0, "---------------ViewPort::onPointerMove( %f, %f)\n", p.x, p.y);
+//		_RPTN(0, "---------------ViewPort::onPointerMove( %f, %f)\n", p.x, p.y);
 
 		mousePoint = reverseTransform.TransformPoint(p);
 		const auto prevMouseOverObject = mouseOverObject;
@@ -556,7 +556,7 @@ namespace gmpi_forms
 
 	ScrollView::~ScrollView()
 	{
-		_RPTN(0, "~ScrollView %x\n", this);
+//		_RPTN(0, "~ScrollView %x\n", this);
 	}
 
 	void ScrollView::onAddedToParent()

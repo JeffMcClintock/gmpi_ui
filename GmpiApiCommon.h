@@ -107,7 +107,7 @@ struct DECLSPEC_NOVTABLE IUnknown
 };
 
 // INTERFACE 'IString'
-struct DECLSPEC_NOVTABLE IString : public IUnknown
+struct DECLSPEC_NOVTABLE IString : IUnknown
 {
     virtual ReturnCode setData(const char* data, int32_t size) = 0;
     virtual int32_t getSize() = 0;
@@ -119,7 +119,7 @@ struct DECLSPEC_NOVTABLE IString : public IUnknown
 };
 
 // INTERFACE 'IPluginFactory'
-struct DECLSPEC_NOVTABLE IPluginFactory : public IUnknown
+struct DECLSPEC_NOVTABLE IPluginFactory : IUnknown
 {
     virtual ReturnCode createInstance(const char* id, PluginSubtype subtype, void** returnInterface) = 0;
     virtual ReturnCode getPluginInformation(int32_t index, IString* returnXml) = 0;

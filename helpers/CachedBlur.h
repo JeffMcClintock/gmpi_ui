@@ -21,7 +21,7 @@ struct cachedBlur
         , std::function<void(drawing::Graphics&)> drawer
     )
     {
-        if (buffer2)
+        if (drawing::AccessPtr::get(buffer2))
         {
             g.drawBitmap(buffer2, drawing::Point{}, bounds);
             return;
@@ -34,7 +34,7 @@ struct cachedBlur
         {
             auto dc = g.createCompatibleRenderTarget(mysize2, (int32_t)drawing::BitmapRenderTargetFlags::Mask | (int32_t)drawing::BitmapRenderTargetFlags::CpuReadable );
 
-            drawing::Graphics gbitmap(dc.get());
+            drawing::Graphics gbitmap(gmpi::drawing::AccessPtr::get(dc));
 
             dc.beginDraw();
 

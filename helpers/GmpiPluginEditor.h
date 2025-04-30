@@ -16,7 +16,7 @@ namespace editor
 class PinBase
 {
 public:
-	int id{};
+	int idx{};
 	gmpi::api::IEditorHost* host{};
 	std::function<void(PinBase*)> onUpdate;
 
@@ -40,7 +40,7 @@ public:
 		if (pvalue != value)
 		{
 			value = pvalue;
-			host->setPin(id, 0, dataSize(value), dataPtr(value));
+			host->setPin(idx, 0, dataSize(value), dataPtr(value));
 		}
 		return value;
 	}
@@ -57,7 +57,7 @@ class PluginEditorBase : public gmpi::api::IEditor
 {
 public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
-	std::map<int, PinBase*> pins;
+	std::vector<PinBase*> pins;
 	inline static thread_local PluginEditorBase* constructingEditor{};
 
 	PluginEditorBase()
@@ -65,21 +65,18 @@ public:
 		constructingEditor = this;
 	}
 
-	void init(int id, PinBase& pin)
+	void init(int PinIndex, PinBase& pin)
 	{
-		assert(pins.find(id) == pins.end()); // init two pins with same id?
-		assert(pins.end() == std::find_if(pins.begin(), pins.end(), [&pin](const auto& pair) {
-			return pair.second == &pin;
-			})); // init same pin twice?
+		assert(0 >= PinIndex); // pin index must be positive.
+		assert(pins.size() < PinIndex); // did you init the same pin twice?
 
-		pin.id = id;
-		pins[id] = &pin;
+		pins.resize(PinIndex + 1);
+		pins[PinIndex] = &pin;
 	}
 
 	void init(PinBase& pin)
 	{
-		const int nextId = pins.empty() ? 0 : pins.rbegin()->first + 1;
-		init(nextId, pin);
+		init(pins.size(), pin); // Automatic indexing.
 	}
 
 	// Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
@@ -88,9 +85,9 @@ public:
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
 
-		for (auto& p : pins)
+		for (auto& pin : pins)
 		{
-			p.second->host = editorHost.get();
+			pin->host = editorHost.get();
 		}
 		return ReturnCode::Ok;
 	}
@@ -100,16 +97,13 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const void* data) override
+	ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const void* data) override
 	{
-		if (auto it = pins.find(pinId); it != pins.end())
-		{
-			it->second->setFromHost(voice, size, data);
-		}
+		pins[PinIndex]->setFromHost(voice, size, data);
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode notifyPin(int32_t pinId, int32_t voice) override
+	ReturnCode notifyPin(int32_t PinIndex, int32_t voice) override
 	{
 		return ReturnCode::Ok;
 	}

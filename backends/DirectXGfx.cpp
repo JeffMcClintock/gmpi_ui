@@ -727,7 +727,7 @@ ID2D1Bitmap* bitmapToNative(
 				// 8-bit formats
 				props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
 				props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-				// window-7 more uses DXGI_FORMAT_B8G8R8A8_UNORM, not implemented yet.
+				// windows-7 more uses DXGI_FORMAT_B8G8R8A8_UNORM, not implemented yet.
 
 				hr = nativeContext->CreateBitmapFromWicBitmap(
 					diBitmap,
@@ -746,8 +746,13 @@ ID2D1Bitmap* bitmapToNative(
 			else if (std::memcmp(&formatGuid, &GUID_WICPixelFormat8bppAlpha, sizeof(formatGuid)) == 0)
 			{
 				assert(false); // this is an 8-bit mask, not suitable for drawing directly on D2D context.
+
+				//props.pixelFormat.format = DXGI_FORMAT_A8_UNORM;
+				//props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_STRAIGHT;
+
 				hr = nativeContext->CreateBitmapFromWicBitmap(
 					diBitmap,
+					//&props,
 					nativeBitmap.put()
 				);
 			}

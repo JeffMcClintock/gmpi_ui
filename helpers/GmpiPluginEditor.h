@@ -67,8 +67,8 @@ public:
 
 	void init(int PinIndex, PinBase& pin)
 	{
-		assert(0 >= PinIndex); // pin index must be positive.
-		assert(pins.size() < PinIndex); // did you init the same pin twice?
+		assert(0 <= PinIndex); // pin index must be positive.
+		assert(pins.size() <= PinIndex); // did you init the same pin twice?
 
 		pins.resize(PinIndex + 1);
 		pins[PinIndex] = &pin;

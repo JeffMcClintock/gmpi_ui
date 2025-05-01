@@ -504,6 +504,20 @@ LRESULT DxDrawingFrameBase::WindowProc(
 			inputClient->OnKeyPress((wchar_t) wParam);
 		break;
 
+	case WM_KEYDOWN:
+		if (inputClient)
+		{
+			switch (wParam)
+			{
+			case VK_RIGHT:
+			case VK_LEFT:
+			case VK_UP:
+			case VK_DOWN:
+				inputClient->OnKeyPress((wchar_t)wParam);
+			}
+		}
+		break;
+
 	case WM_PAINT:
 	{
 		OnPaint();
@@ -1441,6 +1455,9 @@ LRESULT PlatformKeyListener::WindowProc(HWND hwnd, UINT message, WPARAM wParam, 
 
 	case WM_KEYDOWN:
 	{
+		if(!callback2)
+			break;
+
 		wchar_t key[2] = { 0 };
 		BYTE keyboardState[256];
 		GetKeyboardState(keyboardState);
@@ -1466,10 +1483,22 @@ LRESULT PlatformKeyListener::WindowProc(HWND hwnd, UINT message, WPARAM wParam, 
 			break;
 		}
 
-		if (callback2)
+		int32_t flags{};
+
+		if (GetKeyState(VK_SHIFT) < 0)
 		{
-			callback2->onKeyDown(key[0], 0);
+			flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
 		}
+		if (GetKeyState(VK_CONTROL) < 0)
+		{
+			flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
+		}
+		if (GetKeyState(VK_MENU) < 0) // don't work.
+		{
+			flags |= gmpi::api::GG_POINTER_KEY_ALT;
+		}
+
+		callback2->onKeyDown(key[0], flags);
 		break;
 	}
 	break;

@@ -3,8 +3,8 @@
 #include <memory>
 #include <vector>
 #include <algorithm>
-//#include "../se_sdk3/Drawing.h"
-#include "../../gmpi_ui/Drawing.h"
+#include "GmpiUiDrawing.h"
+
 namespace gmpi_helper
 {
 

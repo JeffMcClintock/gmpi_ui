@@ -309,15 +309,16 @@ void clear();
 			// need to redraw and redetermine mouse-over object, but not get stuck in loop
 //??			invalidate();
 //?? how to			onPointerMove();
+
 			// need to redetermine mouse-over object
-			for (auto t : mouseTargets)
+			// iterate mouseTargets in reverse (to respect Z-order)
+			for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
 			{
-				if (t->HitTest(mousePoint))
+				auto t = *it;
+				if (t->HitTest(mousePoint) && t->wantsClicks())
 				{
-					mouseOverObject = t;
 					t->onPointerMove(mousePoint);
 					break;
-					//			return true;
 				}
 			}
 		}

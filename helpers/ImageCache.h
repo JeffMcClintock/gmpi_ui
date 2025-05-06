@@ -2,7 +2,7 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include "../../gmpi_ui/Drawing.h" // .. to force use of gmpi-ui not SE SDK3
+#include "GmpiUiDrawing.h" // .. to force use of gmpi-ui not SE SDK3
 #include "./ImageMetadata.h"
 //#include "GmpiApiDrawing.h"
 

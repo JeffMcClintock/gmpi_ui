@@ -36,7 +36,7 @@ protected:
 
 		// Hit Testing.
 		gmpi::drawing::Rect bmRect;
-		gmpi::drawing::Size bmOffset(0, 0);
+		gmpi::drawing::Size bmOffset{};
 
 		switch (bitmapMetadata_->mode)
 		{
@@ -218,7 +218,7 @@ public:
 
 	void renderBitmap(gmpi::drawing::Graphics& dc, GmpiDrawing_API::MP1_SIZE_U topLeftU)
 	{
-		const gmpi::drawing::Size topLeft(static_cast<float>(topLeftU.width), static_cast<float>(topLeftU.height));
+		const gmpi::drawing::Size topLeft{ static_cast<float>(topLeftU.width), static_cast<float>(topLeftU.height) };
 
 		auto lbitmap = getDrawBitmap();
 

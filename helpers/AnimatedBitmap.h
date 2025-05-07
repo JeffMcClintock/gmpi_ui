@@ -2,7 +2,6 @@
 #include <algorithm>
 #include "../shared/ImageMetadata.h"
 #include "./ImageCache.h"
-#include "helpers/AnimatedBitmap.h"
 
 //#ifdef _DEBUG
 //#include <iostream>
@@ -59,7 +58,7 @@ protected:
 		{
 			if (!hitTestPixelAccurate)
 			{
-				gmpi::drawing::Rect backgroundRect(0, 0, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height);
+				gmpi::drawing::Rect backgroundRect{ 0, 0, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height };
 				return !(point.x < backgroundRect.left || point.x > backgroundRect.right || point.y < backgroundRect.top || point.y > backgroundRect.bottom);
 			}
 
@@ -226,7 +225,7 @@ public:
 		// Draw "not loaded" graphic.
 		if (!gmpi::drawing::AccessPtr::get(lbitmap))
 		{
-			gmpi::drawing::Rect r(topLeft.width, topLeft.height, topLeft.width + 8, topLeft.height + 10);
+			gmpi::drawing::Rect r{ topLeft.width, topLeft.height, topLeft.width + 8, topLeft.height + 10 };
 			auto brush = dc.createSolidColorBrush(gmpi::drawing::Colors::White);
 			dc.fillRectangle(r, brush);
 
@@ -241,7 +240,7 @@ public:
 		float y = (float)bitmapMetadata_->padding_top;
 		//	_RPT2(_CRT_WARN, "BitmapWidget Padding x=%d,y=%d\n", x, y);
 
-		gmpi::drawing::Rect dest_backgroundrect(x, y, x + (float)bitmapMetadata_->frameSize.width, y + (float)bitmapMetadata_->frameSize.height);
+		gmpi::drawing::Rect dest_backgroundrect{ x, y, x + (float)bitmapMetadata_->frameSize.width, y + (float)bitmapMetadata_->frameSize.height };
 		dest_backgroundrect = offsetRect(dest_backgroundrect, topLeft);
 
 		switch (bitmapMetadata_->mode)
@@ -249,7 +248,7 @@ public:
 		case ABM_ANIMATED:
 		default:
 		{
-			gmpi::drawing::Rect source_rect(0.f, (float)drawAt, (float)bitmapMetadata_->frameSize.width, (float)(drawAt + bitmapMetadata_->frameSize.height));
+			gmpi::drawing::Rect source_rect{ 0.f, (float)drawAt, (float)bitmapMetadata_->frameSize.width, (float)(drawAt + bitmapMetadata_->frameSize.height) };
 
 			//		_RPT4(_CRT_WARN, "DrawBitmap Dest(%f,%f,%f,%f) ", dest_rect.left, dest_rect.top, dest_rect.right, dest_rect.bottom);
 			//		_RPT4(_CRT_WARN, "Source((%f,%f,%f,%f)\n", knob_rect.left, knob_rect.top, knob_rect.right, knob_rect.bottom);
@@ -259,7 +258,7 @@ public:
 
 		case ABM_SLIDER:
 		{
-			gmpi::drawing::Rect backgroundRect(0, 0, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height);
+			gmpi::drawing::Rect backgroundRect{ 0, 0, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height };
 
 			// draw background
 			dc.drawBitmap(lbitmap, dest_backgroundrect, backgroundRect);
@@ -281,8 +280,8 @@ public:
 					source_y += chop_off_top;
 				}
 
-				gmpi::drawing::Rect knob_rect(bitmapMetadata_->handle_rect.left, source_y, bitmapMetadata_->handle_rect.right, bitmapMetadata_->handle_rect.bottom);
-				gmpi::drawing::Rect dest_rect(bitmapMetadata_->handle_rect.left, draw_pos, bitmapMetadata_->handle_rect.right, draw_pos + dest_height);
+				gmpi::drawing::Rect knob_rect{ bitmapMetadata_->handle_rect.left, source_y, bitmapMetadata_->handle_rect.right, bitmapMetadata_->handle_rect.bottom };
+				gmpi::drawing::Rect dest_rect{ bitmapMetadata_->handle_rect.left, draw_pos, bitmapMetadata_->handle_rect.right, draw_pos + dest_height };
 				dest_rect = offsetRect(dest_rect, topLeft);
 				dest_rect = offsetRect(dest_rect, { x, y });
 				dc.drawBitmap(lbitmap, dest_rect, knob_rect);
@@ -304,8 +303,8 @@ public:
 					source_x += chop_off_left;
 				}
 
-				gmpi::drawing::Rect knob_rect(source_x, bitmapMetadata_->handle_rect.top, bitmapMetadata_->handle_rect.right, bitmapMetadata_->handle_rect.bottom);
-				gmpi::drawing::Rect dest_rect(draw_pos, bitmapMetadata_->handle_rect.top, draw_pos + dest_width, bitmapMetadata_->handle_rect.bottom);
+				gmpi::drawing::Rect knob_rect{ source_x, bitmapMetadata_->handle_rect.top, bitmapMetadata_->handle_rect.right, bitmapMetadata_->handle_rect.bottom };
+				gmpi::drawing::Rect dest_rect{ draw_pos, bitmapMetadata_->handle_rect.top, draw_pos + dest_width, bitmapMetadata_->handle_rect.bottom };
 				dest_rect = offsetRect(dest_rect, topLeft);
 				dest_rect = offsetRect(dest_rect, { x, y });
 				dc.drawBitmap(lbitmap, dest_rect, knob_rect);
@@ -318,15 +317,15 @@ public:
 			float y = static_cast<float>(bitmapMetadata_->frameSize.height - drawAt);
 			// draw lit seqments
 			{
-				gmpi::drawing::Rect knob_rect(0.f, y, (float)bitmapMetadata_->frameSize.width, bitmapMetadata_->frameSize.height);
-				gmpi::drawing::Rect dest_rect(0.f, y, (float)bitmapMetadata_->frameSize.width, bitmapMetadata_->frameSize.height);
+				gmpi::drawing::Rect knob_rect{ 0.f, y, (float)bitmapMetadata_->frameSize.width, bitmapMetadata_->frameSize.height };
+				gmpi::drawing::Rect dest_rect{ 0.f, y, (float)bitmapMetadata_->frameSize.width, bitmapMetadata_->frameSize.height };
 				dest_rect = offsetRect(dest_rect, topLeft);
 				dc.drawBitmap(lbitmap, dest_rect, knob_rect);
 			}
 			// draw unlit seqments
 			{
-				gmpi::drawing::Rect knob_rect(0.f, bitmapMetadata_->frameSize.height, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height + y);
-				gmpi::drawing::Rect dest_rect(0.f, 0.f, (float)bitmapMetadata_->frameSize.width, y);
+				gmpi::drawing::Rect knob_rect{ 0.f, bitmapMetadata_->frameSize.height, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height + y };
+				gmpi::drawing::Rect dest_rect{ 0.f, 0.f, (float)bitmapMetadata_->frameSize.width, y };
 				dest_rect = offsetRect(dest_rect, topLeft);
 				dc.drawBitmap(lbitmap, dest_rect, knob_rect);
 			}

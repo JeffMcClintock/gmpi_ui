@@ -66,7 +66,7 @@ struct ImageMetadata
 	}
 	gmpi::drawing::Size getPaddedFrameSize() const
 	{
-		return gmpi::drawing::Size(frameSize.width + padding_left + padding_right, frameSize.height + padding_top + padding_bottom);
+		return { frameSize.width + padding_left + padding_right, frameSize.height + padding_top + padding_bottom };
 	}
 
 	void Serialise(const char* textFilename);// gmpi_sdk::mp_shared_ptr<gmpi::IProtectedFile2> stream );

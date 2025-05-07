@@ -952,7 +952,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         return gmpi::ReturnCode::Ok;
     }
 
-    gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget) override;
+    gmpi::ReturnCode createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget) override;
 
     GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
@@ -2474,12 +2474,12 @@ inline gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, int3
 	return bm->queryInterface(&gmpi::drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 }
 
-inline gmpi::ReturnCode Factory::createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget)
+inline gmpi::ReturnCode Factory::createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget)
 {
     gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-    b2.attach(new class BitmapRenderTarget(&size, flags, this));
+// TODO !!!    b2.attach(new BitmapRenderTarget(&size, flags, this ));
 
-    return b2->queryInterface(&gmpi::drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(bitmapRenderTarget));
+    return b2->queryInterface(&gmpi::drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(returnBitmapRenderTarget));
 }
 
 inline gmpi::ReturnCode Factory::loadImageU(const char* utf8Uri, gmpi::drawing::api::IBitmap** returnDiBitmap)

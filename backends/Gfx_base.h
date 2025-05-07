@@ -292,7 +292,7 @@ public:
 	{
 		// create geometry
         gmpi::drawing::Factory factory;
-        getFactory(factory.put());
+        getFactory(gmpi::drawing::AccessPtr::put(factory));
 
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
@@ -311,14 +311,14 @@ public:
     gmpi::ReturnCode drawRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createRectangleGeometry(rect, false);
-		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
+		drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
         return gmpi::ReturnCode::Ok;
 	}
 
     gmpi::ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createRectangleGeometry(rect);
-		fillGeometry(geometry.get(), brush, nullptr);
+		fillGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, nullptr);
         return gmpi::ReturnCode::Ok;
 	}
 
@@ -330,7 +330,7 @@ public:
     gmpi::ReturnCode drawLine(gmpi::drawing::Point point0, gmpi::drawing::Point point1, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createLineGeometry(point0, point1);
-		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
+		drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
 		return gmpi::ReturnCode::Ok;
 	}
 	
@@ -338,7 +338,7 @@ public:
 	{
 		// create geometry
         gmpi::drawing::Factory factory;
-		getFactory(factory.put());
+		getFactory(gmpi::drawing::AccessPtr::put(factory));
 
 		auto geometry = factory.createPathGeometry();
 		auto sink = geometry.open();
@@ -356,7 +356,7 @@ public:
 	{
 		// create geometry
         gmpi::drawing::Factory factory;
-        getFactory(factory.put());
+        getFactory(gmpi::drawing::AccessPtr::put(factory));
 
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
@@ -455,14 +455,14 @@ public:
     gmpi::ReturnCode drawEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
-		drawGeometry(geometry.get(), brush, strokeWidth, strokeStyle);
+		drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
 		return gmpi::ReturnCode::Ok;
 	}
 
     gmpi::ReturnCode fillEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
-		fillGeometry(geometry.get(), brush, nullptr);
+		fillGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, nullptr);
 		return gmpi::ReturnCode::Ok;
 	}
 

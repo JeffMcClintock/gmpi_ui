@@ -280,7 +280,7 @@ struct TextEditCallback : public gmpi::api::ITextEditCallback
 	{
 		text = ptext;
 	}
-	void onComplete(ReturnCode result)
+	void onComplete(ReturnCode result) override
 	{
 		callback(result);
 	}

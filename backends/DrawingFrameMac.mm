@@ -111,7 +111,7 @@ public:
         }
     }
 
-    void CallbackFromCocoa(NSObject* sender) // todo override
+    void CallbackFromCocoa(NSObject* sender) override
     {
         int index = static_cast<int>([((NSMenuItem*) sender) tag]) - 1;
         if (index >= 0 && index < menuIds.size())
@@ -173,7 +173,7 @@ public:
                 
 		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
                 {
-                    [menuItem setState:NSOnState];
+                    [menuItem setState:NSControlStateValueOn];
                 }
             }
         }
@@ -515,7 +515,8 @@ public:
             [view setNeedsDisplay:YES];
         }
     }
-    
+    void invalidateMeasure() override {}
+
 #if 0
     virtual void  invalidateMeasure() override
     {

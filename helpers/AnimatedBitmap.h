@@ -317,14 +317,14 @@ public:
 			float y = static_cast<float>(bitmapMetadata_->frameSize.height - drawAt);
 			// draw lit seqments
 			{
-				gmpi::drawing::Rect knob_rect{ 0.f, y, (float)bitmapMetadata_->frameSize.width, bitmapMetadata_->frameSize.height };
-				gmpi::drawing::Rect dest_rect{ 0.f, y, (float)bitmapMetadata_->frameSize.width, bitmapMetadata_->frameSize.height };
+				gmpi::drawing::Rect knob_rect{ 0.f, y, (float)bitmapMetadata_->frameSize.width, static_cast<float>(bitmapMetadata_->frameSize.height) };
+				gmpi::drawing::Rect dest_rect{ 0.f, y, (float)bitmapMetadata_->frameSize.width, static_cast<float>(bitmapMetadata_->frameSize.height) };
 				dest_rect = offsetRect(dest_rect, topLeft);
 				dc.drawBitmap(lbitmap, dest_rect, knob_rect);
 			}
 			// draw unlit seqments
 			{
-				gmpi::drawing::Rect knob_rect{ 0.f, bitmapMetadata_->frameSize.height, (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height + y };
+				gmpi::drawing::Rect knob_rect{ 0.f, static_cast<float>(bitmapMetadata_->frameSize.height), (float)bitmapMetadata_->frameSize.width, (float)bitmapMetadata_->frameSize.height + y };
 				gmpi::drawing::Rect dest_rect{ 0.f, 0.f, (float)bitmapMetadata_->frameSize.width, y };
 				dest_rect = offsetRect(dest_rect, topLeft);
 				dc.drawBitmap(lbitmap, dest_rect, knob_rect);

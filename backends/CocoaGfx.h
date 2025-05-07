@@ -951,7 +951,9 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         *returnPixelFormat = gmpi::drawing::api::IBitmapPixels::kBGRA;
         return gmpi::ReturnCode::Ok;
     }
-    
+
+    gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget) override;
+
     GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
 };
@@ -2470,6 +2472,14 @@ inline gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, int3
 	bm.attach(new Bitmap(this, width, height));
 
 	return bm->queryInterface(&gmpi::drawing::api::IBitmap::guid, (void**)returnDiBitmap);
+}
+
+inline gmpi::ReturnCode Factory::createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget)
+{
+    gmpi::shared_ptr<gmpi::api::IUnknown> b2;
+    b2.attach(new class BitmapRenderTarget(&size, flags, this));
+
+    return b2->queryInterface(&gmpi::drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(bitmapRenderTarget));
 }
 
 inline gmpi::ReturnCode Factory::loadImageU(const char* utf8Uri, gmpi::drawing::api::IBitmap** returnDiBitmap)

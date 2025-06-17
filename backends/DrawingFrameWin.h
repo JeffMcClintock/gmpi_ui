@@ -49,6 +49,100 @@ namespace hosting
 		}
 	};
 
+	// helper
+	inline float calcWhiteLevelForHwnd(HWND windowHandle)
+	{
+		// get bounds of window having handle: getWindowHandle()
+		RECT m_windowBounds;
+		GetWindowRect(windowHandle, &m_windowBounds);
+		gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+
+		float whiteMult{ 1.0f };
+		{
+			// get all the monitor paths.
+			uint32_t numPathArrayElements{};
+			uint32_t numModeArrayElements{};
+
+			GetDisplayConfigBufferSizes(
+				QDC_ONLY_ACTIVE_PATHS,
+				&numPathArrayElements,
+				&numModeArrayElements
+			);
+
+			std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
+			std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+
+			pathInfo.resize(numPathArrayElements);
+			modeInfo.resize(numModeArrayElements);
+
+			QueryDisplayConfig(
+				QDC_ONLY_ACTIVE_PATHS,
+				&numPathArrayElements,
+				pathInfo.data(),
+				&numModeArrayElements,
+				modeInfo.data(),
+				nullptr
+			);
+
+			DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
+			targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+			targetName.header.size = sizeof(targetName);
+
+			DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
+			white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+			white_level.header.size = sizeof(white_level);
+
+			// check against each path (monitor)
+			int bestIntersectArea = -1;
+			for (auto& path : pathInfo)
+			{
+				const int idx = path.sourceInfo.modeInfoIdx;
+
+				if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+					continue;
+
+				auto& sourceMode = modeInfo[idx].sourceMode;
+
+				const gmpi::drawing::RectL outputRect
+				{
+					  sourceMode.position.x
+					, sourceMode.position.y
+					, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
+					, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
+				};
+
+				const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
+				int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
+				if (intersectArea <= bestIntersectArea)
+					continue;
+
+				// Get monitor handle for this path's target
+				targetName.header.adapterId = path.targetInfo.adapterId;
+				white_level.header.adapterId = path.targetInfo.adapterId;
+				targetName.header.id = path.targetInfo.id;
+				white_level.header.id = path.targetInfo.id;
+
+				if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
+					continue;
+
+				if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
+					continue;
+
+				// divide by 1000 to get nits, divide by reference nits (80) to get a factor
+				const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
+
+				_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
+
+				bestIntersectArea = intersectArea;
+				whiteMult = lwhiteMult;
+			}
+			_RPTWN(0, L"Best white level %f\n", whiteMult);
+		}
+
+		return whiteMult;
+	}
+
+
 	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
 	struct tempSharedD2DBase : public gmpi::api::IDrawingHost
 	{
@@ -61,7 +155,7 @@ namespace hosting
 		// HDR support. Above swapChain so these get released first.
 		gmpi::directx::ComPtr<ID2D1Effect> hdrWhiteScaleEffect;
 		gmpi::directx::ComPtr<ID2D1BitmapRenderTarget> hdrRenderTarget;
-		directx::ComPtr<::ID2D1DeviceContext> hdrRenderTargetDC;
+		directx::ComPtr<::ID2D1DeviceContext> hdrRenderTargetDC; // we need to keep this, else if we requery it, it's address will change, crashing Bitmap::GetNativeBitmap() when it's checks for a consistant device context.
 		gmpi::directx::ComPtr<ID2D1Bitmap> hdrBitmap;
 
 		directx::ComPtr<::IDXGISwapChain2> swapChain;
@@ -75,6 +169,11 @@ namespace hosting
 		bool firstPresent = false;
 		float currentWhiteLevel{};
 		RECT currentWindowPosition{};
+		bool monitorChanged = false;
+		std::function<void()> clientInvalidated; // called from Paint if monitor white-level changed since last check.
+
+		virtual float calcWhiteLevel() = 0;
+
 #ifdef _DEBUG
 		std::string debugName;
 #endif
@@ -89,6 +188,7 @@ namespace hosting
 			IDXGISwapChain1** returnSwapChain
 		) = 0;
 
+		void recreateSwapChainAndClientAsync();
 		void setWhiteLevel(float newWhiteLevel);
 		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 		void CreateDeviceSwapChainBitmap();
@@ -263,7 +363,7 @@ namespace hosting
 		virtual void autoScrollStop() {}
 	};
 
-	// This is used in VST3. Native HWND window frame.
+	// This is used in GMPI VST3. Native HWND window frame.
 	class DrawingFrame : public DxDrawingFrameBase
 	{
 	protected:
@@ -280,6 +380,9 @@ namespace hosting
 		void open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize = {});
 		void reSize(int left, int top, int right, int bottom);
 		virtual void doClose() {}
+
+		// tempSharedD2DBase
+		float calcWhiteLevel() override;
 	};
 
 

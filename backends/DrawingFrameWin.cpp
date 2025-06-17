@@ -616,30 +616,19 @@ void DxDrawingFrameBase::OnPaint()
 	auto& dirtyRects = updateRegion_native.getUpdateRects();
 
 	// prevent infinite assert dialog boxes when assert happens during painting.
-	if (reentrant || !drawingClient || dirtyRects.empty())
+	if (monitorChanged || reentrant || !drawingClient || dirtyRects.empty())
 	{
 		return;
 	}
 	reentrant = true;
 
 	//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
-
+#if 0
 	if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
 	{
 		CreateSwapPanel(DrawingFactory.getD2dFactory());
 	}
-
-	{
-		RECT r{};
-		::GetWindowRect(getWindowHandle(), &r);
-
-		if (currentWindowPosition != r)
-		{
-			currentWindowPosition = r;
-			_RPT0(0, "Window moved.\n");
-//			CheckMonitorType();
-		}
-	}
+#endif
 
 	gmpi::directx::ComPtr <ID2D1DeviceContext> deviceContext;
 
@@ -833,95 +822,10 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	dxgiDevice->GetAdapter(dxgiAdapter.put());
 
 	// Support for HDR displays.
-
-	// get bounds of window having handle: getWindowHandle()
-	RECT m_windowBounds;
-	GetWindowRect(getWindowHandle(), &m_windowBounds);
-	gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
-
-	float whiteMult{ 1.0f };
-	{
-		// get all the monitor paths.
-		uint32_t numPathArrayElements{};
-		uint32_t numModeArrayElements{};
-
-		GetDisplayConfigBufferSizes(
-			QDC_ONLY_ACTIVE_PATHS,
-			&numPathArrayElements,
-			&numModeArrayElements
-		);
-
-		std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
-		std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
-
-		pathInfo.resize(numPathArrayElements);
-		modeInfo.resize(numModeArrayElements);
-
-		QueryDisplayConfig(
-			QDC_ONLY_ACTIVE_PATHS,
-			&numPathArrayElements,
-			pathInfo.data(),
-			&numModeArrayElements,
-			modeInfo.data(),
-			nullptr
-		);
-
-		DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
-		targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
-		targetName.header.size = sizeof(targetName);
-
-		DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
-		white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
-		white_level.header.size = sizeof(white_level);
-
-		// check against each path (monitor)
-		int bestIntersectArea = -1;
-		for (auto& path : pathInfo)
-		{
-			const int idx = path.sourceInfo.modeInfoIdx;
-
-			if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
-				continue;
-
-			auto& sourceMode = modeInfo[idx].sourceMode;
-
-			const gmpi::drawing::RectL outputRect
-			{
-				  sourceMode.position.x
-				, sourceMode.position.y
-				, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
-				, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
-			};
-
-			const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
-			int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
-			if (intersectArea <= bestIntersectArea)
-				continue;
-
-			// Get monitor handle for this path's target
-			targetName.header.adapterId = path.targetInfo.adapterId;
-			white_level.header.adapterId = path.targetInfo.adapterId;
-			targetName.header.id = path.targetInfo.id;
-			white_level.header.id = path.targetInfo.id;
-
-			if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
-				continue;
-
-			if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
-				continue;
-
-			// divide by 1000 to get nits, divide by reference nits (80) to get a factor
-			const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
-
-			_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
-
-			bestIntersectArea = intersectArea;
-			whiteMult = lwhiteMult;
-		}
-		_RPTWN(0, L"Best white level %f\n", whiteMult);
-	}
+	float whiteMult = calcWhiteLevel();
 
 	bool DX_support_sRGB{ true };
+	// !!! this is shit, returns DEFAULT adaptor only. No good if you are using both shitty onboard GPU plus high-end PCI GPU. !!!
 	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
 	// Software renderer has no device memory, yet does support float pixels anyhow.
 	if (!m_disable_gpu)
@@ -1058,14 +962,57 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	WindowToDips = gmpi::drawing::invert(DipsToWindow);
 
 	setWhiteLevel(whiteMult);
+	monitorChanged = false;
 
 	// customisation point.
 	OnSwapChainCreated();
 }
 
+#if 0
+void tempSharedD2DBase::checkForMonitorChanged()
+{
+	// check if window moved since last painted.
+	{
+		RECT r{};
+		::GetWindowRect(getWindowHandle(), &r);
+
+		const auto prev = currentWindowPosition;
+		currentWindowPosition = r;
+
+		if (currentWindowPosition == prev)
+			return;
+
+		if (prev.right == prev.left && prev.top == prev.bottom) // first time here.
+			return;
+	}
+
+	_RPT0(0, "Window moved.\n");
+
+	// check if white-level changed. (ideally would also check if we need an 8-bit swapchain)
+	{
+		const auto prev = currentWhiteLevel;
+		currentWhiteLevel = calcWhiteLevel();
+
+		if (currentWhiteLevel == prev)
+			return;
+	}
+
+	recreateSwapChainAndClientAsync();
+}
+#endif
+
+void tempSharedD2DBase::recreateSwapChainAndClientAsync()
+{
+	monitorChanged = true;
+
+	// notify client that it's device-dependent resources have been invalidated.
+	if (clientInvalidated)
+		clientInvalidated();
+}
+
 void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 {
-	if(!swapChain || currentWhiteLevel == whiteMult) // no need to do anything if app not open properly yet.
+	if(!swapChain) // no need to do anything if app not open properly yet.
 		return;
 
 	const auto bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -1308,6 +1255,12 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 			ReleaseDevice();
 		}
 	}
+}
+
+// see also DrawingFrameHwndBase::calcWhiteLevel()
+float DrawingFrame::calcWhiteLevel()
+{
+	return gmpi::hosting::calcWhiteLevelForHwnd(getWindowHandle());
 }
 
 // Convert to an integer rect, ensuring it surrounds all partial pixels.

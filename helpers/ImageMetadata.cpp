@@ -97,7 +97,7 @@ void ImageMetadata::Serialise(const char* textFilename) //mp_shared_ptr<gmpi::IP
 {
 	Reset();
 
-	// read file into a std::String
+	// read file into a std::string
 	auto size = std::filesystem::file_size(textFilename);
 	std::string imageMetadata(size, '\0');
 	std::ifstream in(textFilename);
@@ -288,7 +288,7 @@ void SkinMetadata::Serialise(const char* fileName) //mp_shared_ptr<gmpi::IProtec
 {
 	fonts_.clear();
 
-	// read file into a std::String
+	// read file into a std::string
 	auto size = std::filesystem::file_size(fileName);
 	std::string imageMetadata(size, '\0');
 	std::ifstream in(fileName);

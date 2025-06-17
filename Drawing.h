@@ -37,6 +37,8 @@ using namespace gmpi::drawing;
 #include <vector>
 #include <array>
 #include <unordered_map>
+#include <charconv>
+#include <string_view>
 #include <algorithm>
 #include "GmpiApiDrawing.h"
 #include "GmpiSdkCommon.h"
@@ -459,6 +461,20 @@ inline Color colorFromHex(uint32_t rgb, float a = 1.0)
 		a);
 }
 
+inline Color colorFromHexString(const std::string_view s)
+{
+	uint32_t hex = 0;
+	std::from_chars(s.data(), s.data() + s.size(), hex, 16);
+
+	// If Alpha not specified, default to 1.0
+	float alpha = 1.0f;
+	if (s.size() > 6)
+	{
+		alpha = static_cast<float>(hex >> 24) / 255.0f;
+	}
+
+	return colorFromHex(hex, alpha);
+}
 
 namespace Colors
 {

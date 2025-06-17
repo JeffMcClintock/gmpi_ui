@@ -285,7 +285,7 @@ ReturnCode Factory_base::createCpuRenderTarget(drawing::SizeU size, int32_t flag
 {
 	*returnBitmapRenderTarget = {};
 
-	drawing::Size size2{ size.width, size.height };
+	drawing::Size size2{ static_cast<float>(size.width), static_cast<float>(size.height) };
 	flags |= (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;

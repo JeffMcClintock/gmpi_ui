@@ -885,7 +885,7 @@ struct DxFactoryInfo
     std::unordered_map<std::string, fontScaling> availableFonts; // lowercase name mapping to scaling information.
     std::vector<std::string> supportedFontFamilies;              // actual system font names, mixed case.
     std::map<std::string, std::wstring> GdiFontConversions;
-    bool DX_support_sRGB = true;
+//    bool DX_support_sRGB = true;
 };
 
 void initFactoryHelper(DxFactoryInfo& info);
@@ -920,14 +920,15 @@ public:
         return info.d2dFactory;
     }
 
-    void setSrgbSupport(bool s)
-    {
-        info.DX_support_sRGB = s;
-    }
+    //void setSrgbSupport(bool s)
+    //{
+    //    info.DX_support_sRGB = s;
+    //}
             
     ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
     {
-        *returnPixelFormat = info.DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
+//        *returnPixelFormat = info.DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
+        *returnPixelFormat = drawing::api::IBitmapPixels::kBGRA_SRGB;
         return ReturnCode::Ok;
     }
 
@@ -1269,6 +1270,7 @@ public:
     GMPI_REFCOUNT;
 };
 
+#if 0
 class GraphicsContext_Win7 : public GraphicsContext_base
 {
 public:
@@ -1310,5 +1312,6 @@ public:
     }
     GMPI_REFCOUNT;
 };
+#endif
 } // Namespace
 } // Namespace

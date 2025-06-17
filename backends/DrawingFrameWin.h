@@ -61,6 +61,7 @@ namespace hosting
 		// HDR support. Above swapChain so these get released first.
 		gmpi::directx::ComPtr<ID2D1Effect> hdrWhiteScaleEffect;
 		gmpi::directx::ComPtr<ID2D1BitmapRenderTarget> hdrRenderTarget;
+		directx::ComPtr<::ID2D1DeviceContext> hdrRenderTargetDC;
 		gmpi::directx::ComPtr<ID2D1Bitmap> hdrBitmap;
 
 		directx::ComPtr<::IDXGISwapChain2> swapChain;
@@ -72,10 +73,14 @@ namespace hosting
 		bool reentrant = false;
 		bool lowDpiMode = {};
 		bool firstPresent = false;
+		float currentWhiteLevel{};
+		RECT currentWindowPosition{};
+#ifdef _DEBUG
+		std::string debugName;
+#endif
 
 		// override these please.
 		virtual HWND getWindowHandle() = 0;
-//		virtual float getRasterizationScale() = 0; // IDrawingHost DPI scaling
 		virtual HRESULT createNativeSwapChain
 		(
 			IDXGIFactory2* factory,
@@ -84,9 +89,10 @@ namespace hosting
 			IDXGISwapChain1** returnSwapChain
 		) = 0;
 
+		void setWhiteLevel(float newWhiteLevel);
 		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 		void CreateDeviceSwapChainBitmap();
-		virtual void OnSwapChainCreated(bool useDeepColor) = 0;
+		virtual void OnSwapChainCreated() = 0;
 
 		// to help re-create device when lost.
 		void ReleaseDevice()
@@ -97,6 +103,7 @@ namespace hosting
 				hdrWhiteScaleEffect = nullptr;
 			}
 			hdrBitmap = nullptr;
+			hdrRenderTargetDC = nullptr;
 			hdrRenderTarget = nullptr;
 			d2dDeviceContext = nullptr;
 			swapChain = nullptr;
@@ -164,7 +171,7 @@ namespace hosting
 			IDXGISwapChain1** returnSwapChain
 		) override;
 
-		void OnSwapChainCreated(bool useDeepColor) override;
+		void OnSwapChainCreated() override;
 
 		void ResizeSwapChainBitmap()
 		{

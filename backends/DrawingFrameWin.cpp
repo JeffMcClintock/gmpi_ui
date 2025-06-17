@@ -613,174 +613,171 @@ void DxDrawingFrameBase::OnPaint()
 	updateRegion_native.copyDirtyRects(getWindowHandle(), swapChainSize);
 	ValidateRect(getWindowHandle(), NULL); // Clear invalid region for next frame.
 
+	auto& dirtyRects = updateRegion_native.getUpdateRects();
+
 	// prevent infinite assert dialog boxes when assert happens during painting.
-	if (reentrant)
+	if (reentrant || !drawingClient || dirtyRects.empty())
 	{
 		return;
 	}
 	reentrant = true;
 
-	auto& dirtyRects = updateRegion_native.getUpdateRects();
-	if (
-		drawingClient
-		&& !dirtyRects.empty())
+	//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
+
+	if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
 	{
-		//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
+		CreateSwapPanel(DrawingFactory.getD2dFactory());
+	}
 
-		if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
+	{
+		RECT r{};
+		::GetWindowRect(getWindowHandle(), &r);
+
+		if (currentWindowPosition != r)
 		{
-			CreateSwapPanel(DrawingFactory.getD2dFactory());
+			currentWindowPosition = r;
+			_RPT0(0, "Window moved.\n");
+//			CheckMonitorType();
 		}
+	}
 
-		gmpi::directx::ComPtr <ID2D1DeviceContext> deviceContext;
+	gmpi::directx::ComPtr <ID2D1DeviceContext> deviceContext;
 
-		gmpi::directx::ComPtr<ID2D1Bitmap> pSourceBitmap;
-		if (hdrWhiteScaleEffect) // draw onto intermediate buffer, then pass that through an effect to scale white.
-		{
-			d2dDeviceContext->BeginDraw();
-			deviceContext = hdrRenderTarget.as<ID2D1DeviceContext>();
-		}
-		else // draw directly on the swapchain bitmap.
-		{
-			deviceContext = d2dDeviceContext;
-		}
+	gmpi::directx::ComPtr<ID2D1Bitmap> pSourceBitmap;
+	if (hdrRenderTarget) // draw onto intermediate buffer, then pass that through an effect to scale white.
+	{
+		d2dDeviceContext->BeginDraw();
+		deviceContext = hdrRenderTargetDC; // hdrRenderTarget.as<ID2D1DeviceContext>();
+	}
+	else // draw directly on the swapchain bitmap.
+	{
+		deviceContext = d2dDeviceContext;
+	}
 
-		gmpi::directx::GraphicsContext_base* lcontext{};
-
+	{
 		gmpi::directx::GraphicsContext context1(deviceContext.get(), &DrawingFactory);
-		gmpi::directx::GraphicsContext_Win7 context2(deviceContext.get(), &DrawingFactory);
+		Graphics graphics(&context1);
 
-		drawing::api::IBitmapPixels::PixelFormat returnPixelFormat{};
-		DrawingFactory.getPlatformPixelFormat(&returnPixelFormat);
+		graphics.beginDraw();
+		graphics.setTransform(viewTransform);
 
-		if (drawing::api::IBitmapPixels::PixelFormat::kBGRA_SRGB == returnPixelFormat)
+		// clip and draw each rect individually (causes some objects to redraw several times)
+		for (auto& r : dirtyRects)
 		{
-			lcontext = &context1;
+			auto r2 = transformRect(WindowToDips, drawing::Rect{ static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom) });
+
+			// Snap to whole DIPs.
+			drawing::Rect temp;
+			temp.left = floorf(r2.left);
+			temp.top = floorf(r2.top);
+			temp.right = ceilf(r2.right);
+			temp.bottom = ceilf(r2.bottom);
+
+			graphics.pushAxisAlignedClip(temp);
+
+			drawingClient->render(&context1);
+
+			graphics.popAxisAlignedClip();
 		}
-		else
+
+		// Print OS Version.
+
+		// Print Frame Rate
+//		const bool displayFrameRate = true;
+		const bool displayFrameRate = false;
+		//		static int presentTimeMs = 0;
+		if (displayFrameRate)
 		{
-			lcontext = &context2;
-		}
-
-		{
-			Graphics graphics(lcontext);// context.get());
-
-			graphics.beginDraw();
-			graphics.setTransform(viewTransform);
-
-			// clip and draw each rect individually (causes some objects to redraw several times)
-			for (auto& r : dirtyRects)
+			static int frameCount = 0;
+			static char frameCountString[100] = "";
+			if (++frameCount == 60)
 			{
-				auto r2 = transformRect(WindowToDips, drawing::Rect{ static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom) });
+				auto timenow = std::chrono::steady_clock::now();
+				auto elapsed = std::chrono::steady_clock::now() - frameCountTime;
+				auto elapsedSeconds = 0.001f * (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
-				// Snap to whole DIPs.
-				drawing::Rect temp;
-				temp.left = floorf(r2.left);
-				temp.top = floorf(r2.top);
-				temp.right = ceilf(r2.right);
-				temp.bottom = ceilf(r2.bottom);
+				float frameRate = frameCount / elapsedSeconds;
 
-				graphics.pushAxisAlignedClip(temp);
+				//				sprintf(frameCountString, "%3.1f FPS. %dms PT", frameRate, presentTimeMs);
+				sprintf_s(frameCountString, sizeof(frameCountString), "%3.1f FPS", frameRate);
+				frameCountTime = timenow;
+				frameCount = 0;
 
-				if (drawingClient)
-					drawingClient->render(lcontext);// context.get());
+				auto brush = graphics.createSolidColorBrush(Colors::Black);
+				auto fpsRect = drawing::Rect{ 0, 0, 50, 18 };
+				graphics.fillRectangle(fpsRect, brush);
+				brush.setColor(Colors::White);
+				graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);
 
-				graphics.popAxisAlignedClip();
-			}
-
-			// Print OS Version.
-
-			// Print Frame Rate
-	//		const bool displayFrameRate = true;
-			const bool displayFrameRate = false;
-			//		static int presentTimeMs = 0;
-			if (displayFrameRate)
-			{
-				static int frameCount = 0;
-				static char frameCountString[100] = "";
-				if (++frameCount == 60)
-				{
-					auto timenow = std::chrono::steady_clock::now();
-					auto elapsed = std::chrono::steady_clock::now() - frameCountTime;
-					auto elapsedSeconds = 0.001f * (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-
-					float frameRate = frameCount / elapsedSeconds;
-
-					//				sprintf(frameCountString, "%3.1f FPS. %dms PT", frameRate, presentTimeMs);
-					sprintf_s(frameCountString, sizeof(frameCountString), "%3.1f FPS", frameRate);
-					frameCountTime = timenow;
-					frameCount = 0;
-
-					auto brush = graphics.createSolidColorBrush(Colors::Black);
-					auto fpsRect = drawing::Rect{ 0, 0, 50, 18 };
-					graphics.fillRectangle(fpsRect, brush);
-					brush.setColor(Colors::White);
-					graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);
-
-					dirtyRects.push_back({ 0, 0, 100, 36 });
-				}
-			}
-
-			/*const auto r =*/ graphics.endDraw();
-		}
-
-		// draw the filtered intermediate buffer onto the swapchain.
-		if (hdrWhiteScaleEffect)
-		{
-			// Draw the effect output to the screen
-			const D2D1_RECT_F destRect = D2D1::RectF(0, 0, static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
-			d2dDeviceContext->DrawImage(hdrWhiteScaleEffect.get());
-
-			d2dDeviceContext->EndDraw();
-		}
-
-		// Present the backbuffer (if it has some new content)
-		if (firstPresent)
-		{
-			firstPresent = false;
-			const auto hr = swapChain->Present(1, 0);
-			if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
-			{
-				// DXGI_ERROR_INVALID_CALL 0x887A0001L
-				ReleaseDevice();
+				dirtyRects.push_back({ 0, 0, 100, 36 });
 			}
 		}
-		else
+
+		graphics.endDraw();
+	}
+
+	// draw the filtered intermediate buffer onto the swapchain.
+	if (hdrRenderTarget)
+	{
+		assert(hdrWhiteScaleEffect);
+
+		// Draw the effect output to the screen
+		const D2D1_RECT_F destRect(0, 0, static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
+		d2dDeviceContext->DrawImage(
+			  hdrWhiteScaleEffect.get()
+			, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR
+			, D2D1_COMPOSITE_MODE_SOURCE_COPY
+		);
+
+		d2dDeviceContext->EndDraw();
+	}
+
+	// Present the backbuffer (if it has some new content)
+	if (firstPresent)
+	{
+		firstPresent = false;
+		const auto hr = swapChain->Present(1, 0);
+		if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
 		{
-			HRESULT hr = S_OK;
-			{
-				assert(!dirtyRects.empty());
-				DXGI_PRESENT_PARAMETERS presetParameters{ (UINT)dirtyRects.size(), reinterpret_cast<RECT*>(dirtyRects.data()), nullptr, nullptr, };
+			// DXGI_ERROR_INVALID_CALL 0x887A0001L
+			ReleaseDevice();
+		}
+	}
+	else
+	{
+		HRESULT hr = S_OK;
+		{
+			assert(!dirtyRects.empty());
+			DXGI_PRESENT_PARAMETERS presetParameters{ (UINT)dirtyRects.size(), reinterpret_cast<RECT*>(dirtyRects.data()), nullptr, nullptr, };
 /*
-				presetParameters.pScrollRect = nullptr;
-				presetParameters.pScrollOffset = nullptr;
-				presetParameters.DirtyRectsCount = (UINT) dirtyRects.size();
-				presetParameters.pDirtyRects = reinterpret_cast<RECT*>(dirtyRects.data()); // should be exact same layout.
+			presetParameters.pScrollRect = nullptr;
+			presetParameters.pScrollOffset = nullptr;
+			presetParameters.DirtyRectsCount = (UINT) dirtyRects.size();
+			presetParameters.pDirtyRects = reinterpret_cast<RECT*>(dirtyRects.data()); // should be exact same layout.
 */
-				// checkout DXGI_PRESENT_DO_NOT_WAIT
+			// checkout DXGI_PRESENT_DO_NOT_WAIT
 //				hr = m_swapChain->Present1(1, DXGI_PRESENT_TEST, &presetParameters);
 //				_RPT1(_CRT_WARN, "Present1() test = %x\n", hr);
 /* NEVER returns DXGI_ERROR_WAS_STILL_DRAWING
-	//			_RPT1(_CRT_WARN, "Present1() DirtyRectsCount = %d\n", presetParameters.DirtyRectsCount);
-				hr = m_swapChain->Present1(1, DXGI_PRESENT_DO_NOT_WAIT, &presetParameters);
-				if (hr == DXGI_ERROR_WAS_STILL_DRAWING)
-				{
-					_RPT1(_CRT_WARN, "Present1() Blocked\n", hr);
+//			_RPT1(_CRT_WARN, "Present1() DirtyRectsCount = %d\n", presetParameters.DirtyRectsCount);
+			hr = m_swapChain->Present1(1, DXGI_PRESENT_DO_NOT_WAIT, &presetParameters);
+			if (hr == DXGI_ERROR_WAS_STILL_DRAWING)
+			{
+				_RPT1(_CRT_WARN, "Present1() Blocked\n", hr);
 */
-					// Present(0... improves framerate only from 60 -> 64 FPS, so must be blocking a little with "1".
+				// Present(0... improves framerate only from 60 -> 64 FPS, so must be blocking a little with "1".
 //				auto timeA = std::chrono::steady_clock::now();
-				hr = swapChain->Present1(1, 0, &presetParameters);
-				//auto elapsed = std::chrono::steady_clock::now() - timeA;
-				//presentTimeMs = (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+			hr = swapChain->Present1(1, 0, &presetParameters);
+			//auto elapsed = std::chrono::steady_clock::now() - timeA;
+			//presentTimeMs = (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 //				}
 /* could put this in timer to reduce blocking, agregating dirty rects until call successful.
 */			}
 
-			if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
-			{
-				// DXGI_ERROR_INVALID_CALL 0x887A0001L
-				ReleaseDevice();
-			}
+		if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
+		{
+			// DXGI_ERROR_INVALID_CALL 0x887A0001L
+			ReleaseDevice();
 		}
 	}
 
@@ -826,122 +823,105 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 			// Clear D3D11_CREATE_DEVICE_DEBUG
 			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
 
-		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
+	} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 
     // Get the Direct3D device.
     auto dxgiDevice = d3dDevice.as<::IDXGIDevice>();
 
-    // Get the DXGI adapter.
-    gmpi::directx::ComPtr< ::IDXGIAdapter > dxgiAdapter;
-    dxgiDevice->GetAdapter(dxgiAdapter.put());
+	// Get the DXGI adapter.
+	gmpi::directx::ComPtr< ::IDXGIAdapter > dxgiAdapter;
+	dxgiDevice->GetAdapter(dxgiAdapter.put());
 
 	// Support for HDR displays.
-    bool DX_support_sRGB{true};
+
+	// get bounds of window having handle: getWindowHandle()
+	RECT m_windowBounds;
+	GetWindowRect(getWindowHandle(), &m_windowBounds);
+	gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+
 	float whiteMult{ 1.0f };
-
 	{
-		UINT i = 0;
-		gmpi::directx::ComPtr<IDXGIOutput> currentOutput;
-		gmpi::directx::ComPtr<IDXGIOutput> bestOutput;
+		// get all the monitor paths.
+		uint32_t numPathArrayElements{};
+		uint32_t numModeArrayElements{};
+
+		GetDisplayConfigBufferSizes(
+			QDC_ONLY_ACTIVE_PATHS,
+			&numPathArrayElements,
+			&numModeArrayElements
+		);
+
+		std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
+		std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+
+		pathInfo.resize(numPathArrayElements);
+		modeInfo.resize(numModeArrayElements);
+
+		QueryDisplayConfig(
+			QDC_ONLY_ACTIVE_PATHS,
+			&numPathArrayElements,
+			pathInfo.data(),
+			&numModeArrayElements,
+			modeInfo.data(),
+			nullptr
+		);
+
+		DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
+		targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+		targetName.header.size = sizeof(targetName);
+
+		DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
+		white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+		white_level.header.size = sizeof(white_level);
+
+		// check against each path (monitor)
 		int bestIntersectArea = -1;
-
-			// get bounds of window having handle: getWindowHandle()
-			RECT m_windowBounds;
-			GetWindowRect(getWindowHandle(), &m_windowBounds);
-			gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
-
-        while (dxgiAdapter->EnumOutputs(i, currentOutput.put()) != DXGI_ERROR_NOT_FOUND)
-        {
-			// Get the rectangle bounds of current output
-			DXGI_OUTPUT_DESC desc;
-			/*auto hr =*/ currentOutput->GetDesc(&desc);
-			RECT desktopRect = desc.DesktopCoordinates;
-			gmpi::drawing::RectL outputRect = { desktopRect.left, desktopRect.top, desktopRect.right, desktopRect.bottom };
-
-			// Compute the intersection
-			const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
-			const int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
-			if (intersectArea > bestIntersectArea)
-			{
-				bestOutput = currentOutput;
-				bestIntersectArea = intersectArea;
-			}
-
-			i++;
-		}
-
-		// Having determined the output (display) upon which the app is primarily being 
-		// rendered, retrieve the HDR capabilities of that display by checking the color space.
-		auto output6 = bestOutput.as<IDXGIOutput6>();
-
-		if (output6)
+		for (auto& path : pathInfo)
 		{
-			DXGI_OUTPUT_DESC1 desc1;
-			auto hr = output6->GetDesc1(&desc1);
+			const int idx = path.sourceInfo.modeInfoIdx;
 
-			if (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709)
+			if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+				continue;
+
+			auto& sourceMode = modeInfo[idx].sourceMode;
+
+			const gmpi::drawing::RectL outputRect
 			{
-				_RPT0(_CRT_WARN, "SDR Display\n");
-			}
-			else
-			{
-				_RPT0(_CRT_WARN, "HDR Display\n");
-			}
+				  sourceMode.position.x
+				, sourceMode.position.y
+				, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
+				, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
+			};
 
-			uint32_t numPathArrayElements{};
-			uint32_t numModeArrayElements{};
+			const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
+			int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
+			if (intersectArea <= bestIntersectArea)
+				continue;
 
-			GetDisplayConfigBufferSizes(
-				QDC_ONLY_ACTIVE_PATHS,
-				&numPathArrayElements,
-				&numModeArrayElements
-			);
+			// Get monitor handle for this path's target
+			targetName.header.adapterId = path.targetInfo.adapterId;
+			white_level.header.adapterId = path.targetInfo.adapterId;
+			targetName.header.id = path.targetInfo.id;
+			white_level.header.id = path.targetInfo.id;
 
-			std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
-			std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+			if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
+				continue;
 
-			pathInfo.resize(numPathArrayElements);
-			modeInfo.resize(numModeArrayElements);
+			if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
+				continue;
 
-			QueryDisplayConfig(
-				QDC_ONLY_ACTIVE_PATHS,
-				&numPathArrayElements,
-				pathInfo.data(),
-				&numModeArrayElements,
-				modeInfo.data(),
-				nullptr
-			);
+			// divide by 1000 to get nits, divide by reference nits (80) to get a factor
+			const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
 
-			DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
-			white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
-			white_level.header.size = sizeof(white_level);
-            for (uint32_t pathIdx = 0; pathIdx < numPathArrayElements; ++pathIdx)
-			{
-				white_level.header.adapterId = pathInfo[pathIdx].targetInfo.adapterId;
-				white_level.header.id = pathInfo[pathIdx].targetInfo.id;
+			_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
 
-				if (DisplayConfigGetDeviceInfo(&white_level.header) == ERROR_SUCCESS)
-				{
-#if	1 //ENABLE_HDR_SUPPORT // proper HDR rendering
-					{
-						// divide by 1000 to get nits, divide by reference nits (80) to get a factor
-						whiteMult = white_level.SDRWhiteLevel / 1000.f;
-					}
-#else // fall back to 8-bit rendering and ignore HDR
-					{
-						const auto whiteMultiplier = white_level.SDRWhiteLevel / 1000.f;
-						DX_support_sRGB = DX_support_sRGB && whiteMultiplier == 1.0f; // workarround HDR issues by reverting to 8-bit colour
-					}
-#endif
-				}
-			}
+			bestIntersectArea = intersectArea;
+			whiteMult = lwhiteMult;
 		}
+		_RPTWN(0, L"Best white level %f\n", whiteMult);
 	}
 
-	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
-	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
-	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
-
+	bool DX_support_sRGB{ true };
 	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
 	// Software renderer has no device memory, yet does support float pixels anyhow.
 	if (!m_disable_gpu)
@@ -955,6 +935,9 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
 	}
 
+	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
+	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
+	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
 	{
 		UINT driverSrgbSupport = 0;
 		auto hr = d3dDevice->CheckFormatSupport(bestFormat, &driverSrgbSupport);
@@ -999,6 +982,11 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 
 		dxgiDevice = d3dDevice.as<::IDXGIDevice>();
+		_RPT0(0, "Using Software Renderer\n");
+	}
+	else
+	{
+		_RPT0(0, "Using Hardware Renderer\n");
 	}
 
     // Get the DXGI factory.
@@ -1069,50 +1057,152 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
  	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
 	WindowToDips = gmpi::drawing::invert(DipsToWindow);
 
+	setWhiteLevel(whiteMult);
+
+	// customisation point.
+	OnSwapChainCreated();
+}
+
+void tempSharedD2DBase::setWhiteLevel(float whiteMult)
+{
+	if(!swapChain || currentWhiteLevel == whiteMult) // no need to do anything if app not open properly yet.
+		return;
+
+	const auto bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+
+	// query actual swapchain capabilities.
+	bool using8bitSwapChain{ false };
+	{
+		DXGI_SWAP_CHAIN_DESC1 swapChainDesc{};
+		swapChain->GetDesc1(&swapChainDesc);
+		using8bitSwapChain = (swapChainDesc.Format != bestFormat);
+	}
+
+	if (using8bitSwapChain)
+	{
+		_RPT0(0, "Using 8-bit Swap Chain\n");
+	}
+	else
+	{
+		_RPT0(0, "Using Deep Color Swap Chain\n");
+	}
+
 	// if we're reverting to 8-bit colour HDR white-mult is N/A.
-	if(!useDeepColor)
+	if (using8bitSwapChain)
 		whiteMult = 1.0f;
 
-	// create a filter to adjust the white level for HDR displays.
-	hdrWhiteScaleEffect = nullptr;
-	if (whiteMult != 1.0f)
+	if (!using8bitSwapChain)
 	{
-		// create whitescale effect
-		// White level scale is used to multiply the color values in the image; this allows the user
-		// to adjust the brightness of the image on an HDR display.
-		d2dDeviceContext->CreateEffect(CLSID_D2D1ColorMatrix, hdrWhiteScaleEffect.put());
+		// create a filter to adjust the white level for HDR displays.
+		if (whiteMult != 1.0f)
+		{
+			// create whitescale effect
+			// White level scale is used to multiply the color values in the image; this allows the user
+			// to adjust the brightness of the image on an HDR display.
+			d2dDeviceContext->CreateEffect(CLSID_D2D1ColorMatrix, hdrWhiteScaleEffect.put());
 
-		// SDR white level scaling is performing by multiplying RGB color values in linear gamma.
-		// We implement this with a Direct2D matrix effect.
-		D2D1_MATRIX_5X4_F matrix = D2D1::Matrix5x4F(
-			whiteMult, 0, 0, 0,  // [R] Multiply each color channel
-			0, whiteMult, 0, 0,  // [G] by the scale factor in 
-			0, 0, whiteMult, 0,  // [B] linear gamma space.
-			0, 0, 0, 1,		 // [A] Preserve alpha values.
-			0, 0, 0, 0);	 //     No offset.
+			// SDR white level scaling is performing by multiplying RGB color values in linear gamma.
+			// We implement this with a Direct2D matrix effect.
+			D2D1_MATRIX_5X4_F matrix = D2D1::Matrix5x4F(
+				whiteMult, 0, 0, 0,  // [R] Multiply each color channel
+				0, whiteMult, 0, 0,  // [G] by the scale factor in 
+				0, 0, whiteMult, 0,  // [B] linear gamma space.
+				0, 0, 0, 1,		 // [A] Preserve alpha values.
+				0, 0, 0, 0);	 //     No offset.
 
-		hdrWhiteScaleEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, matrix);
+			hdrWhiteScaleEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, matrix);
 
+			// increase the bit-depth of the filter, else it does a shitty 8-bit conversion. Which results in serious degredation of the image.
+			if (d2dDeviceContext->IsBufferPrecisionSupported(D2D1_BUFFER_PRECISION_16BPC_FLOAT))
+			{
+				auto hr = hdrWhiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_16BPC_FLOAT);
+			}
+
+			const D2D1_SIZE_F desiredSize = D2D1::SizeF(static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
+
+			d2dDeviceContext->CreateCompatibleRenderTarget(desiredSize, hdrRenderTarget.put());
+			hdrRenderTargetDC = hdrRenderTarget.as<ID2D1DeviceContext>();
+
+			_RPT0(0, "Using HDR White Adjustment filter\n");
+		}
+		else
+		{
+			_RPT0(0, "No Color Adjustment filter\n");
+			hdrRenderTargetDC = {};
+			hdrRenderTarget = {};
+			hdrWhiteScaleEffect = {};
+		}
+	}
+	else
+	{
+		// new: render to 16-bit back-buffer, then copy to swapchain during present.
+
+		// create color management effect to convert from linear to sRGB image
+		d2dDeviceContext->CreateEffect(CLSID_D2D1ColorManagement, hdrWhiteScaleEffect.put());
+
+		hdrWhiteScaleEffect->SetValue(
+			D2D1_COLORMANAGEMENT_PROP_QUALITY,
+			D2D1_COLORMANAGEMENT_QUALITY_BEST   // Required for floating point and DXGI color space support.
+		);
+
+		gmpi::directx::ComPtr<ID2D1ColorContext> srcColorContext, dstColorContext;
+
+		// The destination color space is the render target's (swap chain's) color space. This app uses an
+		// FP16 swap chain, which requires the colorspace to be scRGB.
+		d2dDeviceContext->CreateColorContext(
+			D2D1_COLOR_SPACE_SCRGB,
+			nullptr,
+			0,
+			srcColorContext.put()
+		);
+
+		d2dDeviceContext->CreateColorContext(
+			D2D1_COLOR_SPACE_SRGB,
+			nullptr,
+			0,
+			dstColorContext.put()
+		);
+
+		hdrWhiteScaleEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_SOURCE_COLOR_CONTEXT, srcColorContext.get());
+		hdrWhiteScaleEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_DESTINATION_COLOR_CONTEXT, dstColorContext.get());
+
+		/* no help*/
 		// increase the bit-depth of the filter, else it does a shitty 8-bit conversion. Which results in serious degredation of the image.
 		if (d2dDeviceContext->IsBufferPrecisionSupported(D2D1_BUFFER_PRECISION_16BPC_FLOAT))
 		{
 			auto hr = hdrWhiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_16BPC_FLOAT);
 		}
 
-		// create additional buffer to draw on
-		//DXGI_SWAP_CHAIN_DESC desc;
-		//swapChain1->GetDesc(&desc);
+		const D2D1_SIZE_F desiredSize{ static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height) };
+		D2D1_PIXEL_FORMAT desiredFormat
+		{
+			bestFormat
+			,D2D1_ALPHA_MODE_UNKNOWN
+		};
 
-		const D2D1_SIZE_F desiredSize = D2D1::SizeF(static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
+		d2dDeviceContext->CreateCompatibleRenderTarget(
+			&desiredSize
+			, nullptr
+			, &desiredFormat
+			, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE
+			, hdrRenderTarget.put()
+		);
 
-		d2dDeviceContext->CreateCompatibleRenderTarget(desiredSize, hdrRenderTarget.put());
+		hdrRenderTargetDC = hdrRenderTarget.as<ID2D1DeviceContext>();
+
+		_RPT0(0, "Using F16 to sRGB Adjustment filter\n");
+	}
+
+	if (hdrWhiteScaleEffect)
+	{
 		hdrRenderTarget->GetBitmap(hdrBitmap.put());
 		hdrWhiteScaleEffect->SetInput(0, hdrBitmap.get());
 	}
 
-	// customisation point.
-	OnSwapChainCreated(useDeepColor);
+	currentWhiteLevel = whiteMult;
+	invalidateRect(nullptr); // force redraw with new white level.
 }
+
 
 HRESULT DxDrawingFrameBase::createNativeSwapChain
 (
@@ -1132,9 +1222,8 @@ HRESULT DxDrawingFrameBase::createNativeSwapChain
 	);
 }
 
-void DxDrawingFrameBase::OnSwapChainCreated(bool useDeepColor)
+void DxDrawingFrameBase::OnSwapChainCreated()
 {
-	DrawingFactory.setSrgbSupport(useDeepColor);
 }
 
 void tempSharedD2DBase::CreateDeviceSwapChainBitmap()

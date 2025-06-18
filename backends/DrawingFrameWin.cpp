@@ -968,39 +968,6 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	OnSwapChainCreated();
 }
 
-#if 0
-void tempSharedD2DBase::checkForMonitorChanged()
-{
-	// check if window moved since last painted.
-	{
-		RECT r{};
-		::GetWindowRect(getWindowHandle(), &r);
-
-		const auto prev = currentWindowPosition;
-		currentWindowPosition = r;
-
-		if (currentWindowPosition == prev)
-			return;
-
-		if (prev.right == prev.left && prev.top == prev.bottom) // first time here.
-			return;
-	}
-
-	_RPT0(0, "Window moved.\n");
-
-	// check if white-level changed. (ideally would also check if we need an 8-bit swapchain)
-	{
-		const auto prev = currentWhiteLevel;
-		currentWhiteLevel = calcWhiteLevel();
-
-		if (currentWhiteLevel == prev)
-			return;
-	}
-
-	recreateSwapChainAndClientAsync();
-}
-#endif
-
 void tempSharedD2DBase::recreateSwapChainAndClientAsync()
 {
 	monitorChanged = true;

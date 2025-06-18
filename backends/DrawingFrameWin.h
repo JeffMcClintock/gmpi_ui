@@ -214,7 +214,7 @@ namespace hosting
 		void invalidateMeasure() override {}
 	};
 
-	// Base class for DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
+	// Base class for JuceDrawingFrameBase, DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
 	class DxDrawingFrameBase :
 		public tempSharedD2DBase,
 		public DrawingFrameCommon,

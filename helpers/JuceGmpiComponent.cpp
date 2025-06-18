@@ -68,6 +68,7 @@ public:
 class JuceDrawingFrameBase : public gmpi::hosting::DxDrawingFrameBase
 {
 	juce::HWNDComponent& juceComponent;
+	int pollHdrChangesCount = 100;
 
 public:
 	JuceDrawingFrameBase(juce::HWNDComponent& pJuceComponent) : juceComponent(pJuceComponent)
@@ -80,6 +81,8 @@ public:
 	{
 		return (HWND)juceComponent.getHWND();
 	}
+	float calcWhiteLevel() override;
+	bool onTimer() override;
 };
 
 LRESULT CALLBACK DrawingFrameWindowProc(
@@ -130,6 +133,25 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 	}
 
 	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+}
+
+float JuceDrawingFrameBase::calcWhiteLevel()
+{
+	return gmpi::hosting::calcWhiteLevelForHwnd(getWindowHandle());
+}
+
+bool JuceDrawingFrameBase::onTimer()
+{
+	if(pollHdrChangesCount-- < 0)
+	{
+		pollHdrChangesCount = 100; // 1.5s
+
+		if(currentWhiteLevel != calcWhiteLevel())
+		{
+			recreateSwapChainAndClientAsync();
+		}
+	}
+	return gmpi::hosting::DxDrawingFrameBase::onTimer();
 }
 
 struct GmpiComponent::Pimpl

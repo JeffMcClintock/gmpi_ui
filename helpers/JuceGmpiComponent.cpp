@@ -156,22 +156,40 @@ bool JuceDrawingFrameBase::onTimer()
 
 struct GmpiComponent::Pimpl
 {
-	JuceComponentProxy proxy;
+	GmpiComponent* outer{};
+	std::unique_ptr<JuceComponentProxy> client;
     JuceDrawingFrameBase JuceDrawingFrameBase;
+
+	GmpiComponent::Pimpl(GmpiComponent* pouter) :
+		outer(pouter)
+		, JuceDrawingFrameBase(*pouter)
+	{
+
+	}
 
     void open(HWND hwnd, juce::Rectangle<int> r)
     {
-        HDC hdc = ::GetDC(hwnd);
-        const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-        ::ReleaseDC(hwnd, hdc);
+		JuceDrawingFrameBase.clientInvalidated = [this]()
+			{
+				JuceDrawingFrameBase.detachAndRecreate();
 
-        JuceDrawingFrameBase.attachClient(static_cast<gmpi::api::IDrawingClient*>(&proxy));
+				client = std::make_unique<JuceComponentProxy>(outer);
 
-        JuceDrawingFrameBase.open(
-            hwnd,
-            (r.getWidth() * dpi) / 96,
-            (r.getHeight() * dpi) / 96
-        );
+				JuceDrawingFrameBase.attachClient(static_cast<gmpi::api::IDrawingClient*>(client.get()));
+
+			};
+
+		HDC hdc = ::GetDC(hwnd);
+		const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+		::ReleaseDC(hwnd, hdc);
+
+		JuceDrawingFrameBase.open(
+			hwnd,
+			(r.getWidth() * dpi) / 96,
+			(r.getHeight() * dpi) / 96
+		);
+
+		JuceDrawingFrameBase.clientInvalidated();
     }
 };
 
@@ -189,7 +207,7 @@ void GmpiComponent::invalidateRect()
 }
 
 GmpiComponent::GmpiComponent() :
-    internal(std::make_unique<GmpiComponent::Pimpl>(this, *this))
+    internal(std::make_unique<GmpiComponent::Pimpl>(this))
 {
 }
 

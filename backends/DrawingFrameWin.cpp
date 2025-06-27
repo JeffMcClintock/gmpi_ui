@@ -603,6 +603,32 @@ bool DxDrawingFrameBase::onTimer()
 	return true;
 }
 
+void DxDrawingFrameBase::attachClient(gmpi::api::IUnknown* gfx)
+{
+	gfx->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
+	gfx->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
+
+	// legacy
+	gfx->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
+
+	if (drawingClient)
+	{
+		drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
+	}
+}
+
+void DxDrawingFrameBase::detachAndRecreate()
+{
+	assert(!reentrant); // do this async please.
+
+	// detachClient();
+	frameUpdateClient = {};
+	inputClient = {};
+	drawingClient = {};
+
+	CreateSwapPanel(DrawingFactory.getD2dFactory());
+}
+
 void RenderLog(ID2D1RenderTarget* context_, IDWriteFactory* writeFactory, ID2D1Factory1* factory)
 {
 } // RenderLog ====================================================
@@ -1116,7 +1142,6 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 	currentWhiteLevel = whiteMult;
 	invalidateRect(nullptr); // force redraw with new white level.
 }
-
 
 HRESULT DxDrawingFrameBase::createNativeSwapChain
 (

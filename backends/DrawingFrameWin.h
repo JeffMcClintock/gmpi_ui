@@ -12,6 +12,7 @@
 #include <chrono>
 #include <dxgi1_6.h>
 #include <d3d11_1.h>
+#include <dwmapi.h>
 #include "DirectXGfx.h"
 #include "helpers/Timer.h"
 #include "DrawingFrameCommon.h"
@@ -52,98 +53,102 @@ namespace hosting
 	// helper
 	inline float calcWhiteLevelForHwnd(HWND windowHandle)
 	{
-		// get bounds of window having handle: getWindowHandle()
+		// get bounds of plugin window
+		auto parent = ::GetAncestor(windowHandle, GA_ROOT);
+		RECT m_windowBoundsRoot;
+		GetWindowRect(parent, &m_windowBoundsRoot);
+
 		RECT m_windowBounds;
-		GetWindowRect(windowHandle, &m_windowBounds);
-		gmpi::drawing::RectL appWindowRect = { m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+		DwmGetWindowAttribute(parent, DWMWA_EXTENDED_FRAME_BOUNDS, &m_windowBounds, sizeof(m_windowBounds));
 
+// not DPI aware		GetWindowRect(windowHandle, &m_windowBounds);
+		gmpi::drawing::RectL appWindowRect{ m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+
+		// get all the monitor paths.
+		uint32_t numPathArrayElements{};
+		uint32_t numModeArrayElements{};
+
+		GetDisplayConfigBufferSizes(
+			QDC_ONLY_ACTIVE_PATHS,
+			&numPathArrayElements,
+			&numModeArrayElements
+		);
+
+		std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
+		std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+
+		pathInfo.resize(numPathArrayElements);
+		modeInfo.resize(numModeArrayElements);
+
+		QueryDisplayConfig(
+			QDC_ONLY_ACTIVE_PATHS,
+			&numPathArrayElements,
+			pathInfo.data(),
+			&numModeArrayElements,
+			modeInfo.data(),
+			nullptr
+		);
+
+		DISPLAYCONFIG_TARGET_DEVICE_NAME targetName{};
+		targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+		targetName.header.size = sizeof(targetName);
+
+		DISPLAYCONFIG_SDR_WHITE_LEVEL white_level{};
+		white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+		white_level.header.size = sizeof(white_level);
+
+		// check against each path (monitor)
 		float whiteMult{ 1.0f };
+		int bestIntersectArea = -1;
+		for (auto& path : pathInfo)
 		{
-			// get all the monitor paths.
-			uint32_t numPathArrayElements{};
-			uint32_t numModeArrayElements{};
+			const int idx = path.sourceInfo.modeInfoIdx;
 
-			GetDisplayConfigBufferSizes(
-				QDC_ONLY_ACTIVE_PATHS,
-				&numPathArrayElements,
-				&numModeArrayElements
-			);
+			if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+				continue;
 
-			std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
-			std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+			const auto& sourceMode = modeInfo[idx].sourceMode;
 
-			pathInfo.resize(numPathArrayElements);
-			modeInfo.resize(numModeArrayElements);
-
-			QueryDisplayConfig(
-				QDC_ONLY_ACTIVE_PATHS,
-				&numPathArrayElements,
-				pathInfo.data(),
-				&numModeArrayElements,
-				modeInfo.data(),
-				nullptr
-			);
-
-			DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
-			targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
-			targetName.header.size = sizeof(targetName);
-
-			DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
-			white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
-			white_level.header.size = sizeof(white_level);
-
-			// check against each path (monitor)
-			int bestIntersectArea = -1;
-			for (auto& path : pathInfo)
+			const gmpi::drawing::RectL outputRect
 			{
-				const int idx = path.sourceInfo.modeInfoIdx;
+				  sourceMode.position.x
+				, sourceMode.position.y
+				, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
+				, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
+			};
 
-				if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
-					continue;
+			const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
+			const int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
+			if (intersectArea <= bestIntersectArea)
+				continue;
 
-				auto& sourceMode = modeInfo[idx].sourceMode;
+			// Get monitor handle for this path's target
+			targetName.header.adapterId = path.targetInfo.adapterId;
+			white_level.header.adapterId = path.targetInfo.adapterId;
+			targetName.header.id = path.targetInfo.id;
+			white_level.header.id = path.targetInfo.id;
 
-				const gmpi::drawing::RectL outputRect
-				{
-					  sourceMode.position.x
-					, sourceMode.position.y
-					, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
-					, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
-				};
+			if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
+				continue;
 
-				const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
-				int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
-				if (intersectArea <= bestIntersectArea)
-					continue;
+			if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
+				continue;
 
-				// Get monitor handle for this path's target
-				targetName.header.adapterId = path.targetInfo.adapterId;
-				white_level.header.adapterId = path.targetInfo.adapterId;
-				targetName.header.id = path.targetInfo.id;
-				white_level.header.id = path.targetInfo.id;
+			// divide by 1000 to get a factor
+			const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
 
-				if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
-					continue;
+//			_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
 
-				if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
-					continue;
-
-				// divide by 1000 to get nits, divide by reference nits (80) to get a factor
-				const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
-
-				_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
-
-				bestIntersectArea = intersectArea;
-				whiteMult = lwhiteMult;
-			}
-			_RPTWN(0, L"Best white level %f\n", whiteMult);
+			bestIntersectArea = intersectArea;
+			whiteMult = lwhiteMult;
 		}
+//		_RPTWN(0, L"Best white level %f\n", whiteMult);
 
 		return whiteMult;
 	}
 
 
-	// stuff we can share between GMPI-UI DxDrawingFrameBase and SynthEditlib DrawingFrameBase2
+	// Swapchain Manager: stuff we can share between DxDrawingFrameBase (GMPI-UI) and SynthEditlib DrawingFrameBase2 (SDK3)
 	struct tempSharedD2DBase : public gmpi::api::IDrawingHost
 	{
 		enum { FallBack_8bit, Fallback_Software };
@@ -168,7 +173,6 @@ namespace hosting
 		bool lowDpiMode = {};
 		bool firstPresent = false;
 		float currentWhiteLevel{};
-		RECT currentWindowPosition{};
 		bool monitorChanged = false;
 		std::function<void()> clientInvalidated; // called from Paint if monitor white-level changed since last check.
 
@@ -294,18 +298,8 @@ namespace hosting
 			parameterHost = paramHost;
 		}
 
-		void attachClient(gmpi::api::IUnknown* gfx)
-		{
-			gfx->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
-			gfx->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
-			
-			// legacy
-			gfx->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
-			if (drawingClient)
-			{
-				drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
-			}
-		}
+		void attachClient(gmpi::api::IUnknown* gfx);
+		void detachAndRecreate();
 
 		void OnPaint();
 

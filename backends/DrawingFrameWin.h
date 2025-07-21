@@ -172,7 +172,7 @@ namespace hosting
 		bool reentrant = false;
 		bool lowDpiMode = {};
 		bool firstPresent = false;
-		float currentWhiteLevel{};
+		float windowWhiteLevel{};
 		bool monitorChanged = false;
 		std::function<void()> clientInvalidated; // called from Paint if monitor white-level changed since last check.
 

@@ -848,7 +848,8 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	dxgiDevice->GetAdapter(dxgiAdapter.put());
 
 	// Support for HDR displays.
-	float whiteMult = calcWhiteLevel();
+	windowWhiteLevel = calcWhiteLevel(); // the native white level.
+	float whiteMult = windowWhiteLevel; // the swapchain white-level, that might be overriden by an 8-bit swapchain.
 
 	bool DX_support_sRGB{ true };
 	// !!! this is shit, returns DEFAULT adaptor only. No good if you are using both shitty onboard GPU plus high-end PCI GPU. !!!
@@ -1139,7 +1140,6 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 		hdrWhiteScaleEffect->SetInput(0, hdrBitmap.get());
 	}
 
-	currentWhiteLevel = whiteMult;
 	invalidateRect(nullptr); // force redraw with new white level.
 }
 

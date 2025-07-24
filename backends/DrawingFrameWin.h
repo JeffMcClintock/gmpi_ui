@@ -153,6 +153,10 @@ namespace hosting
 	{
 		enum { FallBack_8bit, Fallback_Software };
 
+		// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
+		const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
+		const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
+
 		gmpi::drawing::Matrix3x2 viewTransform;
 		gmpi::drawing::Matrix3x2 DipsToWindow;
 		gmpi::drawing::Matrix3x2 WindowToDips;
@@ -196,7 +200,9 @@ namespace hosting
 		void setWhiteLevel(float newWhiteLevel);
 		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 		void CreateDeviceSwapChainBitmap();
+		void OnSize(UINT width, UINT height);
 		virtual void OnSwapChainCreated() = 0;
+		virtual void sizeClientDips(float width, float height) = 0;
 
 		// to help re-create device when lost.
 		void ReleaseDevice()
@@ -277,22 +283,6 @@ namespace hosting
 
 		void OnSwapChainCreated() override;
 
-		void ResizeSwapChainBitmap()
-		{
-			d2dDeviceContext->SetTarget(nullptr);
-			if (S_OK == swapChain->ResizeBuffers(0,
-				0, 0,
-				DXGI_FORMAT_UNKNOWN,
-				0))
-			{
-				CreateDeviceSwapChainBitmap();
-			}
-			else
-			{
-				ReleaseDevice();
-			}
-		}
-
 		void setFallbackHost(gmpi::api::IUnknown* paramHost)
 		{
 			parameterHost = paramHost;
@@ -351,7 +341,7 @@ namespace hosting
 		void TooltipOnMouseActivity();
 		void ShowToolTip();
 		void HideToolTip();
-		void OnSize(UINT width, UINT height);
+		void sizeClientDips(float width, float height) override;
 		bool onTimer() override;
 		virtual void autoScrollStart() {}
 		virtual void autoScrollStop() {}

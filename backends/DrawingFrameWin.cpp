@@ -213,15 +213,9 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 	{
 		const auto scale = getRasterizationScale();
 
-		const drawing::Size available{
-			static_cast<float>((r.right - r.left) * scale),
-			static_cast<float>((r.bottom - r.top) * scale)
-		};
-
-		drawing::Size desired{};
-		drawingClient->measure(&available, &desired);
-		const drawing::Rect finalRect{ 0, 0, available.width, available.height };
-		drawingClient->arrange(&finalRect);
+		sizeClientDips(
+			static_cast<float>(r.right - r.left) * scale,
+			static_cast<float>(r.bottom - r.top) * scale);
 	}
 
 	// starting Timer latest to avoid first event getting 'in-between' other init events.
@@ -542,40 +536,14 @@ LRESULT DxDrawingFrameBase::WindowProc(
 	return TRUE;
 }
 
-void DxDrawingFrameBase::OnSize(UINT width, UINT height)
+void DxDrawingFrameBase::sizeClientDips(float width, float height)
 {
-	assert(swapChain);
-	assert(d2dDeviceContext);
+	const gmpi::drawing::Size available{ width, height };
+	const gmpi::drawing::Rect finalRect{ 0, 0, available.width, available.height };
+	gmpi::drawing::Size desired{};
 
-	d2dDeviceContext->SetTarget(nullptr);
-
-	if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
-	{
-		CreateDeviceSwapChainBitmap();
-	}
-	else
-	{
-		ReleaseDevice();
-	}
-
-	int dpiX, dpiY;
-	{
-		HDC hdc = ::GetDC(getWindowHandle());
-		dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
-		dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
-		::ReleaseDC(getWindowHandle(), hdc);
-	}
-
-	const drawing::Size available{
-		static_cast<float>(((width) * 96) / dpiX),
-		static_cast<float>(((height) * 96) / dpiY)
-	};
-
-	if (drawingClient)
-	{
-		const gmpi::drawing::Rect r{ 0, 0, available.width, available.height };
-		drawingClient->arrange(&r);
-	}
+	drawingClient->measure(&available, &desired);
+	drawingClient->arrange(&finalRect);
 }
 
 // Ideally this is called at 60Hz so we can draw as fast as practical, but without blocking to wait for Vsync all the time (makes host unresponsive).
@@ -866,9 +834,6 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
 	}
 
-	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
-	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
-	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
 	{
 		UINT driverSrgbSupport = 0;
 		auto hr = d3dDevice->CheckFormatSupport(bestFormat, &driverSrgbSupport);
@@ -980,16 +945,12 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 
 	// disable DPI for testing.
 	const float dpiScale = lowDpiMode ? 1.0f : getRasterizationScale();
+ 	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
+	WindowToDips = gmpi::drawing::invert(DipsToWindow);
 
     d2dDeviceContext->SetDpi(dpiScale * 96.f, dpiScale * 96.f);
 
 	CreateDeviceSwapChainBitmap();
-
- 	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
-	WindowToDips = gmpi::drawing::invert(DipsToWindow);
-
-	setWhiteLevel(whiteMult);
-	monitorChanged = false;
 
 	// customisation point.
 	OnSwapChainCreated();
@@ -1197,11 +1158,42 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 	// Now attach Device Context to swapchain bitmap.
 	d2dDeviceContext->SetTarget(bitmap.get());
 
+	const bool using8bitSwapChain = (sufaceDesc.Format == fallbackFormat);
+
+	// if we're reverting to 8-bit colour HDR white-mult is N/A.
+	const float whiteMult = using8bitSwapChain ? 1.0f : windowWhiteLevel; // the native white level.
+
+	setWhiteLevel(whiteMult);
+
 	// Initial present() moved here in order to ensure it happens before first Timer() tries to draw anything.
-//	HRESULT hr = m_swapChain->Present(0, 0);
 	firstPresent = true;
+	monitorChanged = false;
 
 	InvalidateRect(getWindowHandle(), nullptr, false);
+}
+
+void tempSharedD2DBase::OnSize(UINT width, UINT height)
+{
+	assert(swapChain);
+	assert(d2dDeviceContext);
+
+	d2dDeviceContext->SetTarget(nullptr);
+
+	if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
+	{
+		CreateDeviceSwapChainBitmap();
+
+		const auto scale = getRasterizationScale();
+
+		sizeClientDips(
+			static_cast<float>(width) * scale,
+			static_cast<float>(height) * scale
+		);
+	}
+	else
+	{
+		ReleaseDevice();
+	}
 }
 
 void DrawingFrame::reSize(int left, int top, int right, int bottom)
@@ -1221,22 +1213,6 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 			, SWP_NOZORDER
 		);
 
-		// Note: This method can fail, but it's okay to ignore the
-		// error here, because the error will be returned again
-		// the next time EndDraw is called.
-/*
-		UINT Width = 0; // Auto size
-		UINT Height = 0;
-
-		if (lowDpiMode)
-		{
-			RECT r;
-			GetClientRect(&r);
-
-			Width = (r.right - r.left) / 2;
-			Height = (r.bottom - r.top) / 2;
-		}
-*/
 		d2dDeviceContext->SetTarget(nullptr);
 		if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
 		{

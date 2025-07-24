@@ -121,15 +121,9 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 	{
 		const auto scale = getRasterizationScale();
 
-		const drawing::Size available{
-			static_cast<float>((r.right - r.left) * scale),
-			static_cast<float>((r.bottom - r.top) * scale)
-		};
-
-		drawing::Size desired{};
-		drawingClient->measure(&available, &desired);
-		const drawing::Rect finalRect{ 0, 0, available.width, available.height };
-		drawingClient->arrange(&finalRect);
+		sizeClientDips(
+			static_cast<float>(r.right - r.left) * scale,
+			static_cast<float>(r.bottom - r.top) * scale);
 	}
 
 	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
@@ -146,7 +140,7 @@ bool JuceDrawingFrameBase::onTimer()
 	{
 		pollHdrChangesCount = 100; // 1.5s
 
-		if(currentWhiteLevel != calcWhiteLevel())
+		if (windowWhiteLevel != calcWhiteLevel())
 		{
 			recreateSwapChainAndClientAsync();
 		}
@@ -164,7 +158,6 @@ struct GmpiComponent::Pimpl
 		outer(pouter)
 		, JuceDrawingFrameBase(*pouter)
 	{
-
 	}
 
     void open(HWND hwnd, juce::Rectangle<int> r)

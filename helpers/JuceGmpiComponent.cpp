@@ -122,8 +122,8 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 		const auto scale = getRasterizationScale();
 
 		sizeClientDips(
-			static_cast<float>(r.right - r.left) * scale,
-			static_cast<float>(r.bottom - r.top) * scale);
+			static_cast<float>(width) * scale,
+			static_cast<float>(height) * scale);
 	}
 
 	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.

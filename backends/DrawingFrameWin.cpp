@@ -211,7 +211,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 
 	if (drawingClient)
 	{
-		const auto scale = getRasterizationScale();
+		const auto scale = 1.0 / getRasterizationScale();
 
 		sizeClientDips(
 			static_cast<float>(r.right - r.left) * scale,
@@ -1183,7 +1183,7 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 	{
 		CreateDeviceSwapChainBitmap();
 
-		const auto scale = getRasterizationScale();
+		const auto scale = 1.0 / getRasterizationScale();
 
 		sizeClientDips(
 			static_cast<float>(width) * scale,

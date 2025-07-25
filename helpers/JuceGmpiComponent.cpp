@@ -119,7 +119,7 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 
 	if (drawingClient)
 	{
-		const auto scale = getRasterizationScale();
+		const auto scale = 1.0 / getRasterizationScale();
 
 		sizeClientDips(
 			static_cast<float>(width) * scale,

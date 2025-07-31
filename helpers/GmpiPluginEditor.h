@@ -76,7 +76,7 @@ public:
 
 	void init(PinBase& pin)
 	{
-		init(pins.size(), pin); // Automatic indexing.
+		init(static_cast<int32_t>(pins.size()), pin); // Automatic indexing.
 	}
 
 	// Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing

@@ -265,7 +265,7 @@ public:
         return windowsFont;
     }
 
-    TextFormat(/*std::wstring_convert<std::codecvt_utf8<wchar_t>>* pstringConverter,*/ const char* pfontFamilyName, gmpi::drawing::FontWeight pfontWeight, gmpi::drawing::FontStyle pfontStyle, gmpi::drawing::FontStretch pfontStretch, float pfontSize) :
+    TextFormat(const char* pfontFamilyName, gmpi::drawing::FontWeight pfontWeight, gmpi::drawing::FontStyle pfontStyle, gmpi::drawing::FontStretch pfontStretch, float pfontSize) :
         //				CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>(nullptr)
         fontWeight(pfontWeight)
         , fontStyle(pfontStyle)
@@ -465,6 +465,8 @@ public:
 
 //      if (!useLegacyBaseLineSnapping)
         returnSize->height -= topAdjustment;
+
+        return gmpi::ReturnCode::Ok;
     }
 	
     gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) override
@@ -708,7 +710,6 @@ public:
 struct FactoryInfo
 {
     std::vector<std::string> supportedFontFamilies;
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter; // cached, as constructor is super-slow.
     NSColorSpace* gmpiColorSpace{};
 };
 
@@ -1350,6 +1351,7 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
     {
         *factory = factory_;
+        return gmpi::ReturnCode::Ok;
     }
 
     GMPI_REFCOUNT;
@@ -1470,7 +1472,8 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
 		//		native_->getFactory((ID2D1Factory**)factory);
-	}
+        return gmpi::ReturnCode::NoSupport;
+    }
 
 	gmpi::ReturnCode strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle, const gmpi::drawing::Matrix3x2* worldTransform, bool* returnContains) override
 	{
@@ -2451,7 +2454,7 @@ inline gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::draw
 inline gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, gmpi::drawing::api::ITextFormat** textFormat)
 {
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-	b2.attach(new TextFormat(/*&stringConverter,*/ fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
+	b2.attach(new TextFormat(fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
 
 	return b2->queryInterface(&gmpi::drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
 }

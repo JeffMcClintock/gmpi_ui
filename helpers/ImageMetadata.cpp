@@ -338,7 +338,7 @@ void SkinMetadata::Serialise(const char* fileName) //mp_shared_ptr<gmpi::IProtec
 					if (words.size() > 1)
 					{
 						string category = words[1];
-						transform(category.begin(), category.end(), category.begin(), towlower);
+						transform(category.begin(), category.end(), category.begin(), [](unsigned char c) { return std::tolower(c); });
 
 						fonts_.push_back(std::make_unique<FontMetadata>(category));
 
@@ -490,7 +490,7 @@ void SkinMetadata::Serialise(const char* fileName) //mp_shared_ptr<gmpi::IProtec
 
 const FontMetadata* SkinMetadata::getFont(std::string category) const
 {
-	transform(category.begin(), category.end(), category.begin(), towlower);
+	transform(category.begin(), category.end(), category.begin(), [](unsigned char c) { return std::tolower(c); });
 
 	for (auto& f : fonts_)
 	{

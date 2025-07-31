@@ -465,6 +465,8 @@ public:
 
 //      if (!useLegacyBaseLineSnapping)
         returnSize->height -= topAdjustment;
+
+        return gmpi::ReturnCode::Ok;
     }
 	
     gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) override
@@ -1350,6 +1352,7 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
     {
         *factory = factory_;
+        return gmpi::ReturnCode::Ok;
     }
 
     GMPI_REFCOUNT;
@@ -1470,7 +1473,8 @@ public:
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
 		//		native_->getFactory((ID2D1Factory**)factory);
-	}
+        return gmpi::ReturnCode::NoSupport;
+    }
 
 	gmpi::ReturnCode strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle, const gmpi::drawing::Matrix3x2* worldTransform, bool* returnContains) override
 	{

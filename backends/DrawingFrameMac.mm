@@ -279,8 +279,9 @@ gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback)
     callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
 
     keyListenerView = [[KeyListenerView alloc] initWithParent:parentView callback:callback2];
-}
 
+    return gmpi::ReturnCode::Ok;
+}
 
 
 class DrawingFrameCocoa :

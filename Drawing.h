@@ -660,8 +660,7 @@ public:
 	//// TODO should be getTextExtentW for consistency?
 	//Size getTextExtentU(std::wstring wString)
 	//{
-	//	static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
-	//	auto utf8String = stringConverter.to_bytes(wString);
+	//	auto utf8String = JmUnicodeConversions::WStringToUtf8(wString);
 	//	//			auto utf8String = FastUnicode::WStringToUtf8(wString.c_str());
 
 	//	Size s;
@@ -1542,8 +1541,7 @@ public:
 
 	//void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	//{
-	//	static std::wstring_convert<std::codecvt_utf8<wchar_t>> stringConverter;
-	//	const auto utf8String = stringConverter.to_bytes(wString);
+	//	auto utf8String = JmUnicodeConversions::WStringToUtf8(wString);
 	//	this->drawTextU(utf8String, textFormat, rect, brush, options);
 	//}
 

@@ -1,12 +1,13 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#ifdef SELIB_HAS_FILESYSTEM
 #include <filesystem>
+#endif
 #include <fstream>
 #include "ImageMetadata.h"
 
 using namespace std;
-//using namespace gmpi_sdk;
 namespace gmpi_helper
 {
 
@@ -93,21 +94,36 @@ void SplitString(const char* pText, std::vector<std::string>& returnValue)
 	}
 }
 
-void ImageMetadata::Serialise(const char* textFilename) //mp_shared_ptr<gmpi::IProtectedFile2> stream)
+// read file into a std::string
+std::string ImFileToString(const char* textFilename)
 {
-	Reset();
-
-	// read file into a std::string
+#ifdef SELIB_HAS_FILESYSTEM
 	auto size = std::filesystem::file_size(textFilename);
 	std::string imageMetadata(size, '\0');
 	std::ifstream in(textFilename);
 	in.read(&imageMetadata[0], size);
+#else
+	std::string imageMetadata;
+	{
+		std::ifstream t(textFilename, std::ifstream::in | std::ifstream::binary);
+		t.seekg(0, std::ios::end);
+		const size_t size = t.tellg();
+		if (!t.fail())
+		{
+			imageMetadata.resize(size);
+			t.seekg(0);
+			t.read((char*)imageMetadata.data(), imageMetadata.size());
+		}
+	}
+#endif
+	return imageMetadata;
+}
 
-	//int64_t fileLength = 0;
-	//stream->getSize(&fileLength);
-	//std::string imageMetadata;
-	//imageMetadata.assign((size_t)fileLength, 0);
-	//stream->read(&(imageMetadata[0]), fileLength);
+void ImageMetadata::Serialise(const char* textFilename)
+{
+	Reset();
+
+	const auto imageMetadata = ImFileToString(textFilename);
 
 	// Parse image metadata.
 
@@ -284,21 +300,11 @@ void ImageMetadata::Serialise(const char* textFilename) //mp_shared_ptr<gmpi::IP
 }
 
 
-void SkinMetadata::Serialise(const char* fileName) //mp_shared_ptr<gmpi::IProtectedFile2> stream)
+void SkinMetadata::Serialise(const char* fileName)
 {
 	fonts_.clear();
 
-	// read file into a std::string
-	auto size = std::filesystem::file_size(fileName);
-	std::string imageMetadata(size, '\0');
-	std::ifstream in(fileName);
-	in.read(&imageMetadata[0], size);
-
-	//int64_t fileLength = 0;
-	//stream->getSize(&fileLength);
-	//std::string imageMetadata;
-	//imageMetadata.assign((size_t)fileLength, 0);
-	//stream->read(&(imageMetadata[0]), fileLength);
+	const auto imageMetadata = ImFileToString(fileName);
 
 	// Parse image metadata.
 
@@ -338,7 +344,7 @@ void SkinMetadata::Serialise(const char* fileName) //mp_shared_ptr<gmpi::IProtec
 					if (words.size() > 1)
 					{
 						string category = words[1];
-						transform(category.begin(), category.end(), category.begin(), [](unsigned char c) { return std::tolower(c); });
+						transform(category.begin(), category.end(), category.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
 						fonts_.push_back(std::make_unique<FontMetadata>(category));
 
@@ -490,7 +496,7 @@ void SkinMetadata::Serialise(const char* fileName) //mp_shared_ptr<gmpi::IProtec
 
 const FontMetadata* SkinMetadata::getFont(std::string category) const
 {
-	transform(category.begin(), category.end(), category.begin(), [](unsigned char c) { return std::tolower(c); });
+	transform(category.begin(), category.end(), category.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
 	for (auto& f : fonts_)
 	{

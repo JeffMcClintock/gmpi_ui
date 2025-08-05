@@ -1,9 +1,6 @@
-#include <filesystem>
 #include "./ImageCache.h"
 #include "GmpiSdkCommon.h"
 #include "../shared/string_utilities.h"
-//#include "../se_sdk3/MpString.h"
-//#include "../shared/xp_simd.h"
 
 using namespace std;
 using namespace gmpi;
@@ -57,16 +54,12 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 		return image;
 	}
 
-	std::filesystem::path fullUri(uri);
 	// Does image have a separate 'mask' image. Happens only in SE editor. VSTs use only png.
-	if(fullUri.extension() == "bmp")
+	const auto urilen = strlen(uri);
+	if(urilen > 4 && strcmp(uri + urilen - 4, ".bmp") == 0)
 	{
-		auto maskFilename = fullUri.stem().string() + "_mask.bmp";
-//		string maskFilename = StripExtension(shortUri) + "_mask.bmp";
-//		MpString maskFullUri;
-//		auto r = host->RegisterResourceUri(maskFilename.c_str(), "Image", &maskFullUri);
-
-//		if (r == MP_OK)
+		std::string maskFilename(uri);
+		maskFilename.replace(maskFilename.size() - 4, 4, "_mask.bmp");
 		{
 			gmpi::drawing::Bitmap maskImage;
 			factory->loadImageU(maskFilename.c_str(), AccessPtr::put(maskImage));
@@ -120,12 +113,12 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 						int alpha = 255 - sourcePixels[0]; // Red.
 
 						// apply pre-multiplied alpha.
-						for (int i = 0; i < 3; ++i)
+						for (int j = 0; j < 3; ++j)
 						{
 							// This is correct on Mac and Win7 because they use (inferior) linear gamma.
 							// This is wrong on Win10
-							int r2 = destPixels[i] * alpha + 127;
-							destPixels[i] = (r2 + 1 + (r2 >> 8)) >> 8; // fast way to divide by 255
+							int r2 = destPixels[j] * alpha + 127;
+							destPixels[j] = (r2 + 1 + (r2 >> 8)) >> 8; // fast way to divide by 255
 						}
 
 						destPixels[3] = alpha;
@@ -180,7 +173,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 		}
 	}
 
-	bitmaps_.push_back(ImageData(factory, fullUri.generic_string(), image, bitmapMetadata));
+	bitmaps_.push_back(ImageData(factory, uri, image, bitmapMetadata));
 
 	return image;
 }

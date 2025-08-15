@@ -33,7 +33,6 @@ public:
 
 	Pin()
 	{
-		//_RPT0(_CRT_WARN, "Pin() constructor\n");
 	}
 	const T& operator=(const T& pvalue)
 	{
@@ -65,13 +64,14 @@ public:
 		constructingEditor = this;
 	}
 
-	void init(int PinIndex, PinBase& pin)
+	void init(int pinIndex, PinBase& pin)
 	{
-		assert(0 <= PinIndex); // pin index must be positive.
-		assert(pins.size() <= PinIndex); // did you init the same pin twice?
+		assert(0 <= pinIndex); // pin index must be positive.
+		assert(pins.size() <= pinIndex); // did you init the same pin twice?
 
-		pins.resize(PinIndex + 1);
-		pins[PinIndex] = &pin;
+		pin.idx = pinIndex;
+		pins.resize(pinIndex + 1);
+		pins[pinIndex] = &pin;
 	}
 
 	void init(PinBase& pin)
@@ -117,7 +117,7 @@ public:
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);
 		return ReturnCode::NoSupport;
 	}
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 
 class PluginEditor : public PluginEditorBase, public gmpi::api::IDrawingClient, public gmpi::api::IInputClient
@@ -235,7 +235,7 @@ public:
 		GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
 		return ReturnCode::NoSupport;
 	}
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 
 inline PinBase::PinBase()

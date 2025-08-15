@@ -58,7 +58,7 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 
 void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags)

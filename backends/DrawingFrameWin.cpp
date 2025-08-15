@@ -1645,7 +1645,7 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenu);
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 
 gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu)

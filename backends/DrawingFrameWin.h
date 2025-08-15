@@ -396,7 +396,7 @@ public:
 	ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IKeyListener);
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 } // namespace win32
 } // namespace.

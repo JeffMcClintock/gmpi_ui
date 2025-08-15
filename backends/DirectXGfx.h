@@ -292,7 +292,7 @@ public:
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
@@ -429,7 +429,7 @@ public:
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmapPixels);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 // helper function.
@@ -497,7 +497,7 @@ public:
     ReturnCode getFactory(drawing::api::IFactory** returnFactory) override;
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmap);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 class GradientstopCollection final : public GmpiDXResourceWrapper<drawing::api::IGradientstopCollection, ID2D1GradientStopCollection>
@@ -506,7 +506,7 @@ public:
     GradientstopCollection(ID2D1GradientStopCollection* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IGradientstopCollection);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 struct Brush
@@ -568,7 +568,7 @@ public:
         return ReturnCode::NoSupport;
     }
 
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 class SolidColorBrush : public Brush, public drawing::api::ISolidColorBrush
@@ -606,7 +606,7 @@ public:
         return ReturnCode::NoSupport;
     }
 
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 class SolidColorBrush_Win7 final : public SolidColorBrush
@@ -664,7 +664,7 @@ public:
         *factory = factory_;
         return ReturnCode::Ok;
     }
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 class RadialGradientBrush final : public Brush, public drawing::api::IRadialGradientBrush
@@ -717,7 +717,7 @@ public:
         *factory = factory_;
         return ReturnCode::Ok;
     }
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 class StrokeStyle final : public GmpiDXResourceWrapper<drawing::api::IStrokeStyle, ID2D1StrokeStyle>
@@ -726,7 +726,7 @@ public:
     StrokeStyle(ID2D1StrokeStyle* native, drawing::api::IFactory* factory) : GmpiDXResourceWrapper(native, factory) {}
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IStrokeStyle);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 inline ID2D1StrokeStyle* toNative(const drawing::api::IStrokeStyle* strokeStyle)
@@ -813,7 +813,7 @@ public:
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IGeometrySink);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 
@@ -866,7 +866,7 @@ public:
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IPathGeometry);
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 struct fontScaling
@@ -1267,7 +1267,7 @@ public:
         return GraphicsContext_base::queryInterface(iid, returnInterface);
     }
 
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 
 #if 0
@@ -1310,7 +1310,7 @@ public:
         context_->Clear(&native);
         return ReturnCode::Ok;
     }
-    GMPI_REFCOUNT;
+    GMPI_REFCOUNT
 };
 #endif
 } // Namespace

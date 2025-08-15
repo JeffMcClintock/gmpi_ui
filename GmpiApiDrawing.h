@@ -1,7 +1,7 @@
 #pragma once
 /*
   GMPI - Generalized Music Plugin Interface specification.
-  Copyright 2023 Jeff McClintock.
+  Copyright 2025 Jeff McClintock.
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -17,16 +17,11 @@
 */
 
 /*
-#include "Drawing_API.h"
+#include "GmpiApiDrawing.h"
 using namespace gmpi::drawing;
 */
 
 /* FUTURE ideas
-	// Obtain information about physical pixels. Translates DIPs to pixels. Alternately GetPixelDpi, but might need offset also.
-	// Alternately might want to do like dpi in terms of integer 96ths to alleviate rounding errors.
-	virtual void IMpDeviceContext::GetPixelTranslation(MP1_MATRIX_3X2* returnTransform) = 0;
-
-	* Support drawing extended-color bitmaps (e.g. 10 bits per pixel)
 */
 
 #include "GmpiApiCommon.h"

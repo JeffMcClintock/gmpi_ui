@@ -179,7 +179,7 @@ public:
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor2_x);
 		return ReturnCode::NoSupport;
 	}
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 
 class PluginEditor : public PluginEditorBase, public gmpi::api::IDrawingClient, public gmpi::api::IInputClient
@@ -301,7 +301,7 @@ public:
 		GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
 		return ReturnCode::NoSupport;
 	}
-	GMPI_REFCOUNT;
+	GMPI_REFCOUNT
 };
 
 PinBase::PinBase()

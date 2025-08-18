@@ -145,6 +145,12 @@ inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
     };
 }
 
+inline bool PointInRect(Point point, Rect rect)
+{
+	return point.x >= rect.left && point.x <= rect.right &&
+		   point.y >= rect.top && point.y <= rect.bottom;
+}
+
 inline Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
 {
 	return {

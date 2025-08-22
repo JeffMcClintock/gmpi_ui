@@ -23,7 +23,7 @@ public:
 
 	PinBase();
 	virtual ~PinBase() {}
-	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
+	virtual void setFromHost(int32_t voice, int32_t size, const uint8_t* data) = 0;
 	virtual void clearDirty()
 	{
 		dirty = false;
@@ -35,7 +35,7 @@ class Pin : public PinBase
 {
 	friend class PluginEditorBase;
 
-	void setFromHost(int32_t voice, int32_t size, const void* data) override
+	void setFromHost(int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		dirty = true;
 		valueFromData(size, data, value);
@@ -60,7 +60,7 @@ class PolyPin : public PinBase
 {
 	friend class PluginEditorBase;
 
-	void setFromHost(int32_t voice, int32_t size, const void* data) override
+	void setFromHost(int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		dirty = true;
 		dirtyVoice[voice] = true;
@@ -138,7 +138,7 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const void* data) override
+	ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		if (auto it = pins.find(pinId); it != pins.end())
 		{

@@ -22,7 +22,7 @@ public:
 
 	PinBase();
 	virtual ~PinBase() {}
-	virtual void setFromHost(int32_t voice, int32_t size, const void* data) = 0;
+	virtual void setFromHost(int32_t voice, int32_t size, const uint8_t* data) = 0;
 };
 
 template<typename T>
@@ -44,7 +44,7 @@ public:
 		return value;
 	}
 
-	void setFromHost(int32_t voice, int32_t size, const void* data) override
+	void setFromHost(int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		valueFromData(size, data, value);
 		if(onUpdate)
@@ -97,7 +97,7 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const void* data) override
+	ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		pins[PinIndex]->setFromHost(voice, size, data);
 		return ReturnCode::Ok;

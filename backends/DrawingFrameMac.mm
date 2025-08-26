@@ -327,7 +327,7 @@ public:
             drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
     }
     
-    void open()
+    void open() // called from viewDidMoveToWindow <= createNativeView()
     {
         if(drawingClient)
         {

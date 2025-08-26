@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #include "GmpiSdkCommon.h"
+#include "GmpiApiEditor.h"
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
@@ -316,8 +317,11 @@ public:
 
 //        gmpi::shared_ptr<gmpi::api::IEditor> editor;
 //        pclient->queryInterface(&gmpi::api::IEditor::guid, editor.put_void());
-//        if(editor)
-//           editor->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+
+        gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
+        pclient->queryInterface(&gmpi::api::IEditor::guid, pluginParameters_GMPI.put_void());
+        if(pluginParameters_GMPI)
+            pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
         
         if(drawingClient)
             drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));

@@ -1625,7 +1625,7 @@ public:
 		sink.addLines(points, pointCount);
 		sink.endFigure();
 		sink.close();
-		DrawGeometry(geometry, brush, strokeWidth);
+		drawGeometry(geometry, brush, strokeWidth);
 	}
 
 	void drawLines(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
@@ -1638,7 +1638,7 @@ public:
 		sink.addLines(points + 1, pointCount - 1);
 		sink.endFigure(gmpi::drawing::FigureEnd::Open);
 		sink.close();
-		DrawGeometry(geometry, brush, strokeWidth);
+		drawGeometry(geometry, brush, strokeWidth);
 	}
 };
 

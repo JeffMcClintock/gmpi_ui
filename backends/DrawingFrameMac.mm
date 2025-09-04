@@ -317,13 +317,13 @@ public:
         pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
         pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
 
-//        gmpi::shared_ptr<gmpi::api::IEditor> editor;
-//        pclient->queryInterface(&gmpi::api::IEditor::guid, editor.put_void());
-
         gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
         pclient->queryInterface(&gmpi::api::IEditor::guid, pluginParameters_GMPI.put_void());
         if(pluginParameters_GMPI)
+        {
             pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+            pluginParameters_GMPI->initialize();
+        }
         
         if(drawingClient)
             drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
@@ -368,7 +368,8 @@ public:
 
             NSSize logicalsize = view.frame.size;
             gmpi::drawing::Rect finalRect{0,0, (float) logicalsize.width, (float) logicalsize.height};
-            drawingClient->arrange(&finalRect);
+            if(drawingClient)
+                drawingClient->arrange(&finalRect);
         }
         
         // draw onto linear back buffer.

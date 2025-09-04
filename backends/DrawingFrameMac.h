@@ -5,6 +5,9 @@
 #include "GmpiSdkCommon.h"
 #include "DrawingFrameCommon.h"
 
+// returns an NSView* (cast to void* for languages other than objective-C)
+void* createNativeView(void* parent, class IUnknown* parameterHost, class IUnknown* controller, int width, int height);
+
 class GMPI_MAC_KeyListener : public gmpi::api::IKeyListener
 {
     gmpi::drawing::Rect bounds{};

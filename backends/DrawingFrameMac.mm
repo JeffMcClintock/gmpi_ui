@@ -1,3 +1,4 @@
+#import <AudioUnit/AudioUnit.h>
 #import <Cocoa/Cocoa.h>
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
@@ -801,6 +802,7 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 - (id) initWithClient: (class IUnknown*) _client parameterHost: (class IUnknown*) paramHost preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
+- (NSView*) uiViewForAudioUnit:(AudioUnit)inAU withSize:(NSSize)inPreferredSize;
 
 @end
 
@@ -825,6 +827,15 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
     return self;
 }
 
+- (NSView*) uiViewForAudioUnit:(AudioUnit)inAU withSize:(NSSize)inPreferredSize
+{
+    void* editController = {};
+    UInt32 size = sizeof (editController);
+    if (AudioUnitGetProperty (inAU, 64000, kAudioUnitScope_Global, 0, &editController, &size) != noErr)
+        return nil;
+    
+    return [[[GMPI_VIEW_CLASS alloc] initWithClient:(class IUnknown*) editController parameterHost:(class IUnknown*) nullptr preferredSize:inPreferredSize] autorelease];
+}
 
 // View shown for first time.
 - (void)viewDidMoveToWindow {

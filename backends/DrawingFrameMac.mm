@@ -1,4 +1,5 @@
 #import <AudioUnit/AudioUnit.h>
+#import <AudioUnit/AUCocoaUIView.h>
 #import <Cocoa/Cocoa.h>
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
@@ -802,7 +803,7 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 - (id) initWithClient: (class IUnknown*) _client parameterHost: (class IUnknown*) paramHost preferredSize: (NSSize) size;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)onTimer: (NSTimer*) t;
-- (NSView*) uiViewForAudioUnit:(AudioUnit)inAU withSize:(NSSize)inPreferredSize;
+//- (NSView*) uiViewForAudioUnit:(AudioUnit)inAU withSize:(NSSize)inPreferredSize;
 
 @end
 
@@ -1116,12 +1117,12 @@ void resizeNativeView(void* ptr, int width, int height)
 }
 
 //// test
-
 // This class name must match the string returned in GetProperty(kAudioUnitProperty_CocoaUI)
-@interface GMPI_VIEW_VERSION_02 : NSObject <AUCocoaUIBase>
+// it's only purpose is to instantiate an NSView (the editor).
+@interface GMPI_VIEW_MAKER_VERSION_02 : NSObject <AUCocoaUIBase>
 @end
 
-@implementation GMPI_VIEW_VERSION_02
+@implementation GMPI_VIEW_MAKER_VERSION_02
 
 // AU Cocoa UI protocol version (0 is fine for simple UIs)
 - (unsigned int)interfaceVersion
@@ -1134,8 +1135,16 @@ void resizeNativeView(void* ptr, int width, int height)
     return @"GMPI Minimal AU View";
 }
 
-- (NSView*) uiViewForAudioUnit:(AudioUnit)inAudioUnit withSize:(NSSize)inPreferredSize
+// todo, make a controller class that inherits from gmpi::api::IEditorHost (paramHost), add it to instrument base, have AudioUnitGetProperty return a pointer to it's IUnknown interface. Then create the GMPI Editor (client) by calling the factory directly and pass these to:
+// NSView* native = [[GMPI_VIEW_CLASS alloc] initWithClient:client parameterHost:paramHost preferredSize:inPreferredSize];
+
+- (NSView *) uiViewForAudioUnit:(AudioUnit)inAudioUnit withSize:(NSSize)inPreferredSize
 {
+    void* editController = {}; // type is SeInstrumentBase, or a member that implements gmpi::api::IEditorHost interface.
+    UInt32 size = sizeof (editController);
+    if (AudioUnitGetProperty (inAudioUnit, 64000, kAudioUnitScope_Global, 0, &editController, &size) != noErr)
+        return nil;
+    
     const CGFloat defaultW = (inPreferredSize.width  > 0.0 ? inPreferredSize.width  : 480.0);
     const CGFloat defaultH = (inPreferredSize.height > 0.0 ? inPreferredSize.height : 320.0);
     NSRect frame = NSMakeRect(0, 0, defaultW, defaultH);
@@ -1147,10 +1156,15 @@ void resizeNativeView(void* ptr, int width, int height)
     view.wantsLayer = YES;
     if (view.layer)
     {
-        view.layer.backgroundColor = NSColor.windowBackgroundColor.CGColor;
+        view.layer.backgroundColor = NSColor.blueColor.CGColor;// .windowBackgroundColor.CGColor;
     }
 
     return view; // ARC: no autorelease needed
 }
 
 @end
+
+int shittyFunction() // force linker to not discard this unit.
+{
+    return 23;
+}

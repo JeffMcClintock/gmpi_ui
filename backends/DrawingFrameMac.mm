@@ -1114,3 +1114,43 @@ void resizeNativeView(void* ptr, int width, int height)
     r.size.height = height;
     [view setFrame:r];
 }
+
+//// test
+
+// This class name must match the string returned in GetProperty(kAudioUnitProperty_CocoaUI)
+@interface GMPI_VIEW_VERSION_02 : NSObject <AUCocoaUIBase>
+@end
+
+@implementation GMPI_VIEW_VERSION_02
+
+// AU Cocoa UI protocol version (0 is fine for simple UIs)
+- (unsigned int)interfaceVersion
+{
+    return 0;
+}
+
+- (NSString*) description
+{
+    return @"GMPI Minimal AU View";
+}
+
+- (NSView*) uiViewForAudioUnit:(AudioUnit)inAudioUnit withSize:(NSSize)inPreferredSize
+{
+    const CGFloat defaultW = (inPreferredSize.width  > 0.0 ? inPreferredSize.width  : 480.0);
+    const CGFloat defaultH = (inPreferredSize.height > 0.0 ? inPreferredSize.height : 320.0);
+    NSRect frame = NSMakeRect(0, 0, defaultW, defaultH);
+
+    NSView* view = [[NSView alloc] initWithFrame:frame];
+    view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    // Optional: give a neutral background so hosts don’t show black
+    view.wantsLayer = YES;
+    if (view.layer)
+    {
+        view.layer.backgroundColor = NSColor.windowBackgroundColor.CGColor;
+    }
+
+    return view; // ARC: no autorelease needed
+}
+
+@end

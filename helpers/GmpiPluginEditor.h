@@ -105,6 +105,7 @@ public:
 
 	ReturnCode notifyPin(int32_t PinIndex, int32_t voice) override
 	{
+        // todo: should be notifiing from here? not setPin?
 		return ReturnCode::Ok;
 	}
 };

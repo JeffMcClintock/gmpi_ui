@@ -829,19 +829,6 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
     return self;
 }
 
-/* moved
-
-- (NSView*) uiViewForAudioUnit:(AudioUnit)inAU withSize:(NSSize)inPreferredSize
-{
-    void* editController = {};
-    UInt32 size = sizeof (editController);
-    if (AudioUnitGetProperty (inAU, 64000, kAudioUnitScope_Global, 0, &editController, &size) != noErr)
-        return nil;
-    
-    return [[[GMPI_VIEW_CLASS alloc] initWithClient:(class IUnknown*) editController parameterHost:(class IUnknown*) nullptr preferredSize:inPreferredSize] autorelease];
-}
-*/
-
 // View shown for first time.
 - (void)viewDidMoveToWindow {
      [super viewDidMoveToWindow];

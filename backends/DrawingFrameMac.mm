@@ -6,6 +6,7 @@
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
+#include "Hosting/controller_holder.h"
 
 struct EventHelperClient
 {
@@ -305,7 +306,8 @@ public:
     gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
     GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
 #endif
-    
+    gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
+
     gmpi::cocoa::Factory drawingFactory;
     NSView* view;
     NSBitmapImageRep* backBuffer{}; // backing buffer with linear colorspace for correct blending.
@@ -316,9 +318,8 @@ public:
         
         pclient->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
         pclient->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
-
-        gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
         pclient->queryInterface(&gmpi::api::IEditor::guid, pluginParameters_GMPI.put_void());
+        
         if(pluginParameters_GMPI)
         {
             pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
@@ -351,6 +352,13 @@ public:
     
      void DeInit()
      {
+         if(pluginParameters_GMPI)
+         {
+             auto controller = dynamic_cast<gmpi::hosting::gmpi_controller_holder*>(parameterHost);
+             if(controller)
+                 controller->unRegisterGui(pluginParameters_GMPI.get());
+         }
+         
          drawingClient = {};
          inputClient = {};
      }
@@ -843,9 +851,9 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 
 - (void) removeFromSuperview
 {
-     [super removeFromSuperview];
-     
-   // Editor is closing
+    [super removeFromSuperview];
+
+    // Editor is closing
     [self onClose];
 }
 

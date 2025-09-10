@@ -13,7 +13,7 @@ struct EventHelperClient
     virtual void CallbackFromCocoa(NSObject* sender) = 0;
 };
 
-@interface GMPI_EVENT_HELPER_CLASSNAME : NSObject {
+@interface GMPI_EVENT_HELPER_CLASSNAME_03 : NSObject {
     EventHelperClient* client;
 }
 - (void)initWithClient:(EventHelperClient*)client;
@@ -21,7 +21,7 @@ struct EventHelperClient
 - (void)endEditing: (id) sender;
 @end
 
-@implementation GMPI_EVENT_HELPER_CLASSNAME
+@implementation GMPI_EVENT_HELPER_CLASSNAME_03
 
 - (void)initWithClient:(EventHelperClient*)pclient
 {
@@ -86,7 +86,7 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClien
     int32_t selectedId;
     NSView* view;
     std::vector<int32_t> menuIds;
-    GMPI_EVENT_HELPER_CLASSNAME* eventhelper{};
+    GMPI_EVENT_HELPER_CLASSNAME_03* eventhelper{};
     gmpi::api::IUnknown* returnCallback{};
     NSPopUpButton* button;
     
@@ -99,7 +99,7 @@ public:
     view(pview)
     ,rect(prect)
     {
-        eventhelper = [GMPI_EVENT_HELPER_CLASSNAME alloc];
+        eventhelper = [GMPI_EVENT_HELPER_CLASSNAME_03 alloc];
         [eventhelper initWithClient : this];
  
         button = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(10,1000,30,30)];
@@ -222,7 +222,7 @@ public:
 
 // GMPI_MAC_KeyListener
 
-@interface KeyListenerView : NSView
+@interface KeyListenerView_03 : NSView
 {
     gmpi::api::IKeyListenerCallback* callback;
 }
@@ -232,7 +232,7 @@ public:
 
 @end
 /////////////////////////////////////////////
-@implementation KeyListenerView
+@implementation KeyListenerView_03
 
 - (id)initWithParent:(NSView*)parent callback:(gmpi::api::IKeyListenerCallback*)pcallback
 {
@@ -282,7 +282,7 @@ gmpi::ReturnCode GMPI_MAC_KeyListener::showAsync(gmpi::api::IUnknown* callback)
 {
     callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
 
-    keyListenerView = [[KeyListenerView alloc] initWithParent:parentView callback:callback2];
+    keyListenerView = [[KeyListenerView_03 alloc] initWithParent:parentView callback:callback2];
 
     return gmpi::ReturnCode::Ok;
 }
@@ -756,7 +756,7 @@ gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 }
 
 // Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
-#define GMPI_KEY_LISTENER_CLASS GMPI_KEY_LISTENER_VERSION_01
+#define GMPI_KEY_LISTENER_CLASS GMPI_KEY_LISTENER_VERSION_03
 
 //--------------------------------------------------------------------------------------------------------------
 @interface GMPI_KEY_LISTENER_CLASS : NSView {
@@ -796,7 +796,7 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 }
 
 // Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
-#define GMPI_VIEW_CLASS GMPI_VIEW_VERSION_01
+#define GMPI_VIEW_CLASS GMPI_VIEW_VERSION_03
 
 //--------------------------------------------------------------------------------------------------------------
 @interface GMPI_VIEW_CLASS : NSView {

@@ -5,13 +5,15 @@
 #endif
 #define WIN32_LEAN_AND_MEAN
 #include "Windows.h"
-#else
+#endif
+
+#if __APPLE__
 #import <CoreFoundation/CoreFoundation.h>
 #endif
 
 #include <algorithm>
-#include "Timer.h"
 #include "assert.h"
+#include "Timer.h"
 
 // time (in ms) between VST onidle calls (via WM_TIMER)
 #define IDLE_PERIOD 50
@@ -35,7 +37,9 @@ void CALLBACK GMPITimerProc(
 	}
 }
 
-#else
+#endif
+
+#if __APPLE__
 void timerCallback_GMPI_Wrapper(CFRunLoopTimerRef t, void *info)
 {
     /* info was null!!
@@ -109,7 +113,8 @@ namespace gmpi
 
 				//			_RPT1(_CRT_WARN, "StartTimer %d\n", idleTimer_);
 
-#else
+#endif
+#if __APPLE__
 				CFRunLoopTimerContext timerContext = CFRunLoopTimerContext();
 				timerContext.info = this;
 				idleTimer_ = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + periodMilliSeconds * 0.001f, periodMilliSeconds * 0.001f, 0, 0, timerCallback_GMPI_Wrapper, &timerContext);
@@ -128,7 +133,8 @@ namespace gmpi
 				KillTimer(0, idleTimer_);
 				//			_RPT1(_CRT_WARN, "KillTimer %d\n", idleTimer_);
 
-#else
+#endif
+#if __APPLE__
 				CFRunLoopRemoveTimer(CFRunLoopGetCurrent(), (CFRunLoopTimerRef)idleTimer_, kCFRunLoopCommonModes);
 				CFRunLoopTimerInvalidate((CFRunLoopTimerRef)idleTimer_);
 				CFRelease((CFRunLoopTimerRef)idleTimer_);

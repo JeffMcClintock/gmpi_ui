@@ -361,6 +361,7 @@ public:
          
          drawingClient = {};
          inputClient = {};
+         pluginParameters_GMPI = {};
      }
 
     ~DrawingFrameCocoa()

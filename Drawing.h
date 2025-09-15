@@ -656,6 +656,11 @@ protected:
 	gmpi::shared_ptr<api::ITextFormat> native;
 
 public:
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
 	Size getTextExtentU(std::string_view utf8String)
 	{
 		Size s;
@@ -689,6 +694,11 @@ public:
 class TextFormat : public TextFormat_readonly
 {
 public:
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
 	// hmm, mutable?
 	gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment textAlignment)
 	{
@@ -735,6 +745,11 @@ protected:
 	}
 
 public:
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
 	uint8_t* getAddress()
 	{
 		return (uint8_t*) data;
@@ -798,6 +813,11 @@ class Bitmap
 
 public:
 	class Factory getFactory();
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 #if 0
 	//	void operator=(const Bitmap& other) { m_ptr = const_cast<gmpi::drawing::Bitmap*>(&other)->get(); }
 	Bitmap() noexcept = default;
@@ -835,6 +855,11 @@ class GradientstopCollection
 
 public:
 	class Factory getFactory();
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 };
 
 class Brush
@@ -851,6 +876,11 @@ class BitmapBrush : public Brush
 public:
 	class Factory getFactory();
 
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
 protected:
 	gmpi::drawing::api::IBrush* getDerived() override
 	{
@@ -865,6 +895,11 @@ class SolidColorBrush : public Brush
 
 public:
 	class Factory getFactory();
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 
 	void setColor(Color color)
 	{
@@ -885,6 +920,11 @@ class LinearGradientBrush : public Brush
 
 public:
 	class Factory getFactory();
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 
 	void setStartPoint(Point startPoint)
 	{
@@ -910,6 +950,11 @@ class RadialGradientBrush : public Brush
 
 public:
 	class Factory getFactory();
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 
 	void setCenter(Point center)
 	{
@@ -944,6 +989,11 @@ class GeometrySink
 	gmpi::shared_ptr<api::IGeometrySink> native;
 
 public:
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 
 	void beginFigure(Point startPoint, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
@@ -1014,6 +1064,11 @@ class StrokeStyle
 
 public:
 	class Factory getFactory();
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 };
 
 class PathGeometry
@@ -1022,6 +1077,11 @@ class PathGeometry
 	gmpi::shared_ptr<api::IPathGeometry> native;
 
 public:
+
+	operator bool() const
+	{
+		return native != nullptr;
+	}
 #if 0
 	// TODO need these member everywhere?
 	PathGeometry() = default;
@@ -1039,6 +1099,7 @@ public:
 	PathGeometry(PathGeometry&& other) = default; // { obj = other.obj; }// Move(std::move(other));
 	PathGeometry& operator=(PathGeometry&& other) = default; // noexcept { Move(std::move(other)); return *this; }
 #endif
+
 
 	class Factory getFactory();
 

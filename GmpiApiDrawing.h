@@ -26,7 +26,6 @@ using namespace gmpi::drawing;
 
 #include "GmpiApiCommon.h"
 
-// Platform specific definitions.
 #pragma pack(push,8)
 
 namespace gmpi
@@ -666,6 +665,5 @@ struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
 } // namespace drawing.
 } // namespace gmpi
 
-// Platform specific definitions.
 #pragma pack(pop)
 

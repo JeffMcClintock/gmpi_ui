@@ -22,7 +22,7 @@ public:
 
 	PinBase();
 	virtual ~PinBase() {}
-	virtual void setFromHost(int32_t voice, int32_t size, const uint8_t* data) = 0;
+	virtual void setFromHost(int32_t voice, std::span<const uint8_t> data) = 0;
 };
 
 template<typename T>
@@ -44,9 +44,9 @@ public:
 		return value;
 	}
 
-	void setFromHost(int32_t voice, int32_t size, const uint8_t* data) override
+	void setFromHost(int32_t voice, std::span<const uint8_t> data) override
 	{
-		valueFromData(size, data, value);
+		valueFromData(data, value);
 		if(onUpdate)
 			onUpdate(this);
 	}
@@ -99,7 +99,7 @@ public:
 
 	ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const uint8_t* data) override
 	{
-		pins[PinIndex]->setFromHost(voice, size, data);
+		pins[PinIndex]->setFromHost(voice, {data, static_cast<size_t>(size)} );
 		return ReturnCode::Ok;
 	}
 
@@ -152,6 +152,14 @@ public:
 	ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override
 	{
 		*returnDesiredSize = *availableSize;
+
+		// a size of zero will crash the swapchain creation in Direct2D.
+		if(returnDesiredSize->width <= 0.0f || returnDesiredSize->height <= 0.0f)
+		{
+			returnDesiredSize->width = 100.0f;
+			returnDesiredSize->height = 100.0f;
+		}
+
 		return ReturnCode::Ok;
 	}
 

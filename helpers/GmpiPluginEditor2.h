@@ -38,7 +38,7 @@ class Pin : public PinBase
 	void setFromHost(int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		dirty = true;
-		valueFromData(size, data, value);
+		valueFromData({ data, static_cast<size_t>(size) } , value);
 	}
 
 public:

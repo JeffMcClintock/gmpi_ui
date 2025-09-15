@@ -668,17 +668,6 @@ public:
 		return s;
 	}
 
-	//// TODO should be getTextExtentW for consistency?
-	//Size getTextExtentU(std::wstring wString)
-	//{
-	//	auto utf8String = JmUnicodeConversions::WStringToUtf8(wString);
-	//	//			auto utf8String = FastUnicode::WStringToUtf8(wString.c_str());
-
-	//	Size s;
-	//	native->getTextExtentU(utf8String.c_str(), (int32_t)utf8String.size(), &s);
-	//	return s;
-	//}
-
 	void getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics)
 	{
 		native->getFontMetrics(returnFontMetrics);
@@ -1605,12 +1594,6 @@ public:
 	{
 		native->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), AccessPtr::get(textFormat), &layoutRect, brush.getDerived(), options/*, measuringMode*/);
 	}
-
-	//void drawTextW(std::wstring wString, TextFormat_readonly textFormat, Rect rect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
-	//{
-	//	auto utf8String = JmUnicodeConversions::WStringToUtf8(wString);
-	//	this->drawTextU(utf8String, textFormat, rect, brush, options);
-	//}
 
 	void setTransform(const Matrix3x2& transform)
 	{

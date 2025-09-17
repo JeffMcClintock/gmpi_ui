@@ -6,7 +6,7 @@
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
-//#include "Hosting/controller_holder.h"
+#include "helpers/IController.h"
 
 struct EventHelperClient
 {
@@ -354,12 +354,9 @@ public:
      {
          if(pluginParameters_GMPI)
          {
-             /* TODO:  no dependancy on gmpi_controller_holder
-              
-             auto controller = dynamic_cast<gmpi::hosting::gmpi_controller_holder*>(parameterHost);
+             auto controller = dynamic_cast<gmpi::hosting::IController*>(parameterHost);
              if(controller)
                  controller->unRegisterGui(pluginParameters_GMPI.get());
-              */
          }
          
          drawingClient = {};

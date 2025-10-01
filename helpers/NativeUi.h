@@ -35,6 +35,8 @@ struct DECLSPEC_NOVTABLE IGraphicsRedrawClient : gmpi::api::IUnknown
 // TODO: all rects be passed as pointers (for speed and consistency w D2D and C ABI compatibility). !!!
 struct IDrawingClient : gmpi::api::IUnknown
 {
+	// TODO !!! just have all client interfaces (drawing, input etc) have an identical setHost() method. They can all map nicely to the same concrete method in the plugin.
+
 	virtual ReturnCode open(gmpi::api::IUnknown* host) = 0;
 
 	// First pass of layout update. Return minimum size required for given available size
@@ -139,7 +141,8 @@ struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 {
 	virtual ReturnCode createTextEdit   (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) = 0;
 	virtual ReturnCode createPopupMenu  (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnPopupMenu) = 0;
-	virtual ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) = 0; // why here not IInputHost? becuase it is effectivly an invisible text-edit
+	// why here not IInputHost? because it is effectively an invisible text-edit
+	virtual ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) = 0;
 	virtual ReturnCode createFileDialog (int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 	virtual ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 

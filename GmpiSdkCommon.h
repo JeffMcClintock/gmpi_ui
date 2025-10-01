@@ -150,7 +150,7 @@ public:
 
 private:
 	// Attach object and increment ref count.
-	void assign(wrappedObjT* newobj)
+	void assign(wrappedObjT* newobj) // use operator= to use this
 	{
 		if (newobj != obj) // skip self-asignment.
 		{

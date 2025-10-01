@@ -127,6 +127,11 @@ inline bool empty(const RectL& a)
 	return getWidth(a) <= 0 || getHeight(a) <= 0;
 }
 
+inline bool empty(const Rect& a)
+{
+	return getWidth(a) <= 0.0f || getHeight(a) <= 0.0f;
+}
+
 inline Point transformPoint(const Matrix3x2& transform, Point point)
 {
     return {
@@ -145,7 +150,7 @@ inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
     };
 }
 
-inline bool PointInRect(Point point, Rect rect)
+inline bool pointInRect(Point point, Rect rect)
 {
 	return point.x >= rect.left && point.x <= rect.right &&
 		   point.y >= rect.top && point.y <= rect.bottom;

@@ -642,7 +642,7 @@ void DxDrawingFrameBase::OnPaint()
 		Graphics graphics(&context1);
 
 		graphics.beginDraw();
-		graphics.setTransform(viewTransform);
+//		graphics.setTransform(viewTransform);
 
 		// clip and draw each rect individually (causes some objects to redraw several times)
 		for (auto& r : dirtyRects)

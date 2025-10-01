@@ -157,8 +157,8 @@ namespace hosting
 		const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
 		const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
 
-		gmpi::drawing::Matrix3x2 viewTransform;
-		gmpi::drawing::Matrix3x2 inv_viewTransform;
+//		gmpi::drawing::Matrix3x2 viewTransform;
+//		gmpi::drawing::Matrix3x2 inv_viewTransform;
 		gmpi::drawing::Matrix3x2 DipsToWindow;
 		gmpi::drawing::Matrix3x2 WindowToDips;
 

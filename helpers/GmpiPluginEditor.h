@@ -136,6 +136,7 @@ public:
 	// IEditor
 	// called right after constructor
     // Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
+	// !!! just have both interfaces have an identical setHost() method. Both will map nicely here.
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
 		PluginEditorBase::setHost(phost);

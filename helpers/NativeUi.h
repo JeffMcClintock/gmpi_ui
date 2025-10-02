@@ -23,7 +23,7 @@ namespace api
 // Supports the client optimizing how often it checks the DSP queue
 struct DECLSPEC_NOVTABLE IGraphicsRedrawClient : gmpi::api::IUnknown
 {
-	virtual void PreGraphicsRedraw() = 0;
+	virtual void preGraphicsRedraw() = 0;
 
 	// {4CCF9E3A-05AE-46C8-AEBB-1FFC5E950494}
 	inline static const gmpi::api::Guid guid =

@@ -556,7 +556,7 @@ bool DxDrawingFrameBase::onTimer()
 
 	if (frameUpdateClient)
 	{
-		frameUpdateClient->PreGraphicsRedraw();
+		frameUpdateClient->preGraphicsRedraw();
 	}
 
 	// Queue pending drawing updates to backbuffer.

@@ -2,9 +2,9 @@
 
 #include <functional>
 #include <map>
-#include "GmpiApiEditor.h"
+#include "Core/Common.h"
+#include "Core/GmpiApiEditor.h"
 #include "RefCountMacros.h"
-#include "Common.h"
 #include "../Drawing.h" // .. to force use of gmpi-ui not SE SDK
 #include "helpers/NativeUi.h"
 

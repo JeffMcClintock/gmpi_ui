@@ -1300,16 +1300,16 @@ gmpi::ReturnCode DxDrawingFrameBase::releaseCapture()
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode DxDrawingFrameBase::getFocus()
-{
-	::SetFocus(getWindowHandle());
-	return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode DxDrawingFrameBase::releaseFocus()
-{
-	return gmpi::ReturnCode::Ok;
-}
+//gmpi::ReturnCode DxDrawingFrameBase::getFocus()
+//{
+//	::SetFocus(getWindowHandle());
+//	return gmpi::ReturnCode::Ok;
+//}
+//
+//gmpi::ReturnCode DxDrawingFrameBase::releaseFocus()
+//{
+//	return gmpi::ReturnCode::Ok;
+//}
 
 // IDialogHost
 gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)

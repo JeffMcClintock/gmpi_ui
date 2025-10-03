@@ -129,8 +129,8 @@ struct DECLSPEC_NOVTABLE IInputHost : gmpi::api::IUnknown
 	virtual ReturnCode releaseCapture() = 0;
 
 	// keyboard, are these duplicating 'createKeyListener'?
-	virtual ReturnCode getFocus() = 0;
-	virtual ReturnCode releaseFocus() = 0;
+	//virtual ReturnCode getFocus() = 0;
+	//virtual ReturnCode releaseFocus() = 0;
 	
 	// {B5109952-2608-48B3-9685-788D36EBA7AF}
 	inline static const gmpi::api::Guid guid =

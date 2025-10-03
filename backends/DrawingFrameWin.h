@@ -308,8 +308,8 @@ namespace hosting
 		gmpi::ReturnCode getCapture(bool& returnValue) override;
 		gmpi::ReturnCode releaseCapture() override;
 
-		gmpi::ReturnCode getFocus() override;
-		gmpi::ReturnCode releaseFocus() override;
+		//gmpi::ReturnCode getFocus() override;
+		//gmpi::ReturnCode releaseFocus() override;
 
 		// IDialogHost
 		gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override;

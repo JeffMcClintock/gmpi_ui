@@ -562,15 +562,6 @@ public:
         return gmpi::ReturnCode::Ok;
     }
     
-    gmpi::ReturnCode getFocus() override
-    {
-        return gmpi::ReturnCode::NoSupport;
-    }
-    gmpi::ReturnCode releaseFocus() override
-    {
-        return gmpi::ReturnCode::NoSupport;
-    }
-    
     float getRasterizationScale() override
     {
         return [[view window] backingScaleFactor];

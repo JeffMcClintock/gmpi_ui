@@ -122,6 +122,17 @@ inline Rect unionRect(Rect a, Rect b)
 	};
 }
 
+inline Rect inflateRect(Rect a, float extra)
+{
+	return
+	{
+	a.left   - extra,
+	a.top    - extra,
+	a.right  + extra,
+	a.bottom + extra
+	};
+}
+
 inline bool empty(const RectL& a)
 {
 	return getWidth(a) <= 0 || getHeight(a) <= 0;
@@ -897,7 +908,13 @@ public:
 
 	void setColor(Color color)
 	{
-		native->setColor((gmpi::drawing::Color*) &color);
+		native->setColor(&color);
+	}
+
+	void setColor(uint32_t col8, float alpha = 1.0f)
+	{
+		const auto color = colorFromHex(col8, alpha);
+		native->setColor(&color);
 	}
 
 protected:
@@ -1299,6 +1316,11 @@ public:
 		native->createSolidColorBrush(&color, {}, AccessPtr::put(temp));
 		return temp;
 	}
+	SolidColorBrush createSolidColorBrush(uint32_t col8, float alpha = 1.0f)
+	{
+		const auto color = colorFromHex(col8, alpha);
+		return createSolidColorBrush(color);
+	}
 
 	// TODO gradientstop view? span?
 	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
@@ -1632,6 +1654,11 @@ public:
 	void clear(Color clearColor)
 	{
 		native->clear(&clearColor);
+	}
+	void clear(uint32_t col8, float alpha = 1.0f)
+	{
+		const auto color = colorFromHex(col8, alpha);
+		clear(color);
 	}
 
 	void beginDraw()

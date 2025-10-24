@@ -214,8 +214,8 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		const auto scale = 1.0 / getRasterizationScale();
 
 		sizeClientDips(
-			static_cast<float>(r.right - r.left) * scale,
-			static_cast<float>(r.bottom - r.top) * scale);
+			static_cast<float>((r.right - r.left) * scale),
+			static_cast<float>((r.bottom - r.top) * scale));
 	}
 
 	// starting Timer latest to avoid first event getting 'in-between' other init events.
@@ -1186,8 +1186,8 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 		const auto scale = 1.0 / getRasterizationScale();
 
 		sizeClientDips(
-			static_cast<float>(width) * scale,
-			static_cast<float>(height) * scale
+			static_cast<float>(width * scale),
+			static_cast<float>(height * scale)
 		);
 	}
 	else
@@ -1435,7 +1435,7 @@ ReturnCode PlatformKeyListener::showAsync(gmpi::api::IUnknown* callback)
 	int extended_style = 0;
 
 	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
-		style, 0, 0, bounds.right - bounds.left, bounds.bottom - bounds.top,
+		style, 0, 0, static_cast<int>(bounds.right - bounds.left), static_cast<int>(bounds.bottom - bounds.top),
 		parentWnd, NULL, dllHandle, NULL);
 
 	if (!windowHandle)

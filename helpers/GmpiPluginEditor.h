@@ -99,6 +99,9 @@ public:
 
 	ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const uint8_t* data) override
 	{
+		if (PinIndex < 0 || PinIndex >= pins.size())
+			return ReturnCode::Fail;
+
 		pins[PinIndex]->setFromHost(voice, {data, static_cast<size_t>(size)} );
 		return ReturnCode::Ok;
 	}
@@ -173,18 +176,6 @@ public:
 	// IDrawingClient
 	ReturnCode open(gmpi::api::IUnknown* host) override
 	{
-		// TOO LAte, measure and arrange need the drawing factory to size text correctly
-  //      gmpi::shared_ptr<gmpi::api::IUnknown> unknown(host);
-
-  //      host->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
-  //      inputHost = unknown.as<gmpi::api::IInputHost>();
-  //      editorHost = unknown.as<gmpi::api::IEditorHost>();
-  //      
-		//for (auto& p : pins)
-		//{
-		//	p.second->host = editorHost.get();
-		//}
-
 		return ReturnCode::Ok;
 	}
 

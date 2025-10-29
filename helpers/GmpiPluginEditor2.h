@@ -87,12 +87,12 @@ public:
 	}
 };
 
-class PluginEditorBase : public gmpi::api::IEditor, public gmpi::api::IEditor2_x
+class PluginEditorBase : public gmpi::api::IEditor, public gmpi::api::IEditor2
 {
 public:
 	inline static thread_local PluginEditorBase* constructingEditor = nullptr;
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
-	gmpi::shared_ptr<gmpi::api::IEditorHost2_x> editorHost2;
+	gmpi::shared_ptr<gmpi::api::IEditorHost2> editorHost2;
 	
 	std::map<int, PinBase*> pins;
 
@@ -124,7 +124,7 @@ public:
 	{
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
-		editorHost2 = unknown.as<gmpi::api::IEditorHost2_x>();
+		editorHost2 = unknown.as<gmpi::api::IEditorHost2>();
 
 		for (auto& p : pins)
 		{
@@ -176,7 +176,7 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);
-		GMPI_QUERYINTERFACE(gmpi::api::IEditor2_x);
+		GMPI_QUERYINTERFACE(gmpi::api::IEditor2);
 		return ReturnCode::NoSupport;
 	}
 	GMPI_REFCOUNT
@@ -296,7 +296,7 @@ public:
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);
-		GMPI_QUERYINTERFACE(gmpi::api::IEditor2_x);
+		GMPI_QUERYINTERFACE(gmpi::api::IEditor2);
 		GMPI_QUERYINTERFACE(gmpi::api::IInputClient);
 		GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
 		return ReturnCode::NoSupport;

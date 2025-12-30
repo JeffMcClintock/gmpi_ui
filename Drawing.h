@@ -36,6 +36,7 @@ using namespace gmpi::drawing;
 
 #include <vector>
 #include <array>
+#include <math.h>
 #include <unordered_map>
 #include <charconv>
 #include <string_view>

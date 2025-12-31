@@ -137,12 +137,19 @@ struct DECLSPEC_NOVTABLE IInputHost : gmpi::api::IUnknown
 	{ 0xb5109952, 0x2608, 0x48b3, { 0x96, 0x85, 0x78, 0x8d, 0x36, 0xeb, 0xa7, 0xaf } };
 };
 
+enum class FileDialogType : int32_t
+{
+	Open = 0,
+	Save = 1,
+};
+
 struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 {
 	virtual ReturnCode createTextEdit   (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) = 0;
 	virtual ReturnCode createPopupMenu  (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnPopupMenu) = 0;
 	// why here not IInputHost? because it is effectively an invisible text-edit
 	virtual ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) = 0;
+	// dialogType: 0 = open, 1 = save
 	virtual ReturnCode createFileDialog (int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 	virtual ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 
@@ -203,11 +210,20 @@ struct DECLSPEC_NOVTABLE IFileDialog : gmpi::api::IUnknown
 	virtual ReturnCode setInitialFilename(const char* text) = 0;
 	virtual ReturnCode setInitialDirectory(const char* text) = 0;
 	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
-// not async	virtual ReturnCode GetSelectedFilename(gmpi::api::IUnknown* returnString) = 0;
 
-// {5D44F94E-26DB-4A22-934B-FC07BFDD6096}
+	// {5D44F94E-26DB-4A22-934B-FC07BFDD6096}
 	inline static const gmpi::api::Guid guid =
 	{ 0x5d44f94e, 0x26db, 0x4a22, { 0x93, 0x4b, 0xfc, 0x7, 0xbf, 0xdd, 0x60, 0x96 } };
+};
+
+struct DECLSPEC_NOVTABLE IFileDialogCallback : gmpi::api::IUnknown
+{
+public:
+	virtual void onComplete(ReturnCode result, const char* selectedPath) = 0;
+
+	// {909C13FA-6059-4A9B-A62E-03407534DA05}
+	inline static const gmpi::api::Guid guid =
+	{ 0x909c13fa, 0x6059, 0x4a9b, { 0xa6, 0x2e, 0x3, 0x40, 0x75, 0x34, 0xda, 0x5 } };
 };
 
 struct DECLSPEC_NOVTABLE IStockDialog : gmpi::api::IUnknown
@@ -305,6 +321,22 @@ public:
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
 	GMPI_REFCOUNT
+};
+
+class FileDialogCallback : public gmpi::api::IFileDialogCallback
+{
+	std::function<void(gmpi::ReturnCode, const char*)> callback;
+
+public:
+	FileDialogCallback(std::function<void(gmpi::ReturnCode, const char*)> callback) : callback(callback) {}
+
+	void onComplete(gmpi::ReturnCode result, const char* selectedPath) override
+	{
+		callback(result, selectedPath);
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IFileDialogCallback);
+	GMPI_REFCOUNT;
 };
 
 // Accepts context-menu items via IContextItemSink, and populates a popup menu with them.

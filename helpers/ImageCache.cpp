@@ -81,7 +81,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 					constexpr float inv255 = 1.0f / 255.0f;
 					for (int i = 0; i < totalPixels; ++i)
 					{
-						int alpha = 255 - sourcePixels[0]; // Red.
+						uint8_t alpha = 255 - sourcePixels[0]; // Red.
 
 						// apply pre-multiplied alpha.
 						for (int j = 0; j < 3; ++j)
@@ -110,7 +110,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 				{
 					for (int i = 0; i < totalPixels; ++i)
 					{
-						int alpha = 255 - sourcePixels[0]; // Red.
+						uint8_t alpha = 255 - sourcePixels[0]; // Red.
 
 						// apply pre-multiplied alpha.
 						for (int j = 0; j < 3; ++j)
@@ -118,7 +118,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 							// This is correct on Mac and Win7 because they use (inferior) linear gamma.
 							// This is wrong on Win10
 							int r2 = destPixels[j] * alpha + 127;
-							destPixels[j] = (r2 + 1 + (r2 >> 8)) >> 8; // fast way to divide by 255
+							destPixels[j] = static_cast<uint8_t>((r2 + 1 + (r2 >> 8)) >> 8); // fast way to divide by 255
 						}
 
 						destPixels[3] = alpha;

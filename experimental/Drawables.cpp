@@ -108,6 +108,16 @@ namespace gmpi_forms
 #endif
 	}
 
+	void RoundedRectangle::Draw(GmpiDrawing::Graphics& g) const
+	{
+		style->Init(g);
+
+		GmpiDrawing::RoundedRect roundedRect(bounds, radiusX, radiusY);
+
+		g.FillRoundedRectangle(roundedRect, style->fill);
+		g.DrawRoundedRectangle(roundedRect, style->stroke);
+	}
+
 	void ScrollBar::Draw(GmpiDrawing::Graphics& g) const
 	{
 		style->Init(g);
@@ -190,18 +200,13 @@ namespace gmpi_forms
 			foreGround = g.CreateSolidColorBrush(foregroundColor);
 			textFormat = g.GetFactory().CreateTextFormat2(bodyHeight);
 			textFormat.SetWordWrapping(WordWrapping::NoWrap);
+			textFormat.SetTextAlignment(static_cast<TextAlignment>(textAlignment));
 
 			if(fixedLineSpacing)
 				textFormat.SetLineSpacing(fixedLineSpacing, 0.8f * fixedLineSpacing);
 		}
 
 		g.FillRectangle(t.bounds, backGround);
-		//	g.DrawRectangle(bounds, outlineBrush);
-
-		//auto textRect = bounds;
-		//textRect.left += 2;
-		//textRect.bottom = textRect.top + 16;
-
 		g.DrawTextU(t.text, textFormat, t.bounds, foreGround, DrawTextOptions::Clip);
 	}
 

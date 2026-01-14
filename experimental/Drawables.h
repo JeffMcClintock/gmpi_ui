@@ -376,6 +376,18 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 		GmpiDrawing::Rect ClipRect() const override { return bounds; }
 	};
 
+	struct RoundedRectangle : public Rectangle
+	{
+		float radiusX = 0;
+		float radiusY = 0;
+		RoundedRectangle(ShapeStyle* pstyle, GmpiDrawing::Rect pbounds, float pradiusX, float pradiusY)
+			: Rectangle(pstyle, pbounds)
+			, radiusX(pradiusX)
+			, radiusY(pradiusY)
+		{}
+		void Draw(GmpiDrawing::Graphics& g) const override;
+	};
+
 	struct ScrollBar : public Visual, public Child
 	{
 		GmpiDrawing::Rect bounds = {};
@@ -452,7 +464,8 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 
 		float bodyHeight = 13; // i.e. text size
 		float fixedLineSpacing = 0.0f; // 0.0f = auto.
-		
+		GmpiDrawing_API::MP1_TEXT_ALIGNMENT textAlignment = GmpiDrawing_API::MP1_TEXT_ALIGNMENT_LEADING; //left
+
 		TextBoxStyle(GmpiDrawing::Color foreground = GmpiDrawing::Color::White, GmpiDrawing::Color background = GmpiDrawing::Color(0x003E3E3Eu)) : foregroundColor(foreground), backgroundColor(background) {}
 		void setLineSpacing(float fixedLineSpacing);
 		void Draw(GmpiDrawing::Graphics& g, const TextBox& t) const;

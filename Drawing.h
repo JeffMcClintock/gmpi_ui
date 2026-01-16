@@ -1217,7 +1217,7 @@ public:
 	{
 		std::vector<const char*> fontFamilies_;
 
-		FontStack(const char* fontFamily = "")
+		FontStack(const char* fontFamily = "Arial")
 		{
 			fontFamilies_.push_back(fontFamily);
 		}

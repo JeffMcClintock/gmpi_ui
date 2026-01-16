@@ -215,6 +215,17 @@ struct Color
     float b{};
     float a{};
 
+    Color() = default;
+    constexpr Color(float pr, float pg, float pb, float pa = 1.0f)
+        : r(pr), g(pg), b(pb), a(pa) {
+    }
+
+    // Prevent implicit construction from integers. You probably meant to use colorFromHex()
+    Color(int) = delete;
+    Color(unsigned) = delete;
+    Color(int64_t) = delete;
+    Color(uint64_t) = delete;
+
     auto operator<=>(const Color&) const = default;
 };
 

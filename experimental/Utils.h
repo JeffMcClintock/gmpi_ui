@@ -17,11 +17,12 @@ namespace gmpi_sdk
 		return cosf(turn * conv);
 	}
 
-	inline auto Center(GmpiDrawing::Rect r) -> GmpiDrawing::Point
-	{
-		return { 0.5f * (r.left + r.right), 0.5f * (r.top + r.bottom) };
-	}
+	//inline auto Center(GmpiDrawing::Rect r) -> GmpiDrawing::Point
+	//{
+	//	return { 0.5f * (r.left + r.right), 0.5f * (r.top + r.bottom) };
+	//}
 
+#if 0
 
 // easy refcounting without macros
 template<class T>
@@ -97,4 +98,5 @@ public:
 		return refCount2_;
 	}
 };
+#endif
 }

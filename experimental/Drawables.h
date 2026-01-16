@@ -1,9 +1,8 @@
 #pragma once
-#include "mp_sdk_gui2.h"
-#include "Drawing.h"
-#include "notify.h"
-#include "Utils.h"
-#include "TimerManager.h"
+#include <map>
+#include <memory>
+#include "GmpiUiDrawing.h"
+#include "helpers/NativeUi.h"
 
 /*
 create an interface IObservableObject
@@ -173,9 +172,9 @@ struct IObservableObject
 	// The top-level object, that manages the views
 	struct IForm
 	{
-		virtual void invalidate(GmpiDrawing::Rect* r) = 0;
+		virtual void invalidate(gmpi::drawing::Rect* r) = 0;
 		virtual Environment* getEnvironment() = 0;
-		virtual gmpi_gui::IMpGraphicsHost* guiHost() const = 0;
+		virtual gmpi::api::IDrawingHost* guiHost() const = 0;
 		virtual void captureMouse(class Interactor*) = 0;
 	};
 
@@ -193,10 +192,10 @@ struct IObservableObject
 		Visual* parent = {};
 
 		virtual ~Visual() {}
-		virtual void Draw(GmpiDrawing::Graphics&) const {}
-		virtual void Invalidate(GmpiDrawing::Rect) const;
+		virtual void Draw(gmpi::drawing::Graphics&) const {}
+		virtual void Invalidate(gmpi::drawing::Rect) const;
 		// the cliprect is the minimum area that needs to be painted to display the visual
-		virtual GmpiDrawing::Rect ClipRect() const {return{};}
+		virtual gmpi::drawing::Rect ClipRect() const {return{};}
 
 		virtual Environment* getEnvironment()
 		{
@@ -206,12 +205,12 @@ struct IObservableObject
 
 	struct IPointerBoss
 	{
-		virtual void captureMouse(std::function<void(GmpiDrawing::Size)> callback) = 0;
+		virtual void captureMouse(std::function<void(gmpi::drawing::Size)> callback) = 0;
 	};
 
 	struct PointerEvent
 	{
-		GmpiDrawing::Point position;
+		gmpi::drawing::Point position;
 		int32_t flags;
 		IPointerBoss* boss;
 	};
@@ -223,15 +222,15 @@ struct IObservableObject
 		IForm* form = {};
 
 		virtual ~Interactor() {}
-		virtual bool HitTest(GmpiDrawing::Point) const = 0;
+		virtual bool HitTest(gmpi::drawing::Point) const = 0;
 		// we want to support overlapping mouse targets, where one wants scroll-wheels and the other wants clicks
 		virtual bool wantsClicks() const { return true; };
 
 		// return true if handled
 		virtual bool onPointerDown(PointerEvent*) const = 0;
-		virtual bool onPointerUp(GmpiDrawing::Point) const = 0;
-		virtual bool onPointerMove(GmpiDrawing::Point) const { return false; };
-		virtual bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const = 0;
+		virtual bool onPointerUp(gmpi::drawing::Point) const = 0;
+		virtual bool onPointerMove(gmpi::drawing::Point) const { return false; };
+		virtual bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point) const = 0;
 		virtual bool setHover(bool isMouseOverMe) const { return false; };
 	};
 
@@ -252,12 +251,12 @@ struct IObservableObject
 		// areas where the mouse produces some effect
 		std::vector<Interactor*> mouseTargets;
 		mutable Interactor* mouseOverObject = {};
-		mutable GmpiDrawing::Point mousePoint;
+		mutable gmpi::drawing::Point mousePoint;
 		mutable bool isHovered = {};
 
 	public:
-		GmpiDrawing::Matrix3x2 transform;			// for drawing
-		GmpiDrawing::Matrix3x2 reverseTransform;	// for mouse
+		gmpi::drawing::Matrix3x2 transform;			// for drawing
+		gmpi::drawing::Matrix3x2 reverseTransform;	// for mouse
 
 		void add(Child* child, const char* id = nullptr);
 		void remove(Child* first, Child* last);
@@ -265,31 +264,31 @@ struct IObservableObject
 		Child* get(int64_t index) { return children[index].child.get(); }
 void clear();
 
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		bool HitTest(GmpiDrawing::Point p) const override;
-		//bool onPointerDown(GmpiDrawing::Point) const override;
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		bool HitTest(gmpi::drawing::Point p) const override;
+		//bool onPointerDown(gmpi::drawing::Point point) const override;
 		bool onPointerDown(PointerEvent*) const override;
 
-		bool onPointerUp(GmpiDrawing::Point) const override;
-		bool onPointerMove(GmpiDrawing::Point) const override;
-		bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const override;
+		bool onPointerUp(gmpi::drawing::Point point) const override;
+		bool onPointerMove(gmpi::drawing::Point point) const override;
+		bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override;
 		bool setHover(bool isMouseOverMe) const override;
 
-		virtual void Invalidate(GmpiDrawing::Rect) const;
+		virtual void Invalidate(gmpi::drawing::Rect) const;
 	};
 
 
 	struct ScrollView : public ViewPort, public Child
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		State<float> scroll;
 		std::string path;
 
-		ScrollView(std::string path, GmpiDrawing::Rect pbounds);
+		ScrollView(std::string path, gmpi::drawing::Rect pbounds);
 		~ScrollView();
 		void onAddedToParent() override;
 		void UpdateTransform();
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
 	struct TopView : public ViewPort, public Child
@@ -323,80 +322,80 @@ void clear();
 			}
 		}
 
-		void Invalidate(GmpiDrawing::Rect) const override;
+		void Invalidate(gmpi::drawing::Rect) const override;
 
 		Environment* getEnvironment() override;
 	};
 
 	struct EditBox : public Visual, public Child
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		std::string& text;
 
-		EditBox(GmpiDrawing::Rect pbounds, std::string& ptext) : bounds(pbounds), text(ptext) {}
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		EditBox(gmpi::drawing::Rect pbounds, std::string& ptext) : bounds(pbounds), text(ptext) {}
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 #if 0
 
 	// should be just stackpanel
 	struct ListView : public Visual, public Interactor, public Child
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		std::vector< std::pair<std::string, std::string> >& data;
 
 		std::function<void(const std::pair<std::string, std::string>&)> onItemSelected;
 
-		ListView(GmpiDrawing::Rect pbounds, std::vector< std::pair<std::string, std::string> >& pdata) : bounds(pbounds), data(pdata) {}
+		ListView(gmpi::drawing::Rect pbounds, std::vector< std::pair<std::string, std::string> >& pdata) : bounds(pbounds), data(pdata) {}
 
 		// drawing
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 
 // interaction
-bool HitTest(GmpiDrawing::Point p) const override;
-bool onPointerDown(GmpiDrawing::Point) const override;
+bool HitTest(gmpi::drawing::Point p) const override;
+bool onPointerDown(gmpi::drawing::Point point) const override;
 
-bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const override {
+bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override {
 	return false;
 }
 	};
 #endif
 	struct Rectangle : public Visual, public Child
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		struct ShapeStyle* style = {};
 
 #ifdef _DEBUG
 		static inline int redrawCount = 0;
 #endif
 
-		Rectangle(ShapeStyle* pstyle, GmpiDrawing::Rect pbounds) : bounds(pbounds), style(pstyle){}
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		Rectangle(ShapeStyle* pstyle, gmpi::drawing::Rect pbounds) : bounds(pbounds), style(pstyle){}
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
 	struct RoundedRectangle : public Rectangle
 	{
 		float radiusX = 0;
 		float radiusY = 0;
-		RoundedRectangle(ShapeStyle* pstyle, GmpiDrawing::Rect pbounds, float pradiusX, float pradiusY)
+		RoundedRectangle(ShapeStyle* pstyle, gmpi::drawing::Rect pbounds, float pradiusX, float pradiusY)
 			: Rectangle(pstyle, pbounds)
 			, radiusX(pradiusX)
 			, radiusY(pradiusY)
 		{}
-		void Draw(GmpiDrawing::Graphics& g) const override;
+		void Draw(gmpi::drawing::Graphics& g) const override;
 	};
 
 	struct ScrollBar : public Visual, public Child
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		struct ShapeStyle* style = {};
 		State<float> position;
 		std::string path;
 		float scrollRangePixels = 1;
 
-		ScrollBar(const char* ppath, ShapeStyle* pstyle, GmpiDrawing::Rect pbounds, float pscrollRangePixels) :
+		ScrollBar(const char* ppath, ShapeStyle* pstyle, gmpi::drawing::Rect pbounds, float pscrollRangePixels) :
 			path(ppath)
 			, bounds(pbounds)
 			, style(pstyle)
@@ -408,98 +407,98 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 			getEnvironment()->reg(&position, path + "scroll");
 		}
 
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 	// A simple box containing text, where the text height is determined by the bounds height.
 
 	struct TextBox : public Visual, public Child
 	{
 		struct TextBoxStyle* style = {};
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		std::string text;
 
-		TextBox(TextBoxStyle* pstyle, GmpiDrawing::Rect pbounds, std::string txt) : style(pstyle), bounds(pbounds), text(txt){}
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		TextBox(TextBoxStyle* pstyle, gmpi::drawing::Rect pbounds, std::string txt) : style(pstyle), bounds(pbounds), text(txt){}
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
 	struct PathHolder : public Child
 	{
-		mutable GmpiDrawing::PathGeometry path;
-		std::function<void(GmpiDrawing::PathGeometry&)> InitPath;
+		mutable gmpi::drawing::PathGeometry path;
+		std::function<void(gmpi::drawing::PathGeometry&)> InitPath;
 	};
 
 	struct ShapeStyle : public Child
 	{
-		mutable GmpiDrawing::Brush fill;
-		mutable GmpiDrawing::Brush stroke;
+		mutable gmpi::drawing::Brush fill;
+		mutable gmpi::drawing::Brush stroke;
 
-		GmpiDrawing::Color strokeColor = GmpiDrawing::Color::White;
-		GmpiDrawing::Color fillColor = GmpiDrawing::Color::Black;
+		gmpi::drawing::Color strokeColor = gmpi::drawing::Colors::White;
+		gmpi::drawing::Color fillColor = gmpi::drawing::Colors::Black;
 
-		void Init(GmpiDrawing::Graphics& g) const;
-		void Draw(GmpiDrawing::Graphics& g, const struct Shape& t, const PathHolder& path) const;
+		void Init(gmpi::drawing::Graphics& g) const;
+		void Draw(gmpi::drawing::Graphics& g, const struct Shape& t, const PathHolder& path) const;
 	};
 
 	struct Shape : public Visual, public Child
 	{
 		ShapeStyle* style = {};
 		PathHolder* path = {};
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 
-		struct Shape(PathHolder* ppath, ShapeStyle* pstyle, GmpiDrawing::Rect pbounds/*, std::string txt*/) : style(pstyle), bounds(pbounds), path(ppath) {}
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		struct Shape(PathHolder* ppath, ShapeStyle* pstyle, gmpi::drawing::Rect pbounds/*, std::string txt*/) : style(pstyle), bounds(pbounds), path(ppath) {}
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
 	struct TextBoxStyle : public Child
 	{
-		mutable GmpiDrawing::Brush foreGround;
-		mutable GmpiDrawing::Brush backGround;
-		mutable GmpiDrawing::TextFormat textFormat;
+		mutable gmpi::drawing::Brush foreGround;
+		mutable gmpi::drawing::Brush backGround;
+		mutable gmpi::drawing::TextFormat textFormat;
 
-		GmpiDrawing::Color foregroundColor;
-		GmpiDrawing::Color backgroundColor;
+		gmpi::drawing::Color foregroundColor;
+		gmpi::drawing::Color backgroundColor;
 
 		float bodyHeight = 13; // i.e. text size
 		float fixedLineSpacing = 0.0f; // 0.0f = auto.
-		GmpiDrawing_API::MP1_TEXT_ALIGNMENT textAlignment = GmpiDrawing_API::MP1_TEXT_ALIGNMENT_LEADING; //left
+		int textAlignment = (int) gmpi::drawing::TextAlignment::Leading; //left
 
-		TextBoxStyle(GmpiDrawing::Color foreground = GmpiDrawing::Color::White, GmpiDrawing::Color background = GmpiDrawing::Color(0x003E3E3Eu)) : foregroundColor(foreground), backgroundColor(background) {}
+		TextBoxStyle(gmpi::drawing::Color foreground = gmpi::drawing::Colors::White, gmpi::drawing::Color background = gmpi::drawing::colorFromHex(0x003E3E3Eu)) : foregroundColor(foreground), backgroundColor(background) {}
 		void setLineSpacing(float fixedLineSpacing);
-		void Draw(GmpiDrawing::Graphics& g, const TextBox& t) const;
+		void Draw(gmpi::drawing::Graphics& g, const TextBox& t) const;
 	};
 
 	struct Circle : public Visual
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 
-		Circle(GmpiDrawing::Rect pbounds) : bounds(pbounds) {}
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		Circle(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
 	struct Knob : public Visual
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 		float& normalized;
 
-		Knob(GmpiDrawing::Rect pbounds, float& pnormalized) : bounds(pbounds), normalized(pnormalized){}
-		void Draw(GmpiDrawing::Graphics& g) const override;
-		GmpiDrawing::Rect ClipRect() const override { return bounds; }
+		Knob(gmpi::drawing::Rect pbounds, float& pnormalized) : bounds(pbounds), normalized(pnormalized){}
+		void Draw(gmpi::drawing::Graphics& g) const override;
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
 
 	struct RectangleMouseTarget : public Interactor, public Child
 	{
-		GmpiDrawing::Rect bounds = {};
+		gmpi::drawing::Rect bounds = {};
 #ifdef _DEBUG
 		std::string debugName;
 #endif
-		RectangleMouseTarget(GmpiDrawing::Rect pbounds) : bounds(pbounds) {}
+		RectangleMouseTarget(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
 
-		bool HitTest(GmpiDrawing::Point p) const override;
+		bool HitTest(gmpi::drawing::Point p) const override;
 		bool wantsClicks() const override
 		{
 			return onPointerDown_callback || onPointerUp_callback || onPointerMove_callback;
@@ -513,7 +512,7 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 			}
 			return false;
 		}
-		bool onPointerUp(GmpiDrawing::Point p) const override
+		bool onPointerUp(gmpi::drawing::Point p) const override
 		{
 			if (onPointerUp_callback)
 			{
@@ -522,7 +521,7 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 			}
 			return false;
 		}
-		bool onPointerMove(GmpiDrawing::Point p) const override
+		bool onPointerMove(gmpi::drawing::Point p) const override
 		{
 			if (onPointerMove_callback)
 			{
@@ -531,7 +530,7 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 			}
 			return false;
 		}
-		bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point p) const override
+		bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point p) const override
 		{
 			if (onMouseWheel_callback)
 			{
@@ -555,9 +554,9 @@ bool onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point) const overri
 
 		std::function<void(bool)> onHover_callback;
 		std::function<void(PointerEvent*)> onPointerDown_callback;
-		std::function<void(GmpiDrawing::Point)> onPointerUp_callback;
-		std::function<void(GmpiDrawing::Point)> onPointerMove_callback;
-		std::function<void(int32_t flags, int32_t delta, GmpiDrawing::Point)> onMouseWheel_callback;
+		std::function<void(gmpi::drawing::Point)> onPointerUp_callback;
+		std::function<void(gmpi::drawing::Point)> onPointerMove_callback;
+		std::function<void(int32_t flags, int32_t delta, gmpi::drawing::Point)> onMouseWheel_callback;
 	};
 }
 

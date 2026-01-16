@@ -207,7 +207,7 @@ public:
 	{
 		return ReturnCode::Unhandled;
 	}
-	gmpi::ReturnCode OnKeyPress(wchar_t c) override
+	gmpi::ReturnCode onKeyPress(wchar_t c) override
 	{
 		return ReturnCode::Unhandled;
 	}

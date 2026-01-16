@@ -12,24 +12,21 @@ void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags
 	{
 		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
 
+		// create menu popup
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
 		createPopupMenu(&rect, unknown.put());
+		contextMenu = unknown.as<gmpi::api::IPopupMenu>();
 
-		auto contextMenu = unknown.as<gmpi::api::IPopupMenu>();
-
+		// populate menu
 		gmpi::sdk::ContextItemsSinkAdaptor sink(contextMenu.get());
-
 		r = inputClient->populateContextMenu(point, &sink);
 
+		// show menu
 		contextMenu->showAsync(
 			new gmpi::sdk::PopupMenuCallback(
-				[this](gmpi::ReturnCode ret, int32_t commandId) -> gmpi::ReturnCode
+				[this](int32_t selectedId)
 				{
-					if (gmpi::ReturnCode::Ok == ret)
-					{
-						ret = inputClient->onContextMenu(commandId);
-					}
-					return ret;
+					inputClient->onContextMenu(selectedId);
 				}
 			)
 		);

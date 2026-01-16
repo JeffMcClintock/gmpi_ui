@@ -326,7 +326,6 @@ namespace hosting
 			GMPI_QUERYINTERFACE(IDrawingHost);
 			GMPI_QUERYINTERFACE(IInputHost);
 			GMPI_QUERYINTERFACE(IDialogHost);
-			GMPI_QUERYINTERFACE(IInputHost);
 
 			if (parameterHost)
 			{

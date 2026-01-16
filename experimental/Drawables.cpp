@@ -1,11 +1,10 @@
 #include "Drawables.h"
 #include "Utils.h"
-#include "modules/shared/unicode_conversion.h"
-#include "ModuleBrowser.h"
+//#include "modules/shared/unicode_conversion.h"
+//#include "ModuleBrowser.h"
 
 using namespace gmpi;
-using namespace GmpiDrawing;
-using namespace GmpiDrawing_API;
+using namespace gmpi::drawing;
 
 namespace gmpi_forms
 {
@@ -20,7 +19,7 @@ namespace gmpi_forms
 			new RectangleMouseTarget(bounds)
 		);
 #if 0
-		environment.child.mouseTargets.back()->onPointerDown = [&environment](GmpiDrawing::Point p)
+		environment.child.mouseTargets.back()->onPointerDown = [&environment](gmpi::drawing::Point p)
 		{
 			_RPT0(0, "Text Edit Clicked\n");
 			environment.setKeyboardHandler(
@@ -46,16 +45,16 @@ namespace gmpi_forms
 	}
 #endif
 
-	void EditBox::Draw(GmpiDrawing::Graphics& g /*, Style style */) const
+	void EditBox::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
 	{
-		auto fillBrush = g.CreateSolidColorBrush(Color::White);
-		auto outlineBrush = g.CreateSolidColorBrush(Color::Black);
-		auto textFormat = g.GetFactory().CreateTextFormat2();
+		auto fillBrush = g.createSolidColorBrush(Colors::White);
+		auto outlineBrush = g.createSolidColorBrush(Colors::Black);
+		auto textFormat = g.getFactory().createTextFormat();
 
-		g.FillRectangle(bounds, fillBrush);
-		g.DrawRectangle(bounds, outlineBrush);
+		g.fillRectangle(bounds, fillBrush);
+		g.drawRectangle(bounds, outlineBrush);
 
-		g.DrawTextU(text, textFormat, bounds, outlineBrush);
+		g.drawTextU(text, textFormat, bounds, outlineBrush);
 	}
 
 #if 0
@@ -70,10 +69,10 @@ namespace gmpi_forms
 			std::make_unique<RectangleMouseTarget>(bounds)
 		);
 
-		environment.mouseTargets.back()->onPointerDown = [&environment](GmpiDrawing::Point p)
+		environment.mouseTargets.back()->onPointerDown = [&environment](gmpi::drawing::Point p)
 		{
 			environment.capturePointer(
-				[&environment](GmpiDrawing::Size delta)
+				[&environment](gmpi::drawing::Size delta)
 				{
 					environment.state.knbNormalized = std::clamp(environment.state.knbNormalized - delta.height * 0.01f, 0.0f, 1.0f);
 					environment.redraw();
@@ -86,12 +85,12 @@ namespace gmpi_forms
 	}
 #endif
 
-	void Rectangle::Draw(GmpiDrawing::Graphics& g) const
+	void Rectangle::Draw(gmpi::drawing::Graphics& g) const
 	{
 		style->Init(g);
 
-		g.FillRectangle(bounds, style->fill);
-		g.DrawRectangle(bounds, style->stroke);
+		g.fillRectangle(bounds, style->fill);
+		g.drawRectangle(bounds, style->stroke);
 
 		// Color the rectangle a little different on each redraw to get a visual indication of what is being invalidated.
 #if 0 //def _DEBUG
@@ -102,46 +101,46 @@ namespace gmpi_forms
 			0x0000ff,
 			0xff00ff,
 		};
-		auto brush = g.CreateSolidColorBrush(Color(colors[redrawCount & 3], 0.1f));
-		g.FillRectangle(bounds, brush);
+		auto brush = g.createSolidColorBrush(colorFromHex(0xcolors[redrawCount & 3], 0.1f));
+		g.fillRectangle(bounds, brush);
 		++redrawCount;
 #endif
 	}
 
-	void RoundedRectangle::Draw(GmpiDrawing::Graphics& g) const
+	void RoundedRectangle::Draw(gmpi::drawing::Graphics& g) const
 	{
 		style->Init(g);
 
-		GmpiDrawing::RoundedRect roundedRect(bounds, radiusX, radiusY);
+		gmpi::drawing::RoundedRect roundedRect(bounds, radiusX, radiusY);
 
-		g.FillRoundedRectangle(roundedRect, style->fill);
-		g.DrawRoundedRectangle(roundedRect, style->stroke);
+		g.fillRoundedRectangle(roundedRect, style->fill);
+		g.drawRoundedRectangle(roundedRect, style->stroke);
 	}
 
-	void ScrollBar::Draw(GmpiDrawing::Graphics& g) const
+	void ScrollBar::Draw(gmpi::drawing::Graphics& g) const
 	{
 		style->Init(g);
 
 		const float normalized = position.get() / scrollRangePixels;
 
-		// total height of content is the visible area (bounds.getHeight()) plus the scroll range (scrollRangePixels)
-		const float handleHeight = bounds.getHeight() * bounds.getHeight() / (bounds.getHeight() - scrollRangePixels);
+		// total height of content is the visible area (getHeight(bounds)) plus the scroll range (scrollRangePixels)
+		const float handleHeight = getHeight(bounds) * getHeight(bounds) / (getHeight(bounds) - scrollRangePixels);
 		auto scrollRect = bounds;
-		scrollRect.top = (scrollRect.getHeight() - handleHeight) * normalized;
+		scrollRect.top = (getHeight(scrollRect) - handleHeight) * normalized;
 		scrollRect.bottom = scrollRect.top + handleHeight;
-		g.FillRectangle(scrollRect, style->fill);
+		g.fillRectangle(scrollRect, style->fill);
 	}
 	
 #if 0
-	void ListView::Draw(GmpiDrawing::Graphics& g /*, Style style */) const
+	void ListView::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
 	{
-		auto fillBrush = g.CreateSolidColorBrush(Color(0x003E3E3Eu));
-		auto outlineBrush = g.CreateSolidColorBrush(Color::White);
-		auto textFormat = g.GetFactory().CreateTextFormat2();
+		auto fillBrush = g.createSolidColorBrush(colorFromHex(0x003E3E3Eu));
+		auto outlineBrush = g.createSolidColorBrush(Colors::White);
+		auto textFormat = g.getFactory().createTextFormat();
 		textFormat.SetWordWrapping(WordWrapping::NoWrap);
 
-		g.FillRectangle(bounds, fillBrush);
-		//	g.DrawRectangle(bounds, outlineBrush);
+		g.fillRectangle(bounds, fillBrush);
+		//	g.drawRectangle(bounds, outlineBrush);
 
 		auto textRect = bounds;
 		textRect.left += 2;
@@ -149,19 +148,19 @@ namespace gmpi_forms
 
 		for (auto& text : data)
 		{
-			g.DrawTextU(text.second.c_str(), textFormat, textRect, outlineBrush, DrawTextOptions::Clip);
+			g.drawTextU(text.second.c_str(), textFormat, textRect, outlineBrush, DrawTextOptions::Clip);
 
 			textRect.top += 16;
 			textRect.bottom += 16;
 		}
 	}
-	bool ListView::HitTest(GmpiDrawing::Point p) const
+	bool ListView::HitTest(gmpi::drawing::Point p) const
 	{
 		return bounds.ContainsPoint(p);
 	}
 #if 1
 
-	bool ListView::onPointerDown(GmpiDrawing::Point p) const
+	bool ListView::onPointerDown(gmpi::drawing::Point p) const
 	{
 		if (onItemSelected)
 		{
@@ -178,12 +177,12 @@ namespace gmpi_forms
 #endif
 #endif
 
-	void ShapeStyle::Init(GmpiDrawing::Graphics& g) const
+	void ShapeStyle::Init(gmpi::drawing::Graphics& g) const
 	{
-		if (!fill.Get())
+		if (!fill.getBrush())
 		{
-			fill = g.CreateSolidColorBrush(fillColor);
-			stroke = g.CreateSolidColorBrush(strokeColor);
+			fill = g.createSolidColorBrush(fillColor);
+			stroke = g.createSolidColorBrush(strokeColor);
 		}
 	}
 
@@ -192,85 +191,85 @@ namespace gmpi_forms
 		fixedLineSpacing = pfixedLineSpacing;
 	}
 	
-	void TextBoxStyle::Draw(GmpiDrawing::Graphics& g, const TextBox& t) const
+	void TextBoxStyle::Draw(gmpi::drawing::Graphics& g, const TextBox& t) const
 	{
-		if (!foreGround.Get())
+		if (!foreGround.getBrush())
 		{
-			backGround = g.CreateSolidColorBrush(backgroundColor);
-			foreGround = g.CreateSolidColorBrush(foregroundColor);
-			textFormat = g.GetFactory().CreateTextFormat2(bodyHeight);
-			textFormat.SetWordWrapping(WordWrapping::NoWrap);
-			textFormat.SetTextAlignment(static_cast<TextAlignment>(textAlignment));
+			backGround = g.createSolidColorBrush(backgroundColor);
+			foreGround = g.createSolidColorBrush(foregroundColor);
+			textFormat = g.getFactory().createTextFormat(bodyHeight);
+			textFormat.setWordWrapping(WordWrapping::NoWrap);
+			textFormat.setTextAlignment(static_cast<TextAlignment>(textAlignment));
 
 			if(fixedLineSpacing)
-				textFormat.SetLineSpacing(fixedLineSpacing, 0.8f * fixedLineSpacing);
+				textFormat.setLineSpacing(fixedLineSpacing, 0.8f * fixedLineSpacing);
 		}
 
-		g.FillRectangle(t.bounds, backGround);
-		g.DrawTextU(t.text, textFormat, t.bounds, foreGround, DrawTextOptions::Clip);
+		g.fillRectangle(t.bounds, backGround);
+		g.drawTextU(t.text, textFormat, t.bounds, foreGround, DrawTextOptions::Clip);
 	}
 
-	void TextBox::Draw(GmpiDrawing::Graphics& g) const
+	void TextBox::Draw(gmpi::drawing::Graphics& g) const
 	{
 		style->Draw(g, *this);
 	}
 
-	void Shape::Draw(GmpiDrawing::Graphics& g) const
+	void Shape::Draw(gmpi::drawing::Graphics& g) const
 	{
-		const auto originalTransform = g.GetTransform();
-		const auto adjustedTransform = originalTransform * Matrix3x2::Translation({ bounds.left, bounds.top });
-		g.SetTransform(adjustedTransform);
+		const auto originalTransform = g.getTransform();
+		const auto adjustedTransform = originalTransform * makeTranslation({ bounds.left, bounds.top });
+		g.setTransform(adjustedTransform);
 
 		style->Draw(g, *this, *path);
 
-		g.SetTransform(originalTransform);
+		g.setTransform(originalTransform);
 	}
 
-	void ShapeStyle::Draw(GmpiDrawing::Graphics& g, const Shape& t, const PathHolder& path) const
+	void ShapeStyle::Draw(gmpi::drawing::Graphics& g, const Shape& t, const PathHolder& path) const
 	{
 		Init(g);
 		if (!path.path)
 		{
-			path.path = g.GetFactory().CreatePathGeometry();
+			path.path = g.getFactory().createPathGeometry();
 			path.InitPath(path.path);
 		}
 		if (path.path)
 		{
-			g.FillGeometry(path.path, fill);
-			g.DrawGeometry(path.path, stroke, 1.f);
+			g.fillGeometry(path.path, fill);
+			g.drawGeometry(path.path, stroke, 1.f);
 		}
 	}
 
-	void Circle::Draw(GmpiDrawing::Graphics& g /*, Style style */) const
+	void Circle::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
 	{
-		auto fillBrush = g.CreateSolidColorBrush(Color::White);
-		auto outlineBrush = g.CreateSolidColorBrush(Color::Black);
+		auto fillBrush = g.createSolidColorBrush(Colors::White);
+		auto outlineBrush = g.createSolidColorBrush(Colors::Black);
 
-		g.FillCircle(gmpi_sdk::Center(bounds), bounds.getWidth() * 0.5f, fillBrush);
-		g.DrawCircle(gmpi_sdk::Center(bounds), bounds.getWidth() * 0.5f, outlineBrush);
+		g.fillCircle(getCenter(bounds), getWidth(bounds) * 0.5f, fillBrush);
+		g.drawCircle(getCenter(bounds), getWidth(bounds) * 0.5f, outlineBrush);
 	}
 
-	void Knob::Draw(GmpiDrawing::Graphics& g /*, Style style */) const
+	void Knob::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
 	{
-		auto fillBrush = g.CreateSolidColorBrush(Color::White);
-		auto outlineBrush = g.CreateSolidColorBrush(Color::Black);
+		auto fillBrush = g.createSolidColorBrush(Colors::White);
+		auto outlineBrush = g.createSolidColorBrush(Colors::Black);
 
-		const auto centerPoint = gmpi_sdk::Center(bounds);
+		const auto centerPoint = getCenter(bounds);
 
-		g.FillCircle(centerPoint, bounds.getWidth() * 0.5f, fillBrush);
-		g.DrawCircle(centerPoint, bounds.getWidth() * 0.5f, outlineBrush);
+		g.fillCircle(centerPoint, getWidth(bounds) * 0.5f, fillBrush);
+		g.drawCircle(centerPoint, getWidth(bounds) * 0.5f, outlineBrush);
 
 		// 0.0 12 o'clock
 		const auto turn = -0.3f + 0.6f * normalized;
-		const auto radius = bounds.getWidth() * 0.3f;
+		const auto radius = getWidth(bounds) * 0.3f;
 		Point tickPoint(centerPoint.x + radius * gmpi_sdk::tsin(turn), centerPoint.y - radius * gmpi_sdk::tcos(turn));
 
-		g.FillCircle(tickPoint, bounds.getWidth() * 0.1f, outlineBrush);
+		g.fillCircle(tickPoint, getWidth(bounds) * 0.1f, outlineBrush);
 	}
 
-	bool RectangleMouseTarget::HitTest(GmpiDrawing::Point p) const
+	bool RectangleMouseTarget::HitTest(gmpi::drawing::Point p) const
 	{
-		return bounds.ContainsPoint(p);
+		return pointInRect(p, bounds);
 	}
 
 	void RectangleMouseTarget::captureMouse(bool capture)
@@ -321,7 +320,7 @@ namespace gmpi_forms
 
 		it2++;
 
-		GmpiDrawing::Rect invalidRect{}; // union of all removed children. (faster than many individual calls to invalidate)
+		gmpi::drawing::Rect invalidRect{}; // union of all removed children. (faster than many individual calls to invalidate)
 		
 		for (auto it = it1; it < it2; ++it)
 		{
@@ -329,7 +328,10 @@ namespace gmpi_forms
 
 			if (auto itx = std::find(visuals.begin(), visuals.end(), dynamic_cast<Visual*>(obj)); itx != visuals.end())
 			{
-				invalidRect = UnionIgnoringNull(invalidRect, (*itx)->ClipRect());
+				if(isNull(invalidRect))
+					invalidRect = (*itx)->ClipRect();
+				else
+					invalidRect = unionRect(invalidRect, (*itx)->ClipRect());
 				
 				visuals.erase(itx);
 			}
@@ -357,29 +359,29 @@ namespace gmpi_forms
 		children.clear();
 	}
 
-	void ViewPort::Draw(GmpiDrawing::Graphics& g) const
+	void ViewPort::Draw(gmpi::drawing::Graphics& g) const
 	{
-		const auto originalTransform = g.GetTransform();
+		const auto originalTransform = g.getTransform();
 		const auto adjustedTransform = transform * originalTransform;
-		g.SetTransform(adjustedTransform);
+		g.setTransform(adjustedTransform);
 
-		const auto clipRect = g.GetAxisAlignedClip();
+		const auto clipRect = g.getAxisAlignedClip();
 
 		for (auto& v : visuals)
 		{
 			const auto childRect = v->ClipRect();
-			if (isOverlapped(clipRect, childRect))
+			if (!empty(intersectRect(clipRect, childRect)))
 			{
 				v->Draw(g);
 			}
 		}
 
-		g.SetTransform(originalTransform);
+		g.setTransform(originalTransform);
 	}
 
-	bool ViewPort::HitTest(GmpiDrawing::Point p) const
+	bool ViewPort::HitTest(gmpi::drawing::Point p) const
 	{
-		const auto point = reverseTransform.TransformPoint(p);
+		const auto point = transformPoint(reverseTransform, p);
 
 		for (auto& v : mouseTargets)
 		{
@@ -394,11 +396,11 @@ namespace gmpi_forms
 	}
 
 	bool ViewPort::onPointerDown(PointerEvent* e) const
-//	bool ViewPort::onPointerDown(GmpiDrawing::Point p) const
+//	bool ViewPort::onPointerDown(gmpi::drawing::Point p) const
 	{
 		auto e2 = *e;
-		e2.position = reverseTransform.TransformPoint(e->position);
-//		const auto point = reverseTransform.TransformPoint(e->position);
+		e2.position = transformPoint(reverseTransform, e->position);
+//		const auto point = transformPoint(reverseTransform, e->position);
 
 		// iterate mouseTargets in reverse (to respect Z-order)
 		for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
@@ -413,9 +415,9 @@ namespace gmpi_forms
 		return false;
 	}
 
-	bool ViewPort::onPointerUp(GmpiDrawing::Point p) const
+	bool ViewPort::onPointerUp(gmpi::drawing::Point p) const
 	{
-		const auto point = reverseTransform.TransformPoint(p);
+		const auto point = transformPoint(reverseTransform, p);
 
 		// iterate mouseTargets in reverse (to respect Z-order)
 		for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
@@ -430,11 +432,11 @@ namespace gmpi_forms
 		return false;
 	}
 
-	bool ViewPort::onPointerMove(GmpiDrawing::Point p) const
+	bool ViewPort::onPointerMove(gmpi::drawing::Point p) const
 	{
 //		_RPTN(0, "---------------ViewPort::onPointerMove( %f, %f)\n", p.x, p.y);
 
-		mousePoint = reverseTransform.TransformPoint(p);
+		mousePoint = transformPoint(reverseTransform, p);
 		const auto prevMouseOverObject = mouseOverObject;
 
 		mouseOverObject = {};
@@ -492,7 +494,7 @@ namespace gmpi_forms
 		return true;
 	}
 
-	bool ViewPort::onMouseWheel(int32_t flags, int32_t delta, GmpiDrawing::Point point) const
+	bool ViewPort::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
 	{
 		for (auto& t : mouseTargets)
 		{
@@ -507,7 +509,7 @@ namespace gmpi_forms
 
 
 #if 0
-	bool ViewPort::onHover(GmpiDrawing::Point point, bool isHovered) const
+	bool ViewPort::onHover(gmpi::drawing::Point point, bool isHovered) const
 	{
 		for (auto& t : mouseTargets)
 		{
@@ -521,21 +523,21 @@ namespace gmpi_forms
 	}
 #endif
 
-	void Visual::Invalidate(GmpiDrawing::Rect r) const
+	void Visual::Invalidate(gmpi::drawing::Rect r) const
 	{
 		assert(parent);
 		parent->Invalidate(r);
 	}
 
-	void ViewPort::Invalidate(GmpiDrawing::Rect r) const
+	void ViewPort::Invalidate(gmpi::drawing::Rect r) const
 	{
 		assert(parent);
 
-		auto r2 = reverseTransform.TransformRect(r);
+		auto r2 = transformRect(reverseTransform, r);
 		parent->Invalidate(r2);
 	}
 
-	void TopView::Invalidate(GmpiDrawing::Rect r) const
+	void TopView::Invalidate(gmpi::drawing::Rect r) const
 	{
 		form->invalidate(&r);
 //		assert(form);
@@ -543,7 +545,7 @@ namespace gmpi_forms
 //		form->redraw(); // TODO, use rect
 	}
 
-	ScrollView::ScrollView(std::string ppath, GmpiDrawing::Rect pbounds)
+	ScrollView::ScrollView(std::string ppath, gmpi::drawing::Rect pbounds)
 		: bounds(pbounds),
 		path(ppath)
 	{
@@ -573,10 +575,8 @@ namespace gmpi_forms
 
 	void ScrollView::UpdateTransform()
 	{
-		transform = Matrix3x2::Translation({ bounds.left, bounds.top + scroll.get() });
-
-		reverseTransform = transform;
-		reverseTransform.Invert(); // should be functional reverseTransform = Invert(transform);
+		transform = makeTranslation({ bounds.left, bounds.top + scroll.get() });
+		reverseTransform = invert(transform);
 	}
 
 	Environment* TopView::getEnvironment()

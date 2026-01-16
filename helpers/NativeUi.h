@@ -1,10 +1,8 @@
 #pragma once
-//
-//  GraphicsRedrawClient.h
-//  Switches
-//
-//  Created by Jeff McClintock on 4/10/22.
-//
+
+/*
+#include "NativeUi.h"
+*/
 
 #ifndef GraphicsRedrawClient2_h
 #define GraphicsRedrawClient2_h
@@ -47,7 +45,7 @@ struct IDrawingClient : gmpi::api::IUnknown
 
 	virtual ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) = 0;
 
-	virtual ReturnCode getClipArea(drawing::Rect* returnRect) = 0;
+	virtual ReturnCode getClipArea(gmpi::drawing::Rect* returnRect) = 0;
 
 	// {E922D16F-447B-4E82-B0B1-FD995CA4210E}
 	inline static const gmpi::api::Guid guid =
@@ -89,7 +87,7 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	virtual ReturnCode onContextMenu(int32_t idx) = 0;
 
 	// keyboard events.
-	virtual ReturnCode OnKeyPress(wchar_t c) = 0;
+	virtual ReturnCode onKeyPress(wchar_t c) = 0;
 
 	// {D2D020D1-BCEE-49F9-A173-97BC6460A727}
 	inline static const gmpi::api::Guid guid =
@@ -145,7 +143,9 @@ enum class FileDialogType : int32_t
 
 struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 {
+	// returns an ITextEdit
 	virtual ReturnCode createTextEdit   (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) = 0;
+	// returns an IPopupMenu
 	virtual ReturnCode createPopupMenu  (const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnPopupMenu) = 0;
 	// why here not IInputHost? because it is effectively an invisible text-edit
 	virtual ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) = 0;
@@ -292,31 +292,33 @@ namespace sdk
 {
 struct TextEditCallback : public gmpi::api::ITextEditCallback
 {
-	std::function<void(ReturnCode)> callback = [](ReturnCode) {};
+	std::function<void(const std::string&)> onSuccess;
 	std::string text;
 
+	TextEditCallback(std::function<void(const std::string&)> callback = [](const std::string&) {}) : onSuccess(callback) {}
 	void onChanged(const char* ptext) override
 	{
 		text = ptext;
 	}
-	void onComplete(ReturnCode result) override
+	void onComplete(gmpi::ReturnCode result) override
 	{
-		callback(result);
+		if (result == gmpi::ReturnCode::Ok)
+			onSuccess(text);
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::ITextEditCallback);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
-class PopupMenuCallback : public gmpi::api::IPopupMenuCallback
+struct PopupMenuCallback : public gmpi::api::IPopupMenuCallback
 {
-	std::function<void(gmpi::ReturnCode, int32_t)> callback;
-public:
-	PopupMenuCallback(std::function<void(gmpi::ReturnCode, int32_t)> callback) : callback(callback) {}
+	std::function<void(int32_t selectedId)> onSuccess;
 
+	PopupMenuCallback(std::function<void(int32_t)> callback = [](int32_t) {}) : onSuccess(callback) {}
 	void onComplete(gmpi::ReturnCode result, int32_t selectedID) override
 	{
-		callback(result, selectedID);
+		if (result == gmpi::ReturnCode::Ok)
+			onSuccess(selectedID);
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
@@ -325,14 +327,18 @@ public:
 
 class FileDialogCallback : public gmpi::api::IFileDialogCallback
 {
-	std::function<void(gmpi::ReturnCode, const char*)> callback;
+	std::function<void(const std::string&)> onSuccess;
 
 public:
-	FileDialogCallback(std::function<void(gmpi::ReturnCode, const char*)> callback) : callback(callback) {}
+	FileDialogCallback(std::function<void(const std::string&)> callback = [](const std::string&) {}) : onSuccess(callback) {}
 
 	void onComplete(gmpi::ReturnCode result, const char* selectedPath) override
 	{
-		callback(result, selectedPath);
+		if (result == gmpi::ReturnCode::Ok)
+		{
+			std::string pathStr(selectedPath);
+			onSuccess(pathStr);
+		}
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IFileDialogCallback);

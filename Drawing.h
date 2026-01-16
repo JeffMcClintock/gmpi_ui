@@ -79,6 +79,11 @@ inline SizeL getSize(RectL r)
 	return { getWidth(r), getHeight(r) };
 }
 
+inline auto getCenter(Rect r) -> Point
+{
+	return { 0.5f * (r.left + r.right), 0.5f * (r.top + r.bottom) };
+}
+
 inline RectL intersectRect(RectL a, RectL b)
 {
 	return
@@ -142,6 +147,15 @@ inline bool empty(const RectL& a)
 inline bool empty(const Rect& a)
 {
 	return getWidth(a) <= 0.0f || getHeight(a) <= 0.0f;
+}
+
+inline bool isNull(const RectL& a)
+{
+	return a == RectL{};
+}
+inline bool isNull(const Rect& a)
+{
+	return a == Rect{};
 }
 
 inline Point transformPoint(const Matrix3x2& transform, Point point)
@@ -641,6 +655,8 @@ inline static Color White = colorFromHex(0xFFFFFFu);
 inline static Color WhiteSmoke = colorFromHex(0xF5F5F5u);
 inline static Color Yellow = colorFromHex(0xFFFF00u);
 inline static Color YellowGreen = colorFromHex(0x9ACD32u);
+inline static Color TransparentBlack = colorFromHex(0x000000u, 0.0f);
+inline static Color TransparentWhite = colorFromHex(0xffffffu, 0.0f);
 };
 
 // access the gmpi::shared_ptr inside a wrapper class like PathGeometry.
@@ -868,13 +884,46 @@ public:
 	}
 };
 
-class Brush
+struct IHasBrush
 {
-public:
-	virtual gmpi::drawing::api::IBrush* getDerived() = 0;
+	virtual gmpi::drawing::api::IBrush* getBrush() = 0;
 };
 
-class BitmapBrush : public Brush
+class Brush : public IHasBrush
+{
+	gmpi::shared_ptr<api::IBrush> native;
+
+public:
+	Brush() = default;
+
+	gmpi::drawing::api::IBrush* getBrush() override
+	{
+		return native.get();
+	}
+
+	// Conversion assignment from any derived brush type
+	template<typename T>
+	Brush& operator=(const T& derived)
+	{
+		native = {};
+		if (auto ptr = AccessPtr::get(derived); ptr)
+		{
+			ptr->queryInterface(&api::IBrush::guid, native.put_void());
+		}
+		return *this;
+	}
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
+	api::IBrush* get() const
+	{
+		return native.get();
+	}
+};
+
+class BitmapBrush : public IHasBrush
 {
 	friend class AccessPtr;
 	gmpi::shared_ptr<api::IBitmapBrush> native;
@@ -888,13 +937,13 @@ public:
 	}
 
 protected:
-	gmpi::drawing::api::IBrush* getDerived() override
+	gmpi::drawing::api::IBrush* getBrush() override
 	{
 		return native.get();
 	}
 };
 
-class SolidColorBrush : public Brush
+class SolidColorBrush : public IHasBrush
 {
 	friend class AccessPtr;
 	gmpi::shared_ptr<api::ISolidColorBrush> native;
@@ -919,13 +968,13 @@ public:
 	}
 
 protected:
-	gmpi::drawing::api::IBrush* getDerived() override
+	gmpi::drawing::api::IBrush* getBrush() override
 	{
 		return native.get();
 	}
 };
 
-class LinearGradientBrush : public Brush
+class LinearGradientBrush : public IHasBrush
 {
 	friend class AccessPtr;
 	gmpi::shared_ptr<api::ILinearGradientBrush> native;
@@ -949,13 +998,13 @@ public:
 	}
 
 protected:
-	gmpi::drawing::api::IBrush* getDerived() override
+	gmpi::drawing::api::IBrush* getBrush() override
 	{
 		return native.get();
 	}
 };
 
-class RadialGradientBrush : public Brush
+class RadialGradientBrush : public IHasBrush
 {
 	friend class AccessPtr;
 	gmpi::shared_ptr<api::IRadialGradientBrush> native;
@@ -989,7 +1038,7 @@ public:
 	}
 
 protected:
-	gmpi::drawing::api::IBrush* getDerived() override
+	gmpi::drawing::api::IBrush* getBrush() override
 	{
 		return native.get();
 	}
@@ -1444,104 +1493,104 @@ public:
 		return createRadialGradientBrush(radialGradientBrushProperties, bp, gradientStopCollection);
 	}
 
-	void drawLine(Point point0, Point point1, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawLine(Point point0, Point point1, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
-		native->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.getDerived(), strokeWidth, AccessPtr::get(strokeStyle));
+		native->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawLine(Point point0, Point point1, Brush& brush, float strokeWidth = 1.0f)
+	void drawLine(Point point0, Point point1, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		native->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.getDerived(), strokeWidth, nullptr);
+		native->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawLine(float x1, float y1, float x2, float y2, Brush& brush, float strokeWidth = 1.0f)
+	void drawLine(float x1, float y1, float x2, float y2, IHasBrush& brush, float strokeWidth = 1.0f)
     {
-        native->drawLine({x1, y1}, {x2, y2}, brush.getDerived(), strokeWidth, nullptr);
+        native->drawLine({x1, y1}, {x2, y2}, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawRectangle(Rect rect, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawRectangle(Rect rect, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
-		native->drawRectangle(&rect, brush.getDerived(), strokeWidth, AccessPtr::get(strokeStyle));
+		native->drawRectangle(&rect, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawRectangle(Rect rect, Brush& brush, float strokeWidth = 1.0f)
+	void drawRectangle(Rect rect, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		native->drawRectangle(&rect, brush.getDerived(), strokeWidth, nullptr);
+		native->drawRectangle(&rect, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void fillRectangle(Rect rect, Brush& brush)
+	void fillRectangle(Rect rect, IHasBrush& brush)
 	{
-		native->fillRectangle(&rect, brush.getDerived());
+		native->fillRectangle(&rect, brush.getBrush());
 	}
 
-	void fillRectangle(float top, float left, float right, float bottom, Brush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
+	void fillRectangle(float top, float left, float right, float bottom, IHasBrush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
 	{
         Rect rect{top, left, right, bottom};
-		native->fillRectangle(&rect, brush.getDerived());
+		native->fillRectangle(&rect, brush.getBrush());
 	}
-	void drawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth, StrokeStyle& strokeStyle)
+	void drawRoundedRectangle(RoundedRect roundedRect, IHasBrush& brush, float strokeWidth, StrokeStyle& strokeStyle)
 	{
-		native->drawRoundedRectangle(&roundedRect, brush.getDerived(), strokeWidth, AccessPtr::get(strokeStyle));
+		native->drawRoundedRectangle(&roundedRect, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawRoundedRectangle(RoundedRect roundedRect, Brush& brush, float strokeWidth = 1.0f)
+	void drawRoundedRectangle(RoundedRect roundedRect, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		native->drawRoundedRectangle(&roundedRect, brush.getDerived(), strokeWidth, nullptr);
+		native->drawRoundedRectangle(&roundedRect, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void fillRoundedRectangle(RoundedRect roundedRect, Brush& brush)
+	void fillRoundedRectangle(RoundedRect roundedRect, IHasBrush& brush)
 	{
-		native->fillRoundedRectangle(&roundedRect, brush.getDerived());
+		native->fillRoundedRectangle(&roundedRect, brush.getBrush());
 	}
 
-	void drawEllipse(Ellipse ellipse, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawEllipse(Ellipse ellipse, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
-		native->drawEllipse(&ellipse, brush.getDerived(), strokeWidth, AccessPtr::get(strokeStyle));
+		native->drawEllipse(&ellipse, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawEllipse(Ellipse ellipse, Brush& brush, float strokeWidth = 1.0f)
+	void drawEllipse(Ellipse ellipse, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		native->drawEllipse(&ellipse, brush.getDerived(), strokeWidth, nullptr);
+		native->drawEllipse(&ellipse, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawCircle(gmpi::drawing::Point point, float radius, Brush& brush, float strokeWidth = 1.0f)
+	void drawCircle(gmpi::drawing::Point point, float radius, IHasBrush& brush, float strokeWidth = 1.0f)
     {
         Ellipse ellipse{point, radius, radius};
-		native->drawEllipse(&ellipse, brush.getDerived(), strokeWidth, nullptr);
+		native->drawEllipse(&ellipse, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void fillEllipse(Ellipse ellipse, Brush& brush)
+	void fillEllipse(Ellipse ellipse, IHasBrush& brush)
 	{
-		native->fillEllipse(&ellipse, brush.getDerived());
+		native->fillEllipse(&ellipse, brush.getBrush());
 	}
 
-	void fillCircle(gmpi::drawing::Point point, float radius, Brush& brush)
+	void fillCircle(gmpi::drawing::Point point, float radius, IHasBrush& brush)
     {
         Ellipse ellipse{point, radius, radius};
-		native->fillEllipse(&ellipse, brush.getDerived());
+		native->fillEllipse(&ellipse, brush.getBrush());
 	}
 
-	void drawGeometry(PathGeometry& geometry, Brush& brush, float strokeWidth = 1.0f)
+	void drawGeometry(PathGeometry& geometry, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		native->drawGeometry(AccessPtr::get(geometry), brush.getDerived(), strokeWidth, nullptr);
+		native->drawGeometry(AccessPtr::get(geometry), brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawGeometry(PathGeometry& geometry, Brush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawGeometry(PathGeometry& geometry, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
-		native->drawGeometry(AccessPtr::get(geometry), brush.getDerived(), strokeWidth, AccessPtr::get(strokeStyle));
+		native->drawGeometry(AccessPtr::get(geometry), brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void fillGeometry(PathGeometry& geometry, Brush& brush, Brush& opacityBrush)
+	void fillGeometry(PathGeometry& geometry, IHasBrush& brush, IHasBrush& opacityBrush)
 	{
-		native->fillGeometry(AccessPtr::get(geometry), brush.getDerived(), opacityBrush.getDerived());
+		native->fillGeometry(AccessPtr::get(geometry), brush.getBrush(), opacityBrush.getBrush());
 	}
 
-	void fillGeometry(PathGeometry& geometry, Brush& brush)
+	void fillGeometry(PathGeometry& geometry, IHasBrush& brush)
 	{
-		native->fillGeometry(AccessPtr::get(geometry), brush.getDerived(), nullptr);
+		native->fillGeometry(AccessPtr::get(geometry), brush.getBrush(), nullptr);
 	}
 
-	void fillPolygon(std::vector<Point>& points, Brush& brush)
+	void fillPolygon(std::vector<Point>& points, IHasBrush& brush)
 	{
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
@@ -1558,7 +1607,7 @@ public:
 		fillGeometry(geometry, brush);
 	}
 
-	void drawPolygon(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolygon(std::vector<Point>& points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
@@ -1575,7 +1624,7 @@ public:
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
-	void drawPolyline(std::vector<Point>& points, Brush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolyline(std::vector<Point>& points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
@@ -1618,9 +1667,9 @@ public:
 	}
 
 	// todo should options be int to allow bitwise combining??? !!!
-	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, Brush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
+	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, IHasBrush& brush, int32_t options = gmpi::drawing::DrawTextOptions::None)
 	{
-		native->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), AccessPtr::get(textFormat), &layoutRect, brush.getDerived(), options/*, measuringMode*/);
+		native->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), AccessPtr::get(textFormat), &layoutRect, brush.getBrush(), options/*, measuringMode*/);
 	}
 
 	void setTransform(const Matrix3x2& transform)
@@ -1673,7 +1722,7 @@ public:
 	}
 
 	// Composit convenience methods.
-	void fillPolygon(Point *points, uint32_t pointCount, Brush& brush)
+	void fillPolygon(Point *points, uint32_t pointCount, IHasBrush& brush)
 	{
 		assert(pointCount > 0 && points != nullptr);
 
@@ -1687,12 +1736,12 @@ public:
 	}
 
 	template <int N>
-	void fillPolygon(Point(&points)[N], Brush& brush)
+	void fillPolygon(Point(&points)[N], IHasBrush& brush)
 	{
 		return fillPolygon(points, N, brush);
 	}
 
-	void drawPolygon(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
+	void drawPolygon(Point *points, uint32_t pointCount, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		assert(pointCount > 0 && points != nullptr);
 
@@ -1705,7 +1754,7 @@ public:
 		drawGeometry(geometry, brush, strokeWidth);
 	}
 
-	void drawLines(Point *points, uint32_t pointCount, Brush& brush, float strokeWidth = 1.0f)
+	void drawLines(Point *points, uint32_t pointCount, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		assert(pointCount > 1 && points != nullptr);
 

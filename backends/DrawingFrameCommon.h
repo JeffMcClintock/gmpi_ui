@@ -4,6 +4,7 @@
 
 class DrawingFrameCommon
 {
+protected:
     gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
 public:

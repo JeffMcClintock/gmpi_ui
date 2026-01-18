@@ -495,7 +495,7 @@ LRESULT DxDrawingFrameBase::WindowProc(
 
 	case WM_CHAR:
 		if(inputClient)
-			inputClient->OnKeyPress((wchar_t) wParam);
+			inputClient->onKeyPress((wchar_t) wParam);
 		break;
 
 	case WM_KEYDOWN:
@@ -507,7 +507,7 @@ LRESULT DxDrawingFrameBase::WindowProc(
 			case VK_LEFT:
 			case VK_UP:
 			case VK_DOWN:
-				inputClient->OnKeyPress((wchar_t)wParam);
+				inputClient->onKeyPress((wchar_t)wParam);
 			}
 		}
 		break;

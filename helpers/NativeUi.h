@@ -89,7 +89,7 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	virtual ReturnCode onContextMenu(int32_t idx) = 0;
 
 	// keyboard events.
-	virtual ReturnCode OnKeyPress(wchar_t c) = 0;
+	virtual ReturnCode onKeyPress(wchar_t c) = 0;
 
 	// {D2D020D1-BCEE-49F9-A173-97BC6460A727}
 	inline static const gmpi::api::Guid guid =
@@ -292,7 +292,7 @@ namespace sdk
 {
 struct TextEditCallback : public gmpi::api::ITextEditCallback
 {
-	std::function<void(ReturnCode)> callback = [](ReturnCode) {};
+	std::function<void(const std::string&)> onSuccess = [](const std::string& text) {};
 	std::string text;
 
 	void onChanged(const char* ptext) override
@@ -301,7 +301,8 @@ struct TextEditCallback : public gmpi::api::ITextEditCallback
 	}
 	void onComplete(ReturnCode result) override
 	{
-		callback(result);
+		if(result == gmpi::ReturnCode::Ok)
+			onSuccess(text);
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::ITextEditCallback);
@@ -310,13 +311,14 @@ struct TextEditCallback : public gmpi::api::ITextEditCallback
 
 class PopupMenuCallback : public gmpi::api::IPopupMenuCallback
 {
-	std::function<void(gmpi::ReturnCode, int32_t)> callback;
+	std::function<void(int32_t)> onSuccess = [](int32_t) {};
 public:
-	PopupMenuCallback(std::function<void(gmpi::ReturnCode, int32_t)> callback) : callback(callback) {}
+	PopupMenuCallback(std::function<void(int32_t)> callback) : onSuccess(callback) {}
 
 	void onComplete(gmpi::ReturnCode result, int32_t selectedID) override
 	{
-		callback(result, selectedID);
+		if (result == gmpi::ReturnCode::Ok)
+			onSuccess(selectedID);
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
@@ -325,14 +327,18 @@ public:
 
 class FileDialogCallback : public gmpi::api::IFileDialogCallback
 {
-	std::function<void(gmpi::ReturnCode, const char*)> callback;
+	std::function<void(const std::string& selectedPath)> onSuccess;
 
 public:
-	FileDialogCallback(std::function<void(gmpi::ReturnCode, const char*)> callback) : callback(callback) {}
+	FileDialogCallback(std::function<void(const std::string& selectedPath)> callback) : onSuccess(callback) {}
 
 	void onComplete(gmpi::ReturnCode result, const char* selectedPath) override
 	{
-		callback(result, selectedPath);
+		if (result == gmpi::ReturnCode::Ok)
+		{
+			std::string res(selectedPath);
+			onSuccess(res);
+		}
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IFileDialogCallback);

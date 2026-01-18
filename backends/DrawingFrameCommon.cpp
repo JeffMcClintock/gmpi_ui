@@ -23,13 +23,9 @@ void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags
 
 		contextMenu->showAsync(
 			new gmpi::sdk::PopupMenuCallback(
-				[this](gmpi::ReturnCode ret, int32_t commandId) -> gmpi::ReturnCode
+				[this](int32_t commandId) -> gmpi::ReturnCode
 				{
-					if (gmpi::ReturnCode::Ok == ret)
-					{
-						ret = inputClient->onContextMenu(commandId);
-					}
-					return ret;
+					return inputClient->onContextMenu(commandId);
 				}
 			)
 		);

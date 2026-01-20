@@ -461,7 +461,7 @@ bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) cons
 		gmpi::drawing::Color foregroundColor;
 		gmpi::drawing::Color backgroundColor;
 
-		float bodyHeight = 13; // i.e. text size
+		float bodyHeight = 12; // i.e. text size
 		float fixedLineSpacing = 0.0f; // 0.0f = auto.
 		int textAlignment = (int) gmpi::drawing::TextAlignment::Leading; //left
 

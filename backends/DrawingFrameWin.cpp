@@ -681,7 +681,7 @@ void DxDrawingFrameBase::OnPaint()
 
 				float frameRate = frameCount / elapsedSeconds;
 
-				//				sprintf(frameCountString, "%3.1f FPS. %dms PT", frameRate, presentTimeMs);
+				//				spr intf(frameCountString, "%3.1f FPS. %dms PT", frameRate, presentTimeMs);
 				sprintf_s(frameCountString, sizeof(frameCountString), "%3.1f FPS", frameRate);
 				frameCountTime = timenow;
 				frameCount = 0;

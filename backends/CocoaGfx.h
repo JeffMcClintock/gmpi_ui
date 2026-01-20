@@ -66,19 +66,19 @@ inline CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in
     for (NSInteger i = 0; i < n; i++) {
         NSPoint ps[3];
         switch ([geometry elementAtIndex:i associatedPoints:ps]) {
-            case NSMoveToBezierPathElement: {
+            case NSBezierPathElementMoveTo: {
                 CGPathMoveToPoint(cgPath, NULL, ps[0].x, ps[0].y);
                 break;
             }
-            case NSLineToBezierPathElement: {
+            case NSBezierPathElementLineTo: {
                 CGPathAddLineToPoint(cgPath, NULL, ps[0].x, ps[0].y);
                 break;
             }
-            case NSCurveToBezierPathElement: {
+            case NSBezierPathElementCurveTo: {
                 CGPathAddCurveToPoint(cgPath, NULL, ps[0].x, ps[0].y, ps[1].x, ps[1].y, ps[2].x, ps[2].y);
                 break;
             }
-            case NSClosePathBezierPathElement: {
+            case NSBezierPathElementClosePath: {
                 CGPathCloseSubpath(cgPath);
                 break;
             }
@@ -1370,11 +1370,11 @@ public:
 		switch (fillMode)
 		{
             case gmpi::drawing::FillMode::Alternate:
-			[geometry_ setWindingRule : NSEvenOddWindingRule] ;
+                [geometry_ setWindingRule : NSWindingRuleEvenOdd] ;
 			break;
 
             case gmpi::drawing::FillMode::Winding:
-			[geometry_ setWindingRule : NSNonZeroWindingRule] ;
+                [geometry_ setWindingRule : NSWindingRuleNonZero] ;
 			break;
 		}
 	}

@@ -39,8 +39,9 @@ float right = snap(300.0f);
 float y     = snap(100.0f);
 
 g.drawLine(gmpi::drawing::Point(left, y), gmpi::drawing::Point(right, y), brush, snap.penWidth);
-
 */
+
+#include <cmath>
 
 struct pixelSnapper
 {

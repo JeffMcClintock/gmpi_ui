@@ -57,11 +57,11 @@ class PluginEditorBase : public gmpi::api::IEditor
 public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	std::vector<PinBase*> pins;
-	inline static thread_local PluginEditorBase* constructingEditor{};
+	inline static thread_local PluginEditorBase* constructingInstance{};
 
 	PluginEditorBase()
 	{
-		constructingEditor = this;
+		constructingInstance = this;
 	}
 
 	void init(int pinIndex, PinBase& pin)
@@ -242,8 +242,8 @@ public:
 inline PinBase::PinBase()
 {
 	// register with the plugin editor.
-	if (PluginEditorBase::constructingEditor)
-		PluginEditorBase::constructingEditor->init(*this);
+	if (PluginEditorBase::constructingInstance)
+		PluginEditorBase::constructingInstance->init(*this);
 }
 
 } // namespace gmpi

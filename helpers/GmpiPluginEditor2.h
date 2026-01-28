@@ -90,7 +90,7 @@ public:
 class PluginEditorBase : public gmpi::api::IEditor, public gmpi::api::IEditor2
 {
 public:
-	inline static thread_local PluginEditorBase* constructingEditor = nullptr;
+	inline static thread_local PluginEditorBase* constructingInstance = nullptr;
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	gmpi::shared_ptr<gmpi::api::IEditorHost2> editorHost2;
 	
@@ -98,7 +98,7 @@ public:
 
 	PluginEditorBase()
 	{
-		constructingEditor = this;
+		constructingInstance = this;
 	}
 	virtual ~PluginEditorBase() {}
 
@@ -307,8 +307,8 @@ public:
 PinBase::PinBase()
 {
 	// when contructing a pin, register it with the plugin editor.
-	if (PluginEditorBase::constructingEditor)
-		PluginEditorBase::constructingEditor->init(*this);
+	if (PluginEditorBase::constructingInstance)
+		PluginEditorBase::constructingInstance->init(*this);
 }
 
 

@@ -101,7 +101,7 @@ namespace gmpi_forms
 			0x0000ff,
 			0xff00ff,
 		};
-		auto brush = g.createSolidColorBrush(colorFromHex(0xcolors[redrawCount & 3], 0.1f));
+		auto brush = g.createSolidColorBrush(gmpi::drawing::colorFromHex(0xcolors[redrawCount & 3], 0.1f));
 		g.fillRectangle(bounds, brush);
 		++redrawCount;
 #endif
@@ -134,7 +134,7 @@ namespace gmpi_forms
 #if 0
 	void ListView::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
 	{
-		auto fillBrush = g.createSolidColorBrush(colorFromHex(0x003E3E3Eu));
+		auto fillBrush = g.createSolidColorBrush(gmpi::drawing::colorFromHex(0x003E3E3Eu));
 		auto outlineBrush = g.createSolidColorBrush(Colors::White);
 		auto textFormat = g.getFactory().createTextFormat();
 		textFormat.SetWordWrapping(WordWrapping::NoWrap);

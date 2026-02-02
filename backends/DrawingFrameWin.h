@@ -173,6 +173,7 @@ namespace hosting
 
 		gmpi::drawing::SizeL swapChainSize = {};
 		inline static bool m_disable_gpu = false;
+		inline static bool m_disable_deep_color = false;
 		inline static int m_fallbackStrategy = Fallback_Software;
 		bool reentrant = false;
 		bool lowDpiMode = {};

@@ -849,7 +849,7 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	}
 
 	const bool useSoftwareRenderer = (!DX_support_sRGB && Fallback_Software == m_fallbackStrategy) || m_disable_gpu;
-	const bool useDeepColor = DX_support_sRGB || useSoftwareRenderer;
+	const bool useDeepColor = !m_disable_deep_color && (DX_support_sRGB || useSoftwareRenderer);
 
 	if (useSoftwareRenderer)
 	{

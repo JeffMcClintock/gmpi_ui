@@ -173,7 +173,6 @@ namespace gmpi_form_builder
 		gmpi::drawing::Rect bounds;
 		std::unique_ptr< ValueObserver<std::string> > value;
 		mutable gmpi::shared_ptr<gmpi::api::IFileDialog> fileDialog; // needs to be kept alive, so it can be called async.
-//		mutable gmpi::sdk::FileDialogCallback dialog_callback;
 
 		FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds){}
 

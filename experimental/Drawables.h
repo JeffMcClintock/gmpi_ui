@@ -293,16 +293,11 @@ void clear();
 
 	struct TopView : public ViewPort, public Child
 	{
-//		Form* form = {};
 		~TopView()
 		{
-			children.clear(); // ensure States are deleted before StateHoldsers
+			children.clear(); // ensure States are deleted before StateHolders
 		}
 
-//		void preRender()
-//		{
-////			mouseOverObject = {};
-//		}
 		void postRender()
 		{
 			// need to redraw and redetermine mouse-over object, but not get stuck in loop
@@ -336,31 +331,7 @@ void clear();
 		void Draw(gmpi::drawing::Graphics& g) const override;
 		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
-#if 0
 
-	// should be just stackpanel
-	struct ListView : public Visual, public Interactor, public Child
-	{
-		gmpi::drawing::Rect bounds = {};
-		std::vector< std::pair<std::string, std::string> >& data;
-
-		std::function<void(const std::pair<std::string, std::string>&)> onItemSelected;
-
-		ListView(gmpi::drawing::Rect pbounds, std::vector< std::pair<std::string, std::string> >& pdata) : bounds(pbounds), data(pdata) {}
-
-		// drawing
-		void Draw(gmpi::drawing::Graphics& g) const override;
-		gmpi::drawing::Rect ClipRect() const override { return bounds; }
-
-// interaction
-bool HitTest(gmpi::drawing::Point p) const override;
-bool onPointerDown(gmpi::drawing::Point point) const override;
-
-bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override {
-	return false;
-}
-	};
-#endif
 	struct Rectangle : public Visual, public Child
 	{
 		gmpi::drawing::Rect bounds = {};

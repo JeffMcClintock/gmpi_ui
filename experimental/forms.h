@@ -5,11 +5,17 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
+#include "conversion.h"
+#include "it_enum_list.h"
 #include "GmpiUiDrawing.h"
+#include "Core/GmpiApiEditor.h"
 #include "experimental/Drawables.h"
 #include "helpers/Timer.h"
+#include "modules/shared/unicode_conversion.h"
 
 #define editor_padding 4.f;
+
+namespace uc = JmUnicodeConversions;
 
 namespace gmpi_form_builder
 {
@@ -199,13 +205,14 @@ namespace gmpi_form_builder
 	inline void TextLabelView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
 	{
 		// Add a text box.
-		const float itemHeight = 13;
+//		const float itemHeight = 13;
 		//	const float itemMargin = 2;
 		gmpi::drawing::Rect textBoxArea = getBounds();
-		textBoxArea.bottom = textBoxArea.top + itemHeight;
+//		textBoxArea.bottom = textBoxArea.top + itemHeight;
 
 		// default text style
 		auto style = new gmpi_forms::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+		style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 		style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 		parent.add(style);
 
@@ -349,7 +356,7 @@ namespace gmpi_form_builder
 		}
 
 		// Draw the text
-		const auto enum_str = WStringToUtf8(enum_get_substring(Utf8ToWstring(enum_list->get()), enum_value->get()));
+		const auto enum_str = uc::WStringToUtf8(enum_get_substring(uc::Utf8ToWstring(enum_list->get()), enum_value->get()));
 
 		auto textArea = comboBoxArea;
 		const auto symbol_width = 0.7f * getHeight(comboBoxArea);
@@ -434,7 +441,7 @@ namespace gmpi_form_builder
 			gmpi::drawing::Colors::White		// text color
 			, gmpi::drawing::Colors::TransparentBlack	// background color
 		);
-		style->textAlignment = GmpiDrawing_API::MP1_TEXT_ALIGNMENT::MP1_TEXT_ALIGNMENT_CENTER;
+		style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
 
 		parent.add(style);
 
@@ -489,7 +496,7 @@ namespace gmpi_form_builder
 			gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
 			, gmpi::drawing::Colors::TransparentBlack     // background color
 		);
-		style->textAlignment = GmpiDrawing_API::MP1_TEXT_ALIGNMENT::MP1_TEXT_ALIGNMENT_CENTER;
+		style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
 		parent.add(style);
 
 		// background rectangle

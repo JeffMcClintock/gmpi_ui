@@ -17,6 +17,11 @@
 
 namespace uc = JmUnicodeConversions;
 
+// NOTE: This UI layer is a retained declarative builder. gmpi_form_builder views
+// (e.g. TextLabelView) don't draw directly; they configure and assemble the
+// actual drawable primitives that get rendered later.
+// for the actual drawing, refer to the GMPI-UI framework (GmpiUiDrawing.h) and the Drawables in experimental/Drawables.h.
+
 namespace gmpi_form_builder
 {
 	struct View : public gmpi_forms::IObserver
@@ -181,6 +186,24 @@ namespace gmpi_form_builder
 		mutable gmpi::shared_ptr<gmpi::api::IFileDialog> fileDialog; // needs to be kept alive, so it can be called async.
 
 		FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds){}
+
+		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		gmpi::drawing::Rect getBounds() const
+		{
+			return bounds;
+		}
+	};
+
+	// A text label that shows a popup menu when clicked.
+	struct PopupMenuView : public View
+	{
+		gmpi::drawing::Rect bounds;
+		std::unique_ptr< ValueObserver<std::string> > text2;
+		std::unique_ptr< ValueObserver<std::string> > menuItems; // comma-separated menu items, e.g. "Learn,Unlearn,Edit..."
+		std::function<void(int32_t)> onItemSelected;
+		mutable gmpi::shared_ptr<gmpi::api::IPopupMenu> popupMenu;
+
+		PopupMenuView() = default;
 
 		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
 		gmpi::drawing::Rect getBounds() const
@@ -556,6 +579,61 @@ namespace gmpi_form_builder
 					);
 				};
 		}
+	}
+
+	inline void PopupMenuView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	{
+		gmpi::drawing::Rect textBoxArea = getBounds();
+
+		// default text style
+		auto style = new gmpi_forms::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+		style->bodyHeight = getHeight(textBoxArea) * 0.8f;
+		style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
+		parent.add(style);
+
+		// Draw the text
+		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
+		parent.add(tbox);
+
+		// Clicking the label brings up a popup menu
+		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
+		parent.add(clickDetector);
+
+		clickDetector->onPointerDown_callback = [this, tbox](gmpi_forms::PointerEvent*)
+			{
+				// get dialog host
+				auto topview = dynamic_cast<gmpi_forms::TopView*>(tbox->parent);
+				gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
+				topview->form->guiHost()->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
+
+				// create popup menu
+				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+				dialogHost->createPopupMenu(&bounds, unknown.put());
+				popupMenu = unknown.as<gmpi::api::IPopupMenu>();
+
+				if (!popupMenu)
+					return;
+
+				popupMenu->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
+
+				constexpr int32_t flags{};
+				for (auto& [index, id, text] : it_enum_list2(menuItems->get()))
+				{
+					popupMenu->addItem(text.c_str(), id, flags);
+				}
+
+				popupMenu->showAsync(
+					new gmpi::sdk::PopupMenuCallback(
+						[this](int32_t selectedId)
+						{
+							if (onItemSelected && selectedId > 0)
+							{
+								onItemSelected(selectedId);
+							}
+						}
+					)
+				);
+			};
 	}
 } // namespace gmpi_form_builder
 

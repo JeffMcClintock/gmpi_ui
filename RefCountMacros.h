@@ -1,4 +1,8 @@
 #pragma once
+
+// SPDX-License-Identifier: ISC
+// Copyright 2007-2026 Jeff McClintock.
+
 #ifndef GMPI_REFCOUNT_MACROS_H_INCLUDED
 #define GMPI_REFCOUNT_MACROS_H_INCLUDED
 

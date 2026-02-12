@@ -117,6 +117,20 @@ namespace gmpi_form_builder
 		}
 	};
 
+	struct ScrollView : public View
+	{
+		gmpi::drawing::Rect bounds;
+		std::vector< std::unique_ptr<gmpi_form_builder::View> > children;
+
+		ScrollView() = default;
+
+		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		gmpi::drawing::Rect getBounds() const
+		{
+			return bounds;
+		}
+	};
+
 	struct Seperator : public View
 	{
 		gmpi::drawing::Rect bounds;
@@ -224,6 +238,25 @@ namespace gmpi_form_builder
 			}
 		);
 	}
+	
+	inline void ScrollView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	{
+		auto scroller = new gmpi_forms::ScrollView({}, getBounds());
+		parent.add(scroller);
+
+		// mouse handler to do scrolling
+		auto scrollHandler = new gmpi_forms::RectangleMouseTarget(getBounds());
+		parent.add(scrollHandler);
+
+		scrollHandler->onMouseWheel_callback = [scroller/*scrollAmntSource, minimumScroll, maximumScroll*/](int32_t flags, int32_t delta, gmpi::drawing::Point point)
+			{
+				auto scrollAmntSource = scroller->scroll.getSource();
+				gmpi_forms::State<float> scroll(scrollAmntSource);
+
+				const auto newScroll = 23.f; // std::clamp(scroll.get() + delta * 0.4f, minimumScroll, maximumScroll);
+				scroll.set(newScroll);
+			};
+	};
 
 	inline void TextLabelView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
 	{

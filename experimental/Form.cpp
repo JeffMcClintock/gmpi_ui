@@ -136,4 +136,42 @@ gmpi::ReturnCode Form::onKeyPress(wchar_t c)
 
 	return gmpi::ReturnCode::Ok;
 }
+
+
 } // namespace gmpi_forms
+
+namespace gmpi_form_builder
+{
+void PortalStart_internal::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+{
+	last_rendered = new gmpi_forms::PortalStart();
+	last_rendered->bounds = bounds;
+	parent.add(last_rendered);
+}
+void PortalEnd_internal::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+{
+	auto pe = new gmpi_forms::PortalEnd();
+	pe->buddy = buddy->last_rendered;
+	parent.add(pe);
+}
+
+Portal::Portal(gmpi::drawing::Rect pbounds)
+{
+	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
+	bounds = pbounds;
+
+	auto pstart = std::make_unique<gmpi_form_builder::PortalStart_internal>(bounds);
+	portal_start = pstart.get();
+
+	result.push_back(std::move(pstart));
+}
+
+Portal::~Portal()
+{
+	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
+
+	auto pend = std::make_unique<gmpi_form_builder::PortalEnd_internal>(bounds);
+	pend->buddy = portal_start;
+	result.push_back(std::move(pend));
+}
+} // namespace gmpi_form_builder

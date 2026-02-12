@@ -144,6 +144,38 @@ namespace gmpi_form_builder
 		}
 	};
 
+	struct PortalStart_internal : public View
+	{
+		gmpi::drawing::Rect bounds;
+		mutable gmpi_forms::PortalStart* last_rendered{};
+
+		PortalStart_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
+
+		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+	};
+
+	struct PortalEnd_internal : public View
+	{
+		gmpi::drawing::Rect bounds;
+		gmpi_form_builder::PortalStart_internal* buddy = {};
+
+		PortalEnd_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
+
+		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+	};
+
+	// temporary object who's job is:
+	// to insert a PortalStart at the beginning of it's scope. (to create a clip rect and offset).
+	// and a PortalEnd at the end of it's scope. (to restore the previous clip rect and offset).
+	struct Portal
+	{
+		gmpi::drawing::Rect bounds{};
+		gmpi_form_builder::PortalStart_internal* portal_start{};
+
+		Portal(gmpi::drawing::Rect pbounds);
+		~Portal();
+	};
+
 	struct TextEditView : public View
 	{
 		gmpi::drawing::Rect bounds;

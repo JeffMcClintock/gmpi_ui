@@ -234,6 +234,33 @@ struct IObservableObject
 		virtual bool setHover(bool isMouseOverMe) const { return false; };
 	};
 
+	struct PortalStart : public Visual, public Child
+	{
+		gmpi::drawing::Rect bounds{};
+		mutable gmpi::drawing::Matrix3x2 originalTransform{};
+//		struct PortalEnd* buddy{};
+
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
+		void Draw(gmpi::drawing::Graphics& g) const override
+		{
+			originalTransform = g.getTransform();
+			auto shifted = originalTransform * gmpi::drawing::makeTranslation(bounds.left, bounds.top);
+			g.setTransform(shifted);
+		}
+	};
+
+	struct PortalEnd : public Visual, public Child
+	{
+		struct PortalStart* buddy = {};
+
+		gmpi::drawing::Rect ClipRect() const override { return buddy->bounds; }
+		void Draw(gmpi::drawing::Graphics& g) const override
+		{
+			g.setTransform(buddy->originalTransform);
+		}
+	};
+
+
 	class ViewPort : public Visual, public Interactor
 	{
 	protected:

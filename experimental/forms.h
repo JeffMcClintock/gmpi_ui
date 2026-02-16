@@ -169,13 +169,39 @@ namespace gmpi_form_builder
 		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 	};
 
+	// persistant object that constructs the drawables
+	struct Portal_internal : public View
+	{
+		mutable gmpi_forms::Portal* portal = {};
+
+		// intrusive linked lists of all drawables with sentinel nodes
+		mutable gmpi_forms::Visual firstVisual;
+		mutable gmpi_forms::Visual lastVisual;
+
+		gmpi::drawing::Rect bounds;
+//		mutable gmpi_forms::PortalStart* last_rendered{};
+		std::vector< std::unique_ptr<gmpi_form_builder::View> > result;
+
+		Portal_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
+		{
+			firstVisual.peerNext = &lastVisual;
+			lastVisual.peerPrev = &firstVisual;
+		}
+
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
+		void DoUpdates(gmpi_forms::Environment* env) const;
+	};
+
+
 	// temporary object who's job is:
 	// to insert a PortalStart at the beginning of it's scope. (to create a clip rect and offset).
 	// and a PortalEnd at the end of it's scope. (to restore the previous clip rect and offset).
 	struct Portal
 	{
+		std::vector< std::unique_ptr<gmpi_form_builder::View> >* saveParent = {};
+
 		gmpi::drawing::Rect bounds{};
-		gmpi_form_builder::PortalStart_internal* portal_start{};
+//		gmpi_form_builder::PortalStart_internal* portal_start{};
 
 		Portal(gmpi::drawing::Rect pbounds);
 		~Portal();

@@ -237,8 +237,8 @@ struct IObservableObject
 	template <typename T>
 	struct intrusiveListItem
 	{
-		T* peerPrev = nullptr;
-		T* peerNext = nullptr;
+		mutable T* peerPrev = nullptr;
+		mutable T* peerNext = nullptr;
 	};
 
 	// IView ? SwiftUI Views aren't drawn, they are a factory that *creates* the things that are drawn.
@@ -272,7 +272,7 @@ struct IObservableObject
 	};
 
 	// could be called 'MouseTarget' ?
-	class Interactor : protected intrusiveListItem<Interactor>
+	class Interactor : public intrusiveListItem<Interactor>
 	{
 		friend class Form;
 
@@ -292,6 +292,21 @@ struct IObservableObject
 		virtual bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point) const { return false; }
 		virtual bool setHover(bool isMouseOverMe) const { return false; }
 	};
+
+	struct Portalx : public Visual
+	{
+		gmpi::drawing::Rect bounds{};
+		mutable gmpi::drawing::Matrix3x2 originalTransform{};
+
+		gmpi::drawing::Rect ClipRect() const override { return bounds; }
+		void Draw(gmpi::drawing::Graphics& g) const override
+		{
+			originalTransform = g.getTransform();
+			auto shifted = originalTransform * gmpi::drawing::makeTranslation(bounds.left, bounds.top);
+			g.setTransform(shifted);
+		}
+	};
+
 
 	struct PortalStart : public Visual
 	{
@@ -353,16 +368,52 @@ void clear();
 		bool onPointerMove(gmpi::drawing::Point point) const override;
 		bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override;
 		bool setHover(bool isMouseOverMe) const override;
-
 		virtual void Invalidate(gmpi::drawing::Rect) const;
 	};
 
-	// not really a canvas, just a temporary list of stuff
-	class Canvas
+	class Portal : public Visual // , public Interactor
 	{
 		friend class Form;
 
 	protected:
+		// intrusive linked lists of all drawables with sentinel nodes
+		Visual firstVisual;
+		Visual lastVisual;
+
+		void clearChildren();
+
+		// areas where the mouse produces some effect
+		mutable Interactor* mouseOverObject = {};
+		mutable gmpi::drawing::Point mousePoint;
+		mutable bool isHovered = {};
+
+	public:
+		gmpi::drawing::Matrix3x2 transform;			// for drawing
+		gmpi::drawing::Matrix3x2 reverseTransform;	// for mouse
+
+		Portal();
+		virtual ~Portal();
+		void clear();
+
+		void Draw(gmpi::drawing::Graphics& g) const override;
+#if 0
+		bool HitTest(gmpi::drawing::Point p) const override;
+		bool onPointerDown(PointerEvent*) const override;
+
+		bool onPointerUp(gmpi::drawing::Point point) const override;
+		bool onPointerMove(gmpi::drawing::Point point) const override;
+		bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override;
+		bool setHover(bool isMouseOverMe) const override;
+#endif
+		virtual void Invalidate(gmpi::drawing::Rect) const;
+	};
+
+	// not really a canvas, just a temporary list of stuff
+	struct Canvas
+	{
+		friend class Form;
+
+//	protected:
 		std::vector<std::unique_ptr<Child>> styles;
 		std::vector<std::unique_ptr<Visual>> visuals;
 		std::vector<std::unique_ptr<Interactor>> mouseTargets;
@@ -408,7 +459,7 @@ void clear();
 	}
 
 
-	struct TopView : public ViewPort, public Child
+	struct TopView : public ViewPort //, public Child
 	{
 		~TopView()
 		{

@@ -282,6 +282,9 @@ namespace gmpi_forms
 		form->captureMouse(this);
 	}
 
+
+	///////////////////////////////////////////////////////////////////////
+
 	ViewPort::ViewPort()
 	{
 		firstVisual.peerNext = &lastVisual;
@@ -557,12 +560,6 @@ namespace gmpi_forms
 	}
 #endif
 
-	void Visual::Invalidate(gmpi::drawing::Rect r) const
-	{
-		assert(parent);
-		parent->Invalidate(r);
-	}
-
 	void ViewPort::Invalidate(gmpi::drawing::Rect r) const
 	{
 		if (!parent) // still under construction
@@ -570,6 +567,202 @@ namespace gmpi_forms
 
 		auto r2 = transformRect(reverseTransform, r);
 		parent->Invalidate(r2);
+	}
+
+	///////////////////////////////////////////////////////////////////////
+
+
+	Portal::Portal()
+	{
+		firstVisual.peerNext = &lastVisual;
+		lastVisual.peerPrev = &firstVisual;
+	}
+
+	Portal::~Portal()
+	{
+		clearChildren();
+	}
+
+	void Portal::clearChildren()
+	{
+		mouseOverObject = {};
+
+#if 0
+		// delete all nodes between sentinels
+		Child* obj = firstChild.peerNext;
+		while (obj && obj != &lastChild)
+		{
+			Child* next = obj->peerNext;
+			delete obj;
+			obj = next;
+		}
+
+		firstChild.peerNext = &lastChild;
+		lastChild.peerPrev = &firstChild;
+#endif
+	}
+
+
+	void Portal::clear()
+	{
+		clearChildren();
+	}
+
+	void Portal::Draw(gmpi::drawing::Graphics& g) const
+	{
+		const auto originalTransform = g.getTransform();
+		const auto adjustedTransform = transform * originalTransform;
+		g.setTransform(adjustedTransform);
+
+		const auto clipRect = g.getAxisAlignedClip();
+
+		for (auto v = firstVisual.peerNext; v != &lastVisual; v = v->peerNext)
+		{
+			const auto childRect = v->ClipRect();
+			if (!empty(intersectRect(clipRect, childRect)))
+			{
+				v->Draw(g);
+			}
+		}
+
+		g.setTransform(originalTransform);
+	}
+
+	void Portal::Invalidate(gmpi::drawing::Rect r) const
+	{
+		if (!parent) // still under construction
+			return;
+
+		auto r2 = transformRect(reverseTransform, r);
+		parent->Invalidate(r2);
+	}
+
+#if 0
+	bool Portal::HitTest(gmpi::drawing::Point p) const
+	{
+		const auto point = transformPoint(reverseTransform, p);
+
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		{
+			if (t->HitTest(point))
+			{
+				return true;
+				break;
+			}
+		}
+
+		return false;
+	}
+
+	bool Portal::onPointerDown(PointerEvent* e) const
+		//	bool Portal::onPointerDown(gmpi::drawing::Point p) const
+	{
+		auto e2 = *e;
+		e2.position = transformPoint(reverseTransform, e->position);
+		//		const auto point = transformPoint(reverseTransform, e->position);
+
+				// iterate mouseTargets in reverse (to respect Z-order)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		{
+			if (t->HitTest(e2.position) && t->onPointerDown(&e2))
+				return true;
+		}
+
+		return false;
+	}
+
+	bool Portal::onPointerUp(gmpi::drawing::Point p) const
+	{
+		const auto point = transformPoint(reverseTransform, p);
+
+		// iterate mouseTargets in reverse (to respect Z-order)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		{
+			if (t->HitTest(point) && t->onPointerUp(point))
+				return true;
+		}
+
+		return false;
+	}
+
+	bool Portal::onPointerMove(gmpi::drawing::Point p) const
+	{
+		//		_RPTN(0, "---------------Portal::onPointerMove( %f, %f)\n", p.x, p.y);
+
+		mousePoint = transformPoint(reverseTransform, p);
+		const auto prevMouseOverObject = mouseOverObject;
+
+		mouseOverObject = {};
+
+		// iterate mouseTargets in reverse (to respect Z-order)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		{
+			if (t->HitTest(mousePoint) && t->wantsClicks())
+			{
+				mouseOverObject = t;
+				break;
+			}
+		}
+
+		if (prevMouseOverObject != mouseOverObject)
+		{
+			const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
+			const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
+
+			_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);
+		}
+
+		if (prevMouseOverObject != mouseOverObject)
+		{
+			if (prevMouseOverObject)
+			{
+				prevMouseOverObject->setHover(false);
+			}
+
+			if (mouseOverObject)
+			{
+				//				_RPTN(0, "SetHover(true) :%s\n", typeid (*mouseOverObject).name());
+				mouseOverObject->setHover(true);
+			}
+		}
+
+		if (mouseOverObject)
+		{
+			mouseOverObject->onPointerMove(mousePoint);
+		}
+
+		return mouseOverObject != nullptr;
+	}
+
+	bool Portal::setHover(bool isMouseOverMe) const
+	{
+		isHovered = isMouseOverMe;
+		if (!isMouseOverMe && mouseOverObject)
+		{
+			mouseOverObject->setHover(false);
+			mouseOverObject = {};
+		}
+
+		return true;
+	}
+
+	bool Portal::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
+	{
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		{
+			if (t->HitTest(point) && t->onMouseWheel(flags, delta, point))
+				return true;
+		}
+
+		return false;
+	}
+#endif
+	///////////////////////////////////////////////////////////////////////
+
+	void Visual::Invalidate(gmpi::drawing::Rect r) const
+	{
+		assert(parent);
+		parent->Invalidate(r);
 	}
 
 	void TopView::Invalidate(gmpi::drawing::Rect r) const

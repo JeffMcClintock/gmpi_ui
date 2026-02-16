@@ -223,21 +223,154 @@ void PortalEnd_internal::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas
 
 Portal::Portal(gmpi::drawing::Rect pbounds)
 {
+	saveParent = gmpi_forms::ThreadLocalCurrentBuilder;
 	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
 	bounds = pbounds;
 
-	auto pstart = std::make_unique<gmpi_form_builder::PortalStart_internal>(bounds);
-	portal_start = pstart.get();
+	auto portal = std::make_unique<gmpi_form_builder::Portal_internal>(bounds);
 
-	result.push_back(std::move(pstart));
+	gmpi_forms::ThreadLocalCurrentBuilder = &(portal->result);
+
+	result.push_back(std::move(portal));
 }
 
 Portal::~Portal()
 {
+	gmpi_forms::ThreadLocalCurrentBuilder = saveParent;
+	/*
 	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
 
 	auto pend = std::make_unique<gmpi_form_builder::PortalEnd_internal>(bounds);
 	pend->buddy = portal_start;
 	result.push_back(std::move(pend));
+	*/
 }
+
+void Portal_internal::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
+{
+//	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
+
+	portal = new gmpi_forms::Portal();
+	canvas.add(portal);
+
+	DoUpdates(env);
+}
+
+void Portal_internal::DoUpdates(gmpi_forms::Environment* env) const
+{
+	bool wasDirty = false;
+
+	auto prevVisual = &firstVisual;
+//	auto prevMouseTarget = &firstMouseTarget;
+
+	for (auto& view : result)
+	{
+		if (!view->dirty)
+			continue;
+
+		wasDirty = true;
+		view->dirty = false;
+
+		// remove old render from linked-list of drawables
+		auto& visuals = view->children.visuals;
+		if (!visuals.empty())
+		{
+			prevVisual = visuals.front()->peerPrev;
+			auto next = visuals.back()->peerNext;
+			// paper over the gap
+			prevVisual->peerNext = next;
+			next->peerPrev = prevVisual;
+
+			visuals.clear();
+		}
+
+#if 0 // TODO mouse-portal
+		// remove old mouse-targets from linked-list
+		auto& mousetargets = view->children.mouseTargets;
+		if (!mousetargets.empty())
+		{
+			prevMouseTarget = mousetargets.front()->peerPrev;
+			auto next = mousetargets.back()->peerNext;
+			// paper over the gap
+			prevMouseTarget->peerNext = next;
+			next->peerPrev = prevMouseTarget;
+
+			mousetargets.clear();
+		}
+#endif
+
+		// render fresh content
+		view->Render(env, view->children); // TODO env should be accessable from any parent, and should chain upward
+
+		// store pointer to views range of children, if any.
+		if (!visuals.empty())
+		{
+			auto next = prevVisual->peerNext;
+
+			for (auto& c : visuals)
+			{
+				prevVisual->peerNext = c.get();
+				c->peerPrev = prevVisual;
+				prevVisual = c.get();
+
+				c->parent = portal;
+				portal->Invalidate(c->ClipRect());
+			}
+
+			prevVisual->peerNext = next;
+			next->peerPrev = prevVisual;
+
+			view->firstVisual = visuals.front().get();
+			view->lastVisual = visuals.back().get();
+
+#if 0 // todo
+			if (auto mouseable = dynamic_cast<Interactor*>(c); mouseable)
+			{
+				mouseable->form = this;
+
+				child.mouseTargets.push_back(mouseable);
+			}
+#endif
+		}
+		else
+		{
+			view->firstVisual = view->lastVisual = {};
+		}
+#if 0
+		// store pointer to views range of children, if any.
+		if (!mousetargets.empty())
+		{
+			auto next = prevMouseTarget->peerNext;
+
+			for (auto& c : mousetargets)
+			{
+				prevMouseTarget->peerNext = c.get();
+				c->peerPrev = prevMouseTarget;
+				prevMouseTarget = c.get();
+
+				c->form = this;
+			}
+
+			prevMouseTarget->peerNext = next;
+			next->peerPrev = prevMouseTarget;
+
+			view->firstMouseTarget = mousetargets.front().get();
+			view->lastMouseTarget = mousetargets.back().get();
+		}
+		else
+		{
+			view->firstMouseTarget = view->lastMouseTarget = {};
+		}
+#endif
+	}
+
+	if (wasDirty)
+	{
+// TODO		child.postRender();
+	}
+}
+
+
+
+
 } // namespace gmpi_form_builder

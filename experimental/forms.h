@@ -5,761 +5,28 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
-#include "conversion.h"
-#include "it_enum_list.h"
 #include "GmpiUiDrawing.h"
 #include "Core/GmpiApiEditor.h"
 #include "experimental/Drawables.h"
 #include "helpers/Timer.h"
-#include "modules/shared/unicode_conversion.h"
+#include "ComponentBuilders.h"
 
 #define editor_padding 4.f;
 
-namespace uc = JmUnicodeConversions;
-
-// NOTE: This UI layer is a retained declarative builder. gmpi_form_builder views
-// (e.g. TextLabelView) don't draw directly; they configure and assemble the
-// actual drawable primitives that get rendered later.
-// for the actual drawing, refer to the GMPI-UI framework (GmpiUiDrawing.h) and the Drawables in experimental/Drawables.h.
-
-namespace gmpi_form_builder
+namespace gmpi::ui
 {
-	struct View : public gmpi_forms::IObserver
-	{
-		mutable bool dirty = true;
-		mutable gmpi_forms::Visual* firstVisual = {};
-		mutable gmpi_forms::Visual* lastVisual = {};
-
-		mutable gmpi_forms::Interactor* firstMouseTarget = {};
-		mutable gmpi_forms::Interactor* lastMouseTarget = {};
-
-		mutable gmpi_forms::Canvas children;
-
-		virtual ~View() {}
-		virtual void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const {}
-		void setDirty();
-//		virtual void RenderDirtyViews();
-		void OnModelWillChange() override;
-	};
-
-	// abstract the act of using a value from somewhere on a Visual
-	template<typename T>
-	struct ValueObserver // : public gmpi_forms::IObserver
-	{
-		View* view = {};
-
-		virtual ~ValueObserver() {}
-		void ObjectChanged()
-		{
-			view->setDirty();
-		}
-
-		virtual T get() = 0;
-		virtual void set(T) = 0;
-	};
-
-	// just a simple value that never changes
-	template<typename T>
-	struct ValueObserverLiteral : public ValueObserver<T>
-	{
-		T value;
-
-		ValueObserverLiteral(T value, gmpi_form_builder::View* pview) : value(value)
-		{
-			ValueObserver<T>::view = pview;
-		}
-
-		T get() override
-		{
-			return value;
-		}
-		void set(T) override
-		{
-			assert(false); // not settable
-		}
-	};
-
-	// A value that is a member of a class that is observable
-	template<typename T>
-	struct ValueObserverLambda : public ValueObserver<T>
-	{
-		std::function<T(void)> getfunc;
-		std::function<void (T)> setfunc;
-
-		ValueObserverLambda(
-			gmpi_form_builder::View* pview,
-			std::function<T(void)> pget,
-			std::function<void(T)> pset = {}
-		) : getfunc(pget), setfunc(pset)
-		{
-			ValueObserver<T>::view = pview;
-		}
-
-		T get() override
-		{
-			return getfunc();
-		}
-		void set(T newval) override
-		{
-			assert(setfunc); // not settable?
-			setfunc(newval);
-		}
-	};
-
-	struct TextLabelView : public View
-	{
-		gmpi::drawing::Rect bounds;
-		bool rightAlign = false;
-		std::unique_ptr< ValueObserver<std::string> > text2;
-
-		TextLabelView() = default;
-		TextLabelView(std::string_view staticText);
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	struct ScrollView : public View
-	{
-		gmpi::drawing::Rect bounds;
-		std::vector< std::unique_ptr<gmpi_form_builder::View> > children;
-
-		ScrollView() = default;
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	struct Seperator : public View
-	{
-		gmpi::drawing::Rect bounds;
-
-		Seperator() = default;
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	struct PortalStart_internal : public View
-	{
-		gmpi::drawing::Rect bounds;
-		mutable gmpi_forms::PortalStart* last_rendered{};
-
-		PortalStart_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-	};
-
-	struct PortalEnd_internal : public View
-	{
-		gmpi::drawing::Rect bounds;
-		gmpi_form_builder::PortalStart_internal* buddy = {};
-
-		PortalEnd_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-	};
-
-	// persistant object that constructs the drawables
-	struct Portal_internal : public View
-	{
-		mutable gmpi::forms::primative::Portal* portal = {};
-
-		gmpi::drawing::Rect bounds;
-//		mutable gmpi_forms::PortalStart* last_rendered{};
-		std::vector< std::unique_ptr<gmpi_form_builder::View> > result;
-
-		Portal_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
-		{
-		}
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		void DoUpdates(gmpi_forms::Environment* env) const;
-	};
-
-
-	// temporary object who's job is:
-	// to insert a PortalStart at the beginning of it's scope. (to create a clip rect and offset).
-	// and a PortalEnd at the end of it's scope. (to restore the previous clip rect and offset).
-	struct Portal
-	{
-		std::vector< std::unique_ptr<gmpi_form_builder::View> >* saveParent = {};
-
-		gmpi::drawing::Rect bounds{};
-//		gmpi_form_builder::PortalStart_internal* portal_start{};
-
-		Portal(gmpi::drawing::Rect pbounds);
-		~Portal();
-	};
-
-	struct TextEditView : public View
-	{
-		gmpi::drawing::Rect bounds;
-		std::unique_ptr< ValueObserver<std::string> > text2;
-		bool rightAlign = false;
-
-		mutable gmpi::shared_ptr<gmpi::api::ITextEdit> textEdit;
-
-		TextEditView(gmpi_forms::Environment* env, std::string path);
-		~TextEditView();
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-	
-	struct ComboBoxView : public View
-	{
-		gmpi::drawing::Rect bounds;
-		std::unique_ptr< ValueObserver<std::string> > enum_list;
-		std::unique_ptr< ValueObserver<int32_t> > enum_value;
-
-		mutable gmpi::shared_ptr<gmpi::api::IPopupMenu> combo;
-
-		ComboBoxView() = default;
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	struct TickBox : public View
-	{
-		gmpi::drawing::Rect bounds;
-		std::unique_ptr< ValueObserver<bool> > value;
-
-		TickBox() = default;
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	struct FileBrowseButtonView : public View
-	{
-		gmpi::drawing::Rect bounds;
-		std::unique_ptr< ValueObserver<std::string> > value;
-		mutable gmpi::shared_ptr<gmpi::api::IFileDialog> fileDialog; // needs to be kept alive, so it can be called async.
-
-		FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds){}
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	// A text label that shows a popup menu when clicked.
-	struct PopupMenuView : public View
-	{
-		gmpi::drawing::Rect bounds;
-		std::unique_ptr< ValueObserver<std::string> > text2;
-		std::unique_ptr< ValueObserver<std::string> > menuItems; // comma-separated menu items, e.g. "Learn,Unlearn,Edit..."
-		std::function<void(int32_t)> onItemSelected;
-		mutable gmpi::shared_ptr<gmpi::api::IPopupMenu> popupMenu;
-
-		PopupMenuView() = default;
-
-		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
-		gmpi::drawing::Rect getBounds() const
-		{
-			return bounds;
-		}
-	};
-
-	inline TextLabelView::TextLabelView(std::string_view staticText)
-	{
-		std::string txt(staticText);
-
-		text2 = std::make_unique< gmpi_form_builder::ValueObserverLambda<std::string> >(
-			this,
-			[txt]() ->std::string
-			{
-				return txt;
-			}
-		);
-	}
-	
-	inline void ScrollView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		auto scroller = new gmpi_forms::ScrollView({}, getBounds());
-		canvas.add(scroller);
-
-		// mouse handler to do scrolling
-		auto scrollHandler = new gmpi_forms::RectangleMouseTarget(getBounds());
-		canvas.add(scrollHandler);
-
-		scrollHandler->onMouseWheel_callback = [scroller/*scrollAmntSource, minimumScroll, maximumScroll*/](int32_t flags, int32_t delta, gmpi::drawing::Point point)
-			{
-				auto scrollAmntSource = scroller->scroll.getSource();
-				gmpi_forms::State<float> scroll(scrollAmntSource);
-
-				const auto newScroll = 23.f; // std::clamp(scroll.get() + delta * 0.4f, minimumScroll, maximumScroll);
-				scroll.set(newScroll);
-			};
-	};
-
-	inline void TextLabelView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		// Add a text box.
-//		const float itemHeight = 13;
-		//	const float itemMargin = 2;
-		gmpi::drawing::Rect textBoxArea = getBounds();
-//		textBoxArea.bottom = textBoxArea.top + itemHeight;
-
-		// default text style
-		auto style = new gmpi_forms::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
-		style->bodyHeight = getHeight(textBoxArea) * 0.8f;
-		style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
-		canvas.add(style);
-
-		// Draw the text
-		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
-
-		canvas.add(
-			tbox
-		);
-	}
-
-	inline TextEditView::TextEditView(gmpi_forms::Environment* env, std::string path)
-	{
-		//	env->reg(&text, path + "/textEdit");
-		//	model = std::make_shared<TextLabelModel>(patch);
-	//	_RPT0(0, "TextEditView\n");
-	}
-	inline TextEditView::~TextEditView()
-	{
-		//	_RPT0(0, "~TextEditView\n");
-	}
-
-	inline void TextEditView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		// Add a text box.
-	//	const float itemHeight = 13;
-
-		gmpi::drawing::Rect textBoxArea = getBounds();
-		//	textBoxArea.bottom = textBoxArea.top + itemHeight;
-		textBoxArea.left += editor_padding;
-		textBoxArea.right -= editor_padding;
-
-		// default text style
-		auto style = new gmpi_forms::TextBoxStyle(
-			gmpi::drawing::Colors::White					// text color
-			, gmpi::drawing::Colors::TransparentBlack		// background color
-		);
-		style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
-
-		canvas.add(style);
-
-		// background rectangle
-		{
-			auto style2 = new gmpi_forms::ShapeStyle();
-			style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-			style2->fillColor = gmpi::drawing::colorFromHex(0x383838u);
-			constexpr float radius = 4.f;
-
-			canvas.add(style2);
-
-			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			canvas.add(backGroundRect);
-		}
-
-		// Draw the text
-		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
-
-		canvas.add(
-			tbox
-		);
-
-		// Clicking over the textLabel brings up a native text-entry box
-		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
-		{
-			canvas.add(clickDetector);
-
-			const auto textRect = clickDetector->bounds;
-
-			clickDetector->onPointerDown_callback = [this, tbox, textRect](gmpi_forms::PointerEvent*)
-				{
-					// get dialog host
-					auto topview = dynamic_cast<gmpi_forms::TopView*>(tbox->parent);
-					gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
-					topview->form->guiHost()->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
-
-					// creat text-editor
-					gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-					dialogHost->createTextEdit(&bounds, unknown.put());
-					textEdit = unknown.as<gmpi::api::ITextEdit>();
-
-					if (!textEdit)
-						return;
-
-					// TODO: !!! set font (at least height).
-					textEdit->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
-					textEdit->setText(tbox->text.c_str());
-
-					textEdit->showAsync(
-						new gmpi::sdk::TextEditCallback
-						(
-							[this](const std::string& text)
-							{
-								text2->set(text);
-							}
-						)
-					);
-				};
-		}
-	}
-
-	inline void Seperator::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		auto style2 = new gmpi_forms::ShapeStyle();
-		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		style2->fillColor = gmpi::drawing::colorFromHex(0x00444444u);
-
-		canvas.add(style2);
-
-		auto thinLine = new gmpi_forms::Rectangle(style2, getBounds());
-		canvas.add(thinLine);
-	}
-
-	inline void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		// Add a text box.
-	//	const float itemHeight = 13;
-		//	const float itemMargin = 2;
-		gmpi::drawing::Rect comboBoxArea = getBounds();
-		//	comboBoxArea.bottom = comboBoxArea.top + itemHeight;
-		comboBoxArea.left += editor_padding;
-		comboBoxArea.right -= editor_padding;
-
-		// default text style
-		auto style = new gmpi_forms::TextBoxStyle(
-			gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
-			, gmpi::drawing::Colors::TransparentBlack     // background color
-		);
-		canvas.add(style);
-
-		// background rectangle
-		{
-			auto style2 = new gmpi_forms::ShapeStyle();
-			style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-			style2->fillColor = gmpi::drawing::colorFromHex(0x003E3E3Eu);
-			constexpr float radius = 4.f;
-
-			canvas.add(style2);
-
-			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			canvas.add(backGroundRect);
-		}
-
-		// Draw the text
-		const auto enum_str = uc::WStringToUtf8(enum_get_substring(uc::Utf8ToWstring(enum_list->get()), enum_value->get()));
-
-		auto textArea = comboBoxArea;
-		const auto symbol_width = 0.7f * getHeight(comboBoxArea);
-		textArea.right -= symbol_width;
-
-		auto tbox = new gmpi_forms::TextBox(style, textArea, enum_str);
-
-		canvas.add(
-			tbox
-		);
-
-		// draw a drop-down symbol
-		{
-			auto symbolArea = comboBoxArea;
-			symbolArea.left = symbolArea.right - symbol_width;
-			symbolArea.top -= 4; // else too low
-
-			auto tbox2 = new gmpi_forms::TextBox(style, symbolArea, "\xE2\x8C\x84"); // unicode 'down arrowhead'
-
-			canvas.add(
-				tbox2
-			);
-		}
-
-		// Clicking over the textLabel brings up a native combo box
-		auto clickDetector = new gmpi_forms::RectangleMouseTarget(comboBoxArea);
-		{
-			canvas.add(clickDetector);
-
-			const auto textRect = clickDetector->bounds;
-
-			clickDetector->onPointerDown_callback = [this, tbox, textRect](gmpi_forms::PointerEvent*)
-				{
-					// get dialog host
-					auto topview = dynamic_cast<gmpi_forms::TopView*>(tbox->parent);
-					gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
-					topview->form->guiHost()->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
-
-					// create combo-box
-					gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-					dialogHost->createPopupMenu(&bounds, unknown.put());
-					combo = unknown.as<gmpi::api::IPopupMenu>();
-
-					if (!combo)
-						return;
-
-					// TODO: !!! set font (at least height).
-					combo->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
-
-					// populate combo
-					constexpr int32_t flags{};
-					for (auto& [index, id, text] : it_enum_list2(enum_list->get()))
-					{
-						combo->addItem(text.c_str(), index, flags);
-					}
-
-					combo->showAsync(
-						new gmpi::sdk::PopupMenuCallback
-						(
-							[this](int32_t selectedId)
-							{
-								it_enum_list it(Utf8ToWstring(enum_list->get()));
-								it.FindIndex(selectedId);
-								if (!it.IsDone())
-									enum_value->set(it.CurrentItem()->value);
-							}
-						)
-					);
-				};
-		}
-	}
-
-	inline void TickBox::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		// Add a text box.
-		const float itemHeight = 13;
-		gmpi::drawing::Rect textBoxArea = getBounds();
-		textBoxArea.bottom = textBoxArea.top + itemHeight;
-
-		// default text style
-		auto style = new gmpi_forms::TextBoxStyle(
-			gmpi::drawing::Colors::White		// text color
-			, gmpi::drawing::Colors::TransparentBlack	// background color
-		);
-		style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
-
-		canvas.add(style);
-
-		// background rectangle
-		{
-			auto style2 = new gmpi_forms::ShapeStyle();
-			style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-			style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
-			constexpr float radius = 4.f;
-
-			canvas.add(style2);
-
-			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			canvas.add(backGroundRect);
-		}
-
-		// Draw the text
-	//	const char check[] = { (char)0xE2, (char)0x9C, (char)0x93, (char)0 };
-		const char* text = value->get() ? "\xE2\x9C\x93" : " ";
-
-		auto textbox = new gmpi_forms::TextBox(style, textBoxArea, text);
-
-		canvas.add(textbox);
-
-		// Clicking toggles the value
-		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
-		{
-			canvas.add(clickDetector);
-
-			clickDetector->onPointerDown_callback = [this, clickDetector](gmpi_forms::PointerEvent*)
-				{
-					value->set(!value->get());
-				};
-
-			// don't work?
-			//clickDetector->onPointerUp_callback = [this, clickDetector](gmpi::drawing::Point)
-			//	{
-			//		value->set(!value->get());
-			//	};
-		}
-	}
-
-	inline void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		// Add a text box.
-		const float itemHeight = 13;
-		gmpi::drawing::Rect textBoxArea = getBounds();
-		textBoxArea.bottom = textBoxArea.top + itemHeight;
-
-		// default text style
-		auto style = new gmpi_forms::TextBoxStyle(
-			gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
-			, gmpi::drawing::Colors::TransparentBlack     // background color
-		);
-		style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
-		canvas.add(style);
-
-		// background rectangle
-		{
-			auto style2 = new gmpi_forms::ShapeStyle();
-			style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-			style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
-			constexpr float radius = 4.f;
-
-			canvas.add(style2);
-
-			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			canvas.add(backGroundRect);
-		}
-
-		// Draw the text on the button
-		canvas.add(
-			new gmpi_forms::TextBox(style, textBoxArea, "...")
-		);
-
-		// Clicking over the textLabel brings up a native combo box
-		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
-		{
-			canvas.add(clickDetector);
-
-			const auto textRect = clickDetector->bounds;
-
-			clickDetector->onPointerDown_callback = [this, clickDetector](gmpi_forms::PointerEvent*)
-				{
-					// get dialog host
-					gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
-					clickDetector->form->guiHost()->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
-
-					// creat file-browser
-					gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-					dialogHost->createFileDialog((int32_t)gmpi::api::FileDialogType::Save, unknown.put());
-					fileDialog = unknown.as<gmpi::api::IFileDialog>();
-
-					if (!fileDialog)
-						return;
-
-					fileDialog->setInitialFilename(value->get().c_str());
-
-					// TODO bind to extensions list
-					//nativeFileDialog2->addExtension("xmlpreset");
-					//nativeFileDialog2->addExtension("aupreset");
-					//nativeFileDialog2->addExtension("vstpreset");
-					fileDialog->addExtension("*");
-
-					fileDialog->showAsync(
-						nullptr,
-						new gmpi::sdk::FileDialogCallback(
-							[this](const std::string& selectedPath) -> void
-							{
-								value->set(selectedPath);
-							})
-					);
-				};
-		}
-	}
-
-	inline void PopupMenuView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
-	{
-		gmpi::drawing::Rect textBoxArea = getBounds();
-
-		// default text style
-		auto style = new gmpi_forms::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
-		style->bodyHeight = getHeight(textBoxArea) * 0.8f;
-		style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
-		canvas.add(style);
-
-		// Draw the text
-		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
-		canvas.add(tbox);
-
-		// Clicking the label brings up a popup menu
-		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
-		canvas.add(clickDetector);
-
-		clickDetector->onPointerDown_callback = [this, tbox](gmpi_forms::PointerEvent*)
-			{
-				// get dialog host
-				auto topview = dynamic_cast<gmpi_forms::TopView*>(tbox->parent);
-				gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
-				topview->form->guiHost()->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
-
-				// create popup menu
-				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-				dialogHost->createPopupMenu(&bounds, unknown.put());
-				popupMenu = unknown.as<gmpi::api::IPopupMenu>();
-
-				if (!popupMenu)
-					return;
-
-				popupMenu->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
-
-				constexpr int32_t flags{};
-				for (auto& [index, id, text] : it_enum_list2(menuItems->get()))
-				{
-					popupMenu->addItem(text.c_str(), id, flags);
-				}
-
-				popupMenu->showAsync(
-					new gmpi::sdk::PopupMenuCallback(
-						[this](int32_t selectedId)
-						{
-							if (onItemSelected && selectedId > 0)
-							{
-								onItemSelected(selectedId);
-							}
-						}
-					)
-				);
-			};
-	}
-} // namespace gmpi_form_builder
-
-namespace gmpi_forms
-{
-inline thread_local std::vector< std::unique_ptr<gmpi_form_builder::View> >* ThreadLocalCurrentBuilder = {};
-
-class Builder
-{
-	std::vector< std::unique_ptr<gmpi_form_builder::View> >& result;
-public:
-
-	Builder(std::vector< std::unique_ptr<gmpi_form_builder::View> >& presult) : result(presult)
-	{
-		gmpi_forms::ThreadLocalCurrentBuilder = &result;
-	}
-	~Builder()
-	{
-		gmpi_forms::ThreadLocalCurrentBuilder = {};
-	}
-
-	/* weird compiler error
-	std::vector< std::unique_ptr<gmpi_form_builder::View> >& getResult()
-	{
-		return result;
-	}
-	*/
-};
-
 class Form :
-	public IForm
-	, public gmpi::api::IDrawingClient
+	  public gmpi::api::IDrawingClient
 	, public gmpi::api::IInputClient
 	, public gmpi::api::IEditor
 	, public gmpi::TimerClient
-	, public gmpi_forms::IPointerBoss
+
+	, public gmpi::forms::primitive::IPointerBoss
+	, public gmpi::forms::primitive::displayList
+	, public gmpi::forms::primitive::mouseList
+	, public gmpi::ui::builder::ViewParent
+	, public gmpi::forms::primitive::IVisualParent
+	, public gmpi::forms::primitive::IMouseParent
 {
 protected:
 	gmpi::api::IDrawingHost* host = {};
@@ -767,68 +34,82 @@ protected:
 	// can just query	gmpi::api::IDialogHost* dialogHost = {};
 
 	std::function<void(std::string)> onKey;
-	// layout
-	std::vector< std::unique_ptr<gmpi_form_builder::View> > body_;
-	gmpi::drawing::Point prevPoint = {};
+	std::function<void(gmpi::drawing::Size)> onMouseMove;
 
 	bool onTimer() override;
 
 	void DoUpdates();
+	void restoreMouseState(gmpi::forms::primitive::Interactor* prevMouseOverObject);
 
 public:
-	Environment env;
-	TopView child;
+	gmpi_forms::Environment env;
 
 	Form();
 	~Form()
 	{
-		child.clear(); // release anything pointing to states before releasing states (else crash).
-		body_.clear();
+		// derived class to call clear() in destructor please, to ensure that any visuals/mousetargets are released before the states that they point to are released (else crash).
+		assert(
+			gmpi::forms::primitive::displayList::empty() &&
+			gmpi::forms::primitive::mouseList::empty() &&
+			childViews.empty()
+		);
+	}
+
+	void clear()
+	{
+		// release anything pointing to states before releasing states (else crash).
+		gmpi::forms::primitive::displayList::clear();
+		gmpi::forms::primitive::mouseList::clear();
+		childViews.clear();
 	}
 
 	virtual void Body() = 0;
 
-	// IForm
-	gmpi::api::IDrawingHost* guiHost() const override
+	// IMouseParent
+	struct mouseList& getMouseTargetList() override
 	{
-		return host;
+		return *this;
 	}
-	Environment* getEnvironment() override
-	{
-		return &env;
-	}
-	void captureMouse(class Interactor*) override
+	void captureMouse(gmpi::forms::primitive::Interactor*) override
 	{
 		// need to capture mouse and record the interactors ID, so that mouse events can be routed correcty.
 		// perhaps interactors are stored as std::pair<ID, Interactor> in a map.
 	}
 
-	// IPointerBoss
 	void captureMouse(std::function<void(gmpi::drawing::Size)> callback) override
 	{
-		//		guiHost()->setCapture();
+		onMouseMove = callback;
+		inputhost->setCapture();
 	}
 
 	// just redraw, without any changes to visuals
-	void invalidate(gmpi::drawing::Rect* r) override;
 	void redraw();
 	virtual void renderVisuals();
 	void setKeyboardHandler(std::function<void(std::string glyph)> pOnKey);
+
+	// IVisualParent
+	void Invalidate(gmpi::drawing::Rect r) const override;
+	gmpi_forms::Environment* getEnvironment() override { return &env; }
+	gmpi::forms::primitive::displayList& getDisplayList() override { return *this; }
+	gmpi::drawing::Matrix3x2 getTransform() const override
+	{
+		return {};
+	}
 
 	// IDrawingClient
 	gmpi::ReturnCode open(gmpi::api::IUnknown* phost) override;
 	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override { return gmpi::ReturnCode::NoSupport; };
-	gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override { return gmpi::ReturnCode::NoSupport; }
+	gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override; // { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode getClipArea(gmpi::drawing::Rect* returnRect) override { return gmpi::ReturnCode::NoSupport; }	// IInputClient
 
 	// IInputClient
-	gmpi::ReturnCode setHover(bool isMouseOverMe) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode hitTest(gmpi::drawing::Point, int32_t flags) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode onPointerDown(gmpi::drawing::Point, int32_t flags) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode onPointerMove(gmpi::drawing::Point, int32_t flags) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode onPointerUp(gmpi::drawing::Point, int32_t flags) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point, int32_t flags, int32_t delta) override { return gmpi::ReturnCode::NoSupport; }
+	gmpi::ReturnCode setHover(bool isMouseOverMe) override;// { return gmpi::ReturnCode::NoSupport; }
+	gmpi::ReturnCode hitTest(gmpi::drawing::Point, int32_t flags) override { return gmpi::ReturnCode::Ok; }
+	gmpi::ReturnCode onPointerDown(gmpi::drawing::Point, int32_t flags) override;// { return gmpi::ReturnCode::NoSupport; }
+	gmpi::ReturnCode onPointerMove(gmpi::drawing::Point, int32_t flags) override;// { return gmpi::ReturnCode::NoSupport; }
+	gmpi::ReturnCode onPointerUp(gmpi::drawing::Point, int32_t flags) override;// { return gmpi::ReturnCode::NoSupport; }
+	gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point, int32_t flags, int32_t delta) override;// { return gmpi::ReturnCode::NoSupport; }
 
 	// right-click menu
 	gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point, gmpi::api::IUnknown* contextMenuItemsSink) override { return gmpi::ReturnCode::NoSupport; }
@@ -854,4 +135,71 @@ public:
 
 	GMPI_REFCOUNT;
 };
-}
+
+// temporary helper object to create the portal builder
+// it uses RIAA to replace and later restore the parent builder-list
+class ScrollPortal
+{
+	std::vector< std::unique_ptr<gmpi::ui::builder::View> >* saveParent = {};
+	gmpi::drawing::Rect bounds{};
+	
+public:
+	ScrollPortal(gmpi::drawing::Rect pbounds);
+	~ScrollPortal();
+};
+
+class Spacer
+{
+public:
+	Spacer(gmpi::drawing::Rect bounds);
+};
+
+class ToggleSwitch
+{
+public:
+	ToggleSwitch(
+		std::string_view labelText,
+		gmpi::drawing::Rect bounds,
+		std::function<bool()> getValue,
+		std::function<void(bool)> setValue
+	);
+};
+
+class Label
+{
+public:
+	gmpi::ui::builder::TextLabelView* view = {};
+
+	Label(std::string_view text, gmpi::drawing::Rect bounds = {});
+	Label(gmpi::drawing::Rect bounds);
+};
+
+class ComboBox
+{
+public:
+	gmpi::ui::builder::ComboBoxView* view = {};
+
+	ComboBox(gmpi::drawing::Rect bounds);
+};
+
+struct TextEdit
+{
+	gmpi::ui::builder::TextEditView* view = {};
+	gmpi_forms::StateRef<std::string> name;
+
+	TextEdit(gmpi_forms::State<std::string>& pname);
+};
+
+class vStack
+{
+	std::vector< std::unique_ptr<gmpi::ui::builder::View> >* saveParent = {};
+	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;
+	gmpi::drawing::Rect bounds{};
+	float spacing = 0.0f;
+
+public:
+	vStack(gmpi::drawing::Rect pbounds = {}, float pspacing = 0.0f);
+	~vStack();
+};
+
+} // namespace gmpi::ui

@@ -572,7 +572,7 @@ namespace gmpi_forms
 	///////////////////////////////////////////////////////////////////////
 
 
-	Portal::Portal()
+	Portal::Portal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
 	{
 		firstVisual.peerNext = &lastVisual;
 		lastVisual.peerPrev = &firstVisual;

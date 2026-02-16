@@ -174,18 +174,12 @@ namespace gmpi_form_builder
 	{
 		mutable gmpi_forms::Portal* portal = {};
 
-		// intrusive linked lists of all drawables with sentinel nodes
-		mutable gmpi_forms::Visual firstVisual;
-		mutable gmpi_forms::Visual lastVisual;
-
 		gmpi::drawing::Rect bounds;
 //		mutable gmpi_forms::PortalStart* last_rendered{};
 		std::vector< std::unique_ptr<gmpi_form_builder::View> > result;
 
 		Portal_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
 		{
-			firstVisual.peerNext = &lastVisual;
-			lastVisual.peerPrev = &firstVisual;
 		}
 
 		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;

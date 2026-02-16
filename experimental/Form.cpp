@@ -250,8 +250,11 @@ void Portal_internal::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& c
 {
 //	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
 
-	portal = new gmpi_forms::Portal();
+	portal = new gmpi_forms::Portal(bounds);
 	canvas.add(portal);
+
+	portal->transform = gmpi::drawing::makeTranslation(50, 50);
+	portal->reverseTransform = gmpi::drawing::makeTranslation(-50, -50);
 
 	DoUpdates(env);
 }
@@ -260,7 +263,7 @@ void Portal_internal::DoUpdates(gmpi_forms::Environment* env) const
 {
 	bool wasDirty = false;
 
-	auto prevVisual = &firstVisual;
+	auto prevVisual = &portal->firstVisual;
 //	auto prevMouseTarget = &firstMouseTarget;
 
 	for (auto& view : result)

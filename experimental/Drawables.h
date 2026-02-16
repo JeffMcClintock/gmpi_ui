@@ -375,7 +375,7 @@ void clear();
 	{
 		friend class Form;
 
-	protected:
+	public:
 		// intrusive linked lists of all drawables with sentinel nodes
 		Visual firstVisual;
 		Visual lastVisual;
@@ -386,15 +386,17 @@ void clear();
 		mutable Interactor* mouseOverObject = {};
 		mutable gmpi::drawing::Point mousePoint;
 		mutable bool isHovered = {};
+		gmpi::drawing::Rect bounds;
 
 	public:
 		gmpi::drawing::Matrix3x2 transform;			// for drawing
 		gmpi::drawing::Matrix3x2 reverseTransform;	// for mouse
 
-		Portal();
+		Portal(gmpi::drawing::Rect pbounds);
 		virtual ~Portal();
 		void clear();
 
+		virtual gmpi::drawing::Rect ClipRect() const { return bounds; }
 		void Draw(gmpi::drawing::Graphics& g) const override;
 #if 0
 		bool HitTest(gmpi::drawing::Point p) const override;

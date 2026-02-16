@@ -248,13 +248,25 @@ Portal::~Portal()
 
 void Portal_internal::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 {
-//	auto& result = *gmpi_forms::ThreadLocalCurrentBuilder;
-
-	portal = new gmpi_forms::Portal(bounds);
+	portal = new gmpi::forms::primative::Portal(bounds);
 	canvas.add(portal);
 
-	portal->transform = gmpi::drawing::makeTranslation(50, 50);
-	portal->reverseTransform = gmpi::drawing::makeTranslation(-50, -50);
+//portal->transform = gmpi::drawing::makeTranslation(50, 50);
+//portal->reverseTransform = gmpi::drawing::makeTranslation(-50, -50);
+
+	auto mt = new gmpi_forms::RectangleMouseTarget(bounds);
+	canvas.add(mt);
+
+	mt->onMouseWheel_callback = [this](int32_t flags, int32_t delta, gmpi::drawing::Point p)
+	{
+		portal->transform = portal->transform * gmpi::drawing::makeTranslation(0, delta * 0.1f);
+
+		portal->transform._32 = (std::min)(0.0f, portal->transform._32);
+
+		portal->reverseTransform = gmpi::drawing::invert(portal->transform);
+		portal->Invalidate(portal->ClipRect());
+	};
+
 
 	DoUpdates(env);
 }

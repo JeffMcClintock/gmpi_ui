@@ -172,7 +172,7 @@ namespace gmpi_form_builder
 	// persistant object that constructs the drawables
 	struct Portal_internal : public View
 	{
-		mutable gmpi_forms::Portal* portal = {};
+		mutable gmpi::forms::primative::Portal* portal = {};
 
 		gmpi::drawing::Rect bounds;
 //		mutable gmpi_forms::PortalStart* last_rendered{};

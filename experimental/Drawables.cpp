@@ -9,17 +9,17 @@ using namespace gmpi::drawing;
 namespace gmpi_forms
 {
 #if 0
-	void TextEditWidget::renderVisuals(Form& environment)
-	{
-		environment.child.add(
-			new EditBox(bounds, environment.state.filterText)
-		);
+void TextEditWidget::renderVisuals(Form& environment)
+{
+	environment.child.add(
+		new EditBox(bounds, environment.state.filterText)
+	);
 
-		environment.child.add(
-			new RectangleMouseTarget(bounds)
-		);
+	environment.child.add(
+		new RectangleMouseTarget(bounds)
+	);
 #if 0
-		environment.child.mouseTargets.back()->onPointerDown = [&environment](gmpi::drawing::Point p)
+	environment.child.mouseTargets.back()->onPointerDown = [&environment](gmpi::drawing::Point p)
 		{
 			_RPT0(0, "Text Edit Clicked\n");
 			environment.setKeyboardHandler(
@@ -42,34 +42,34 @@ namespace gmpi_forms
 			);
 		};
 #endif
-	}
+}
 #endif
 
-	void EditBox::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
-	{
-		auto fillBrush = g.createSolidColorBrush(Colors::White);
-		auto outlineBrush = g.createSolidColorBrush(Colors::Black);
-		auto textFormat = g.getFactory().createTextFormat();
+void EditBox::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
+{
+	auto fillBrush = g.createSolidColorBrush(Colors::White);
+	auto outlineBrush = g.createSolidColorBrush(Colors::Black);
+	auto textFormat = g.getFactory().createTextFormat();
 
-		g.fillRectangle(bounds, fillBrush);
-		g.drawRectangle(bounds, outlineBrush);
+	g.fillRectangle(bounds, fillBrush);
+	g.drawRectangle(bounds, outlineBrush);
 
-		g.drawTextU(text, textFormat, bounds, outlineBrush);
-	}
+	g.drawTextU(text, textFormat, bounds, outlineBrush);
+}
 
 #if 0
-	void KnobWidget::renderVisuals(Form& environment)
-	{
+void KnobWidget::renderVisuals(Form& environment)
+{
 #if 0
-		environment.views.push_back(
-			std::make_unique<Knob>(bounds, environment.state.knbNormalized)
-		);
+	environment.views.push_back(
+		std::make_unique<Knob>(bounds, environment.state.knbNormalized)
+	);
 
-		environment.mouseTargets.push_back(
-			std::make_unique<RectangleMouseTarget>(bounds)
-		);
+	environment.mouseTargets.push_back(
+		std::make_unique<RectangleMouseTarget>(bounds)
+	);
 
-		environment.mouseTargets.back()->onPointerDown = [&environment](gmpi::drawing::Point p)
+	environment.mouseTargets.back()->onPointerDown = [&environment](gmpi::drawing::Point p)
 		{
 			environment.capturePointer(
 				[&environment](gmpi::drawing::Size delta)
@@ -82,681 +82,688 @@ namespace gmpi_forms
 			_RPT0(0, "Knob Clicked\n");
 		};
 #endif
-	}
+}
 #endif
 
-	void Rectangle::Draw(gmpi::drawing::Graphics& g) const
-	{
-		style->Init(g);
+void Rectangle::Draw(gmpi::drawing::Graphics& g) const
+{
+	style->Init(g);
 
-		g.fillRectangle(bounds, style->fill);
-		g.drawRectangle(bounds, style->stroke);
+	g.fillRectangle(bounds, style->fill);
+	g.drawRectangle(bounds, style->stroke);
 
-		// Color the rectangle a little different on each redraw to get a visual indication of what is being invalidated.
+	// Color the rectangle a little different on each redraw to get a visual indication of what is being invalidated.
 #if 0 //def _DEBUG
-		static uint32_t colors[] =
-		{
-			0xff0000,
-			0x00ff00,
-			0x0000ff,
-			0xff00ff,
-		};
-		auto brush = g.createSolidColorBrush(gmpi::drawing::colorFromHex(0xcolors[redrawCount & 3], 0.1f));
-		g.fillRectangle(bounds, brush);
-		++redrawCount;
+	static uint32_t colors[] =
+	{
+		0xff0000,
+		0x00ff00,
+		0x0000ff,
+		0xff00ff,
+	};
+	auto brush = g.createSolidColorBrush(gmpi::drawing::colorFromHex(0xcolors[redrawCount & 3], 0.1f));
+	g.fillRectangle(bounds, brush);
+	++redrawCount;
 #endif
-	}
+}
 
-	void RoundedRectangle::Draw(gmpi::drawing::Graphics& g) const
-	{
-		style->Init(g);
+void RoundedRectangle::Draw(gmpi::drawing::Graphics& g) const
+{
+	style->Init(g);
 
-		gmpi::drawing::RoundedRect roundedRect(bounds, radiusX, radiusY);
+	gmpi::drawing::RoundedRect roundedRect(bounds, radiusX, radiusY);
 
-		g.fillRoundedRectangle(roundedRect, style->fill);
-		g.drawRoundedRectangle(roundedRect, style->stroke);
-	}
+	g.fillRoundedRectangle(roundedRect, style->fill);
+	g.drawRoundedRectangle(roundedRect, style->stroke);
+}
 
-	void ScrollBar::Draw(gmpi::drawing::Graphics& g) const
-	{
-		style->Init(g);
+void ScrollBar::Draw(gmpi::drawing::Graphics& g) const
+{
+	style->Init(g);
 
-		const float normalized = 0.0f; // TODO position.get() / scrollRangePixels;
+	const float normalized = 0.0f; // TODO position.get() / scrollRangePixels;
 
-		// total height of content is the visible area (getHeight(bounds)) plus the scroll range (scrollRangePixels)
-		const float handleHeight = getHeight(bounds) * getHeight(bounds) / (getHeight(bounds) - scrollRangePixels);
-		auto scrollRect = bounds;
-		scrollRect.top = (getHeight(scrollRect) - handleHeight) * normalized;
-		scrollRect.bottom = scrollRect.top + handleHeight;
-		g.fillRectangle(scrollRect, style->fill);
-	}
-	
+	// total height of content is the visible area (getHeight(bounds)) plus the scroll range (scrollRangePixels)
+	const float handleHeight = getHeight(bounds) * getHeight(bounds) / (getHeight(bounds) - scrollRangePixels);
+	auto scrollRect = bounds;
+	scrollRect.top = (getHeight(scrollRect) - handleHeight) * normalized;
+	scrollRect.bottom = scrollRect.top + handleHeight;
+	g.fillRectangle(scrollRect, style->fill);
+}
+
 #if 0
-	void ListView::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
+void ListView::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
+{
+	auto fillBrush = g.createSolidColorBrush(gmpi::drawing::colorFromHex(0x003E3E3Eu));
+	auto outlineBrush = g.createSolidColorBrush(Colors::White);
+	auto textFormat = g.getFactory().createTextFormat();
+	textFormat.SetWordWrapping(WordWrapping::NoWrap);
+
+	g.fillRectangle(bounds, fillBrush);
+	//	g.drawRectangle(bounds, outlineBrush);
+
+	auto textRect = bounds;
+	textRect.left += 2;
+	textRect.bottom = textRect.top + 16;
+
+	for (auto& text : data)
 	{
-		auto fillBrush = g.createSolidColorBrush(gmpi::drawing::colorFromHex(0x003E3E3Eu));
-		auto outlineBrush = g.createSolidColorBrush(Colors::White);
-		auto textFormat = g.getFactory().createTextFormat();
-		textFormat.SetWordWrapping(WordWrapping::NoWrap);
+		g.drawTextU(text.second.c_str(), textFormat, textRect, outlineBrush, DrawTextOptions::Clip);
 
-		g.fillRectangle(bounds, fillBrush);
-		//	g.drawRectangle(bounds, outlineBrush);
-
-		auto textRect = bounds;
-		textRect.left += 2;
-		textRect.bottom = textRect.top + 16;
-
-		for (auto& text : data)
-		{
-			g.drawTextU(text.second.c_str(), textFormat, textRect, outlineBrush, DrawTextOptions::Clip);
-
-			textRect.top += 16;
-			textRect.bottom += 16;
-		}
+		textRect.top += 16;
+		textRect.bottom += 16;
 	}
-	bool ListView::HitTest(gmpi::drawing::Point p) const
-	{
-		return bounds.ContainsPoint(p);
-	}
+}
+bool ListView::HitTest(gmpi::drawing::Point p) const
+{
+	return bounds.ContainsPoint(p);
+}
 #if 1
 
-	bool ListView::onPointerDown(gmpi::drawing::Point p) const
+bool ListView::onPointerDown(gmpi::drawing::Point p) const
+{
+	if (onItemSelected)
 	{
-		if (onItemSelected)
-		{
-			p.x -= bounds.left;
-			p.y -= bounds.top;
+		p.x -= bounds.left;
+		p.y -= bounds.top;
 
-			const auto itemIndex = static_cast<int>(p.y) / 16;
+		const auto itemIndex = static_cast<int>(p.y) / 16;
 
-			onItemSelected(data[itemIndex]);
-		}
-
-		return true;
+		onItemSelected(data[itemIndex]);
 	}
+
+	return true;
+}
 #endif
 #endif
 
-	void ShapeStyle::Init(gmpi::drawing::Graphics& g) const
+void ShapeStyle::Init(gmpi::drawing::Graphics& g) const
+{
+	if (!fill.getBrush())
 	{
-		if (!fill.getBrush())
-		{
-			fill = g.createSolidColorBrush(fillColor);
-			stroke = g.createSolidColorBrush(strokeColor);
-		}
+		fill = g.createSolidColorBrush(fillColor);
+		stroke = g.createSolidColorBrush(strokeColor);
+	}
+}
+
+void TextBoxStyle::setLineSpacing(float pfixedLineSpacing)
+{
+	fixedLineSpacing = pfixedLineSpacing;
+}
+
+void TextBoxStyle::Draw(gmpi::drawing::Graphics& g, const TextBox& t) const
+{
+	if (!foreGround.getBrush())
+	{
+		backGround = g.createSolidColorBrush(backgroundColor);
+		foreGround = g.createSolidColorBrush(foregroundColor);
+		textFormat = g.getFactory().createTextFormat(bodyHeight);
+		textFormat.setWordWrapping(WordWrapping::NoWrap);
+		textFormat.setTextAlignment(static_cast<TextAlignment>(textAlignment));
+
+		if (fixedLineSpacing)
+			textFormat.setLineSpacing(fixedLineSpacing, 0.8f * fixedLineSpacing);
 	}
 
-	void TextBoxStyle::setLineSpacing(float pfixedLineSpacing)
+	g.fillRectangle(t.bounds, backGround);
+	g.drawTextU(t.text, textFormat, t.bounds, foreGround, DrawTextOptions::Clip);
+}
+
+void TextBox::Draw(gmpi::drawing::Graphics& g) const
+{
+	style->Draw(g, *this);
+}
+
+void Shape::Draw(gmpi::drawing::Graphics& g) const
+{
+	const auto originalTransform = g.getTransform();
+	const auto adjustedTransform = originalTransform * makeTranslation({ bounds.left, bounds.top });
+	g.setTransform(adjustedTransform);
+
+	style->Draw(g, *this, *path);
+
+	g.setTransform(originalTransform);
+}
+
+void ShapeStyle::Draw(gmpi::drawing::Graphics& g, const Shape& t, const PathHolder& path) const
+{
+	Init(g);
+	if (!path.path)
 	{
-		fixedLineSpacing = pfixedLineSpacing;
+		path.path = g.getFactory().createPathGeometry();
+		path.InitPath(path.path);
 	}
-	
-	void TextBoxStyle::Draw(gmpi::drawing::Graphics& g, const TextBox& t) const
+	if (path.path)
 	{
-		if (!foreGround.getBrush())
-		{
-			backGround = g.createSolidColorBrush(backgroundColor);
-			foreGround = g.createSolidColorBrush(foregroundColor);
-			textFormat = g.getFactory().createTextFormat(bodyHeight);
-			textFormat.setWordWrapping(WordWrapping::NoWrap);
-			textFormat.setTextAlignment(static_cast<TextAlignment>(textAlignment));
-
-			if(fixedLineSpacing)
-				textFormat.setLineSpacing(fixedLineSpacing, 0.8f * fixedLineSpacing);
-		}
-
-		g.fillRectangle(t.bounds, backGround);
-		g.drawTextU(t.text, textFormat, t.bounds, foreGround, DrawTextOptions::Clip);
+		g.fillGeometry(path.path, fill);
+		g.drawGeometry(path.path, stroke, 1.f);
 	}
+}
 
-	void TextBox::Draw(gmpi::drawing::Graphics& g) const
-	{
-		style->Draw(g, *this);
-	}
+void Circle::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
+{
+	auto fillBrush = g.createSolidColorBrush(Colors::White);
+	auto outlineBrush = g.createSolidColorBrush(Colors::Black);
 
-	void Shape::Draw(gmpi::drawing::Graphics& g) const
-	{
-		const auto originalTransform = g.getTransform();
-		const auto adjustedTransform = originalTransform * makeTranslation({ bounds.left, bounds.top });
-		g.setTransform(adjustedTransform);
+	g.fillCircle(getCenter(bounds), getWidth(bounds) * 0.5f, fillBrush);
+	g.drawCircle(getCenter(bounds), getWidth(bounds) * 0.5f, outlineBrush);
+}
 
-		style->Draw(g, *this, *path);
+void Knob::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
+{
+	auto fillBrush = g.createSolidColorBrush(Colors::White);
+	auto outlineBrush = g.createSolidColorBrush(Colors::Black);
 
-		g.setTransform(originalTransform);
-	}
+	const auto centerPoint = getCenter(bounds);
 
-	void ShapeStyle::Draw(gmpi::drawing::Graphics& g, const Shape& t, const PathHolder& path) const
-	{
-		Init(g);
-		if (!path.path)
-		{
-			path.path = g.getFactory().createPathGeometry();
-			path.InitPath(path.path);
-		}
-		if (path.path)
-		{
-			g.fillGeometry(path.path, fill);
-			g.drawGeometry(path.path, stroke, 1.f);
-		}
-	}
+	g.fillCircle(centerPoint, getWidth(bounds) * 0.5f, fillBrush);
+	g.drawCircle(centerPoint, getWidth(bounds) * 0.5f, outlineBrush);
 
-	void Circle::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
-	{
-		auto fillBrush = g.createSolidColorBrush(Colors::White);
-		auto outlineBrush = g.createSolidColorBrush(Colors::Black);
+	// 0.0 12 o'clock
+	const auto turn = -0.3f + 0.6f * normalized;
+	const auto radius = getWidth(bounds) * 0.3f;
+	Point tickPoint(centerPoint.x + radius * gmpi_sdk::tsin(turn), centerPoint.y - radius * gmpi_sdk::tcos(turn));
 
-		g.fillCircle(getCenter(bounds), getWidth(bounds) * 0.5f, fillBrush);
-		g.drawCircle(getCenter(bounds), getWidth(bounds) * 0.5f, outlineBrush);
-	}
+	g.fillCircle(tickPoint, getWidth(bounds) * 0.1f, outlineBrush);
+}
 
-	void Knob::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
-	{
-		auto fillBrush = g.createSolidColorBrush(Colors::White);
-		auto outlineBrush = g.createSolidColorBrush(Colors::Black);
+bool RectangleMouseTarget::HitTest(gmpi::drawing::Point p) const
+{
+	return pointInRect(p, bounds);
+}
 
-		const auto centerPoint = getCenter(bounds);
-
-		g.fillCircle(centerPoint, getWidth(bounds) * 0.5f, fillBrush);
-		g.drawCircle(centerPoint, getWidth(bounds) * 0.5f, outlineBrush);
-
-		// 0.0 12 o'clock
-		const auto turn = -0.3f + 0.6f * normalized;
-		const auto radius = getWidth(bounds) * 0.3f;
-		Point tickPoint(centerPoint.x + radius * gmpi_sdk::tsin(turn), centerPoint.y - radius * gmpi_sdk::tcos(turn));
-
-		g.fillCircle(tickPoint, getWidth(bounds) * 0.1f, outlineBrush);
-	}
-
-	bool RectangleMouseTarget::HitTest(gmpi::drawing::Point p) const
-	{
-		return pointInRect(p, bounds);
-	}
-
-	void RectangleMouseTarget::captureMouse(bool capture)
-	{
-		// how to capture mouse? (currently dragging scrollbar works only so long as mouse is over narrow strip)
+void RectangleMouseTarget::captureMouse(bool capture)
+{
+	// how to capture mouse? (currently dragging scrollbar works only so long as mouse is over narrow strip)
 // need to get to form/environment whatever.		getEnvironment()->captureMouse(this, capture);
 
 		// need to get topview to capture mouse on behalf of my identity, so even if this object is deleted, mouse capture is still valid, and topview will route it 
 		// to my replacement.
-		form->captureMouse(this);
-	}
+	form->captureMouse(this);
+}
 
 
-	///////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////
 
-	ViewPort::ViewPort()
-	{
-		firstVisual.peerNext = &lastVisual;
-		lastVisual.peerPrev = &firstVisual;
-		firstMouseTarget.peerNext = &lastMouseTarget;
-		lastMouseTarget.peerPrev = &firstMouseTarget;
-	}
+ViewPort::ViewPort()
+{
+	firstVisual.peerNext = &lastVisual;
+	lastVisual.peerPrev = &firstVisual;
+	firstMouseTarget.peerNext = &lastMouseTarget;
+	lastMouseTarget.peerPrev = &firstMouseTarget;
+}
 
-	ViewPort::~ViewPort()
-	{
-		clearChildren();
-	}
+ViewPort::~ViewPort()
+{
+	clearChildren();
+}
 
-	void ViewPort::clearChildren()
-	{
-		mouseOverObject = {};
-//		mouseTargets.clear();
-//		visuals.clear();
+void ViewPort::clearChildren()
+{
+	mouseOverObject = {};
+	//		mouseTargets.clear();
+	//		visuals.clear();
 
 #if 0
 		// delete all nodes between sentinels
-		Child* obj = firstChild.peerNext;
-		while (obj && obj != &lastChild)
-		{
-			Child* next = obj->peerNext;
-			delete obj;
-			obj = next;
-		}
-
-		firstChild.peerNext = &lastChild;
-		lastChild.peerPrev = &firstChild;
-#endif
+	Child* obj = firstChild.peerNext;
+	while (obj && obj != &lastChild)
+	{
+		Child* next = obj->peerNext;
+		delete obj;
+		obj = next;
 	}
+
+	firstChild.peerNext = &lastChild;
+	lastChild.peerPrev = &firstChild;
+#endif
+}
 
 #if 0 // TODO
-	void ViewPort::add(Child* child, const char* id)
+void ViewPort::add(Child* child, const char* id)
+{
+	child->peerUnlink();
+
+	lastChild.peerPrev->peerNext = child;
+	child->peerPrev = lastChild.peerPrev;
+	child->peerNext = &lastChild;
+
+	//		children.push_back(std::unique_ptr<Child>(child));
+
+	if (auto drawable = dynamic_cast<Visual*>(child); drawable)
 	{
-		child->peerUnlink();
+		drawable->parent = this;
+		visuals.push_back(drawable);
 
-		lastChild.peerPrev->peerNext = child;
-		child->peerPrev = lastChild.peerPrev;
-		child->peerNext = &lastChild;
-
-//		children.push_back(std::unique_ptr<Child>(child));
-
-		if (auto drawable = dynamic_cast<Visual*>(child); drawable)
-		{
-			drawable->parent = this;
-			visuals.push_back(drawable);
-
-			Invalidate(drawable->ClipRect());
-		}
-
-		if (auto mouseable = dynamic_cast<Interactor*>(child); mouseable)
-		{
-			mouseable->form = form;
-
-			mouseTargets.push_back(mouseable);
-		}
-
-		child->onAddedToParent();
+		Invalidate(drawable->ClipRect());
 	}
 
-	// Removes a contiguous range of children
-	void ViewPort::remove(Child* first, Child* last)
+	if (auto mouseable = dynamic_cast<Interactor*>(child); mouseable)
 	{
-		if (!first || !last)
-			return;
+		mouseable->form = form;
 
-		gmpi::drawing::Rect invalidRect{}; // union of all removed children.
+		mouseTargets.push_back(mouseable);
+	}
 
-		auto nextAfterLast = last->peerNext;
-		auto beforeFirst = first->peerPrev;
+	child->onAddedToParent();
+}
 
-		// Detach the range from the intrusive list now so traversal of remaining children
-		// can't accidentally step into nodes that are being deleted.
-		beforeFirst->peerNext = nextAfterLast;
-		nextAfterLast->peerPrev = beforeFirst;
+// Removes a contiguous range of children
+void ViewPort::remove(Child* first, Child* last)
+{
+	if (!first || !last)
+		return;
 
-		// Isolate removed nodes to avoid leaving dangling links while deleting.
-		first->peerPrev = nullptr;
-		last->peerNext = nullptr;
-		for (auto* obj = first; obj; )
+	gmpi::drawing::Rect invalidRect{}; // union of all removed children.
+
+	auto nextAfterLast = last->peerNext;
+	auto beforeFirst = first->peerPrev;
+
+	// Detach the range from the intrusive list now so traversal of remaining children
+	// can't accidentally step into nodes that are being deleted.
+	beforeFirst->peerNext = nextAfterLast;
+	nextAfterLast->peerPrev = beforeFirst;
+
+	// Isolate removed nodes to avoid leaving dangling links while deleting.
+	first->peerPrev = nullptr;
+	last->peerNext = nullptr;
+	for (auto* obj = first; obj; )
+	{
+		auto* next = obj->peerNext;
+
+		// is it a visual?
+		if (auto itx = std::find(visuals.begin(), visuals.end(), dynamic_cast<Visual*>(obj)); itx != visuals.end())
 		{
-			auto* next = obj->peerNext;
+			if (isNull(invalidRect))
+				invalidRect = (*itx)->ClipRect();
+			else
+				invalidRect = unionRect(invalidRect, (*itx)->ClipRect());
 
-			// is it a visual?
-			if (auto itx = std::find(visuals.begin(), visuals.end(), dynamic_cast<Visual*>(obj)); itx != visuals.end())
-			{
-				if(isNull(invalidRect))
-					invalidRect = (*itx)->ClipRect();
-				else
-					invalidRect = unionRect(invalidRect, (*itx)->ClipRect());
-				
-				visuals.erase(itx);
-			}
-
-			// is it a mouse-taret?
-			auto obj_interactor = dynamic_cast<Interactor*>(obj);
-			if (auto itx = std::find(mouseTargets.begin(), mouseTargets.end(), obj_interactor); itx != mouseTargets.end())
-			{
-				mouseTargets.erase(itx);
-			}
-
-			if (obj_interactor == mouseOverObject)
-				mouseOverObject = {};
-
-			delete obj;
-			obj = next;
+			visuals.erase(itx);
 		}
 
-		Invalidate(invalidRect);
+		// is it a mouse-taret?
+		auto obj_interactor = dynamic_cast<Interactor*>(obj);
+		if (auto itx = std::find(mouseTargets.begin(), mouseTargets.end(), obj_interactor); itx != mouseTargets.end())
+		{
+			mouseTargets.erase(itx);
+		}
+
+		if (obj_interactor == mouseOverObject)
+			mouseOverObject = {};
+
+		delete obj;
+		obj = next;
 	}
+
+	Invalidate(invalidRect);
+}
 #endif
 
-	void ViewPort::clear()
+void ViewPort::clear()
+{
+	clearChildren();
+}
+
+void ViewPort::Draw(gmpi::drawing::Graphics& g) const
+{
+	const auto originalTransform = g.getTransform();
+	const auto adjustedTransform = transform * originalTransform;
+	g.setTransform(adjustedTransform);
+
+	const auto clipRect = g.getAxisAlignedClip();
+
+	for (auto v = firstVisual.peerNext; v != &lastVisual; v = v->peerNext)
 	{
-		clearChildren();
-	}
-
-	void ViewPort::Draw(gmpi::drawing::Graphics& g) const
-	{
-		const auto originalTransform = g.getTransform();
-		const auto adjustedTransform = transform * originalTransform;
-		g.setTransform(adjustedTransform);
-
-		const auto clipRect = g.getAxisAlignedClip();
-
-		for (auto v = firstVisual.peerNext ; v != &lastVisual ; v = v->peerNext)
+		const auto childRect = v->ClipRect();
+		if (!empty(intersectRect(clipRect, childRect)))
 		{
-			const auto childRect = v->ClipRect();
-			if (!empty(intersectRect(clipRect, childRect)))
-			{
-				v->Draw(g);
-			}
+			v->Draw(g);
 		}
-
-		g.setTransform(originalTransform);
 	}
 
-	bool ViewPort::HitTest(gmpi::drawing::Point p) const
+	g.setTransform(originalTransform);
+}
+
+bool ViewPort::HitTest(gmpi::drawing::Point p) const
+{
+	const auto point = transformPoint(reverseTransform, p);
+
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		const auto point = transformPoint(reverseTransform, p);
-
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		if (t->HitTest(point))
 		{
-			if (t->HitTest(point))
-			{
-				return true;
-				break;
-			}
+			return true;
+			break;
 		}
-
-		return false;
 	}
 
-	bool ViewPort::onPointerDown(PointerEvent* e) const
+	return false;
+}
+
+bool ViewPort::onPointerDown(PointerEvent* e) const
 //	bool ViewPort::onPointerDown(gmpi::drawing::Point p) const
+{
+	auto e2 = *e;
+	e2.position = transformPoint(reverseTransform, e->position);
+	//		const auto point = transformPoint(reverseTransform, e->position);
+
+			// iterate mouseTargets in reverse (to respect Z-order)
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		auto e2 = *e;
-		e2.position = transformPoint(reverseTransform, e->position);
-//		const auto point = transformPoint(reverseTransform, e->position);
-
-		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
-		{
-			if (t->HitTest(e2.position) && t->onPointerDown(&e2))
-				return true;
-		}
-
-		return false;
+		if (t->HitTest(e2.position) && t->onPointerDown(&e2))
+			return true;
 	}
 
-	bool ViewPort::onPointerUp(gmpi::drawing::Point p) const
+	return false;
+}
+
+bool ViewPort::onPointerUp(gmpi::drawing::Point p) const
+{
+	const auto point = transformPoint(reverseTransform, p);
+
+	// iterate mouseTargets in reverse (to respect Z-order)
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		const auto point = transformPoint(reverseTransform, p);
-
-		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
-		{
-			if (t->HitTest(point) && t->onPointerUp(point))
-				return true;
-		}
-
-		return false;
+		if (t->HitTest(point) && t->onPointerUp(point))
+			return true;
 	}
 
-	bool ViewPort::onPointerMove(gmpi::drawing::Point p) const
+	return false;
+}
+
+bool ViewPort::onPointerMove(gmpi::drawing::Point p) const
+{
+	//		_RPTN(0, "---------------ViewPort::onPointerMove( %f, %f)\n", p.x, p.y);
+
+	mousePoint = transformPoint(reverseTransform, p);
+	const auto prevMouseOverObject = mouseOverObject;
+
+	mouseOverObject = {};
+
+	// iterate mouseTargets in reverse (to respect Z-order)
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-//		_RPTN(0, "---------------ViewPort::onPointerMove( %f, %f)\n", p.x, p.y);
-
-		mousePoint = transformPoint(reverseTransform, p);
-		const auto prevMouseOverObject = mouseOverObject;
-
-		mouseOverObject = {};
-
-		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		if (t->HitTest(mousePoint) && t->wantsClicks())
 		{
-			if (t->HitTest(mousePoint) && t->wantsClicks())
-			{
-				mouseOverObject = t;
-				break;
-			}
+			mouseOverObject = t;
+			break;
 		}
+	}
 
-		if (prevMouseOverObject != mouseOverObject)
+	if (prevMouseOverObject != mouseOverObject)
+	{
+		const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
+		const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
+
+		_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);
+	}
+
+	if (prevMouseOverObject != mouseOverObject)
+	{
+		if (prevMouseOverObject)
 		{
-			const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
-			const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
-
-			_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);
-		}
-
-		if (prevMouseOverObject != mouseOverObject)
-		{
-			if (prevMouseOverObject)
-			{
-				prevMouseOverObject->setHover(false);
-			}
-
-			if (mouseOverObject)
-			{
-//				_RPTN(0, "SetHover(true) :%s\n", typeid (*mouseOverObject).name());
-				mouseOverObject->setHover(true);
-			}
+			prevMouseOverObject->setHover(false);
 		}
 
 		if (mouseOverObject)
 		{
-			mouseOverObject->onPointerMove(mousePoint);
+			//				_RPTN(0, "SetHover(true) :%s\n", typeid (*mouseOverObject).name());
+			mouseOverObject->setHover(true);
 		}
-
-		return mouseOverObject != nullptr;
 	}
 
-	bool ViewPort::setHover(bool isMouseOverMe) const
+	if (mouseOverObject)
 	{
-		isHovered = isMouseOverMe;
-		if (!isMouseOverMe && mouseOverObject)
-		{
-			mouseOverObject->setHover(false);
-			mouseOverObject = {};
-		}
-
-		return true;
+		mouseOverObject->onPointerMove(mousePoint);
 	}
 
-	bool ViewPort::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
+	return mouseOverObject != nullptr;
+}
+
+bool ViewPort::setHover(bool isMouseOverMe) const
+{
+	isHovered = isMouseOverMe;
+	if (!isMouseOverMe && mouseOverObject)
 	{
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
-		{
-			if (t->HitTest(point) && t->onMouseWheel(flags, delta, point))
-				return true;
-		}
-
-		return false;
+		mouseOverObject->setHover(false);
+		mouseOverObject = {};
 	}
+
+	return true;
+}
+
+bool ViewPort::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
+{
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+	{
+		if (t->HitTest(point) && t->onMouseWheel(flags, delta, point))
+			return true;
+	}
+
+	return false;
+}
 
 
 #if 0
-	bool ViewPort::onHover(gmpi::drawing::Point point, bool isHovered) const
+bool ViewPort::onHover(gmpi::drawing::Point point, bool isHovered) const
+{
+	for (auto& t : mouseTargets)
 	{
-		for (auto& t : mouseTargets)
+		if (t->HitTest(point) && t->onHover())
 		{
-			if (t->HitTest(point) && t->onHover())
-			{
-				return true;
-			}
+			return true;
 		}
-
-		return false;
 	}
+
+	return false;
+}
 #endif
 
-	void ViewPort::Invalidate(gmpi::drawing::Rect r) const
-	{
-		if (!parent) // still under construction
-			return;
+void ViewPort::Invalidate(gmpi::drawing::Rect r) const
+{
+	if (!parent) // still under construction
+		return;
 
-		auto r2 = transformRect(reverseTransform, r);
-		parent->Invalidate(r2);
-	}
+	auto r2 = transformRect(reverseTransform, r);
+	parent->Invalidate(r2);
+}
 
-	///////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////
 
+} // namespace gmpi_forms
 
-	Portal::Portal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
-	{
-		firstVisual.peerNext = &lastVisual;
-		lastVisual.peerPrev = &firstVisual;
-	}
+namespace gmpi::forms::primative
+{
+Portal::Portal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
+{
+	firstVisual.peerNext = &lastVisual;
+	lastVisual.peerPrev = &firstVisual;
+}
 
-	Portal::~Portal()
-	{
-		clearChildren();
-	}
+Portal::~Portal()
+{
+	clearChildren();
+}
 
-	void Portal::clearChildren()
-	{
-		mouseOverObject = {};
+void Portal::clearChildren()
+{
+	//	mouseOverObject = {};
 
 #if 0
-		// delete all nodes between sentinels
-		Child* obj = firstChild.peerNext;
-		while (obj && obj != &lastChild)
-		{
-			Child* next = obj->peerNext;
-			delete obj;
-			obj = next;
-		}
+	// delete all nodes between sentinels
+	Child* obj = firstChild.peerNext;
+	while (obj && obj != &lastChild)
+	{
+		Child* next = obj->peerNext;
+		delete obj;
+		obj = next;
+	}
 
-		firstChild.peerNext = &lastChild;
-		lastChild.peerPrev = &firstChild;
+	firstChild.peerNext = &lastChild;
+	lastChild.peerPrev = &firstChild;
 #endif
-	}
+}
 
 
-	void Portal::clear()
+void Portal::clear()
+{
+	clearChildren();
+}
+
+void Portal::Draw(gmpi::drawing::Graphics& g) const
+{
+	const auto originalTransform = g.getTransform();
+	const auto adjustedTransform = transform * originalTransform;
+	g.setTransform(adjustedTransform);
+
+	const auto clipRect = g.getAxisAlignedClip();
+
+	for (auto v = firstVisual.peerNext; v != &lastVisual; v = v->peerNext)
 	{
-		clearChildren();
-	}
-
-	void Portal::Draw(gmpi::drawing::Graphics& g) const
-	{
-		const auto originalTransform = g.getTransform();
-		const auto adjustedTransform = transform * originalTransform;
-		g.setTransform(adjustedTransform);
-
-		const auto clipRect = g.getAxisAlignedClip();
-
-		for (auto v = firstVisual.peerNext; v != &lastVisual; v = v->peerNext)
+		const auto childRect = v->ClipRect();
+		if (!empty(intersectRect(clipRect, childRect)))
 		{
-			const auto childRect = v->ClipRect();
-			if (!empty(intersectRect(clipRect, childRect)))
-			{
-				v->Draw(g);
-			}
+			v->Draw(g);
 		}
-
-		g.setTransform(originalTransform);
 	}
 
-	void Portal::Invalidate(gmpi::drawing::Rect r) const
-	{
-		if (!parent) // still under construction
-			return;
+	g.setTransform(originalTransform);
+}
 
-		auto r2 = transformRect(reverseTransform, r);
-		parent->Invalidate(r2);
-	}
+void Portal::Invalidate(gmpi::drawing::Rect r) const
+{
+	if (!parent) // still under construction
+		return;
+
+	auto r2 = transformRect(reverseTransform, r);
+	parent->Invalidate(r2);
+}
 
 #if 0
-	bool Portal::HitTest(gmpi::drawing::Point p) const
+bool Portal::HitTest(gmpi::drawing::Point p) const
+{
+	const auto point = transformPoint(reverseTransform, p);
+
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		const auto point = transformPoint(reverseTransform, p);
-
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		if (t->HitTest(point))
 		{
-			if (t->HitTest(point))
-			{
-				return true;
-				break;
-			}
+			return true;
+			break;
 		}
-
-		return false;
 	}
 
-	bool Portal::onPointerDown(PointerEvent* e) const
-		//	bool Portal::onPointerDown(gmpi::drawing::Point p) const
+	return false;
+}
+
+bool Portal::onPointerDown(PointerEvent* e) const
+//	bool Portal::onPointerDown(gmpi::drawing::Point p) const
+{
+	auto e2 = *e;
+	e2.position = transformPoint(reverseTransform, e->position);
+	//		const auto point = transformPoint(reverseTransform, e->position);
+
+			// iterate mouseTargets in reverse (to respect Z-order)
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		auto e2 = *e;
-		e2.position = transformPoint(reverseTransform, e->position);
-		//		const auto point = transformPoint(reverseTransform, e->position);
-
-				// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
-		{
-			if (t->HitTest(e2.position) && t->onPointerDown(&e2))
-				return true;
-		}
-
-		return false;
+		if (t->HitTest(e2.position) && t->onPointerDown(&e2))
+			return true;
 	}
 
-	bool Portal::onPointerUp(gmpi::drawing::Point p) const
+	return false;
+}
+
+bool Portal::onPointerUp(gmpi::drawing::Point p) const
+{
+	const auto point = transformPoint(reverseTransform, p);
+
+	// iterate mouseTargets in reverse (to respect Z-order)
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		const auto point = transformPoint(reverseTransform, p);
-
-		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
-		{
-			if (t->HitTest(point) && t->onPointerUp(point))
-				return true;
-		}
-
-		return false;
+		if (t->HitTest(point) && t->onPointerUp(point))
+			return true;
 	}
 
-	bool Portal::onPointerMove(gmpi::drawing::Point p) const
+	return false;
+}
+
+bool Portal::onPointerMove(gmpi::drawing::Point p) const
+{
+	//		_RPTN(0, "---------------Portal::onPointerMove( %f, %f)\n", p.x, p.y);
+
+	mousePoint = transformPoint(reverseTransform, p);
+	const auto prevMouseOverObject = mouseOverObject;
+
+	mouseOverObject = {};
+
+	// iterate mouseTargets in reverse (to respect Z-order)
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 	{
-		//		_RPTN(0, "---------------Portal::onPointerMove( %f, %f)\n", p.x, p.y);
-
-		mousePoint = transformPoint(reverseTransform, p);
-		const auto prevMouseOverObject = mouseOverObject;
-
-		mouseOverObject = {};
-
-		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+		if (t->HitTest(mousePoint) && t->wantsClicks())
 		{
-			if (t->HitTest(mousePoint) && t->wantsClicks())
-			{
-				mouseOverObject = t;
-				break;
-			}
+			mouseOverObject = t;
+			break;
 		}
+	}
 
-		if (prevMouseOverObject != mouseOverObject)
+	if (prevMouseOverObject != mouseOverObject)
+	{
+		const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
+		const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
+
+		_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);
+	}
+
+	if (prevMouseOverObject != mouseOverObject)
+	{
+		if (prevMouseOverObject)
 		{
-			const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
-			const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
-
-			_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);
-		}
-
-		if (prevMouseOverObject != mouseOverObject)
-		{
-			if (prevMouseOverObject)
-			{
-				prevMouseOverObject->setHover(false);
-			}
-
-			if (mouseOverObject)
-			{
-				//				_RPTN(0, "SetHover(true) :%s\n", typeid (*mouseOverObject).name());
-				mouseOverObject->setHover(true);
-			}
+			prevMouseOverObject->setHover(false);
 		}
 
 		if (mouseOverObject)
 		{
-			mouseOverObject->onPointerMove(mousePoint);
+			//				_RPTN(0, "SetHover(true) :%s\n", typeid (*mouseOverObject).name());
+			mouseOverObject->setHover(true);
 		}
-
-		return mouseOverObject != nullptr;
 	}
 
-	bool Portal::setHover(bool isMouseOverMe) const
+	if (mouseOverObject)
 	{
-		isHovered = isMouseOverMe;
-		if (!isMouseOverMe && mouseOverObject)
-		{
-			mouseOverObject->setHover(false);
-			mouseOverObject = {};
-		}
-
-		return true;
+		mouseOverObject->onPointerMove(mousePoint);
 	}
 
-	bool Portal::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
+	return mouseOverObject != nullptr;
+}
+
+bool Portal::setHover(bool isMouseOverMe) const
+{
+	isHovered = isMouseOverMe;
+	if (!isMouseOverMe && mouseOverObject)
 	{
-		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
-		{
-			if (t->HitTest(point) && t->onMouseWheel(flags, delta, point))
-				return true;
-		}
-
-		return false;
+		mouseOverObject->setHover(false);
+		mouseOverObject = {};
 	}
+
+	return true;
+}
+
+bool Portal::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
+{
+	for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
+	{
+		if (t->HitTest(point) && t->onMouseWheel(flags, delta, point))
+			return true;
+	}
+
+	return false;
+}
 #endif
+} // namespace
+
+namespace gmpi_forms
+{
 	///////////////////////////////////////////////////////////////////////
 
 	void Visual::Invalidate(gmpi::drawing::Rect r) const

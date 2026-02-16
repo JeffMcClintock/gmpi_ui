@@ -371,45 +371,6 @@ void clear();
 		virtual void Invalidate(gmpi::drawing::Rect) const;
 	};
 
-	class Portal : public Visual // , public Interactor
-	{
-		friend class Form;
-
-	public:
-		// intrusive linked lists of all drawables with sentinel nodes
-		Visual firstVisual;
-		Visual lastVisual;
-
-		void clearChildren();
-
-		// areas where the mouse produces some effect
-		mutable Interactor* mouseOverObject = {};
-		mutable gmpi::drawing::Point mousePoint;
-		mutable bool isHovered = {};
-		gmpi::drawing::Rect bounds;
-
-	public:
-		gmpi::drawing::Matrix3x2 transform;			// for drawing
-		gmpi::drawing::Matrix3x2 reverseTransform;	// for mouse
-
-		Portal(gmpi::drawing::Rect pbounds);
-		virtual ~Portal();
-		void clear();
-
-		virtual gmpi::drawing::Rect ClipRect() const { return bounds; }
-		void Draw(gmpi::drawing::Graphics& g) const override;
-#if 0
-		bool HitTest(gmpi::drawing::Point p) const override;
-		bool onPointerDown(PointerEvent*) const override;
-
-		bool onPointerUp(gmpi::drawing::Point point) const override;
-		bool onPointerMove(gmpi::drawing::Point point) const override;
-		bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override;
-		bool setHover(bool isMouseOverMe) const override;
-#endif
-		virtual void Invalidate(gmpi::drawing::Rect) const;
-	};
-
 	// not really a canvas, just a temporary list of stuff
 	struct Canvas
 	{
@@ -700,3 +661,44 @@ void clear();
 	};
 }
 
+namespace gmpi::forms::primative
+{
+class Portal : public gmpi_forms::Visual // , public Interactor
+{
+	friend class Form;
+
+public:
+	// intrusive linked lists of all drawables with sentinel nodes
+	Visual firstVisual;
+	Visual lastVisual;
+
+	void clearChildren();
+
+	// areas where the mouse produces some effect
+//	mutable Interactor* mouseOverObject = {};
+	mutable gmpi::drawing::Point mousePoint;
+	mutable bool isHovered = {};
+	gmpi::drawing::Rect bounds;
+
+public:
+	gmpi::drawing::Matrix3x2 transform;			// for drawing
+	gmpi::drawing::Matrix3x2 reverseTransform;	// for mouse
+
+	Portal(gmpi::drawing::Rect pbounds);
+	virtual ~Portal();
+	void clear();
+
+	virtual gmpi::drawing::Rect ClipRect() const { return bounds; }
+	void Draw(gmpi::drawing::Graphics& g) const override;
+#if 0
+	bool HitTest(gmpi::drawing::Point p) const override;
+	bool onPointerDown(PointerEvent*) const override;
+
+	bool onPointerUp(gmpi::drawing::Point point) const override;
+	bool onPointerMove(gmpi::drawing::Point point) const override;
+	bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const override;
+	bool setHover(bool isMouseOverMe) const override;
+#endif
+	virtual void Invalidate(gmpi::drawing::Rect) const;
+};
+}

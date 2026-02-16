@@ -121,7 +121,7 @@ namespace gmpi_forms
 	{
 		style->Init(g);
 
-		const float normalized = position.get() / scrollRangePixels;
+		const float normalized = 0.0f; // TODO position.get() / scrollRangePixels;
 
 		// total height of content is the visible area (getHeight(bounds)) plus the scroll range (scrollRangePixels)
 		const float handleHeight = getHeight(bounds) * getHeight(bounds) / (getHeight(bounds) - scrollRangePixels);
@@ -282,9 +282,50 @@ namespace gmpi_forms
 		form->captureMouse(this);
 	}
 
+	ViewPort::ViewPort()
+	{
+		firstVisual.peerNext = &lastVisual;
+		lastVisual.peerPrev = &firstVisual;
+		firstMouseTarget.peerNext = &lastMouseTarget;
+		lastMouseTarget.peerPrev = &firstMouseTarget;
+	}
+
+	ViewPort::~ViewPort()
+	{
+		clearChildren();
+	}
+
+	void ViewPort::clearChildren()
+	{
+		mouseOverObject = {};
+//		mouseTargets.clear();
+//		visuals.clear();
+
+#if 0
+		// delete all nodes between sentinels
+		Child* obj = firstChild.peerNext;
+		while (obj && obj != &lastChild)
+		{
+			Child* next = obj->peerNext;
+			delete obj;
+			obj = next;
+		}
+
+		firstChild.peerNext = &lastChild;
+		lastChild.peerPrev = &firstChild;
+#endif
+	}
+
+#if 0 // TODO
 	void ViewPort::add(Child* child, const char* id)
 	{
-		children.push_back({ id ? std::string(id) : std::string(), std::unique_ptr<Child>(child)});
+		child->peerUnlink();
+
+		lastChild.peerPrev->peerNext = child;
+		child->peerPrev = lastChild.peerPrev;
+		child->peerNext = &lastChild;
+
+//		children.push_back(std::unique_ptr<Child>(child));
 
 		if (auto drawable = dynamic_cast<Visual*>(child); drawable)
 		{
@@ -307,25 +348,27 @@ namespace gmpi_forms
 	// Removes a contiguous range of children
 	void ViewPort::remove(Child* first, Child* last)
 	{
-		auto it1 = children.begin();
-		while (it1 != children.end() && (*it1).child.get() != first)
-			++it1;
-
-		auto it2 = it1;
-		while (it2 != children.end() && (*it2).child.get() != last)
-			++it2;
-
-		if (it1 == children.end() || it2 == children.end())
+		if (!first || !last)
 			return;
 
-		it2++;
+		gmpi::drawing::Rect invalidRect{}; // union of all removed children.
 
-		gmpi::drawing::Rect invalidRect{}; // union of all removed children. (faster than many individual calls to invalidate)
-		
-		for (auto it = it1; it < it2; ++it)
+		auto nextAfterLast = last->peerNext;
+		auto beforeFirst = first->peerPrev;
+
+		// Detach the range from the intrusive list now so traversal of remaining children
+		// can't accidentally step into nodes that are being deleted.
+		beforeFirst->peerNext = nextAfterLast;
+		nextAfterLast->peerPrev = beforeFirst;
+
+		// Isolate removed nodes to avoid leaving dangling links while deleting.
+		first->peerPrev = nullptr;
+		last->peerNext = nullptr;
+		for (auto* obj = first; obj; )
 		{
-			auto obj = (*it).child.get();
+			auto* next = obj->peerNext;
 
+			// is it a visual?
 			if (auto itx = std::find(visuals.begin(), visuals.end(), dynamic_cast<Visual*>(obj)); itx != visuals.end())
 			{
 				if(isNull(invalidRect))
@@ -336,6 +379,7 @@ namespace gmpi_forms
 				visuals.erase(itx);
 			}
 
+			// is it a mouse-taret?
 			auto obj_interactor = dynamic_cast<Interactor*>(obj);
 			if (auto itx = std::find(mouseTargets.begin(), mouseTargets.end(), obj_interactor); itx != mouseTargets.end())
 			{
@@ -344,19 +388,18 @@ namespace gmpi_forms
 
 			if (obj_interactor == mouseOverObject)
 				mouseOverObject = {};
-		}
 
-		children.erase(it1, it2);
+			delete obj;
+			obj = next;
+		}
 
 		Invalidate(invalidRect);
 	}
+#endif
 
 	void ViewPort::clear()
 	{
-		mouseOverObject = {};
-		mouseTargets.clear();
-		visuals.clear();
-		children.clear();
+		clearChildren();
 	}
 
 	void ViewPort::Draw(gmpi::drawing::Graphics& g) const
@@ -367,7 +410,7 @@ namespace gmpi_forms
 
 		const auto clipRect = g.getAxisAlignedClip();
 
-		for (auto& v : visuals)
+		for (auto v = firstVisual.peerNext ; v != &lastVisual ; v = v->peerNext)
 		{
 			const auto childRect = v->ClipRect();
 			if (!empty(intersectRect(clipRect, childRect)))
@@ -383,9 +426,9 @@ namespace gmpi_forms
 	{
 		const auto point = transformPoint(reverseTransform, p);
 
-		for (auto& v : mouseTargets)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 		{
-			if (v->HitTest(point))
+			if (t->HitTest(point))
 			{
 				return true;
 				break;
@@ -403,13 +446,10 @@ namespace gmpi_forms
 //		const auto point = transformPoint(reverseTransform, e->position);
 
 		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 		{
-			auto t = *it;
 			if (t->HitTest(e2.position) && t->onPointerDown(&e2))
-			{
 				return true;
-			}
 		}
 
 		return false;
@@ -420,13 +460,10 @@ namespace gmpi_forms
 		const auto point = transformPoint(reverseTransform, p);
 
 		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 		{
-			auto t = *it;
 			if (t->HitTest(point) && t->onPointerUp(point))
-			{
 				return true;
-			}
 		}
 
 		return false;
@@ -442,9 +479,8 @@ namespace gmpi_forms
 		mouseOverObject = {};
 
 		// iterate mouseTargets in reverse (to respect Z-order)
-		for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 		{
-			auto t = *it;
 			if (t->HitTest(mousePoint) && t->wantsClicks())
 			{
 				mouseOverObject = t;
@@ -496,12 +532,10 @@ namespace gmpi_forms
 
 	bool ViewPort::onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point point) const
 	{
-		for (auto& t : mouseTargets)
+		for (auto t = firstMouseTarget.peerNext; t != &lastMouseTarget; t = t->peerNext)
 		{
 			if (t->HitTest(point) && t->onMouseWheel(flags, delta, point))
-			{
 				return true;
-			}
 		}
 
 		return false;
@@ -531,7 +565,8 @@ namespace gmpi_forms
 
 	void ViewPort::Invalidate(gmpi::drawing::Rect r) const
 	{
-		assert(parent);
+		if (!parent) // still under construction
+			return;
 
 		auto r2 = transformRect(reverseTransform, r);
 		parent->Invalidate(r2);

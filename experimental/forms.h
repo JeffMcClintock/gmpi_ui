@@ -27,11 +27,16 @@ namespace gmpi_form_builder
 	struct View : public gmpi_forms::IObserver
 	{
 		mutable bool dirty = true;
-		mutable gmpi_forms::Child* firstVisual = {};
-		mutable gmpi_forms::Child* lastVisual = {};
+		mutable gmpi_forms::Visual* firstVisual = {};
+		mutable gmpi_forms::Visual* lastVisual = {};
+
+		mutable gmpi_forms::Interactor* firstMouseTarget = {};
+		mutable gmpi_forms::Interactor* lastMouseTarget = {};
+
+		mutable gmpi_forms::Canvas children;
 
 		virtual ~View() {}
-		virtual void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const {}
+		virtual void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const {}
 		void setDirty();
 //		virtual void RenderDirtyViews();
 		void OnModelWillChange() override;
@@ -110,7 +115,7 @@ namespace gmpi_form_builder
 		TextLabelView() = default;
 		TextLabelView(std::string_view staticText);
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -124,7 +129,7 @@ namespace gmpi_form_builder
 
 		ScrollView() = default;
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -137,7 +142,7 @@ namespace gmpi_form_builder
 
 		Seperator() = default;
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -151,7 +156,7 @@ namespace gmpi_form_builder
 
 		PortalStart_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 	};
 
 	struct PortalEnd_internal : public View
@@ -161,7 +166,7 @@ namespace gmpi_form_builder
 
 		PortalEnd_internal(gmpi::drawing::Rect pbounds) : bounds(pbounds) {}
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 	};
 
 	// temporary object who's job is:
@@ -187,7 +192,7 @@ namespace gmpi_form_builder
 		TextEditView(gmpi_forms::Environment* env, std::string path);
 		~TextEditView();
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -204,7 +209,7 @@ namespace gmpi_form_builder
 
 		ComboBoxView() = default;
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -218,7 +223,7 @@ namespace gmpi_form_builder
 
 		TickBox() = default;
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -233,7 +238,7 @@ namespace gmpi_form_builder
 
 		FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds){}
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -251,7 +256,7 @@ namespace gmpi_form_builder
 
 		PopupMenuView() = default;
 
-		void Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const override;
+		void Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const override;
 		gmpi::drawing::Rect getBounds() const
 		{
 			return bounds;
@@ -271,14 +276,14 @@ namespace gmpi_form_builder
 		);
 	}
 	
-	inline void ScrollView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void ScrollView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		auto scroller = new gmpi_forms::ScrollView({}, getBounds());
-		parent.add(scroller);
+		canvas.add(scroller);
 
 		// mouse handler to do scrolling
 		auto scrollHandler = new gmpi_forms::RectangleMouseTarget(getBounds());
-		parent.add(scrollHandler);
+		canvas.add(scrollHandler);
 
 		scrollHandler->onMouseWheel_callback = [scroller/*scrollAmntSource, minimumScroll, maximumScroll*/](int32_t flags, int32_t delta, gmpi::drawing::Point point)
 			{
@@ -290,7 +295,7 @@ namespace gmpi_form_builder
 			};
 	};
 
-	inline void TextLabelView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void TextLabelView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		// Add a text box.
 //		const float itemHeight = 13;
@@ -302,12 +307,12 @@ namespace gmpi_form_builder
 		auto style = new gmpi_forms::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
 		style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 		style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
-		parent.add(style);
+		canvas.add(style);
 
 		// Draw the text
 		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
 
-		parent.add(
+		canvas.add(
 			tbox
 		);
 	}
@@ -323,7 +328,7 @@ namespace gmpi_form_builder
 		//	_RPT0(0, "~TextEditView\n");
 	}
 
-	inline void TextEditView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void TextEditView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		// Add a text box.
 	//	const float itemHeight = 13;
@@ -340,7 +345,7 @@ namespace gmpi_form_builder
 		);
 		style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 
-		parent.add(style);
+		canvas.add(style);
 
 		// background rectangle
 		{
@@ -349,23 +354,23 @@ namespace gmpi_form_builder
 			style2->fillColor = gmpi::drawing::colorFromHex(0x383838u);
 			constexpr float radius = 4.f;
 
-			parent.add(style2);
+			canvas.add(style2);
 
 			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			parent.add(backGroundRect);
+			canvas.add(backGroundRect);
 		}
 
 		// Draw the text
 		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
 
-		parent.add(
+		canvas.add(
 			tbox
 		);
 
 		// Clicking over the textLabel brings up a native text-entry box
 		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
 		{
-			parent.add(clickDetector);
+			canvas.add(clickDetector);
 
 			const auto textRect = clickDetector->bounds;
 
@@ -401,19 +406,19 @@ namespace gmpi_form_builder
 		}
 	}
 
-	inline void Seperator::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void Seperator::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		auto style2 = new gmpi_forms::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		style2->fillColor = gmpi::drawing::colorFromHex(0x00444444u);
 
-		parent.add(style2);
+		canvas.add(style2);
 
 		auto thinLine = new gmpi_forms::Rectangle(style2, getBounds());
-		parent.add(thinLine);
+		canvas.add(thinLine);
 	}
 
-	inline void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		// Add a text box.
 	//	const float itemHeight = 13;
@@ -428,7 +433,7 @@ namespace gmpi_form_builder
 			gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
 			, gmpi::drawing::Colors::TransparentBlack     // background color
 		);
-		parent.add(style);
+		canvas.add(style);
 
 		// background rectangle
 		{
@@ -437,10 +442,10 @@ namespace gmpi_form_builder
 			style2->fillColor = gmpi::drawing::colorFromHex(0x003E3E3Eu);
 			constexpr float radius = 4.f;
 
-			parent.add(style2);
+			canvas.add(style2);
 
 			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			parent.add(backGroundRect);
+			canvas.add(backGroundRect);
 		}
 
 		// Draw the text
@@ -452,7 +457,7 @@ namespace gmpi_form_builder
 
 		auto tbox = new gmpi_forms::TextBox(style, textArea, enum_str);
 
-		parent.add(
+		canvas.add(
 			tbox
 		);
 
@@ -464,7 +469,7 @@ namespace gmpi_form_builder
 
 			auto tbox2 = new gmpi_forms::TextBox(style, symbolArea, "\xE2\x8C\x84"); // unicode 'down arrowhead'
 
-			parent.add(
+			canvas.add(
 				tbox2
 			);
 		}
@@ -472,7 +477,7 @@ namespace gmpi_form_builder
 		// Clicking over the textLabel brings up a native combo box
 		auto clickDetector = new gmpi_forms::RectangleMouseTarget(comboBoxArea);
 		{
-			parent.add(clickDetector);
+			canvas.add(clickDetector);
 
 			const auto textRect = clickDetector->bounds;
 
@@ -517,7 +522,7 @@ namespace gmpi_form_builder
 		}
 	}
 
-	inline void TickBox::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void TickBox::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		// Add a text box.
 		const float itemHeight = 13;
@@ -531,7 +536,7 @@ namespace gmpi_form_builder
 		);
 		style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
 
-		parent.add(style);
+		canvas.add(style);
 
 		// background rectangle
 		{
@@ -540,10 +545,10 @@ namespace gmpi_form_builder
 			style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
 			constexpr float radius = 4.f;
 
-			parent.add(style2);
+			canvas.add(style2);
 
 			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			parent.add(backGroundRect);
+			canvas.add(backGroundRect);
 		}
 
 		// Draw the text
@@ -552,12 +557,12 @@ namespace gmpi_form_builder
 
 		auto textbox = new gmpi_forms::TextBox(style, textBoxArea, text);
 
-		parent.add(textbox);
+		canvas.add(textbox);
 
 		// Clicking toggles the value
 		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
 		{
-			parent.add(clickDetector);
+			canvas.add(clickDetector);
 
 			clickDetector->onPointerDown_callback = [this, clickDetector](gmpi_forms::PointerEvent*)
 				{
@@ -572,7 +577,7 @@ namespace gmpi_form_builder
 		}
 	}
 
-	inline void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		// Add a text box.
 		const float itemHeight = 13;
@@ -585,7 +590,7 @@ namespace gmpi_form_builder
 			, gmpi::drawing::Colors::TransparentBlack     // background color
 		);
 		style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
-		parent.add(style);
+		canvas.add(style);
 
 		// background rectangle
 		{
@@ -594,21 +599,21 @@ namespace gmpi_form_builder
 			style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
 			constexpr float radius = 4.f;
 
-			parent.add(style2);
+			canvas.add(style2);
 
 			auto backGroundRect = new gmpi_forms::RoundedRectangle(style2, getBounds(), radius, radius);
-			parent.add(backGroundRect);
+			canvas.add(backGroundRect);
 		}
 
 		// Draw the text on the button
-		parent.add(
+		canvas.add(
 			new gmpi_forms::TextBox(style, textBoxArea, "...")
 		);
 
 		// Clicking over the textLabel brings up a native combo box
 		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
 		{
-			parent.add(clickDetector);
+			canvas.add(clickDetector);
 
 			const auto textRect = clickDetector->bounds;
 
@@ -646,7 +651,7 @@ namespace gmpi_form_builder
 		}
 	}
 
-	inline void PopupMenuView::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+	inline void PopupMenuView::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 	{
 		gmpi::drawing::Rect textBoxArea = getBounds();
 
@@ -654,15 +659,15 @@ namespace gmpi_form_builder
 		auto style = new gmpi_forms::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
 		style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 		style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
-		parent.add(style);
+		canvas.add(style);
 
 		// Draw the text
 		auto tbox = new gmpi_forms::TextBox(style, textBoxArea, text2->get());
-		parent.add(tbox);
+		canvas.add(tbox);
 
 		// Clicking the label brings up a popup menu
 		auto clickDetector = new gmpi_forms::RectangleMouseTarget(textBoxArea);
-		parent.add(clickDetector);
+		canvas.add(clickDetector);
 
 		clickDetector->onPointerDown_callback = [this, tbox](gmpi_forms::PointerEvent*)
 			{

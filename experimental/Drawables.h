@@ -116,7 +116,8 @@ struct IObservableObject
 
 		~State()
 		{
-			stateholder->release(this);
+			if(stateholder)
+				stateholder->release(this);
 		}
 
 		StateHolder<T>* getSource() {
@@ -181,12 +182,67 @@ struct IObservableObject
 	// A child is anything that can exist in a view, including drawable, and non-drawable (like styles)
 	struct Child
 	{
-		virtual ~Child() {}
+		Child* peerPrev = nullptr;
+		Child* peerNext = nullptr;
+
+		virtual ~Child() { peerUnlink(); }
 		virtual void onAddedToParent() {}
+
+		bool peerLinked() const { return peerPrev || peerNext; }
+
+		void peerUnlink()
+		{
+			if (peerPrev)
+				peerPrev->peerNext = peerNext;
+			if (peerNext)
+				peerNext->peerPrev = peerPrev;
+			peerPrev = nullptr;
+			peerNext = nullptr;
+		}
+
+		void peerInsertAfter(Child* pos)
+		{
+			peerUnlink();
+			if (!pos)
+				return;
+			peerPrev = pos;
+			peerNext = pos->peerNext;
+			pos->peerNext->peerPrev = this;
+			pos->peerNext = this;
+		}
+
+		void peerInsertBefore(Child* pos)
+		{
+			peerUnlink();
+			if (!pos)
+				return;
+			peerNext = pos;
+			peerPrev = pos->peerPrev;
+			if (pos->peerPrev)
+				pos->peerPrev->peerNext = this;
+			pos->peerPrev = this;
+		}
+
+		Child* append(Child* next)
+		{
+			next->peerNext = peerNext;
+			next->peerPrev = this;
+			peerNext->peerPrev = next;
+			peerNext = next;
+
+			return next;
+		}
+	};
+
+	template <typename T>
+	struct intrusiveListItem
+	{
+		T* peerPrev = nullptr;
+		T* peerNext = nullptr;
 	};
 
 	// IView ? SwiftUI Views aren't drawn, they are a factory that *creates* the things that are drawn.
-	class Visual
+	class Visual : public intrusiveListItem<Visual>
 	{
 	public:
 		Visual* parent = {};
@@ -216,29 +272,31 @@ struct IObservableObject
 	};
 
 	// could be called 'MouseTarget' ?
-	class Interactor
+	class Interactor : protected intrusiveListItem<Interactor>
 	{
+		friend class Form;
+
 	public:
 		IForm* form = {};
 
+		Interactor() = default;
 		virtual ~Interactor() {}
-		virtual bool HitTest(gmpi::drawing::Point) const = 0;
+		virtual bool HitTest(gmpi::drawing::Point) const { return false; }
 		// we want to support overlapping mouse targets, where one wants scroll-wheels and the other wants clicks
-		virtual bool wantsClicks() const { return true; };
+		virtual bool wantsClicks() const { return true; }
 
 		// return true if handled
-		virtual bool onPointerDown(PointerEvent*) const = 0;
-		virtual bool onPointerUp(gmpi::drawing::Point) const = 0;
-		virtual bool onPointerMove(gmpi::drawing::Point) const { return false; };
-		virtual bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point) const = 0;
-		virtual bool setHover(bool isMouseOverMe) const { return false; };
+		virtual bool onPointerDown(PointerEvent*) const { return false; }
+		virtual bool onPointerUp(gmpi::drawing::Point) const { return false; }
+		virtual bool onPointerMove(gmpi::drawing::Point) const { return false; }
+		virtual bool onMouseWheel(int32_t flags, int32_t delta, gmpi::drawing::Point) const { return false; }
+		virtual bool setHover(bool isMouseOverMe) const { return false; }
 	};
 
-	struct PortalStart : public Visual, public Child
+	struct PortalStart : public Visual
 	{
 		gmpi::drawing::Rect bounds{};
 		mutable gmpi::drawing::Matrix3x2 originalTransform{};
-//		struct PortalEnd* buddy{};
 
 		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 		void Draw(gmpi::drawing::Graphics& g) const override
@@ -249,7 +307,7 @@ struct IObservableObject
 		}
 	};
 
-	struct PortalEnd : public Visual, public Child
+	struct PortalEnd : public Visual
 	{
 		struct PortalStart* buddy = {};
 
@@ -263,20 +321,18 @@ struct IObservableObject
 
 	class ViewPort : public Visual, public Interactor
 	{
+		friend class Form;
+
 	protected:
-		struct childInfo
-		{
-			std::string id;
-			std::unique_ptr<Child> child;
-		};
+		// intrusive linked lists of all drawables with sentinel nodes
+		Visual firstVisual;
+		Visual lastVisual;
+		Interactor firstMouseTarget;
+		Interactor lastMouseTarget;
 
-		std::vector<childInfo> /*std::unique_ptr<Child >>*/ children; // can be Style, View, Interactor, or both
-
-		// shapes that get drawn (to represent widgets)
-		std::vector<Visual*> visuals;
+		void clearChildren();
 
 		// areas where the mouse produces some effect
-		std::vector<Interactor*> mouseTargets;
 		mutable Interactor* mouseOverObject = {};
 		mutable gmpi::drawing::Point mousePoint;
 		mutable bool isHovered = {};
@@ -285,15 +341,12 @@ struct IObservableObject
 		gmpi::drawing::Matrix3x2 transform;			// for drawing
 		gmpi::drawing::Matrix3x2 reverseTransform;	// for mouse
 
-		void add(Child* child, const char* id = nullptr);
-		void remove(Child* first, Child* last);
-		int64_t count() const { return children.size(); }
-		Child* get(int64_t index) { return children[index].child.get(); }
+		ViewPort();
+		virtual ~ViewPort();
 void clear();
 
 		void Draw(gmpi::drawing::Graphics& g) const override;
 		bool HitTest(gmpi::drawing::Point p) const override;
-		//bool onPointerDown(gmpi::drawing::Point point) const override;
 		bool onPointerDown(PointerEvent*) const override;
 
 		bool onPointerUp(gmpi::drawing::Point point) const override;
@@ -304,25 +357,62 @@ void clear();
 		virtual void Invalidate(gmpi::drawing::Rect) const;
 	};
 
+	// not really a canvas, just a temporary list of stuff
+	class Canvas
+	{
+		friend class Form;
 
-	struct ScrollView : public ViewPort, public Child
+	protected:
+		std::vector<std::unique_ptr<Child>> styles;
+		std::vector<std::unique_ptr<Visual>> visuals;
+		std::vector<std::unique_ptr<Interactor>> mouseTargets;
+
+	public:
+		
+		void add(Child* v)
+		{
+			styles.push_back(std::unique_ptr<Child>(v));
+		}
+		void add(Visual* v)
+		{
+			visuals.push_back(std::unique_ptr<Visual>(v));
+		}
+		void add(Interactor* i)
+		{
+			mouseTargets.push_back(std::unique_ptr<Interactor>(i));
+		}
+
+		void add(struct ScrollView* i);
+	};
+
+	struct ScrollView : public ViewPort //, public Child
 	{
 		gmpi::drawing::Rect bounds = {};
 		State<float> scroll;
 		std::string path;
+		Canvas canvas;
 
 		ScrollView(std::string path, gmpi::drawing::Rect pbounds);
 		~ScrollView();
-		void onAddedToParent() override;
+		void onAddedToParent(); // override;
 		void UpdateTransform();
 		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
+
+	// moved below ScrollView definition.
+	inline void Canvas::add(ScrollView* i)
+	{
+		visuals.push_back(std::unique_ptr<Visual>(i));
+		// TODO : separate mouse targets from visuals, just have a seperate mousetarget over the scroller/viewport.
+// no, double delete		mouseTargets.push_back(std::unique_ptr<Interactor>(i));
+	}
+
 
 	struct TopView : public ViewPort, public Child
 	{
 		~TopView()
 		{
-			children.clear(); // ensure States are deleted before StateHolders
+			clearChildren(); // ensure States are deleted before StateHolders
 		}
 
 		void postRender()
@@ -333,9 +423,8 @@ void clear();
 
 			// need to redetermine mouse-over object
 			// iterate mouseTargets in reverse (to respect Z-order)
-			for (auto it = mouseTargets.rbegin(); it != mouseTargets.rend(); ++it)
+			for (auto t = firstMouseTarget.peerNext ; t != &lastMouseTarget; t = t->peerNext)
 			{
-				auto t = *it;
 				if (t->HitTest(mousePoint) && t->wantsClicks())
 				{
 					t->onPointerMove(mousePoint);
@@ -359,7 +448,7 @@ void clear();
 		gmpi::drawing::Rect ClipRect() const override { return bounds; }
 	};
 
-	struct Rectangle : public Visual, public Child
+	struct Rectangle : public Visual //, public Child
 	{
 		gmpi::drawing::Rect bounds = {};
 		struct ShapeStyle* style = {};
@@ -385,7 +474,7 @@ void clear();
 		void Draw(gmpi::drawing::Graphics& g) const override;
 	};
 
-	struct ScrollBar : public Visual, public Child
+	struct ScrollBar : public Visual //, public Child
 	{
 		gmpi::drawing::Rect bounds = {};
 		struct ShapeStyle* style = {};
@@ -400,7 +489,7 @@ void clear();
 			, scrollRangePixels(pscrollRangePixels)
 		{}
 
-		void onAddedToParent() override
+		void onAddedToParent() //override
 		{
 			getEnvironment()->reg(&position, path + "scroll");
 		}
@@ -410,7 +499,7 @@ void clear();
 	};
 	// A simple box containing text, where the text height is determined by the bounds height.
 
-	struct TextBox : public Visual, public Child
+	struct TextBox : public Visual //, public Child
 	{
 		struct TextBoxStyle* style = {};
 		gmpi::drawing::Rect bounds = {};
@@ -439,7 +528,7 @@ void clear();
 		void Draw(gmpi::drawing::Graphics& g, const struct Shape& t, const PathHolder& path) const;
 	};
 
-	struct Shape : public Visual, public Child
+	struct Shape : public Visual //, public Child
 	{
 		ShapeStyle* style = {};
 		PathHolder* path = {};
@@ -488,7 +577,7 @@ void clear();
 	};
 
 
-	struct RectangleMouseTarget : public Interactor, public Child
+	struct RectangleMouseTarget : public Interactor //, public Child
 	{
 		gmpi::drawing::Rect bounds = {};
 #ifdef _DEBUG

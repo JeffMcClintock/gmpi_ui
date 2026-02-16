@@ -32,38 +32,105 @@ void Form::DoUpdates()
 {
 	bool wasDirty = false;
 
+	auto prevVisual = &child.firstVisual;
+	auto prevMouseTarget = &child.firstMouseTarget;
+
 	for (auto& view : body_)
 	{
-		if (view->dirty)
+		if (!view->dirty)
+			continue;
+
+		wasDirty = true;
+		view->dirty = false;
+
+		// remove old render from linked-list of drawables
+		auto& visuals = view->children.visuals;
+		if (!visuals.empty())
 		{
-			wasDirty = true;
-			view->dirty = false;
+			prevVisual = visuals.front()->peerPrev;
+			auto next = visuals.back()->peerNext;
+			// paper over the gap
+			prevVisual->peerNext = next;
+			next->peerPrev = prevVisual;
 
-			// remove old render from list of drawables
-			if (view->firstVisual)
+			visuals.clear();
+		}
+
+		// remove old mouse-targets from linked-list
+		auto& mousetargets = view->children.mouseTargets;
+		if (!mousetargets.empty())
+		{
+			prevMouseTarget = mousetargets.front()->peerPrev;
+			auto next = mousetargets.back()->peerNext;
+			// paper over the gap
+			prevMouseTarget->peerNext = next;
+			next->peerPrev = prevMouseTarget;
+
+			mousetargets.clear();
+		}
+
+
+		// render fresh content
+		view->Render(&env, view->children); // TODO env should be accessable from any parent, and should chain upward
+
+		// store pointer to views range of children, if any.
+		if (!visuals.empty())
+		{
+			auto next = prevVisual->peerNext;
+
+			for (auto& c : visuals)
 			{
-				assert(view->lastVisual);
-				child.remove(view->firstVisual, view->lastVisual);
-				view->firstVisual = view->lastVisual = {};
+				prevVisual->peerNext = c.get();
+				c->peerPrev = prevVisual;
+				prevVisual = c.get();
+
+				c->parent = &child;
+				child.Invalidate(c->ClipRect());
 			}
 
-			const auto beforeChildCount = child.count();
-			// render fresh content
+			prevVisual->peerNext = next;
+			next->peerPrev = prevVisual;
 
-			view->Render(&env, child); // TODO env should be accessable from any parent, and should chain upward
+			view->firstVisual = visuals.front().get();
+			view->lastVisual = visuals.back().get();
 
-			// store pointer to childs range of drawables.
-			const auto afterChildCount = child.count();
-			if (beforeChildCount < afterChildCount)
+#if 0 // todo
+			if (auto mouseable = dynamic_cast<Interactor*>(c); mouseable)
 			{
-				view->firstVisual = child.get(beforeChildCount);
-				view->lastVisual = child.get(afterChildCount - 1);
+				mouseable->form = this;
+
+				child.mouseTargets.push_back(mouseable);
 			}
+#endif
 		}
 		else
 		{
-			// needs to check ALL Views, not only immediate children.
-//				view->OnTimer();
+			view->firstVisual = view->lastVisual = {};
+		}
+
+		// store pointer to views range of children, if any.
+		if (!mousetargets.empty())
+		{
+			auto next = prevMouseTarget->peerNext;
+
+			for (auto& c : mousetargets)
+			{
+				prevMouseTarget->peerNext = c.get();
+				c->peerPrev = prevMouseTarget;
+				prevMouseTarget = c.get();
+
+				c->form = this;
+			}
+
+			prevMouseTarget->peerNext = next;
+			next->peerPrev = prevMouseTarget;
+
+			view->firstMouseTarget = mousetargets.front().get();
+			view->lastMouseTarget = mousetargets.back().get();
+		}
+		else
+		{
+			view->firstMouseTarget = view->lastMouseTarget = {};
 		}
 	}
 
@@ -71,7 +138,6 @@ void Form::DoUpdates()
 	{
 		child.postRender();
 	}
-
 }
 
 #if 0
@@ -142,17 +208,17 @@ gmpi::ReturnCode Form::onKeyPress(wchar_t c)
 
 namespace gmpi_form_builder
 {
-void PortalStart_internal::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+void PortalStart_internal::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 {
 	last_rendered = new gmpi_forms::PortalStart();
 	last_rendered->bounds = bounds;
-	parent.add(last_rendered);
+	canvas.add(last_rendered);
 }
-void PortalEnd_internal::Render(gmpi_forms::Environment* env, gmpi_forms::ViewPort& parent) const
+void PortalEnd_internal::Render(gmpi_forms::Environment* env, gmpi_forms::Canvas& canvas) const
 {
 	auto pe = new gmpi_forms::PortalEnd();
 	pe->buddy = buddy->last_rendered;
-	parent.add(pe);
+	canvas.add(pe);
 }
 
 Portal::Portal(gmpi::drawing::Rect pbounds)

@@ -220,35 +220,29 @@ inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 
 inline Matrix3x2 invert(const Matrix3x2& transform)
 {
-	double det = transform._11 * (transform._22);
-	det -= transform._12 * (transform._21);
+	const auto det = transform._11 * transform._22 - transform._12 * transform._21;
+	const auto s = 1.0f / det;
 
-	float s = 1.0f / (float)det;
-
-	Matrix3x2 result;
-
-	result._11 = s * (transform._22 * 1.0f - 0.0f * transform._32);
-	result._21 = s * (0.0f * transform._31 - transform._21 * 1.0f);
-	result._31 = s * (transform._21 * transform._32 - transform._22 * transform._31);
-
-	result._12 = s * (0.0f * transform._32 - transform._12 * 1.0f);
-	result._22 = s * (transform._11 * 1.0f - 0.0f * transform._31);
-	result._32 = s * (transform._12 * transform._31 - transform._11 * transform._32);
-
-	return result;
+	return {
+		s *  transform._22,
+		s * -transform._12,
+		s * -transform._21,
+		s *  transform._11,
+		s * (transform._21 * transform._32 - transform._22 * transform._31),
+		s * (transform._12 * transform._31 - transform._11 * transform._32),
+	};
 }
 
-inline Matrix3x2 makeTranslation(
-	Size size
-)
+inline Matrix3x2 makeTranslation(Size size)
 {
-	Matrix3x2 translation;
-
-	translation._11 = 1.0; translation._12 = 0.0;
-	translation._21 = 0.0; translation._22 = 1.0;
-	translation._31 = size.width; translation._32 = size.height;
-
-	return translation;
+	return {
+		1.0f,
+		0.0f,
+		0.0f,
+		1.0f,
+		size.width,
+		size.height,
+	};
 }
 
 inline Matrix3x2 makeTranslation(

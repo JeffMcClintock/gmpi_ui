@@ -148,20 +148,32 @@ public:
 	~ScrollPortal();
 };
 
-class Spacer
+struct Spacer
 {
-public:
-	Spacer(gmpi::drawing::Rect bounds);
+	gmpi::ui::builder::Seperator* view = {};
+
+	Spacer(gmpi::drawing::Rect bounds = {});
+	void setBounds(gmpi::drawing::Rect newBounds);
 };
 
-class ToggleSwitch
+class ToggleSwitch_old
 {
 public:
-	ToggleSwitch(
+	ToggleSwitch_old(
 		std::string_view labelText,
 		gmpi::drawing::Rect bounds,
 		std::function<bool()> getValue,
 		std::function<void(bool)> setValue
+	);
+};
+
+struct ToggleSwitch
+{
+	gmpi::ui::builder::ToggleSwitch* view = {};
+
+	ToggleSwitch(
+		std::string_view labelText,
+		gmpi_forms::State<bool>& value
 	);
 };
 
@@ -190,16 +202,16 @@ struct TextEdit
 	TextEdit(gmpi_forms::State<std::string>& pname);
 };
 
-class vStack
+class Grid
 {
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> >* saveParent = {};
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;
 	gmpi::drawing::Rect bounds{};
-	float spacing = 0.0f;
+	float gap = 0.0f;
 
 public:
-	vStack(gmpi::drawing::Rect pbounds = {}, float pspacing = 0.0f);
-	~vStack();
+	Grid(gmpi::drawing::Rect pbounds = {}, float pspacing = 0.0f);
+	~Grid();
 };
 
 } // namespace gmpi::ui

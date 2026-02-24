@@ -188,10 +188,11 @@ ScrollPortal::~ScrollPortal()
 Spacer::Spacer(gmpi::drawing::Rect bounds)
 {
 	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
-	result.push_back(std::move(std::make_unique<gmpi::ui::builder::Seperator>(bounds)));
+	view = new gmpi::ui::builder::Seperator(bounds);
+	result.push_back(std::unique_ptr<gmpi::ui::builder::Seperator>(view));
 }
 
-ToggleSwitch::ToggleSwitch(
+ToggleSwitch_old::ToggleSwitch_old(
 	std::string_view labelText,
 	gmpi::drawing::Rect bounds,
 	std::function<bool()> getValue,
@@ -218,6 +219,19 @@ ToggleSwitch::ToggleSwitch(
 
 	result.push_back(std::move(label));
 	result.push_back(std::move(toggleSwitch));
+}
+
+ToggleSwitch::ToggleSwitch(
+	std::string_view labelText,
+	gmpi_forms::State<bool>& value
+)
+{
+	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
+
+	auto temp = std::make_unique<gmpi::ui::builder::ToggleSwitch>(labelText, value);
+	view = temp.get();
+
+	result.push_back(std::move(temp));
 }
 
 Label::Label(std::string_view text, gmpi::drawing::Rect bounds)
@@ -257,53 +271,36 @@ TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
 	result.push_back(std::move(editor));
 }
 
-vStack::vStack(gmpi::drawing::Rect pbounds, float pspacing)
+Grid::Grid(gmpi::drawing::Rect pbounds, float pspacing)
 	: bounds(pbounds)
-	, spacing(pspacing)
+	, gap(pspacing)
 {
 	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
 }
 
-vStack::~vStack()
+Grid::~Grid()
 {
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = saveParent;
 	if (!saveParent)
 		return;
 
 	auto& result = *saveParent;
-	const auto hasBounds = bounds.left != 0.0f || bounds.top != 0.0f || bounds.right != 0.0f || bounds.bottom != 0.0f;
-	const auto doLayout = hasBounds || spacing != 0.0f;
-	const auto useStackWidth = hasBounds && getWidth(bounds) > 0.0f;
-	float y = hasBounds && doLayout ? bounds.top : 0.0f;
 
-	if (doLayout && !childViews.empty() && !hasBounds)
-		y = childViews.front()->getBounds().top;
+	const auto childCount = static_cast<float>(childViews.size());
+	const auto rowHeight = childCount > 0 ? (getHeight(bounds) - gap * (childCount - 1)) / childCount : 0.0f;
+
+	auto childRect = bounds;
 
 	for (auto& child : childViews)
 	{
-		if (doLayout)
-		{
-			auto childBounds = child->getBounds();
-			auto height = getHeight(childBounds);
+		childRect.bottom = childRect.top + rowHeight;
+		child->setBounds(childRect);
 
-			if (height > 0.0f)
-			{
-				if (useStackWidth)
-				{
-					childBounds.left = bounds.left;
-					childBounds.right = bounds.right;
-				}
-
-				childBounds.top = y;
-				childBounds.bottom = y + height;
-				child->setBounds(childBounds);
-
-				y = childBounds.bottom + spacing;
-			}
-		}
+		childRect.top = childRect.bottom + gap;
 		result.push_back(std::move(child));
 	}
+
 	childViews.clear();
 }
 } // namespace gmpi_form_builder

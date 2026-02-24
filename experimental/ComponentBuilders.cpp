@@ -3,6 +3,8 @@
 #include "it_enum_list.h"
 #include "conversion.h"
 
+using namespace gmpi::forms;
+
 namespace gmpi::ui::builder
 {
 
@@ -19,7 +21,7 @@ TextLabelView::TextLabelView(std::string_view staticText)
 	);
 }
 
-void TextLabelView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void TextLabelView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	// Add a text box.
 	//		const float itemHeight = 13;
@@ -28,13 +30,13 @@ void TextLabelView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive:
 	//		textBoxArea.bottom = textBoxArea.top + itemHeight;
 
 	// default text style
-	auto style = new gmpi::forms::primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
 	style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 	style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 	canvas.add(style);
 
 	// Draw the text
-	auto tbox = new gmpi::forms::primitive::TextBox(style, textBoxArea, text2->get());
+	auto tbox = new primitive::TextBox(style, textBoxArea, text2->get());
 
 	canvas.add(
 		tbox
@@ -57,7 +59,7 @@ TextEditView::~TextEditView()
 	//	_RPT0(0, "~TextEditView\n");
 }
 
-void TextEditView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	// Add a text box.
 //	const float itemHeight = 13;
@@ -68,7 +70,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	textBoxArea.right -= editor_padding;
 
 	// default text style
-	auto style = new gmpi::forms::primitive::TextBoxStyle(
+	auto style = new primitive::TextBoxStyle(
 		gmpi::drawing::Colors::White					// text color
 		, gmpi::drawing::Colors::TransparentBlack		// background color
 	);
@@ -78,19 +80,19 @@ void TextEditView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 
 	// background rectangle
 	{
-		auto style2 = new gmpi::forms::primitive::ShapeStyle();
+		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		style2->fillColor = gmpi::drawing::colorFromHex(0x383838u);
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
 
-		auto backGroundRect = new gmpi::forms::primitive::RoundedRectangle(style2, getBounds(), radius, radius);
+		auto backGroundRect = new primitive::RoundedRectangle(style2, getBounds(), radius, radius);
 		canvas.add(backGroundRect);
 	}
 
 	// Draw the text
-	auto tbox = new gmpi::forms::primitive::TextBox(style, textBoxArea, text.getSource() ? text.get() : "!!!");
+	auto tbox = new primitive::TextBox(style, textBoxArea, text.getSource() ? text.get() : "!!!");
 
 	canvas.add(
 		tbox
@@ -98,12 +100,12 @@ void TextEditView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 
 	// Clicking over the textLabel brings up a native text-entry box
 	{
-		auto clickDetector = new gmpi::forms::primitive::RectangleMouseTarget(textBoxArea);
+		auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
 		canvas.add(clickDetector);
 
 		const auto textRect = clickDetector->bounds;
 
-		clickDetector->onPointerDown_callback = [this, env, tbox](const gmpi::forms::primitive::PointerEvent*)
+		clickDetector->onPointerDown_callback = [this, env, tbox](const primitive::PointerEvent*)
 			{
 				// account for scrolling
 				auto mtx = tbox->getTransform();
@@ -134,9 +136,9 @@ void TextEditView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	}
 }
 
-void Seperator::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void Seperator::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
-	auto style2 = new gmpi::forms::primitive::ShapeStyle();
+	auto style2 = new primitive::ShapeStyle();
 	style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 	style2->fillColor = gmpi::drawing::colorFromHex(0x00444444u);
 
@@ -146,11 +148,11 @@ void Seperator::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Can
 	r.top = 0.5f * (r.top + r.bottom);
 	r.bottom = r.top + 1;
 
-	auto thinLine = new gmpi::forms::primitive::Rectangle(style2, r);
+	auto thinLine = new primitive::Rectangle(style2, r);
 	canvas.add(thinLine);
 }
 
-void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	// Add a text box.
 //	const float itemHeight = 13;
@@ -161,7 +163,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	comboBoxArea.right -= editor_padding;
 
 	// default text style
-	auto style = new gmpi::forms::primitive::TextBoxStyle(
+	auto style = new primitive::TextBoxStyle(
 		gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
 		, gmpi::drawing::Colors::TransparentBlack     // background color
 	);
@@ -169,14 +171,14 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 
 	// background rectangle
 	{
-		auto style2 = new gmpi::forms::primitive::ShapeStyle();
+		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		style2->fillColor = gmpi::drawing::colorFromHex(0x003E3E3Eu);
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
 
-		auto backGroundRect = new gmpi::forms::primitive::RoundedRectangle(style2, getBounds(), radius, radius);
+		auto backGroundRect = new primitive::RoundedRectangle(style2, getBounds(), radius, radius);
 		canvas.add(backGroundRect);
 	}
 
@@ -187,7 +189,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	const auto symbol_width = 0.7f * getHeight(comboBoxArea);
 	textArea.right -= symbol_width;
 
-	auto tbox = new gmpi::forms::primitive::TextBox(style, textArea, enum_str);
+	auto tbox = new primitive::TextBox(style, textArea, enum_str);
 
 	canvas.add(
 		tbox
@@ -199,7 +201,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 		symbolArea.left = symbolArea.right - symbol_width;
 		symbolArea.top -= 4; // else too low
 
-		auto tbox2 = new gmpi::forms::primitive::TextBox(style, symbolArea, "\xE2\x8C\x84"); // unicode 'down arrowhead'
+		auto tbox2 = new primitive::TextBox(style, symbolArea, "\xE2\x8C\x84"); // unicode 'down arrowhead'
 
 		canvas.add(
 			tbox2
@@ -207,13 +209,13 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	}
 
 	// Clicking over the textLabel brings up a native combo box
-	auto clickDetector = new gmpi::forms::primitive::RectangleMouseTarget(comboBoxArea);
+	auto clickDetector = new primitive::RectangleMouseTarget(comboBoxArea);
 	{
 		canvas.add(clickDetector);
 
 		const auto textRect = clickDetector->bounds;
 
-		clickDetector->onPointerDown_callback = [this, tbox, env](const gmpi::forms::primitive::PointerEvent*)
+		clickDetector->onPointerDown_callback = [this, tbox, env](const primitive::PointerEvent*)
 			{
 				// account for scrolling
 				auto mtx = tbox->getTransform();
@@ -253,7 +255,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	}
 }
 
-void TickBox::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	// Add a text box.
 	const float itemHeight = 13;
@@ -261,7 +263,7 @@ void TickBox::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canva
 	textBoxArea.bottom = textBoxArea.top + itemHeight;
 
 	// default text style
-	auto style = new gmpi::forms::primitive::TextBoxStyle(
+	auto style = new primitive::TextBoxStyle(
 		gmpi::drawing::Colors::White		// text color
 		, gmpi::drawing::Colors::TransparentBlack	// background color
 	);
@@ -271,14 +273,14 @@ void TickBox::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canva
 
 	// background rectangle
 	{
-		auto style2 = new gmpi::forms::primitive::ShapeStyle();
+		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
 
-		auto backGroundRect = new gmpi::forms::primitive::RoundedRectangle(style2, getBounds(), radius, radius);
+		auto backGroundRect = new primitive::RoundedRectangle(style2, getBounds(), radius, radius);
 		canvas.add(backGroundRect);
 	}
 
@@ -286,16 +288,16 @@ void TickBox::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canva
 //	const char check[] = { (char)0xE2, (char)0x9C, (char)0x93, (char)0 };
 	const char* text = value->get() ? "\xE2\x9C\x93" : " ";
 
-	auto textbox = new gmpi::forms::primitive::TextBox(style, textBoxArea, text);
+	auto textbox = new primitive::TextBox(style, textBoxArea, text);
 
 	canvas.add(textbox);
 
 	// Clicking toggles the value
-	auto clickDetector = new gmpi::forms::primitive::RectangleMouseTarget(textBoxArea);
+	auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
 	{
 		canvas.add(clickDetector);
 
-		clickDetector->onPointerDown_callback = [this, clickDetector](const gmpi::forms::primitive::PointerEvent*)
+		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
 			{
 				value->set(!value->get());
 			};
@@ -308,7 +310,76 @@ void TickBox::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canva
 	}
 }
 
-void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
+{
+	gmpi::drawing::Rect lableArea = getBounds();
+	lableArea.right -= getHeight(lableArea) + 3.f;
+	gmpi::drawing::Rect tickBoxArea = getBounds();
+	tickBoxArea.left = tickBoxArea.right - getHeight(tickBoxArea);
+
+	// add label
+
+	// default label style
+	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+	style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
+
+	canvas.add(style);
+
+	// Draw the text
+	auto tbox = new primitive::TextBox(style, lableArea, text.getSource() ? text.get() : "!!!");
+
+	canvas.add(
+		tbox
+	);
+
+
+	// Add the tickbox. (text)
+	auto style3 = new primitive::TextBoxStyle(
+		  gmpi::drawing::Colors::White				// text color
+		, gmpi::drawing::Colors::TransparentBlack	// background color
+	);
+	style3->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
+
+	canvas.add(style3);
+
+	// background rectangle
+	{
+		auto style2 = new primitive::ShapeStyle();
+		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
+		style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
+		constexpr float radius = 4.f;
+
+		canvas.add(style2);
+
+		auto backGroundRect = new primitive::RoundedRectangle(style2, tickBoxArea, radius, radius);
+		canvas.add(backGroundRect);
+	}
+
+	// Draw the tcheckk mark
+	std::string checktext = value.get() ? "\xE2\x9C\x93" : " ";
+
+	auto tickbox = new primitive::TextBox(style3, tickBoxArea, checktext);
+
+	canvas.add(tickbox);
+
+	// Clicking toggles the value
+	auto clickDetector = new primitive::RectangleMouseTarget(tickBoxArea);
+	{
+		canvas.add(clickDetector);
+
+		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
+			{
+				value = !value;
+			};
+
+		// don't work?
+		//clickDetector->onPointerUp_callback = [this, clickDetector](gmpi::drawing::Point)
+		//	{
+		//		value->set(!value->get());
+		//	};
+	}
+}
+void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	// Add a text box.
 	const float itemHeight = 13;
@@ -316,7 +387,7 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi::forms::pri
 	textBoxArea.bottom = textBoxArea.top + itemHeight;
 
 	// default text style
-	auto style = new gmpi::forms::primitive::TextBoxStyle(
+	auto style = new primitive::TextBoxStyle(
 		gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
 		, gmpi::drawing::Colors::TransparentBlack     // background color
 	);
@@ -325,30 +396,30 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi::forms::pri
 
 	// background rectangle
 	{
-		auto style2 = new gmpi::forms::primitive::ShapeStyle();
+		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
 
-		auto backGroundRect = new gmpi::forms::primitive::RoundedRectangle(style2, getBounds(), radius, radius);
+		auto backGroundRect = new primitive::RoundedRectangle(style2, getBounds(), radius, radius);
 		canvas.add(backGroundRect);
 	}
 
 	// Draw the text on the button
 	canvas.add(
-		new gmpi::forms::primitive::TextBox(style, textBoxArea, "...")
+		new primitive::TextBox(style, textBoxArea, "...")
 	);
 
 	// Clicking over the textLabel brings up a native combo box
-	auto clickDetector = new gmpi::forms::primitive::RectangleMouseTarget(textBoxArea);
+	auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
 	{
 		canvas.add(clickDetector);
 
 		const auto textRect = clickDetector->bounds;
 
-		clickDetector->onPointerDown_callback = [this, clickDetector, env](const gmpi::forms::primitive::PointerEvent*)
+		clickDetector->onPointerDown_callback = [this, clickDetector, env](const primitive::PointerEvent*)
 			{
 				// get dialog host
 				//gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
@@ -382,25 +453,25 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, gmpi::forms::pri
 	}
 }
 
-void PopupMenuView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	gmpi::drawing::Rect textBoxArea = getBounds();
 
 	// default text style
-	auto style = new gmpi::forms::primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
 	style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 	style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
 	canvas.add(style);
 
 	// Draw the text
-	auto tbox = new gmpi::forms::primitive::TextBox(style, textBoxArea, text2->get());
+	auto tbox = new primitive::TextBox(style, textBoxArea, text2->get());
 	canvas.add(tbox);
 
 	// Clicking the label brings up a popup menu
-	auto clickDetector = new gmpi::forms::primitive::RectangleMouseTarget(textBoxArea);
+	auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
 	canvas.add(clickDetector);
 
-	clickDetector->onPointerDown_callback = [this, tbox, env](const gmpi::forms::primitive::PointerEvent*)
+	clickDetector->onPointerDown_callback = [this, tbox, env](const primitive::PointerEvent*)
 		{
 			// account for scrolling
 			auto mtx = tbox->getTransform();
@@ -438,8 +509,8 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, gmpi::forms::primitive:
 
 bool ScrollPortal::RenderIfDirty(
 	gmpi_forms::Environment* env,
-	gmpi::forms::primitive::IVisualParent& parent_visual,
-	gmpi::forms::primitive::IMouseParent& mouseParent
+	primitive::IVisualParent& parent_visual,
+	primitive::IMouseParent& mouseParent
 	) const
 {
 	// render myself
@@ -478,7 +549,7 @@ ScrollPortal::ScrollInfo ScrollPortal::calcScrollBar() const
 	return { visibleLength, contentLength, thumbLength, thumbPosition };
 }
 
-void ScrollPortal::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const
+void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	auto scrollBarBounds = bounds;
 	scrollBarBounds.left = scrollBarBounds.right - 12;
@@ -486,14 +557,14 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 	auto contentBounds = bounds;
 	contentBounds.right = scrollBarBounds.left;
 
-	portal = new gmpi::forms::primitive::Portal(contentBounds);
+	portal = new primitive::Portal(contentBounds);
 	canvas.add(portal);
 
-	mouseportal = new gmpi::forms::primitive::MousePortal(contentBounds);
+	mouseportal = new primitive::MousePortal(contentBounds);
 	canvas.add(mouseportal);
 
 	// testing scrolling from mouse-wheel.
-	auto mt = new gmpi::forms::primitive::RectangleMouseTarget(contentBounds);
+	auto mt = new primitive::RectangleMouseTarget(contentBounds);
 	canvas.add(mt);
 
 	// Scroll-bar
@@ -501,28 +572,28 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, gmpi::forms::primitive::
 		// drawing
 
 		// background
-		auto scrollBarBackgroundStyle = new gmpi::forms::primitive::ShapeStyle();
+		auto scrollBarBackgroundStyle = new primitive::ShapeStyle();
 		scrollBarBackgroundStyle->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		scrollBarBackgroundStyle->fillColor = gmpi::drawing::colorFromHex(0x505050);
-		canvas.add(new gmpi::forms::primitive::Rectangle(scrollBarBackgroundStyle, scrollBarBounds));
+		canvas.add(new primitive::Rectangle(scrollBarBackgroundStyle, scrollBarBounds));
 		canvas.add(scrollBarBackgroundStyle);
 
 		//thumb
-		auto scrollBarStyle = new gmpi::forms::primitive::ShapeStyle();
+		auto scrollBarStyle = new primitive::ShapeStyle();
 		scrollBarStyle->strokeColor = gmpi::drawing::Colors::TransparentBlack;
 		scrollBarStyle->fillColor = gmpi::drawing::colorFromHex(0xA0A0A0);
 		auto r = scrollBarBounds;
 		r.left += 4;
 		r.right -= 4;
-		scrollThumb = new gmpi::forms::primitive::RoundedRectangle(scrollBarStyle, r, 4.0f, 4.0f);
+		scrollThumb = new primitive::RoundedRectangle(scrollBarStyle, r, 4.0f, 4.0f);
 		canvas.add(scrollThumb);
 		canvas.add(scrollBarStyle);
 
 		// mouse
-		scrollThumbMouseTarget = new gmpi::forms::primitive::RectangleMouseTarget(scrollBarBounds);
+		scrollThumbMouseTarget = new primitive::RectangleMouseTarget(scrollBarBounds);
 		canvas.add(scrollThumbMouseTarget);
 
-		scrollThumbMouseTarget->onPointerDown_callback = [this](const gmpi::forms::primitive::PointerEvent* e)
+		scrollThumbMouseTarget->onPointerDown_callback = [this](const primitive::PointerEvent* e)
 			{
 				// capture the scroller *state*, and manipulate it directly. let updates flow only from the state forward.
 				e->boss->captureMouse(
@@ -595,8 +666,8 @@ void View::OnModelWillChange()
 
 bool View::RenderIfDirty(
 	gmpi_forms::Environment* env,
-	gmpi::forms::primitive::IVisualParent& parent,
-	gmpi::forms::primitive::IMouseParent& mouseParent
+	primitive::IVisualParent& parent,
+	primitive::IMouseParent& mouseParent
 ) const
 {
 	if (!dirty)

@@ -291,6 +291,46 @@ struct TickBox : public View
 	}
 };
 
+// labled tickbox
+struct ToggleSwitch : public View
+{
+	std::vector<std::unique_ptr<gmpi_forms::StateHolderbase>> myStates;
+
+	gmpi::drawing::Rect bounds;
+	mutable gmpi_forms::StateRef<bool> value;
+	mutable gmpi_forms::StateRef<std::string> text;
+
+	ToggleSwitch(
+		std::string_view labelText,
+		gmpi_forms::State<bool>& pvalue
+	)
+	{
+		// manage the label-text state myself.
+		auto label = std::make_unique<gmpi_forms::State<std::string>>();
+		label->set(std::string(labelText));
+		text.setSource(label.get());
+		myStates.push_back(std::move(label));
+
+		// hook up the 'ticked' state to the one provided.
+		value.setSource(&pvalue);
+
+		value.addObserver([this]()
+			{
+				setDirty();
+			});
+	}
+
+	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+	gmpi::drawing::Rect getBounds() const override
+	{
+		return bounds;
+	}
+	void setBounds(gmpi::drawing::Rect newBounds) override
+	{
+		bounds = newBounds;
+	}
+};
+
 struct FileBrowseButtonView : public View
 {
 	gmpi::drawing::Rect bounds;

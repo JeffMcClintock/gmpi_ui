@@ -53,7 +53,7 @@ struct Environment
 	//		Environment* parent = {};
 	//		std::vector<std::unique_ptr<Environment>> children;
 private:
-	std::map<std::string, std::unique_ptr< StateHolderbase > > states;
+	std::map<std::string, std::unique_ptr< thing > > states;
 
 public:
 	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost; // bit odd here.
@@ -78,7 +78,7 @@ public:
 	}
 
 
-	StateHolderbase* findState(std::string path)
+	thing* findState(std::string path)
 	{
 		if (auto it = states.find(path); it != states.end())
 			return (*it).second.get();

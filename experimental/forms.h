@@ -156,16 +156,16 @@ struct Spacer
 	void setBounds(gmpi::drawing::Rect newBounds);
 };
 
-class ToggleSwitch_old
-{
-public:
-	ToggleSwitch_old(
-		std::string_view labelText,
-		gmpi::drawing::Rect bounds,
-		std::function<bool()> getValue,
-		std::function<void(bool)> setValue
-	);
-};
+//class ToggleSwitch_old
+//{
+//public:
+//	ToggleSwitch_old(
+//		std::string_view labelText,
+//		gmpi::drawing::Rect bounds,
+//		std::function<bool()> getValue,
+//		std::function<void(bool)> setValue
+//	);
+//};
 
 struct ToggleSwitch
 {

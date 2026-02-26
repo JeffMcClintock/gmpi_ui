@@ -192,35 +192,6 @@ Spacer::Spacer(gmpi::drawing::Rect bounds)
 	result.push_back(std::unique_ptr<gmpi::ui::builder::Seperator>(view));
 }
 
-ToggleSwitch_old::ToggleSwitch_old(
-	std::string_view labelText,
-	gmpi::drawing::Rect bounds,
-	std::function<bool()> getValue,
-	std::function<void(bool)> setValue
-)
-{
-	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
-
-	auto label = std::make_unique<gmpi::ui::builder::TextLabelView>(labelText);
-	auto toggleSwitch = std::make_unique<gmpi::ui::builder::TickBox>();
-
-	toggleSwitch->bounds = bounds; toggleSwitch->bounds.left = toggleSwitch->bounds.right - getHeight(bounds); // { right - colHeight, y, right, y + colHeight };
-	label->bounds = bounds; label->bounds.right = toggleSwitch->bounds.left - 3; // { left, y, toggleSwitch->bounds.left - 3.0f, y + colHeight };
-
-	toggleSwitch->value = std::make_unique< gmpi::ui::builder::ValueObserverLambda<bool> >(
-		toggleSwitch.get(),
-		std::move(getValue),
-		[setValue = std::move(setValue), view = toggleSwitch.get()](bool newval) -> void
-		{
-			setValue(newval);
-			view->setDirty();
-		}
-	);
-
-	result.push_back(std::move(label));
-	result.push_back(std::move(toggleSwitch));
-}
-
 ToggleSwitch::ToggleSwitch(
 	std::string_view labelText,
 	gmpi_forms::State<bool>& value
@@ -237,7 +208,15 @@ ToggleSwitch::ToggleSwitch(
 Label::Label(std::string_view text, gmpi::drawing::Rect bounds)
 {
 	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
-	auto label = std::make_unique<gmpi::ui::builder::TextLabelView>(text);
+
+	auto label = std::make_unique<gmpi::ui::builder::TextLabelView>();
+	
+	// own the state myself. Todo constructor that accepts state directly.
+	auto state = std::make_unique< gmpi_forms::State<std::string> >();
+	label->text2.setSource(state.get());
+	state->set((std::string)text);
+	label->selfOwnedStates.push_back(std::move(state));
+
 	label->bounds = bounds;
 	view = label.get();
 	result.push_back(std::move(label));
@@ -263,6 +242,11 @@ ComboBox::ComboBox(gmpi::drawing::Rect bounds)
 
 TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
 {
+	name.addObserver([this]()
+		{
+			view->setDirty();
+		});
+
 	auto editor = std::make_unique<gmpi::ui::builder::TextEditView>();
 	view = editor.get();
 	view->text.setSource(&pname);

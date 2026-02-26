@@ -110,6 +110,8 @@ struct View : public gmpi_forms::IObserver
 	// TODO, could remove it and have linked-list own the primitives
 	mutable gmpi::forms::primitive::Canvas children;
 
+	mutable std::vector< std::unique_ptr<gmpi_forms::thing> > selfOwnedStates;
+
 	virtual ~View() {}
 	void clear2();
 	virtual void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const {}
@@ -123,6 +125,10 @@ struct View : public gmpi_forms::IObserver
 	void setDirty();
 	void OnModelWillChange() override;
 };
+
+
+// replaced by State
+#if 0
 
 // abstract the act of using a value from somewhere on a Visual
 template<typename T>
@@ -189,25 +195,34 @@ struct ValueObserverLambda : public ValueObserver<T>
 	}
 };
 
-struct TextLabelView : public View
+// A value that binds a State to anything else via the lambda.
+// only supports notification from observer to state, not the other way around, so it's basically a one-way adapter.
+struct StateBindBass
 {
-	gmpi::drawing::Rect bounds;
-	bool rightAlign = false;
-	std::unique_ptr< ValueObserver<std::string> > text2;
+	virtual ~StateBindBass() = default;
+};
 
-	TextLabelView() = default;
-	TextLabelView(std::string_view staticText);
+template<typename T>
+struct StateBinding : public StateBindBass
+{
+	gmpi_forms::State<T> value;
+	std::function<void(T)> setfunc;
 
-	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
-	gmpi::drawing::Rect getBounds() const override
+	StateBinding(
+		T initialValue,
+		std::function<void(T)> pset = {}
+	) : setfunc(pset)
 	{
-		return bounds;
-	}
-	void setBounds(gmpi::drawing::Rect newBounds) override
-	{
-		bounds = newBounds;
+		value.set(initialValue);
+
+		value.addObserver([this]()
+			{
+				if (setfunc)
+					setfunc(value.get());
+			});
 	}
 };
+#endif
 
 struct Seperator : public View
 {
@@ -229,17 +244,34 @@ struct Seperator : public View
 };
 
 
+struct TextLabelView : public View
+{
+	gmpi::drawing::Rect bounds;
+	bool rightAlign = false;
+	mutable gmpi_forms::StateRef<std::string> text2;
+
+	TextLabelView() = default;
+
+	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+	gmpi::drawing::Rect getBounds() const override
+	{
+		return bounds;
+	}
+	void setBounds(gmpi::drawing::Rect newBounds) override
+	{
+		bounds = newBounds;
+	}
+};
+
 struct TextEditView : public View
 {
 	gmpi::drawing::Rect bounds;
-//	std::unique_ptr< ValueObserver<std::string> > text2;
 	mutable gmpi_forms::StateRef<std::string> text;
 	bool rightAlign = false;
 
 	mutable gmpi::shared_ptr<gmpi::api::ITextEdit> textEdit;
 
-	TextEditView(/*gmpi_forms::Environment* env, */std::string path = {});
-	~TextEditView();
+	TextEditView(std::string path = {});
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
 	gmpi::drawing::Rect getBounds() const override
@@ -255,12 +287,22 @@ struct TextEditView : public View
 struct ComboBoxView : public View
 {
 	gmpi::drawing::Rect bounds;
-	std::unique_ptr< ValueObserver<std::string> > enum_list;
-	std::unique_ptr< ValueObserver<int32_t> > enum_value;
+	mutable gmpi_forms::StateRef<std::string> enum_list;
+	mutable gmpi_forms::StateRef<int32_t> enum_value;
 
 	mutable gmpi::shared_ptr<gmpi::api::IPopupMenu> combo;
 
-	ComboBoxView() = default;
+	ComboBoxView()
+	{
+		enum_value.addObserver([this]()
+			{
+				setDirty();
+			});
+		enum_list.addObserver([this]()
+			{
+				setDirty();
+			});
+	}
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
 	gmpi::drawing::Rect getBounds() const override
@@ -276,9 +318,26 @@ struct ComboBoxView : public View
 struct TickBox : public View
 {
 	gmpi::drawing::Rect bounds;
-	std::unique_ptr< ValueObserver<bool> > value;
+	mutable gmpi_forms::StateRef<bool> value;
 
-	TickBox() = default;
+	TickBox()
+	{
+		value.addObserver([this]()
+			{
+				setDirty();
+			});
+	}
+
+	TickBox(gmpi_forms::State<bool>& pvalue)
+	{
+		// hook up the 'ticked' state to the one provided.
+		value.setSource(&pvalue);
+
+		value.addObserver([this]()
+			{
+				setDirty();
+			});
+	}
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
 	gmpi::drawing::Rect getBounds() const override
@@ -294,8 +353,6 @@ struct TickBox : public View
 // labled tickbox
 struct ToggleSwitch : public View
 {
-	std::vector<std::unique_ptr<gmpi_forms::StateHolderbase>> myStates;
-
 	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<bool> value;
 	mutable gmpi_forms::StateRef<std::string> text;
@@ -309,7 +366,7 @@ struct ToggleSwitch : public View
 		auto label = std::make_unique<gmpi_forms::State<std::string>>();
 		label->set(std::string(labelText));
 		text.setSource(label.get());
-		myStates.push_back(std::move(label));
+		selfOwnedStates.push_back(std::move(label));
 
 		// hook up the 'ticked' state to the one provided.
 		value.setSource(&pvalue);
@@ -334,7 +391,7 @@ struct ToggleSwitch : public View
 struct FileBrowseButtonView : public View
 {
 	gmpi::drawing::Rect bounds;
-	std::unique_ptr< ValueObserver<std::string> > value;
+	mutable gmpi_forms::StateRef<std::string> value;
 	mutable gmpi::shared_ptr<gmpi::api::IFileDialog> fileDialog; // needs to be kept alive, so it can be called async.
 
 	FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds) {}
@@ -354,12 +411,18 @@ struct FileBrowseButtonView : public View
 struct PopupMenuView : public View
 {
 	gmpi::drawing::Rect bounds;
-	std::unique_ptr< ValueObserver<std::string> > text2;
-	std::unique_ptr< ValueObserver<std::string> > menuItems; // comma-separated menu items, e.g. "Learn,Unlearn,Edit..."
+	mutable gmpi_forms::StateRef<std::string> text2;
+	mutable gmpi_forms::StateRef<std::string> menuItems; // comma-separated menu items, e.g. "Learn,Unlearn,Edit..."
 	std::function<void(int32_t)> onItemSelected;
 	mutable gmpi::shared_ptr<gmpi::api::IPopupMenu> popupMenu;
 
-	PopupMenuView() = default;
+	PopupMenuView()
+	{
+		text2.addObserver([this]()
+			{
+				setDirty();
+			});
+	}
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
 	gmpi::drawing::Rect getBounds() const override

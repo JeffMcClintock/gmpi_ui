@@ -8,26 +8,9 @@ using namespace gmpi::forms;
 namespace gmpi::ui::builder
 {
 
-TextLabelView::TextLabelView(std::string_view staticText)
-{
-	std::string txt(staticText);
-
-	text2 = std::make_unique< gmpi::ui::builder::ValueObserverLambda<std::string> >(
-		this,
-		[txt]() ->std::string
-		{
-			return txt;
-		}
-	);
-}
-
 void TextLabelView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
-	// Add a text box.
-	//		const float itemHeight = 13;
-	//	const float itemMargin = 2;
 	gmpi::drawing::Rect textBoxArea = getBounds();
-	//		textBoxArea.bottom = textBoxArea.top + itemHeight;
 
 	// default text style
 	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
@@ -36,7 +19,7 @@ void TextLabelView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 	canvas.add(style);
 
 	// Draw the text
-	auto tbox = new primitive::TextBox(style, textBoxArea, text2->get());
+	auto tbox = new primitive::TextBox(style, textBoxArea, text2.get());
 
 	canvas.add(
 		tbox
@@ -54,16 +37,10 @@ TextEditView::TextEditView(/*gmpi_forms::Environment* env,*/ std::string path)
 	//	model = std::make_shared<TextLabelModel>(patch);
 //	_RPT0(0, "TextEditView\n");
 }
-TextEditView::~TextEditView()
-{
-	//	_RPT0(0, "~TextEditView\n");
-}
 
 void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	// Add a text box.
-//	const float itemHeight = 13;
-
 	gmpi::drawing::Rect textBoxArea = getBounds();
 	//	textBoxArea.bottom = textBoxArea.top + itemHeight;
 	textBoxArea.left += editor_padding;
@@ -154,11 +131,7 @@ void Seperator::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) 
 
 void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
-	// Add a text box.
-//	const float itemHeight = 13;
-	//	const float itemMargin = 2;
 	gmpi::drawing::Rect comboBoxArea = getBounds();
-	//	comboBoxArea.bottom = comboBoxArea.top + itemHeight;
 	comboBoxArea.left += editor_padding;
 	comboBoxArea.right -= editor_padding;
 
@@ -183,7 +156,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	}
 
 	// Draw the text
-	const auto enum_str = uc::WStringToUtf8(enum_get_substring(uc::Utf8ToWstring(enum_list->get()), enum_value->get()));
+	const auto enum_str = uc::WStringToUtf8(enum_get_substring(uc::Utf8ToWstring(enum_list.get()), enum_value.get()));
 
 	auto textArea = comboBoxArea;
 	const auto symbol_width = 0.7f * getHeight(comboBoxArea);
@@ -234,7 +207,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 				// populate combo
 				constexpr int32_t flags{};
-				for (auto& [index, id, text] : it_enum_list2(enum_list->get()))
+				for (auto& [index, id, text] : it_enum_list2(enum_list.get()))
 				{
 					combo->addItem(text.c_str(), index, flags);
 				}
@@ -244,10 +217,10 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 					(
 						[this](int32_t selectedId)
 						{
-							it_enum_list it(Utf8ToWstring(enum_list->get()));
+							it_enum_list it(Utf8ToWstring(enum_list.get()));
 							it.FindIndex(selectedId);
 							if (!it.IsDone())
-								enum_value->set(it.CurrentItem()->value);
+								enum_value.set(it.CurrentItem()->value);
 						}
 					)
 				);
@@ -285,8 +258,7 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 	}
 
 	// Draw the text
-//	const char check[] = { (char)0xE2, (char)0x9C, (char)0x93, (char)0 };
-	const char* text = value->get() ? "\xE2\x9C\x93" : " ";
+	const char* text = value.get() ? "\xE2\x9C\x93" : " ";
 
 	auto textbox = new primitive::TextBox(style, textBoxArea, text);
 
@@ -299,13 +271,13 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 
 		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
 			{
-				value->set(!value->get());
+				value.set(!value.get());
 			};
 
 		// don't work?
 		//clickDetector->onPointerUp_callback = [this, clickDetector](gmpi::drawing::Point)
 		//	{
-		//		value->set(!value->get());
+		//		value.set()(!value.get());
 		//	};
 	}
 }
@@ -328,10 +300,7 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	// Draw the text
 	auto tbox = new primitive::TextBox(style, lableArea, text.getSource() ? text.get() : "!!!");
 
-	canvas.add(
-		tbox
-	);
-
+	canvas.add(tbox);
 
 	// Add the tickbox. (text)
 	auto style3 = new primitive::TextBoxStyle(
@@ -375,7 +344,7 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		// don't work?
 		//clickDetector->onPointerUp_callback = [this, clickDetector](gmpi::drawing::Point)
 		//	{
-		//		value->set(!value->get());
+		//		value.set()(!value.get());
 		//	};
 	}
 }
@@ -433,7 +402,7 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 				if (!fileDialog)
 					return;
 
-				fileDialog->setInitialFilename(value->get().c_str());
+				fileDialog->setInitialFilename(value.get().c_str());
 
 				// TODO bind to extensions list
 				//nativeFileDialog2->addExtension("xmlpreset");
@@ -446,7 +415,7 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 					new gmpi::sdk::FileDialogCallback(
 						[this](const std::string& selectedPath) -> void
 						{
-							value->set(selectedPath);
+							value.set(selectedPath);
 						})
 				);
 			};
@@ -464,7 +433,7 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 	canvas.add(style);
 
 	// Draw the text
-	auto tbox = new primitive::TextBox(style, textBoxArea, text2->get());
+	auto tbox = new primitive::TextBox(style, textBoxArea, text2.get());
 	canvas.add(tbox);
 
 	// Clicking the label brings up a popup menu
@@ -488,7 +457,7 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 			popupMenu->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
 
 			constexpr int32_t flags{};
-			for (auto& [index, id, text] : it_enum_list2(menuItems->get()))
+			for (auto& [index, id, text] : it_enum_list2(menuItems.get()))
 			{
 				popupMenu->addItem(text.c_str(), id, flags);
 			}

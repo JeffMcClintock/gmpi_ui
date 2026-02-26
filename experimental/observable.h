@@ -9,19 +9,13 @@ namespace gmpi_forms
 template <typename T>
 struct StateRef;
 
-// holds the value references by a state
-struct StateHolderbase
+struct thing
 {
-	virtual ~StateHolderbase() = default;
-};
-
-struct StateRefBase
-{
-	virtual ~StateRefBase() = default;
+	virtual ~thing() = default;
 };
 
 template <typename T>
-struct State : public StateHolderbase
+struct State : public thing
 {
 private:
 	T value = {};
@@ -107,7 +101,7 @@ public:
 
 // an observer of a state
 template <typename T>
-struct StateRef : public StateRefBase
+struct StateRef : public thing
 {
 	StateRef() = default;
 	StateRef(State<T>* pstate) : state(pstate) {}

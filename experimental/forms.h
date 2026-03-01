@@ -7,9 +7,9 @@
 #include <cassert>
 #include "GmpiUiDrawing.h"
 #include "Core/GmpiApiEditor.h"
-#include "experimental/Drawables.h"
+#include "./Primatives.h"
 #include "helpers/Timer.h"
-#include "ComponentBuilders.h"
+#include "builders.h"
 
 #define editor_padding 4.f;
 
@@ -204,14 +204,31 @@ struct TextEdit
 
 class Grid
 {
+public:
+	struct Initializer
+	{
+		float gap = 0.0f;
+		float auto_rows = 0.0f;
+		float auto_columns = 0.0f;
+		std::vector<float> column_widths;
+		std::vector<float> column_heights;
+	};
+
+	bool layoutDone = {};
+
+private:
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> >* saveParent = {};
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;
-	gmpi::drawing::Rect bounds{};
-	float gap = 0.0f;
+
+	Initializer spec;
 
 public:
-	Grid(gmpi::drawing::Rect pbounds = {}, float pspacing = 0.0f);
+	gmpi::drawing::Rect bounds{};
+
+	Grid(Initializer init = {});
 	~Grid();
+
+	void doLayout();
 };
 
 } // namespace gmpi::ui

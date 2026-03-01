@@ -1,7 +1,6 @@
-#include "ComponentBuilders.h"
+#include "builders.h"
 #include "forms.h"
 #include "it_enum_list.h"
-#include "conversion.h"
 
 using namespace gmpi::forms;
 
@@ -156,8 +155,9 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	}
 
 	// Draw the text
-	const auto enum_str = uc::WStringToUtf8(enum_get_substring(uc::Utf8ToWstring(enum_list.get()), enum_value.get()));
-
+	// get the text for the current value of the enum.
+	const auto enum_str = enum_list_lookup_id(enum_list.get(), enum_value.get()).text;
+	
 	auto textArea = comboBoxArea;
 	const auto symbol_width = 0.7f * getHeight(comboBoxArea);
 	textArea.right -= symbol_width;
@@ -215,12 +215,9 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 				combo->showAsync(
 					new gmpi::sdk::PopupMenuCallback
 					(
-						[this](int32_t selectedId)
+						[this](int32_t selectedIndex)
 						{
-							it_enum_list it(Utf8ToWstring(enum_list.get()));
-							it.FindIndex(selectedId);
-							if (!it.IsDone())
-								enum_value.set(it.CurrentItem()->value);
+							enum_value.set(enum_list_lookup_index(enum_list.get(), selectedIndex).id);
 						}
 					)
 				);

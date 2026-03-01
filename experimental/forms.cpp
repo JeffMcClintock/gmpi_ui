@@ -1,6 +1,6 @@
 #include "forms.h"
-#include "ComponentBuilders.h"
-#include "modules/shared/unicode_conversion.h"
+#include "builders.h"
+#include "helpers/unicode_conversion.h"
 
 using namespace gmpi::forms;
 
@@ -160,7 +160,7 @@ gmpi::ReturnCode Form::onKeyPress(wchar_t c)
 
 	wchar_t temp[2] = { c, 0 };
 
-	const auto u8string = JmUnicodeConversions::WStringToUtf8(temp);
+	const auto u8string = gmpi::unicode::to_utf8(temp);
 
 	onKey(u8string);
 
@@ -255,9 +255,8 @@ TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
 	result.push_back(std::move(editor));
 }
 
-Grid::Grid(gmpi::drawing::Rect pbounds, float pspacing)
-	: bounds(pbounds)
-	, gap(pspacing)
+Grid::Grid(Initializer init)
+	: spec(init)
 {
 	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
@@ -269,23 +268,45 @@ Grid::~Grid()
 	if (!saveParent)
 		return;
 
+	doLayout();
+
+	//	childViews.clear();
+}
+
+void Grid::doLayout()
+{
+	if (layoutDone)
+		return;
+
 	auto& result = *saveParent;
 
 	const auto childCount = static_cast<float>(childViews.size());
-	const auto rowHeight = childCount > 0 ? (getHeight(bounds) - gap * (childCount - 1)) / childCount : 0.0f;
+	bool size_to_children = spec.auto_rows > 0.0f;
+
+	const auto rowHeight = 
+		spec.auto_rows > 0.0f ? spec.auto_rows :												// fixed row height
+		childCount > 0 ? (getHeight(bounds) - spec.gap * (childCount - 1)) / childCount : 0.0f;	// row height to fit all children.
 
 	auto childRect = bounds;
 
+	// stack children vertically
 	for (auto& child : childViews)
 	{
 		childRect.bottom = childRect.top + rowHeight;
 		child->setBounds(childRect);
 
-		childRect.top = childRect.bottom + gap;
+		childRect.top = childRect.bottom + spec.gap;
+
 		result.push_back(std::move(child));
 	}
 
-	childViews.clear();
+	if(size_to_children)
+		bounds.bottom = childRect.top - spec.gap; // size to fit children, removing the last gap.
+
+	childViews.clear(); // they have been moved away.
+
+	layoutDone = true;
 }
+
 } // namespace gmpi_form_builder
 

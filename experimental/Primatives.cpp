@@ -369,13 +369,15 @@ void MousePortal::restoreMouseState(Interactor* prevMouseOverObject)
 
 void MousePortal::setScroll(float dx, float dy)
 {
+	const auto prev = transform;
+
 	const auto originalMouse = transformPoint(transform, mousePoint);
 
 	transform = makeTranslation({ bounds.left + dx, bounds.top + dy });
 	reverseTransform = makeTranslation({ -bounds.left - dx, -bounds.top - dy });
 
 	// recalulate hovered object.
-	if(isHovered)
+	if(isHovered && prev != transform)
 		onPointerMove(originalMouse);
 }
 

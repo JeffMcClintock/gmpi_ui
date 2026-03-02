@@ -30,18 +30,6 @@ bool Form::onTimer()
 	return true;
 }
 
-void Form::DoUpdates()
-{
-	// todo make a base class for 'thing that has visual/mousetarget list) for Form and also for ScrollPortal 
-	// why dialog host part of env, perhaps move it.
-
-	bool childWasDirty = false;
-	for (auto& view : childViews)
-		childWasDirty |= view->RenderIfDirty(&env, *this, *this);
-
-	restoreMouseState(mouseOverObject);
-}
-
 void Form::restoreMouseState(gmpi::forms::primitive::Interactor* prevMouseOverObject)
 {
 	mouseList::restoreMouseState(prevMouseOverObject);
@@ -55,11 +43,27 @@ void Form::renderVisuals()
 	gmpi::ui::builder::ViewParent::clear();
 
 	{
-		gmpi::ui::builder::Builder builder(childViews);
+		gmpi::ui::builder::ThreadLocalCurrentBuilder = this;
+
 		Body(); // creates factories
+
+		gmpi::ui::builder::ThreadLocalCurrentBuilder = {};
+
+		doChildLayout();
 	}
 
 	DoUpdates();
+}
+
+void Form::DoUpdates()
+{
+	// why dialog host part of env, perhaps move it.
+
+	bool childWasDirty = false;
+	for (auto& view : childViews)
+		childWasDirty |= view->RenderIfDirty(&env, *this, *this);
+
+	restoreMouseState(mouseOverObject);
 }
 
 gmpi::ReturnCode Form::render(gmpi::drawing::api::IDeviceContext* drawingContext)
@@ -175,7 +179,7 @@ ScrollPortal::ScrollPortal(gmpi::drawing::Rect pbounds)
 
 	auto portal = std::make_unique<builder::ScrollPortal>(bounds);
 
-	gmpi::ui::builder::ThreadLocalCurrentBuilder = &(portal->childViews);
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = portal.get(); // &(portal->childViews);
 
 	result.push_back(std::move(portal));
 }
@@ -255,11 +259,18 @@ TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
 	result.push_back(std::move(editor));
 }
 
-Grid::Grid(Initializer init)
-	: spec(init)
+Grid::Grid(
+	  gmpi::ui::builder::ViewParent::Initializer init
+	, gmpi::drawing::Rect pbounds
+)
 {
 	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
-	gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
+
+	auto portal = std::make_unique<builder::Grid>(init, pbounds);
+
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = portal.get();
+
+	saveParent->push_back(std::move(portal));
 }
 
 Grid::Grid()
@@ -271,14 +282,15 @@ Grid::Grid()
 Grid::~Grid()
 {
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = saveParent;
-	if (!saveParent)
-		return;
+//	if (!saveParent)
+//		return;
 
-	doLayout();
+//	doLayout();
 
 	//	childViews.clear();
 }
 
+#if 0
 void Grid::doLayout()
 {
 	if (layoutDone)
@@ -287,32 +299,75 @@ void Grid::doLayout()
 	auto& result = *saveParent;
 
 	const auto childCount = static_cast<float>(childViews.size());
-	bool size_to_children = spec.auto_rows > 0.0f;
+	const bool autoFlowRows = spec.auto_flow == eAutoFlow::rows;
+	const bool size_to_children = autoFlowRows ? spec.auto_rows > 0.0f : spec.auto_columns > 0.0f;
 
-	const auto rowHeight = 
-		spec.auto_rows > 0.0f ? spec.auto_rows :												// fixed row height
-		childCount > 0 ? (getHeight(bounds) - spec.gap * (childCount - 1)) / childCount : 0.0f;	// row height to fit all children.
+	const auto itemExtent =
+		autoFlowRows ?
+		(
+			spec.auto_rows > 0.0f ? spec.auto_rows :
+			childCount > 0 ? (getHeight(bounds) - spec.gap * (childCount - 1)) / childCount : 0.0f
+		) :
+		(
+			spec.auto_columns > 0.0f ? spec.auto_columns :
+			childCount > 0 ? (getWidth(bounds) - spec.gap * (childCount - 1)) / childCount : 0.0f
+		);
 
 	auto childRect = bounds;
 
-	// stack children vertically
+	// stack children in the selected auto-flow direction.
+	int index = 0;
 	for (auto& child : childViews)
 	{
-		childRect.bottom = childRect.top + rowHeight;
+		if (autoFlowRows)
+		{
+			if (spec.auto_columns > 0.0f)
+			{
+				childRect.right = childRect.left + spec.auto_columns;
+			}
+
+			childRect.bottom = childRect.top + itemExtent;
+		}
+		else
+		{
+			if (spec.auto_rows > 0.0f)
+			{
+				childRect.bottom = childRect.top + spec.auto_rows;
+			}
+
+			childRect.right = childRect.left + itemExtent;
+		}
+
 		child->setBounds(childRect);
 
-		childRect.top = childRect.bottom + spec.gap;
+		if (autoFlowRows)
+		{
+			childRect.top = childRect.bottom + spec.gap;
+		}
+		else
+		{
+			childRect.left = childRect.right + spec.gap;
+		}
+
+		_RPTN(0, "child %2d : (LTRB) %f,%f,%f,%f\n", index, childRect.left, childRect.top, childRect.right, childRect.bottom);
 
 		result.push_back(std::move(child));
+		++index;
 	}
 
 	if(size_to_children)
-		bounds.bottom = childRect.top - spec.gap; // size to fit children, removing the last gap.
+	{
+		if (autoFlowRows)
+			bounds.bottom = childRect.top - spec.gap; // size to fit children, removing the last gap.
+		else
+			bounds.right = childRect.left - spec.gap; // size to fit children, removing the last gap.
+	}
 
 	childViews.clear(); // they have been moved away.
 
 	layoutDone = true;
 }
+#endif
 
 } // namespace gmpi_form_builder
 

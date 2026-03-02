@@ -7,9 +7,10 @@
 #include <cassert>
 #include "GmpiUiDrawing.h"
 #include "Core/GmpiApiEditor.h"
-#include "./primatives.h"
+#include "./Primatives.h"
 #include "helpers/Timer.h"
 #include "builders.h"
+#include "grid.h"
 
 #define editor_padding 4.f;
 
@@ -119,7 +120,7 @@ public:
 	gmpi::ReturnCode onKeyPress(wchar_t c) override;
 
 	// IEditor
-	gmpi::ReturnCode setHost(IUnknown* phost) override;
+	gmpi::ReturnCode setHost(IUnknown* phost);
 	gmpi::ReturnCode initialize() override { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode notifyPin(int32_t PinIndex, int32_t voice) override { return gmpi::ReturnCode::NoSupport; }
@@ -140,7 +141,7 @@ public:
 // it uses RIAA to replace and later restore the parent builder-list
 class ScrollPortal
 {
-	std::vector< std::unique_ptr<gmpi::ui::builder::View> >* saveParent = {};
+	gmpi::ui::builder::ViewParent* saveParent = {};
 	gmpi::drawing::Rect bounds{};
 	
 public:
@@ -204,35 +205,11 @@ struct TextEdit
 
 class Grid
 {
-public:
-	struct Initializer
-	{
-		float gap = 0.0f;
-		float auto_rows = 0.0f;
-		float auto_columns = 0.0f;
-		std::vector<float> column_widths;
-		std::vector<float> column_heights;
-
-		Initializer() = default;
-	};
-
-	bool layoutDone = {};
-
-private:
-	std::vector< std::unique_ptr<gmpi::ui::builder::View> >* saveParent = {};
-	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;
-
-	Initializer spec;
+	gmpi::ui::builder::ViewParent* saveParent = {};
 
 public:
-	gmpi::drawing::Rect bounds{};
-
-	Grid();
-	Grid(Initializer init);
+	Grid(gmpi::ui::builder::ViewParent::Initializer init = {}, gmpi::drawing::Rect pbounds = {});
 	~Grid();
-
-	void doLayout();
 };
 
 } // namespace gmpi::ui
-

@@ -7,6 +7,13 @@ using namespace gmpi::forms;
 namespace gmpi::ui::builder
 {
 
+void ViewParent::doChildLayout()
+{
+	for (auto& child : childViews)
+		child->doLayout();
+}
+
+
 void TextLabelView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	gmpi::drawing::Rect textBoxArea = getBounds();
@@ -473,38 +480,6 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 		};
 }
 
-bool ScrollPortal::RenderIfDirty(
-	gmpi_forms::Environment* env,
-	primitive::IVisualParent& parent_visual,
-	primitive::IMouseParent& mouseParent
-	) const
-{
-	// render myself
-	const auto iwasdirty = dirty;
-
-	if (dirty)
-	{
-		// recreate all children.
-		View::RenderIfDirty(env, parent_visual, mouseParent);
-	}
-	else
-	{
-		// selectivly update children that are dirty.
-		const auto mouseState = mouseportal->saveMouseState();
-
-		bool childWasDirty = false;
-		for (auto& view : childViews)
-			childWasDirty |= view->RenderIfDirty(env, *portal, *mouseportal);
-
-		if (childWasDirty)
-			mouseportal->restoreMouseState(mouseState);
-	}
-
-	scroll_state.onChanged(); // update scroll position/size.
-
-	return iwasdirty;
-}
-
 ScrollPortal::ScrollInfo ScrollPortal::calcScrollBar() const
 {
 	const auto visibleLength = getHeight(bounds);
@@ -607,6 +582,46 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 			const auto newScroll = std::clamp(scroll_state.get() + delta * 0.2f, maxScroll, 0.0f);
 			scroll_state.set(newScroll);
 		};
+}
+
+bool ScrollPortal::RenderIfDirty(
+	gmpi_forms::Environment* env,
+	primitive::IVisualParent& parent_visual,
+	primitive::IMouseParent& mouseParent
+) const
+{
+	// render myself
+	const auto iwasdirty = dirty;
+
+	if (dirty)
+	{
+		// recreate all children.
+		View::RenderIfDirty(env, parent_visual, mouseParent);
+	}
+	else
+	{
+		// selectivly update children that are dirty.
+		gmpi::forms::primitive::Interactor* mouseState{};
+
+		if (mouseportal)
+			mouseportal->saveMouseState();
+
+		bool childWasDirty = false;
+		for (auto& view : childViews)
+			childWasDirty |= view->RenderIfDirty(env, *portal, *mouseportal);
+
+		if (childWasDirty && mouseportal)
+			mouseportal->restoreMouseState(mouseState);
+	}
+
+	scroll_state.onChanged(); // update scroll position/size.
+
+	return iwasdirty;
+}
+
+void ScrollPortal::doLayout()
+{
+	doChildLayout();
 }
 
 void View::setDirty()

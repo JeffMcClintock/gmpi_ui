@@ -1,6 +1,6 @@
 #pragma once
 #include <type_traits>
-#include "./primatives.h"
+#include "./Primatives.h"
 
 // NOTE: This UI layer is a retained declarative builder. gmpi_form_builder views
 // (e.g. TextLabelView) don't draw directly; they configure and assemble the
@@ -74,8 +74,8 @@ struct PointerSpan
 	}
 };
 
-inline thread_local std::vector< std::unique_ptr<View> >* ThreadLocalCurrentBuilder = {};
 
+#if 0
 class Builder
 {
 	std::vector< std::unique_ptr<View> >& result;
@@ -97,6 +97,7 @@ public:
 	}
 	*/
 };
+#endif
 
 struct View : public gmpi_forms::IObserver
 {
@@ -111,6 +112,8 @@ struct View : public gmpi_forms::IObserver
 
 	virtual ~View() {}
 	void clear2();
+
+	virtual void doLayout() {}
 	virtual void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const {}
 	virtual gmpi::drawing::Rect getBounds() const { return {}; }
 	virtual void setBounds(gmpi::drawing::Rect) {}
@@ -434,13 +437,51 @@ struct PopupMenuView : public View
 
 struct ViewParent
 {
+	//enum class eLayoutMode
+	//{
+	//	absolute,
+	//	grid
+	//};
+
+	enum class eAutoFlow
+	{
+		rows,
+		columns
+	};
+
+	struct Initializer
+	{
+		float gap = 0.0f;
+		float auto_rows = 0.0f;
+		float auto_columns = 0.0f;
+		eAutoFlow auto_flow = eAutoFlow::rows;
+		std::vector<float> column_widths;
+		std::vector<float> column_heights;
+	};
+
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;
+	gmpi::drawing::Rect bounds{};
+//	eLayoutMode layout_mode = eLayoutMode::absolute;
+	Initializer spec;
+
+	ViewParent(Initializer init = {}) : spec(init)
+	{
+	}
+
+	void push_back(std::unique_ptr<gmpi::ui::builder::View> view)
+	{
+		childViews.push_back(std::move(view));
+	}
 
 	void clear()
 	{
 		childViews.clear();
 	}
+
+	void doChildLayout();
 };
+
+inline thread_local ViewParent* ThreadLocalCurrentBuilder = {};
 
 // scene-builder object that constructs widgets by composing primitive drawable objects into a scene graph.
 struct ScrollPortal : public View, public ViewParent
@@ -474,6 +515,9 @@ struct ScrollPortal : public View, public ViewParent
 	) const override;
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+
+	void doLayout() override;
+
 	gmpi::drawing::Rect getBounds() const override
 	{
 		return bounds;

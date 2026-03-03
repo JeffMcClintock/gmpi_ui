@@ -7,7 +7,7 @@
 #include <cassert>
 #include "GmpiUiDrawing.h"
 #include "Core/GmpiApiEditor.h"
-#include "./Primatives.h"
+#include "./primatives.h"
 #include "helpers/Timer.h"
 #include "builders.h"
 #include "grid.h"
@@ -120,7 +120,7 @@ public:
 	gmpi::ReturnCode onKeyPress(wchar_t c) override;
 
 	// IEditor
-	gmpi::ReturnCode setHost(IUnknown* phost);
+	gmpi::ReturnCode setHost(IUnknown* phost) override;
 	gmpi::ReturnCode initialize() override { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode notifyPin(int32_t PinIndex, int32_t voice) override { return gmpi::ReturnCode::NoSupport; }

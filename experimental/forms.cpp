@@ -262,6 +262,12 @@ Grid::Grid(Initializer init)
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
 }
 
+Grid::Grid()
+{
+    saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
+    gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
+}
+
 Grid::~Grid()
 {
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = saveParent;

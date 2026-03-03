@@ -1,6 +1,6 @@
 #pragma once
 #include <type_traits>
-#include "./Primatives.h"
+#include "./primatives.h"
 
 // NOTE: This UI layer is a retained declarative builder. gmpi_form_builder views
 // (e.g. TextLabelView) don't draw directly; they configure and assemble the

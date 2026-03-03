@@ -401,7 +401,7 @@ struct Shape : public RectangularVisual
 	ShapeStyle* style = {};
 	PathHolder* path = {};
 
-	struct Shape(PathHolder* ppath, ShapeStyle* pstyle, gmpi::drawing::Rect pbounds/*, std::string txt*/) : RectangularVisual(pbounds), style(pstyle), path(ppath) {}
+	Shape(PathHolder* ppath, ShapeStyle* pstyle, gmpi::drawing::Rect pbounds) : RectangularVisual(pbounds), style(pstyle), path(ppath) {}
 	void Draw(gmpi::drawing::Graphics& g) const override;
 };
 

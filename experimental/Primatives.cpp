@@ -1,4 +1,4 @@
-#include "Primatives.h"
+#include "primatives.h"
 #include "Utils.h"
 #include "forms.h"
 
@@ -178,7 +178,7 @@ void mouseList::onPointerMove(gmpi::drawing::Point p) const
 
 	if (prevMouseOverObject != mouseOverObject)
 	{
-#ifdef _DEBUG
+#if 0 //def _DEBUG
 		const char* prevName = prevMouseOverObject ? typeid(*prevMouseOverObject).name() : "<none>";
 		const char* nextName = mouseOverObject ? typeid(*mouseOverObject).name() : "<none>";
 		_RPTN(0, "%x MouseOverObject %s [%x] => %s [%x]\n", this, prevName, prevMouseOverObject, nextName, mouseOverObject);

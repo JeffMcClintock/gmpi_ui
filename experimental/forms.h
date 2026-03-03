@@ -208,7 +208,8 @@ class Grid
 	gmpi::ui::builder::ViewParent* saveParent = {};
 
 public:
-	Grid(gmpi::ui::builder::ViewParent::Initializer init = {}, gmpi::drawing::Rect pbounds = {});
+	Grid(gmpi::ui::builder::ViewParent::Initializer init);
+	Grid(gmpi::ui::builder::ViewParent::Initializer init, gmpi::drawing::Rect pbounds);
 	~Grid();
 };
 

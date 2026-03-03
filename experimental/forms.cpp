@@ -273,11 +273,26 @@ Grid::Grid(
 	saveParent->push_back(std::move(portal));
 }
 
-Grid::Grid()
+Grid::Grid(
+	gmpi::ui::builder::ViewParent::Initializer init
+)
 {
-    saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
-    gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
+	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
+
+	auto portal = std::make_unique<builder::Grid>(init, gmpi::drawing::Rect{});
+
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = portal.get();
+
+	saveParent->push_back(std::move(portal));
 }
+
+
+
+//Grid::Grid()
+//{
+//    saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
+//    gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
+//}
 
 Grid::~Grid()
 {

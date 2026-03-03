@@ -461,10 +461,12 @@ struct ViewParent
 
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;
 	gmpi::drawing::Rect bounds{};
-//	eLayoutMode layout_mode = eLayoutMode::absolute;
 	Initializer spec;
 
-	ViewParent(Initializer init = {}) : spec(init)
+	ViewParent(Initializer init) : spec(init)
+	{
+	}
+	ViewParent()
 	{
 	}
 

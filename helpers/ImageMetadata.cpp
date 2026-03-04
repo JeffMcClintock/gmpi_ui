@@ -1,9 +1,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#ifdef SELIB_HAS_FILESYSTEM
 #include <filesystem>
-#endif
 #include <fstream>
 #include "ImageMetadata.h"
 
@@ -97,12 +95,12 @@ void SplitString(const char* pText, std::vector<std::string>& returnValue)
 // read file into a std::string
 std::string ImFileToString(const char* textFilename)
 {
-#ifdef SELIB_HAS_FILESYSTEM
 	auto size = std::filesystem::file_size(textFilename);
 	std::string imageMetadata(size, '\0');
 	std::ifstream in(textFilename);
 	in.read(&imageMetadata[0], size);
-#else
+
+#if 0 // old way
 	std::string imageMetadata;
 	{
 		std::ifstream t(textFilename, std::ifstream::in | std::ifstream::binary);

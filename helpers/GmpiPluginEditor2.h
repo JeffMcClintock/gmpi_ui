@@ -127,9 +127,7 @@ public:
 		editorHost2 = unknown.as<gmpi::api::IEditorHost2>();
 
 		for (auto& p : pins)
-		{
 			p.second->host = editorHost.get();
-		}
 		return ReturnCode::Ok;
 	}
 
@@ -141,9 +139,7 @@ public:
 	ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const uint8_t* data) override
 	{
 		if (auto it = pins.find(pinId); it != pins.end())
-		{
 			it->second->setFromHost(voice, size, data);
-		}
 		return ReturnCode::Ok;
 	}
 

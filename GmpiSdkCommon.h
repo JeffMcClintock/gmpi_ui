@@ -24,7 +24,8 @@ public:
 
 	explicit shared_ptr(wrappedObjT* newobj)
 	{
-		assign(newobj);
+//		assign(newobj);
+		attach(newobj); // new objects have refcount =1 already, leave it at that.
 	}
 	shared_ptr(shared_ptr<wrappedObjT> const& value) noexcept // copy
 	{
@@ -43,9 +44,7 @@ public:
 		obj = newobj;
 
 		if( old )
-		{
 			old->release();
-		}
 	}
 
 	~shared_ptr()
@@ -112,12 +111,6 @@ public:
 		return reinterpret_cast<void**>(put());
 	}
 
-	//void** asIUnknownPtr()
-	//{
-	//	assert(obj == 0); // Free it before you re-use it!
-	//	return reinterpret_cast<void**>(&obj);
-	//}
-
 	template<typename I>
 	shared_ptr<I> as()
 	{
@@ -142,9 +135,7 @@ private:
 		{
 			attach(newobj);
 			if( newobj )
-			{
 				newobj->addRef();
-			}
 		}
 	}
 };

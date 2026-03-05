@@ -72,6 +72,25 @@ inline auto getCenter(Rect r) -> Point
 	return { 0.5f * (r.left + r.right), 0.5f * (r.top + r.bottom) };
 }
 
+inline bool empty(const RectL& a)
+{
+	return getWidth(a) <= 0 || getHeight(a) <= 0;
+}
+
+inline bool empty(const Rect& a)
+{
+	return getWidth(a) <= 0.0f || getHeight(a) <= 0.0f;
+}
+
+inline bool isNull(const RectL& a)
+{
+	return a == RectL{};
+}
+inline bool isNull(const Rect& a)
+{
+	return a == Rect{};
+}
+
 inline RectL intersectRect(RectL a, RectL b)
 {
 	return
@@ -127,23 +146,14 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-inline bool empty(const RectL& a)
+inline bool overlaps(const Rect& a, const Rect& b)
 {
-	return getWidth(a) <= 0 || getHeight(a) <= 0;
+	return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
-inline bool empty(const Rect& a)
+inline bool overlaps(const RectL& a, const RectL& b)
 {
-	return getWidth(a) <= 0.0f || getHeight(a) <= 0.0f;
-}
-
-inline bool isNull(const RectL& a)
-{
-	return a == RectL{};
-}
-inline bool isNull(const Rect& a)
-{
-	return a == Rect{};
+	return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
 inline Point transformPoint(const Matrix3x2& transform, Point point)

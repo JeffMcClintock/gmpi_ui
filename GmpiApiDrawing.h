@@ -70,8 +70,10 @@ enum class FontFlags : int32_t
 
 enum class TextAlignment : int32_t
 {
-    Leading  = 0, // left
-    Trailing = 1, // right
+    Leading  = 0,
+    Left     = 0,
+    Trailing = 1,
+    Right    = 1,
     Center   = 2,
 };
 

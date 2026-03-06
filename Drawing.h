@@ -146,17 +146,17 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-inline bool overlaps(const Rect& a, const Rect& b)
+inline bool [[nodiscard]] overlaps(const Rect& a, const Rect& b)
 {
 	return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
-inline bool overlaps(const RectL& a, const RectL& b)
+inline bool [[nodiscard]] overlaps(const RectL& a, const RectL& b)
 {
 	return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
-inline Point transformPoint(const Matrix3x2& transform, Point point)
+inline [[nodiscard]] Point transformPoint(const Matrix3x2& transform, Point point)
 {
     return {
         point.x * transform._11 + point.y * transform._21 + transform._31,
@@ -164,7 +164,7 @@ inline Point transformPoint(const Matrix3x2& transform, Point point)
     };
 }
 
-inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
+inline [[nodiscard]] Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
 {
     return {
         rect.left * transform._11 + rect.top * transform._21 + transform._31,
@@ -174,13 +174,82 @@ inline Rect transformRect(const Matrix3x2& transform, gmpi::drawing::Rect rect)
     };
 }
 
-inline bool pointInRect(Point point, Rect rect)
+inline [[nodiscard]] bool pointInRect(Point point, Rect rect)
 {
 	return point.x >= rect.left && point.x <= rect.right &&
 		   point.y >= rect.top && point.y <= rect.bottom;
 }
 
-inline Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
+inline [[nodiscard]] Point operator+(Point point, Size size)
+{
+	return {
+		point.x + size.width,
+		point.y + size.height
+	};
+}
+
+inline [[nodiscard]] Point operator+(Size size, Point point)
+{
+	return point + size;
+}
+
+inline [[nodiscard]] Point& operator+=(Point& lhs, Size rhs)
+{
+	lhs = lhs + rhs;
+	return lhs;
+}
+
+inline [[nodiscard]] Point operator-(Point point, Size size)
+{
+	return {
+		point.x - size.width,
+		point.y - size.height
+	};
+}
+
+inline [[nodiscard]] Point& operator-=(Point& lhs, Size rhs)
+{
+	lhs = lhs - rhs;
+	return lhs;
+}
+
+inline [[nodiscard]] Size operator-(Point lhs, Point rhs)
+{
+	return {
+		lhs.x - rhs.x,
+		lhs.y - rhs.y
+	};
+}
+
+inline [[nodiscard]] Size operator+(Size lhs, Size rhs)
+{
+	return {
+		lhs.width + rhs.width,
+		lhs.height + rhs.height
+	};
+}
+
+inline [[nodiscard]] Size& operator+=(Size& lhs, Size rhs)
+{
+	lhs = lhs + rhs;
+	return lhs;
+}
+
+inline [[nodiscard]] Size operator-(Size lhs, Size rhs)
+{
+	return {
+		lhs.width - rhs.width,
+		lhs.height - rhs.height
+	};
+}
+
+inline [[nodiscard]] Size& operator-=(Size& lhs, Size rhs)
+{
+	lhs = lhs - rhs;
+	return lhs;
+}
+
+inline [[nodiscard]] Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
 {
 	return {
 		lhs._11 * rhs._11 + lhs._12 * rhs._21,
@@ -192,13 +261,13 @@ inline Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
 	};
 }
 
-inline Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
+inline [[nodiscard]] Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-inline Point operator*(Point point, Matrix3x2 transform)
+inline [[nodiscard]] Point operator*(Point point, Matrix3x2 transform)
 {
 	return {
 		point.x * transform._11 + point.y * transform._21 + transform._31,
@@ -206,13 +275,13 @@ inline Point operator*(Point point, Matrix3x2 transform)
 	};
 }
 
-inline Point& operator*=(Point& lhs, Matrix3x2 rhs)
+inline [[nodiscard]] Point& operator*=(Point& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-inline Rect operator*(Rect rect, Matrix3x2 transform)
+inline [[nodiscard]] Rect operator*(Rect rect, Matrix3x2 transform)
 {
 	return {
 		rect.left * transform._11 + rect.top * transform._21 + transform._31,
@@ -222,13 +291,13 @@ inline Rect operator*(Rect rect, Matrix3x2 transform)
 	};
 }
 
-inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
+inline [[nodiscard]] Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-inline Matrix3x2 invert(const Matrix3x2& transform)
+inline [[nodiscard]] Matrix3x2 invert(const Matrix3x2& transform)
 {
 	const auto det = transform._11 * transform._22 - transform._12 * transform._21;
 	const auto s = 1.0f / det;
@@ -243,7 +312,7 @@ inline Matrix3x2 invert(const Matrix3x2& transform)
 	};
 }
 
-inline Matrix3x2 makeTranslation(Size size)
+inline [[nodiscard]] Matrix3x2 makeTranslation(Size size)
 {
 	return {
 		1.0f,
@@ -255,7 +324,7 @@ inline Matrix3x2 makeTranslation(Size size)
 	};
 }
 
-inline Matrix3x2 makeTranslation(
+inline [[nodiscard]] Matrix3x2 makeTranslation(
 	float x,
 	float y
 )
@@ -263,7 +332,7 @@ inline Matrix3x2 makeTranslation(
     return makeTranslation(Size{x, y});
 }
 
-inline Matrix3x2 makeScale(
+inline [[nodiscard]] Matrix3x2 makeScale(
 	Size size,
 	Point center = {}
 )
@@ -278,7 +347,7 @@ inline Matrix3x2 makeScale(
 	return scale;
 }
 
-inline Matrix3x2 makeScale(
+inline [[nodiscard]] Matrix3x2 makeScale(
 	float x,
 	float y,
 	Point center = {}
@@ -287,7 +356,7 @@ inline Matrix3x2 makeScale(
 	return makeScale(Size{ x, y }, center);
 }
 
-inline Matrix3x2 makeScale(
+inline [[nodiscard]] Matrix3x2 makeScale(
 	float scale,
 	Point center = {}
 )
@@ -295,7 +364,7 @@ inline Matrix3x2 makeScale(
 	return makeScale(Size{ scale, scale }, center);
 }
 
-inline Matrix3x2 makeRotation(
+inline [[nodiscard]] Matrix3x2 makeRotation(
 	float angleRadians,
 	Point center = {}
 )
@@ -317,7 +386,7 @@ inline Matrix3x2 makeRotation(
 	};
 }
 
-inline Matrix3x2 makeSkew(
+inline [[nodiscard]] Matrix3x2 makeSkew(
 	float angleX,
 	float angleY,
 	Point center = Point()
@@ -330,7 +399,7 @@ inline Matrix3x2 makeSkew(
 	return skew;
 }
 
-inline gmpi::drawing::Rect offsetRect(gmpi::drawing::Rect r, gmpi::drawing::Size offset)
+inline [[nodiscard]] gmpi::drawing::Rect offsetRect(gmpi::drawing::Rect r, gmpi::drawing::Size offset)
 {
 	return
 	{
@@ -341,7 +410,7 @@ inline gmpi::drawing::Rect offsetRect(gmpi::drawing::Rect r, gmpi::drawing::Size
 	};
 }
 
-inline gmpi::drawing::RectL offsetRect(gmpi::drawing::RectL r, gmpi::drawing::SizeL offset)
+inline [[nodiscard]] gmpi::drawing::RectL offsetRect(gmpi::drawing::RectL r, gmpi::drawing::SizeL offset)
 {
 	return
 	{
@@ -1163,27 +1232,43 @@ public:
 		return temp;
 	}
 
+	/* ? stroke style not easily avail as ptr
 	bool strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 	{
 		bool r{};
 		native->strokeContainsPoint(point, strokeWidth, strokeStyle, worldTransform, &r);
 		return r;
 	}
+	*/
 
-	bool fillContainsPoint(gmpi::drawing::Point point, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
+	bool strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f)
 	{
 		bool r{};
-		native->fillContainsPoint(point, worldTransform, &r);
+		native->strokeContainsPoint(point, strokeWidth, nullptr, nullptr, &r);
+		return r;
+	}
+	bool strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth, gmpi::drawing::StrokeStyle strokeStyle)
+	{
+		bool r{};
+		native->strokeContainsPoint(point, strokeWidth, AccessPtr::get(strokeStyle), nullptr, &r);
 		return r;
 	}
 
+	bool fillContainsPoint(gmpi::drawing::Point point)
+	{
+		bool r{};
+		native->fillContainsPoint(point, nullptr, &r);
+		return r;
+	}
+
+	/* ? stroke style not easily avail as ptr
 	gmpi::drawing::Rect getWidenedBounds(float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
 	{
 		gmpi::drawing::Rect r;
 		native->getWidenedBounds(strokeWidth, strokeStyle, worldTransform, &r);
 		return r;
 	}
-
+	*/
 	gmpi::drawing::Rect getWidenedBounds(float strokeWidth, gmpi::drawing::StrokeStyle strokeStyle)
 	{
 		gmpi::drawing::Rect r;
@@ -1368,14 +1453,14 @@ public:
 	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
 	{
 		GradientstopCollection temp;
-		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, AccessPtr::put(temp));
+		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, ExtendMode::Clamp, AccessPtr::put(temp));
 		return temp;
 	}
 
 	GradientstopCollection createGradientstopCollection(std::vector<gmpi::drawing::Gradientstop>& gradientStops)
 	{
 		GradientstopCollection temp;
-		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), AccessPtr::put(temp));
+		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), ExtendMode::Clamp, AccessPtr::put(temp));
 		return temp;
 	}
 

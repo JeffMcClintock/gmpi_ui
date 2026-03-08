@@ -249,6 +249,38 @@ inline [[nodiscard]] Size& operator-=(Size& lhs, Size rhs)
 	return lhs;
 }
 
+inline [[nodiscard]] Rect operator+(Rect rect, Size offset)
+{
+	return {
+		rect.left + offset.width,
+		rect.top + offset.height,
+		rect.right + offset.width,
+		rect.bottom + offset.height
+	};
+}
+
+inline [[nodiscard]] Rect& operator+=(Rect& lhs, Size rhs)
+{
+	lhs = lhs + rhs;
+	return lhs;
+}
+
+inline [[nodiscard]] Rect operator-(Rect rect, Size offset)
+{
+	return {
+		rect.left - offset.width,
+		rect.top - offset.height,
+		rect.right - offset.width,
+		rect.bottom - offset.height
+	};
+}
+
+inline [[nodiscard]] Rect& operator-=(Rect& lhs, Size rhs)
+{
+	lhs = lhs - rhs;
+	return lhs;
+}
+
 inline [[nodiscard]] Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
 {
 	return {

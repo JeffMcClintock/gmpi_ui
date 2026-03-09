@@ -82,13 +82,13 @@ public:
 	// Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		unknown = phost;
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
 
 		for (auto& pin : pins)
-		{
 			pin->host = editorHost.get();
-		}
+
 		return ReturnCode::Ok;
 	}
 
@@ -144,7 +144,8 @@ public:
 	{
 		PluginEditorBase::setHost(phost);
 
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		unknown = phost; // asign assuming ownership is already managed from caller.
 
 		inputHost = unknown.as<gmpi::api::IInputHost>();
 		drawingHost = unknown.as<gmpi::api::IDrawingHost>();

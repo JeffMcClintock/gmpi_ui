@@ -1610,11 +1610,12 @@ public:
 			selectedId = 0; // N/A
 		}
 
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		unknown = returnCallback; // asign assuming ownership is already managed from caller.
+
 		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
-		{
 			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
-		}
+
 #if 0 // not required
 		else if (auto callback = unknown.as<gmpi::api::ILegacyCompletionCallback>(); callback)
 		{

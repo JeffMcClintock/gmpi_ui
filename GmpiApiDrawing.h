@@ -348,7 +348,7 @@ struct ArcSegment
     Point point;
     Size size;
     float rotationAngle{};
-    SweepDirection sweepDirection;
+    SweepDirection sweepDirection = SweepDirection::Clockwise;
     ArcSize arcSize;
 };
 

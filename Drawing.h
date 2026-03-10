@@ -1322,33 +1322,12 @@ public:
 		return temp;
 	}
 
-	struct FontStack
-	{
-		std::vector<const char*> fontFamilies_;
-
-		FontStack(const char* fontFamily = "Arial")
-		{
-			fontFamilies_.push_back(fontFamily);
-		}
-
-		FontStack(std::span<const char* const> fontFamilies) :
-			fontFamilies_(fontFamilies.begin(), fontFamilies.end())
-		{
-		}
-
-		FontStack(std::span<const std::string> fontFamilies)
-		{
-			for(const auto& fontFamilyName : fontFamilies)
-				fontFamilies_.push_back(fontFamilyName.c_str());
-		}
-	};
-
 	// createTextFormat by default scales the bounding box of the font, so that it is always the same height as Arial.
 	// This is useful if you’re drawing text in a box(e.g.a Text - Entry module). The text will always have nice vertical alignment,
 	// even when the font 'falls back' to a font with different metrics. use FontFlags::SystemHeight for legacy behaviour
 	TextFormat createTextFormat(
 		float bodyHeight = 12.0f,
-		FontStack fontStack = {},
+		std::span<const std::string_view> fontFamilies = {},
 		gmpi::drawing::FontWeight fontWeight = gmpi::drawing::FontWeight::Regular,
 		gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal,
 		gmpi::drawing::FontStretch fontStretch = gmpi::drawing::FontStretch::Normal,
@@ -1357,13 +1336,13 @@ public:
 	{
 		assert(bodyHeight > 0.0f);
 
-		const char* fallBackFontFamilyName = "Arial";
+		constexpr std::string_view fallBackFontFamilyName = "Arial";
 
 		TextFormat returnTextFormat;
-		for (const auto fontFamilyName : fontStack.fontFamilies_)
+		for (const auto fontFamilyName : fontFamilies)
 		{
 			native->createTextFormat(
-				fontFamilyName,
+				fontFamilyName.data(),
 				fontWeight,
 				fontStyle,
 				fontStretch,
@@ -1378,9 +1357,8 @@ public:
 			}
 		}
 
-		// fallback to Arial
 		native->createTextFormat(
-			fallBackFontFamilyName,
+			fallBackFontFamilyName.data(),
 			fontWeight,
 			fontStyle,
 			fontStretch,
@@ -1389,7 +1367,7 @@ public:
 			AccessPtr::put(returnTextFormat)
 		);
 
-		assert(AccessPtr::get(returnTextFormat)); // should never happen unless font size is 0 (rogue module or global.txt style)
+		assert(AccessPtr::get(returnTextFormat));
 		return returnTextFormat;
 	}
 

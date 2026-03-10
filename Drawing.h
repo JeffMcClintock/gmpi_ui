@@ -24,8 +24,8 @@ using namespace gmpi::drawing;
 
 #include <vector>
 #include <array>
+#include <span>
 #include <math.h>
-#include <unordered_map>
 #include <charconv>
 #include <string_view>
 #include <algorithm>
@@ -1159,14 +1159,9 @@ public:
 		native->beginFigure({x, y}, figureBegin);
 	}
 
-	void addLines(Point* points, uint32_t pointsCount)
+	void addLines(std::span<const Point> points)
 	{
-		native->addLines(points, pointsCount);
-	}
-
-	void addBeziers(BezierSegment* beziers, uint32_t beziersCount)
-	{
-		native->addBeziers(beziers, beziersCount);
+		native->addLines(points.data(), static_cast<uint32_t>(points.size()));
 	}
 
 	void endFigure(gmpi::drawing::FigureEnd figureEnd = gmpi::drawing::FigureEnd::Closed)
@@ -1194,9 +1189,14 @@ public:
 		native->addQuadraticBezier(&bezier);
 	}
 
-	void addQuadraticBeziers(QuadraticBezierSegment* beziers, uint32_t beziersCount)
+	void addBeziers(std::span<const BezierSegment> beziers)
 	{
-		native->addQuadraticBeziers(beziers, beziersCount);
+		native->addBeziers(beziers.data(), static_cast<uint32_t>(beziers.size()));
+	}
+
+	void addQuadraticBeziers(std::span<const QuadraticBezierSegment> beziers)
+	{
+		native->addQuadraticBeziers(beziers.data(), static_cast<uint32_t>(beziers.size()));
 	}
 
 	void addArc(ArcSegment arc)
@@ -1331,17 +1331,15 @@ public:
 			fontFamilies_.push_back(fontFamily);
 		}
 
-		FontStack(const std::vector<const char*> fontFamilies) :
-			fontFamilies_(fontFamilies)
+		FontStack(std::span<const char* const> fontFamilies) :
+			fontFamilies_(fontFamilies.begin(), fontFamilies.end())
 		{
 		}
 
-		FontStack(const std::vector<std::string>& fontFamilies)
+		FontStack(std::span<const std::string> fontFamilies)
 		{
 			for(const auto& fontFamilyName : fontFamilies)
-			{
 				fontFamilies_.push_back(fontFamilyName.c_str());
-			}
 		}
 	};
 
@@ -1422,10 +1420,10 @@ public:
 		return loadImageU(utf8Uri.c_str());
 	}
 
-	StrokeStyle createStrokeStyle(const gmpi::drawing::StrokeStyleProperties strokeStyleProperties, const float* dashes = nullptr, int32_t dashesCount = 0)
+	StrokeStyle createStrokeStyle(const gmpi::drawing::StrokeStyleProperties strokeStyleProperties, std::span<const float> dashes = {})
 	{
 		StrokeStyle temp;
-		native->createStrokeStyle(&strokeStyleProperties, const_cast<float*>(dashes), dashesCount, AccessPtr::put(temp));
+		native->createStrokeStyle(&strokeStyleProperties, dashes.data(), static_cast<int32_t>(dashes.size()), AccessPtr::put(temp));
 		return temp;
 	}
 
@@ -1481,27 +1479,10 @@ public:
 		return createSolidColorBrush(color);
 	}
 
-	// TODO gradientstop view? span?
-	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop* gradientStops, uint32_t gradientStopsCount)
+	GradientstopCollection createGradientstopCollection(std::span<const gmpi::drawing::Gradientstop> gradientStops)
 	{
 		GradientstopCollection temp;
-		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops, gradientStopsCount, ExtendMode::Clamp, AccessPtr::put(temp));
-		return temp;
-	}
-
-	GradientstopCollection createGradientstopCollection(std::vector<gmpi::drawing::Gradientstop>& gradientStops)
-	{
-		GradientstopCollection temp;
-		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), ExtendMode::Clamp, AccessPtr::put(temp));
-		return temp;
-	}
-
-	// Pass POD array, infer size.
-	template <int N>
-	GradientstopCollection createGradientstopCollection(gmpi::drawing::Gradientstop(&gradientStops)[N])
-	{
-		GradientstopCollection temp;
-		native->createGradientstopCollection((gmpi::drawing::Gradientstop *) &gradientStops, N, gmpi::drawing::ExtendMode::Clamp, AccessPtr::put(temp));
+		native->createGradientstopCollection(gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), ExtendMode::Clamp, AccessPtr::put(temp));
 		return temp;
 	}
 
@@ -1522,16 +1503,13 @@ public:
 		return temp;
 	}
 
-	template <int N>
-	LinearGradientBrush createLinearGradientBrush(Gradientstop(&gradientStops)[N], gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
-    {
-        BrushProperties brushProperties;
-        LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
+	LinearGradientBrush createLinearGradientBrush(std::span<const Gradientstop> gradientStops, gmpi::drawing::Point startPoint, gmpi::drawing::Point endPoint)
+	{
+		BrushProperties brushProperties;
+		LinearGradientBrushProperties linearGradientBrushProperties{ startPoint, endPoint };
 		auto gradientStopCollection = createGradientstopCollection(gradientStops);
 
-		LinearGradientBrush temp;
-		native->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, gradientStopCollection.get(), AccessPtr::put(temp));
-		return temp;
+		return createLinearGradientBrush(linearGradientBrushProperties, brushProperties, gradientStopCollection);
 	}
 
 	// Simple 2-color gradient.
@@ -1568,21 +1546,16 @@ public:
 		return temp;
 	}
 
-	template <int N>
-	RadialGradientBrush createRadialGradientBrush(Gradientstop(&gradientstops)[N], gmpi::drawing::Point center, float radius)
-    {
+	RadialGradientBrush createRadialGradientBrush(std::span<const Gradientstop> gradientstops, gmpi::drawing::Point center, float radius)
+	{
 		BrushProperties brushProperties;
-
 		RadialGradientBrushProperties radialGradientBrushProperties{};
 		radialGradientBrushProperties.center = center;
 		radialGradientBrushProperties.radiusX = radius;
 		radialGradientBrushProperties.radiusY = radius;
 
 		auto gradientstopCollection = createGradientstopCollection(gradientstops);
-
-		RadialGradientBrush temp;
-		native->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, gradientstopCollection.get(), AccessPtr::put(temp));
-		return temp;
+		return createRadialGradientBrush(radialGradientBrushProperties, brushProperties, gradientstopCollection);
 	}
 
 	// Simple 2-color gradient.
@@ -1699,51 +1672,28 @@ public:
 		native->fillGeometry(AccessPtr::get(geometry), brush.getBrush(), nullptr);
 	}
 
-	void fillPolygon(std::vector<Point>& points, IHasBrush& brush)
+	void drawPolygon(std::span<const Point> points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
+		assert(!points.empty());
+
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
-
-		auto it = points.begin();
-		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
-		for ( ; it != points.end(); ++it)
-		{
-			sink.addLine(*it);
-		}
-
-		sink.endFigure();
-		sink.close();
-		fillGeometry(geometry, brush);
-	}
-
-	void drawPolygon(std::vector<Point>& points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
-	{
-		auto geometry = getFactory().createPathGeometry();
-		auto sink = geometry.open();
-
-		auto it = points.begin();
-		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
-		for (; it != points.end(); ++it)
-		{
-			sink.addLine(*it);
-		}
+		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Filled);
+		sink.addLines(points.subspan(1));
 
 		sink.endFigure();
 		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
-	void drawPolyline(std::vector<Point>& points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolyline(std::span<const Point> points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
+		assert(!points.empty());
+
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
-
-		auto it = points.begin();
-		sink.beginFigure(*it++, gmpi::drawing::FigureBegin::Filled);
-		for (; it != points.end(); ++it)
-		{
-			sink.addLine(*it);
-		}
+		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Filled);
+		sink.addLines(points.subspan(1));
 
 		sink.endFigure(gmpi::drawing::FigureEnd::Open);
 		sink.close();
@@ -1831,46 +1781,40 @@ public:
 	}
 
 	// Composit convenience methods.
-	void fillPolygon(Point *points, uint32_t pointCount, IHasBrush& brush)
+	void fillPolygon(std::span<const Point> points, IHasBrush& brush)
 	{
-		assert(pointCount > 0 && points != nullptr);
+		assert(!points.empty());
 
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
 		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Filled);
-		sink.addLines(points, pointCount);
+		sink.addLines(points);
 		sink.endFigure();
 		sink.close();
 		fillGeometry(geometry, brush);
 	}
 
-	template <int N>
-	void fillPolygon(Point(&points)[N], IHasBrush& brush)
+	void drawPolygon(std::span<const Point> points, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		return fillPolygon(points, N, brush);
-	}
-
-	void drawPolygon(Point *points, uint32_t pointCount, IHasBrush& brush, float strokeWidth = 1.0f)
-	{
-		assert(pointCount > 0 && points != nullptr);
+		assert(!points.empty());
 
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
 		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Hollow);
-		sink.addLines(points, pointCount);
+		sink.addLines(points);
 		sink.endFigure();
 		sink.close();
 		drawGeometry(geometry, brush, strokeWidth);
 	}
 
-	void drawLines(Point *points, uint32_t pointCount, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawLines(std::span<const Point> points, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		assert(pointCount > 1 && points != nullptr);
+		assert(points.size() > 1);
 
 		auto geometry = getFactory().createPathGeometry();
 		auto sink = geometry.open();
 		sink.beginFigure(points[0], gmpi::drawing::FigureBegin::Hollow);
-		sink.addLines(points + 1, pointCount - 1);
+		sink.addLines(points.subspan(1));
 		sink.endFigure(gmpi::drawing::FigureEnd::Open);
 		sink.close();
 		drawGeometry(geometry, brush, strokeWidth);

@@ -24,6 +24,7 @@
 #include <d2d1_2.h>
 #include <dwrite.h>
 #include <Wincodec.h>
+#include <unordered_map>
 #include "../Drawing.h"
 
 namespace gmpi

@@ -94,16 +94,6 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	{ 0xd2d020d1, 0xbcee, 0x49f9, { 0xa1, 0x73, 0x97, 0xbc, 0x64, 0x60, 0xa7, 0x27 } };
 };
 
-struct DECLSPEC_NOVTABLE IContextItemSink : gmpi::api::IUnknown
-{
-	// WARNING: USING SAME GUID AS IMpContextItemSink. If u change the interface, change the GUID!
-	virtual ReturnCode addItem(const char* text, int32_t id, int32_t flags = 0) = 0;
-
-	// {BC152E7E-7FB8-4921-84EE-BED7CFD9A897}
-	inline static const gmpi::api::Guid guid =
-	{ 0xbc152e7e, 0x7fb8, 0x4921, { 0x84, 0xee, 0xbe, 0xd7, 0xcf, 0xd9, 0xa8, 0x97 } };
-};
-
 struct DECLSPEC_NOVTABLE IDrawingHost : gmpi::api::IUnknown
 {
 	virtual ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) = 0;
@@ -169,12 +159,19 @@ enum class PopupMenuFlags : int32_t
 	SubMenuEnd = 32,
 };
 
-struct DECLSPEC_NOVTABLE IPopupMenu : gmpi::api::IUnknown
+struct DECLSPEC_NOVTABLE IContextItemSink : gmpi::api::IUnknown
 {
-	virtual ReturnCode addItem(const char* text, int32_t id, int32_t flags) = 0;
+	virtual ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* callback) = 0;
+
+	// {4D91F798-7AD1-4919-A4FB-A7C24E3541BE}
+	inline static const gmpi::api::Guid guid =
+	{ 0x4d91f798, 0x7ad1, 0x4919, { 0xa4, 0xfb, 0xa7, 0xc2, 0x4e, 0x35, 0x41, 0xbe } };
+};
+
+struct DECLSPEC_NOVTABLE IPopupMenu : IContextItemSink
+{
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
-	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
-// not async	virtual ReturnCode GetSelectedId() = 0;
+	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
 	inline static const gmpi::api::Guid guid =
@@ -343,49 +340,6 @@ public:
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IFileDialogCallback);
 	GMPI_REFCOUNT;
-};
-
-// Accepts context-menu items via IContextItemSink, and populates a popup menu with them.
-// Also suppresses redundant separators
-class ContextItemsSinkAdaptor : public gmpi::api::IContextItemSink
-{
-	gmpi::api::IPopupMenu* contextMenu{};
-	bool pendingSeperator = false;
-
-public:
-	ContextItemsSinkAdaptor(gmpi::api::IPopupMenu* pcontextMenu)
-	{
-		contextMenu = pcontextMenu;
-	}
-
-	ReturnCode addItem(const char* text, int32_t id, int32_t flags = 0) override
-	{
-		// suppress redundant or repeated separators.
-		if (0 != (flags & (int32_t)gmpi::api::PopupMenuFlags::Separator))
-		{
-			pendingSeperator = true;
-		}
-		else
-		{
-			if (0 != (flags & (int32_t)gmpi::api::PopupMenuFlags::SubMenuEnd))
-			{
-				pendingSeperator = false;
-			}
-
-			if (pendingSeperator)
-			{
-				contextMenu->addItem("", 0, (int32_t)gmpi::api::PopupMenuFlags::Separator);
-				pendingSeperator = false;
-			}
-
-			contextMenu->addItem(text, id, flags);
-		}
-
-		return gmpi::ReturnCode::Ok;
-	}
-
-	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IContextItemSink);
-	GMPI_REFCOUNT_NO_DELETE;
 };
 
 }

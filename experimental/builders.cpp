@@ -216,7 +216,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 				constexpr int32_t flags{};
 				for (auto& [index, id, text] : it_enum_list2(enum_list.get()))
 				{
-					combo->addItem(text.c_str(), index, flags);
+					combo->addItem(text.c_str(), index, flags, nullptr);
 				}
 
 				combo->showAsync(
@@ -463,7 +463,7 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 			constexpr int32_t flags{};
 			for (auto& [index, id, text] : it_enum_list2(menuItems.get()))
 			{
-				popupMenu->addItem(text.c_str(), id, flags);
+				popupMenu->addItem(text.c_str(), id, flags, nullptr);
 			}
 
 			popupMenu->showAsync(

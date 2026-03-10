@@ -1547,7 +1547,7 @@ public:
 		DestroyMenu(hmenu);
 	}
 
-	gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
+	gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* callback) override
 	{
 		UINT nativeFlags = MF_STRING;
 		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
@@ -1645,7 +1645,14 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenu);
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+
+		GMPI_QUERYINTERFACE(gmpi::api::IPopupMenu);
+		GMPI_QUERYINTERFACE(gmpi::api::IContextItemSink);
+		return gmpi::ReturnCode::NoSupport;
+	}
 	GMPI_REFCOUNT
 };
 

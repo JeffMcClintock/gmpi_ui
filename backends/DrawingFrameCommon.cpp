@@ -18,8 +18,7 @@ void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags
 		contextMenu = unknown.as<gmpi::api::IPopupMenu>();
 
 		// populate menu
-		gmpi::sdk::ContextItemsSinkAdaptor sink(contextMenu.get());
-		r = inputClient->populateContextMenu(point, &sink);
+		r = inputClient->populateContextMenu(point, contextMenu.get());
 
 		// show menu
 		contextMenu->showAsync(

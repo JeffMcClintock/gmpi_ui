@@ -1164,15 +1164,25 @@ public:
 		native->addLines(points.data(), static_cast<uint32_t>(points.size()));
 	}
 
+	void addRect(Rect r, FigureBegin figureBegin = FigureBegin::Hollow)
+	{
+		const std::array<Point, 4> points = {
+			Point{ r.left,  r.top },
+			Point{ r.right, r.top },
+			Point{ r.right, r.bottom },
+			Point{ r.left,  r.bottom }
+		};
+
+		addPolygon(points, figureBegin);
+	}
+
 	void addPolygon(std::span<const Point> points, FigureBegin figureBegin = FigureBegin::Hollow)
 	{
 		assert(!points.empty());
 
 		beginFigure(points[0], figureBegin);
-		if (points.size() > 1)
-		{
+		if(points.size() > 1)
 			addLines(points.subspan(1));
-		}
 		endFigure();
 	}
 

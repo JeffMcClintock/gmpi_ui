@@ -582,7 +582,7 @@ inline constexpr Color colorFromSrgba(unsigned char pRed, unsigned char pGreen, 
 	return colorFromArgb(pRed, pGreen, pBlue, pAlpha);
 }
 
-inline Color colorFromHex(uint32_t rgb, float a = 1.0)
+inline constexpr Color colorFromHex(uint32_t rgb, float a = 1.0f)
 {
 	return colorFromArgb(
 		static_cast<uint8_t>(rgb >> 16),
@@ -608,148 +608,148 @@ inline Color colorFromHexString(const std::string_view s)
 
 namespace Colors
 {
-inline static Color AliceBlue = colorFromHex(0xF0F8FFu);
-inline static Color AntiqueWhite = colorFromHex(0xFAEBD7u);
-inline static Color Aqua = colorFromHex(0x00FFFFu);
-inline static Color Aquamarine = colorFromHex(0x7FFFD4u);
-inline static Color Azure = colorFromHex(0xF0FFFFu);
-inline static Color Beige = colorFromHex(0xF5F5DCu);
-inline static Color Bisque = colorFromHex(0xFFE4C4u);
-inline static Color Black = colorFromHex(0x000000u);
-inline static Color BlanchedAlmond = colorFromHex(0xFFEBCDu);
-inline static Color Blue = colorFromHex(0x0000FFu);
-inline static Color BlueViolet = colorFromHex(0x8A2BE2u);
-inline static Color Brown = colorFromHex(0xA52A2Au);
-inline static Color BurlyWood = colorFromHex(0xDEB887u);
-inline static Color CadetBlue = colorFromHex(0x5F9EA0u);
-inline static Color Chartreuse = colorFromHex(0x7FFF00u);
-inline static Color Chocolate = colorFromHex(0xD2691Eu);
-inline static Color Coral = colorFromHex(0xFF7F50u);
-inline static Color CornflowerBlue = colorFromHex(0x6495EDu);
-inline static Color Cornsilk = colorFromHex(0xFFF8DCu);
-inline static Color Crimson = colorFromHex(0xDC143Cu);
-inline static Color Cyan = colorFromHex(0x00FFFFu);
-inline static Color DarkBlue = colorFromHex(0x00008Bu);
-inline static Color DarkCyan = colorFromHex(0x008B8Bu);
-inline static Color DarkGoldenrod = colorFromHex(0xB8860Bu);
-inline static Color DarkGray = colorFromHex(0xA9A9A9u);
-inline static Color DarkGreen = colorFromHex(0x006400u);
-inline static Color DarkKhaki = colorFromHex(0xBDB76Bu);
-inline static Color DarkMagenta = colorFromHex(0x8B008Bu);
-inline static Color DarkOliveGreen = colorFromHex(0x556B2Fu);
-inline static Color DarkOrange = colorFromHex(0xFF8C00u);
-inline static Color DarkOrchid = colorFromHex(0x9932CCu);
-inline static Color DarkRed = colorFromHex(0x8B0000u);
-inline static Color DarkSalmon = colorFromHex(0xE9967Au);
-inline static Color DarkSeaGreen = colorFromHex(0x8FBC8Fu);
-inline static Color DarkSlateBlue = colorFromHex(0x483D8Bu);
-inline static Color DarkSlateGray = colorFromHex(0x2F4F4Fu);
-inline static Color DarkTurquoise = colorFromHex(0x00CED1u);
-inline static Color DarkViolet = colorFromHex(0x9400D3u);
-inline static Color DeepPink = colorFromHex(0xFF1493u);
-inline static Color DeepSkyBlue = colorFromHex(0x00BFFFu);
-inline static Color DimGray = colorFromHex(0x696969u);
-inline static Color DodgerBlue = colorFromHex(0x1E90FFu);
-inline static Color Firebrick = colorFromHex(0xB22222u);
-inline static Color FloralWhite = colorFromHex(0xFFFAF0u);
-inline static Color ForestGreen = colorFromHex(0x228B22u);
-inline static Color Fuchsia = colorFromHex(0xFF00FFu);
-inline static Color Gainsboro = colorFromHex(0xDCDCDCu);
-inline static Color GhostWhite = colorFromHex(0xF8F8FFu);
-inline static Color Gold = colorFromHex(0xFFD700u);
-inline static Color Goldenrod = colorFromHex(0xDAA520u);
-inline static Color Gray = colorFromHex(0x808080u);
-inline static Color Green = colorFromHex(0x008000u);
-inline static Color GreenYellow = colorFromHex(0xADFF2Fu);
-inline static Color Honeydew = colorFromHex(0xF0FFF0u);
-inline static Color HotPink = colorFromHex(0xFF69B4u);
-inline static Color IndianRed = colorFromHex(0xCD5C5Cu);
-inline static Color Indigo = colorFromHex(0x4B0082u);
-inline static Color Ivory = colorFromHex(0xFFFFF0u);
-inline static Color Khaki = colorFromHex(0xF0E68Cu);
-inline static Color Lavender = colorFromHex(0xE6E6FAu);
-inline static Color LavenderBlush = colorFromHex(0xFFF0F5u);
-inline static Color LawnGreen = colorFromHex(0x7CFC00u);
-inline static Color LemonChiffon = colorFromHex(0xFFFACDu);
-inline static Color LightBlue = colorFromHex(0xADD8E6u);
-inline static Color LightCoral = colorFromHex(0xF08080u);
-inline static Color LightCyan = colorFromHex(0xE0FFFFu);
-inline static Color LightGoldenrodYellow = colorFromHex(0xFAFAD2u);
-inline static Color LightGreen = colorFromHex(0x90EE90u);
-inline static Color LightGray = colorFromHex(0xD3D3D3u);
-inline static Color LightPink = colorFromHex(0xFFB6C1u);
-inline static Color LightSalmon = colorFromHex(0xFFA07Au);
-inline static Color LightSeaGreen = colorFromHex(0x20B2AAu);
-inline static Color LightSkyBlue = colorFromHex(0x87CEFAu);
-inline static Color LightSlateGray = colorFromHex(0x778899u);
-inline static Color LightSteelBlue = colorFromHex(0xB0C4DEu);
-inline static Color LightYellow = colorFromHex(0xFFFFE0u);
-inline static Color Lime = colorFromHex(0x00FF00u);
-inline static Color LimeGreen = colorFromHex(0x32CD32u);
-inline static Color Linen = colorFromHex(0xFAF0E6u);
-inline static Color Magenta = colorFromHex(0xFF00FFu);
-inline static Color Maroon = colorFromHex(0x800000u);
-inline static Color MediumAquamarine = colorFromHex(0x66CDAAu);
-inline static Color MediumBlue = colorFromHex(0x0000CDu);
-inline static Color MediumOrchid = colorFromHex(0xBA55D3u);
-inline static Color MediumPurple = colorFromHex(0x9370DBu);
-inline static Color MediumSeaGreen = colorFromHex(0x3CB371u);
-inline static Color MediumSlateBlue = colorFromHex(0x7B68EEu);
-inline static Color MediumSpringGreen = colorFromHex(0x00FA9Au);
-inline static Color MediumTurquoise = colorFromHex(0x48D1CCu);
-inline static Color MediumVioletRed = colorFromHex(0xC71585u);
-inline static Color MidnightBlue = colorFromHex(0x191970u);
-inline static Color MintCream = colorFromHex(0xF5FFFAu);
-inline static Color MistyRose = colorFromHex(0xFFE4E1u);
-inline static Color Moccasin = colorFromHex(0xFFE4B5u);
-inline static Color NavajoWhite = colorFromHex(0xFFDEADu);
-inline static Color Navy = colorFromHex(0x000080u);
-inline static Color OldLace = colorFromHex(0xFDF5E6u);
-inline static Color Olive = colorFromHex(0x808000u);
-inline static Color OliveDrab = colorFromHex(0x6B8E23u);
-inline static Color Orange = colorFromHex(0xFFA500u);
-inline static Color OrangeRed = colorFromHex(0xFF4500u);
-inline static Color Orchid = colorFromHex(0xDA70D6u);
-inline static Color PaleGoldenrod = colorFromHex(0xEEE8AAu);
-inline static Color PaleGreen = colorFromHex(0x98FB98u);
-inline static Color PaleTurquoise = colorFromHex(0xAFEEEEu);
-inline static Color PaleVioletRed = colorFromHex(0xDB7093u);
-inline static Color PapayaWhip = colorFromHex(0xFFEFD5u);
-inline static Color PeachPuff = colorFromHex(0xFFDAB9u);
-inline static Color Peru = colorFromHex(0xCD853Fu);
-inline static Color Pink = colorFromHex(0xFFC0CBu);
-inline static Color Plum = colorFromHex(0xDDA0DDu);
-inline static Color PowderBlue = colorFromHex(0xB0E0E6u);
-inline static Color Purple = colorFromHex(0x800080u);
-inline static Color Red = colorFromHex(0xFF0000u);
-inline static Color RosyBrown = colorFromHex(0xBC8F8Fu);
-inline static Color RoyalBlue = colorFromHex(0x4169E1u);
-inline static Color SaddleBrown = colorFromHex(0x8B4513u);
-inline static Color Salmon = colorFromHex(0xFA8072u);
-inline static Color SandyBrown = colorFromHex(0xF4A460u);
-inline static Color SeaGreen = colorFromHex(0x2E8B57u);
-inline static Color SeaShell = colorFromHex(0xFFF5EEu);
-inline static Color Sienna = colorFromHex(0xA0522Du);
-inline static Color Silver = colorFromHex(0xC0C0C0u);
-inline static Color SkyBlue = colorFromHex(0x87CEEBu);
-inline static Color SlateBlue = colorFromHex(0x6A5ACDu);
-inline static Color SlateGray = colorFromHex(0x708090u);
-inline static Color Snow = colorFromHex(0xFFFAFAu);
-inline static Color SpringGreen = colorFromHex(0x00FF7Fu);
-inline static Color SteelBlue = colorFromHex(0x4682B4u);
-inline static Color Tan = colorFromHex(0xD2B48Cu);
-inline static Color Teal = colorFromHex(0x008080u);
-inline static Color Thistle = colorFromHex(0xD8BFD8u);
-inline static Color Tomato = colorFromHex(0xFF6347u);
-inline static Color Turquoise = colorFromHex(0x40E0D0u);
-inline static Color Violet = colorFromHex(0xEE82EEu);
-inline static Color Wheat = colorFromHex(0xF5DEB3u);
-inline static Color White = colorFromHex(0xFFFFFFu);
-inline static Color WhiteSmoke = colorFromHex(0xF5F5F5u);
-inline static Color Yellow = colorFromHex(0xFFFF00u);
-inline static Color YellowGreen = colorFromHex(0x9ACD32u);
-inline static Color TransparentBlack = colorFromHex(0x000000u, 0.0f);
-inline static Color TransparentWhite = colorFromHex(0xffffffu, 0.0f);
+inline constexpr Color AliceBlue = colorFromHex(0xF0F8FFu);
+inline constexpr Color AntiqueWhite = colorFromHex(0xFAEBD7u);
+inline constexpr Color Aqua = colorFromHex(0x00FFFFu);
+inline constexpr Color Aquamarine = colorFromHex(0x7FFFD4u);
+inline constexpr Color Azure = colorFromHex(0xF0FFFFu);
+inline constexpr Color Beige = colorFromHex(0xF5F5DCu);
+inline constexpr Color Bisque = colorFromHex(0xFFE4C4u);
+inline constexpr Color Black = colorFromHex(0x000000u);
+inline constexpr Color BlanchedAlmond = colorFromHex(0xFFEBCDu);
+inline constexpr Color Blue = colorFromHex(0x0000FFu);
+inline constexpr Color BlueViolet = colorFromHex(0x8A2BE2u);
+inline constexpr Color Brown = colorFromHex(0xA52A2Au);
+inline constexpr Color BurlyWood = colorFromHex(0xDEB887u);
+inline constexpr Color CadetBlue = colorFromHex(0x5F9EA0u);
+inline constexpr Color Chartreuse = colorFromHex(0x7FFF00u);
+inline constexpr Color Chocolate = colorFromHex(0xD2691Eu);
+inline constexpr Color Coral = colorFromHex(0xFF7F50u);
+inline constexpr Color CornflowerBlue = colorFromHex(0x6495EDu);
+inline constexpr Color Cornsilk = colorFromHex(0xFFF8DCu);
+inline constexpr Color Crimson = colorFromHex(0xDC143Cu);
+inline constexpr Color Cyan = colorFromHex(0x00FFFFu);
+inline constexpr Color DarkBlue = colorFromHex(0x00008Bu);
+inline constexpr Color DarkCyan = colorFromHex(0x008B8Bu);
+inline constexpr Color DarkGoldenrod = colorFromHex(0xB8860Bu);
+inline constexpr Color DarkGray = colorFromHex(0xA9A9A9u);
+inline constexpr Color DarkGreen = colorFromHex(0x006400u);
+inline constexpr Color DarkKhaki = colorFromHex(0xBDB76Bu);
+inline constexpr Color DarkMagenta = colorFromHex(0x8B008Bu);
+inline constexpr Color DarkOliveGreen = colorFromHex(0x556B2Fu);
+inline constexpr Color DarkOrange = colorFromHex(0xFF8C00u);
+inline constexpr Color DarkOrchid = colorFromHex(0x9932CCu);
+inline constexpr Color DarkRed = colorFromHex(0x8B0000u);
+inline constexpr Color DarkSalmon = colorFromHex(0xE9967Au);
+inline constexpr Color DarkSeaGreen = colorFromHex(0x8FBC8Fu);
+inline constexpr Color DarkSlateBlue = colorFromHex(0x483D8Bu);
+inline constexpr Color DarkSlateGray = colorFromHex(0x2F4F4Fu);
+inline constexpr Color DarkTurquoise = colorFromHex(0x00CED1u);
+inline constexpr Color DarkViolet = colorFromHex(0x9400D3u);
+inline constexpr Color DeepPink = colorFromHex(0xFF1493u);
+inline constexpr Color DeepSkyBlue = colorFromHex(0x00BFFFu);
+inline constexpr Color DimGray = colorFromHex(0x696969u);
+inline constexpr Color DodgerBlue = colorFromHex(0x1E90FFu);
+inline constexpr Color Firebrick = colorFromHex(0xB22222u);
+inline constexpr Color FloralWhite = colorFromHex(0xFFFAF0u);
+inline constexpr Color ForestGreen = colorFromHex(0x228B22u);
+inline constexpr Color Fuchsia = colorFromHex(0xFF00FFu);
+inline constexpr Color Gainsboro = colorFromHex(0xDCDCDCu);
+inline constexpr Color GhostWhite = colorFromHex(0xF8F8FFu);
+inline constexpr Color Gold = colorFromHex(0xFFD700u);
+inline constexpr Color Goldenrod = colorFromHex(0xDAA520u);
+inline constexpr Color Gray = colorFromHex(0x808080u);
+inline constexpr Color Green = colorFromHex(0x008000u);
+inline constexpr Color GreenYellow = colorFromHex(0xADFF2Fu);
+inline constexpr Color Honeydew = colorFromHex(0xF0FFF0u);
+inline constexpr Color HotPink = colorFromHex(0xFF69B4u);
+inline constexpr Color IndianRed = colorFromHex(0xCD5C5Cu);
+inline constexpr Color Indigo = colorFromHex(0x4B0082u);
+inline constexpr Color Ivory = colorFromHex(0xFFFFF0u);
+inline constexpr Color Khaki = colorFromHex(0xF0E68Cu);
+inline constexpr Color Lavender = colorFromHex(0xE6E6FAu);
+inline constexpr Color LavenderBlush = colorFromHex(0xFFF0F5u);
+inline constexpr Color LawnGreen = colorFromHex(0x7CFC00u);
+inline constexpr Color LemonChiffon = colorFromHex(0xFFFACDu);
+inline constexpr Color LightBlue = colorFromHex(0xADD8E6u);
+inline constexpr Color LightCoral = colorFromHex(0xF08080u);
+inline constexpr Color LightCyan = colorFromHex(0xE0FFFFu);
+inline constexpr Color LightGoldenrodYellow = colorFromHex(0xFAFAD2u);
+inline constexpr Color LightGreen = colorFromHex(0x90EE90u);
+inline constexpr Color LightGray = colorFromHex(0xD3D3D3u);
+inline constexpr Color LightPink = colorFromHex(0xFFB6C1u);
+inline constexpr Color LightSalmon = colorFromHex(0xFFA07Au);
+inline constexpr Color LightSeaGreen = colorFromHex(0x20B2AAu);
+inline constexpr Color LightSkyBlue = colorFromHex(0x87CEFAu);
+inline constexpr Color LightSlateGray = colorFromHex(0x778899u);
+inline constexpr Color LightSteelBlue = colorFromHex(0xB0C4DEu);
+inline constexpr Color LightYellow = colorFromHex(0xFFFFE0u);
+inline constexpr Color Lime = colorFromHex(0x00FF00u);
+inline constexpr Color LimeGreen = colorFromHex(0x32CD32u);
+inline constexpr Color Linen = colorFromHex(0xFAF0E6u);
+inline constexpr Color Magenta = colorFromHex(0xFF00FFu);
+inline constexpr Color Maroon = colorFromHex(0x800000u);
+inline constexpr Color MediumAquamarine = colorFromHex(0x66CDAAu);
+inline constexpr Color MediumBlue = colorFromHex(0x0000CDu);
+inline constexpr Color MediumOrchid = colorFromHex(0xBA55D3u);
+inline constexpr Color MediumPurple = colorFromHex(0x9370DBu);
+inline constexpr Color MediumSeaGreen = colorFromHex(0x3CB371u);
+inline constexpr Color MediumSlateBlue = colorFromHex(0x7B68EEu);
+inline constexpr Color MediumSpringGreen = colorFromHex(0x00FA9Au);
+inline constexpr Color MediumTurquoise = colorFromHex(0x48D1CCu);
+inline constexpr Color MediumVioletRed = colorFromHex(0xC71585u);
+inline constexpr Color MidnightBlue = colorFromHex(0x191970u);
+inline constexpr Color MintCream = colorFromHex(0xF5FFFAu);
+inline constexpr Color MistyRose = colorFromHex(0xFFE4E1u);
+inline constexpr Color Moccasin = colorFromHex(0xFFE4B5u);
+inline constexpr Color NavajoWhite = colorFromHex(0xFFDEADu);
+inline constexpr Color Navy = colorFromHex(0x000080u);
+inline constexpr Color OldLace = colorFromHex(0xFDF5E6u);
+inline constexpr Color Olive = colorFromHex(0x808000u);
+inline constexpr Color OliveDrab = colorFromHex(0x6B8E23u);
+inline constexpr Color Orange = colorFromHex(0xFFA500u);
+inline constexpr Color OrangeRed = colorFromHex(0xFF4500u);
+inline constexpr Color Orchid = colorFromHex(0xDA70D6u);
+inline constexpr Color PaleGoldenrod = colorFromHex(0xEEE8AAu);
+inline constexpr Color PaleGreen = colorFromHex(0x98FB98u);
+inline constexpr Color PaleTurquoise = colorFromHex(0xAFEEEEu);
+inline constexpr Color PaleVioletRed = colorFromHex(0xDB7093u);
+inline constexpr Color PapayaWhip = colorFromHex(0xFFEFD5u);
+inline constexpr Color PeachPuff = colorFromHex(0xFFDAB9u);
+inline constexpr Color Peru = colorFromHex(0xCD853Fu);
+inline constexpr Color Pink = colorFromHex(0xFFC0CBu);
+inline constexpr Color Plum = colorFromHex(0xDDA0DDu);
+inline constexpr Color PowderBlue = colorFromHex(0xB0E0E6u);
+inline constexpr Color Purple = colorFromHex(0x800080u);
+inline constexpr Color Red = colorFromHex(0xFF0000u);
+inline constexpr Color RosyBrown = colorFromHex(0xBC8F8Fu);
+inline constexpr Color RoyalBlue = colorFromHex(0x4169E1u);
+inline constexpr Color SaddleBrown = colorFromHex(0x8B4513u);
+inline constexpr Color Salmon = colorFromHex(0xFA8072u);
+inline constexpr Color SandyBrown = colorFromHex(0xF4A460u);
+inline constexpr Color SeaGreen = colorFromHex(0x2E8B57u);
+inline constexpr Color SeaShell = colorFromHex(0xFFF5EEu);
+inline constexpr Color Sienna = colorFromHex(0xA0522Du);
+inline constexpr Color Silver = colorFromHex(0xC0C0C0u);
+inline constexpr Color SkyBlue = colorFromHex(0x87CEEBu);
+inline constexpr Color SlateBlue = colorFromHex(0x6A5ACDu);
+inline constexpr Color SlateGray = colorFromHex(0x708090u);
+inline constexpr Color Snow = colorFromHex(0xFFFAFAu);
+inline constexpr Color SpringGreen = colorFromHex(0x00FF7Fu);
+inline constexpr Color SteelBlue = colorFromHex(0x4682B4u);
+inline constexpr Color Tan = colorFromHex(0xD2B48Cu);
+inline constexpr Color Teal = colorFromHex(0x008080u);
+inline constexpr Color Thistle = colorFromHex(0xD8BFD8u);
+inline constexpr Color Tomato = colorFromHex(0xFF6347u);
+inline constexpr Color Turquoise = colorFromHex(0x40E0D0u);
+inline constexpr Color Violet = colorFromHex(0xEE82EEu);
+inline constexpr Color Wheat = colorFromHex(0xF5DEB3u);
+inline constexpr Color White = colorFromHex(0xFFFFFFu);
+inline constexpr Color WhiteSmoke = colorFromHex(0xF5F5F5u);
+inline constexpr Color Yellow = colorFromHex(0xFFFF00u);
+inline constexpr Color YellowGreen = colorFromHex(0x9ACD32u);
+inline constexpr Color TransparentBlack = colorFromHex(0x000000u, 0.0f);
+inline constexpr Color TransparentWhite = colorFromHex(0xffffffu, 0.0f);
 };
 
 // access the gmpi::shared_ptr inside a wrapper class like PathGeometry.
@@ -1207,7 +1207,6 @@ public:
 	void setFillMode(gmpi::drawing::FillMode fillMode)
 	{
 		native->setFillMode(fillMode);
-//???		native->release();
 	}
 };
 
@@ -1264,15 +1263,6 @@ public:
 		return temp;
 	}
 
-	/* ? stroke style not easily avail as ptr
-	bool strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
-	{
-		bool r{};
-		native->strokeContainsPoint(point, strokeWidth, strokeStyle, worldTransform, &r);
-		return r;
-	}
-	*/
-
 	bool strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth = 1.0f)
 	{
 		bool r{};
@@ -1293,14 +1283,6 @@ public:
 		return r;
 	}
 
-	/* ? stroke style not easily avail as ptr
-	gmpi::drawing::Rect getWidenedBounds(float strokeWidth = 1.0f, gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr, const gmpi::drawing::Matrix3x2* worldTransform = nullptr)
-	{
-		gmpi::drawing::Rect r;
-		native->getWidenedBounds(strokeWidth, strokeStyle, worldTransform, &r);
-		return r;
-	}
-	*/
 	gmpi::drawing::Rect getWidenedBounds(float strokeWidth, gmpi::drawing::StrokeStyle strokeStyle)
 	{
 		gmpi::drawing::Rect r;
@@ -1676,11 +1658,6 @@ public:
 		sink.endFigure(gmpi::drawing::FigureEnd::Open);
 		sink.close();
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
-	}
-
-	void drawBitmap(gmpi::drawing::api::IBitmap* bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)
-	{
-		native->drawBitmap(bitmap, &destinationRectangle, opacity, interpolationMode, &sourceRectangle);
 	}
 
 	void drawBitmap(Bitmap bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, gmpi::drawing::BitmapInterpolationMode interpolationMode = gmpi::drawing::BitmapInterpolationMode::Linear)

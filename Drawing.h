@@ -765,7 +765,7 @@ public:
 	template <typename T>
 	inline static void** put_void(T& wrapper)
 	{
-		return (void**)wrapper.native.put();
+		return reinterpret_cast<void**>(wrapper.native.put());
 	}
 	template <typename T>
 	inline static auto get(T& wrapper)
@@ -790,7 +790,7 @@ public:
 	Size getTextExtentU(std::string_view utf8String)
 	{
 		Size s;
-		native->getTextExtentU(utf8String.data(), (int32_t)utf8String.size(), &s);
+		native->getTextExtentU(utf8String.data(), static_cast<int32_t>(utf8String.size()), &s);
 		return s;
 	}
 
@@ -822,12 +822,12 @@ public:
 
 	gmpi::ReturnCode setParagraphAlignment(gmpi::drawing::ParagraphAlignment paragraphAlignment)
 	{
-		return native->setParagraphAlignment((gmpi::drawing::ParagraphAlignment) paragraphAlignment);
+		return native->setParagraphAlignment(static_cast<gmpi::drawing::ParagraphAlignment>(paragraphAlignment));
 	}
 
 	gmpi::ReturnCode setWordWrapping(gmpi::drawing::WordWrapping wordWrapping)
 	{
-		return native->setWordWrapping((gmpi::drawing::WordWrapping) wordWrapping);
+		return native->setWordWrapping(static_cast<gmpi::drawing::WordWrapping>(wordWrapping));
 	}
 
 	// sets the line spacing.
@@ -867,7 +867,7 @@ public:
 
 	uint8_t* getAddress()
 	{
-		return (uint8_t*) data;
+		return reinterpret_cast<uint8_t*>(data);
 	}
 	int32_t getBytesPerRow()
 	{
@@ -957,7 +957,7 @@ public:
 	BitmapPixels lockPixels(gmpi::drawing::BitmapLockFlags flags = gmpi::drawing::BitmapLockFlags::Read)
 	{
         BitmapPixels ret;
-		native->lockPixels(AccessPtr::put(ret), (int32_t) flags);
+		native->lockPixels(AccessPtr::put(ret), static_cast<int32_t>(flags));
 		ret.init();
         return ret;
 	}
@@ -1082,12 +1082,12 @@ public:
 
 	void setStartPoint(Point startPoint)
 	{
-		native->setStartPoint((gmpi::drawing::Point) startPoint);
+		native->setStartPoint(startPoint);
 	}
 
 	void setEndPoint(Point endPoint)
 	{
-		native->setEndPoint((gmpi::drawing::Point) endPoint);
+		native->setEndPoint(endPoint);
 	}
 
 protected:
@@ -1112,12 +1112,12 @@ public:
 
 	void setCenter(Point center)
 	{
-		native->setCenter((gmpi::drawing::Point) center);
+		native->setCenter(center);
 	}
 
 	void setGradientOriginOffset(Point gradientOriginOffset)
 	{
-		native->setGradientOriginOffset((gmpi::drawing::Point) gradientOriginOffset);
+		native->setGradientOriginOffset(gradientOriginOffset);
 	}
 
 	void setRadiusX(float radiusX)
@@ -1151,7 +1151,7 @@ public:
 
 	void beginFigure(Point startPoint, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
 	{
-		native->beginFigure((gmpi::drawing::Point)startPoint, figureBegin);
+		native->beginFigure(startPoint, figureBegin);
 	}
 
 	void beginFigure(float x, float y, gmpi::drawing::FigureBegin figureBegin = gmpi::drawing::FigureBegin::Hollow)
@@ -1347,7 +1347,7 @@ public:
 				fontStyle,
 				fontStretch,
 				bodyHeight,
-				(int32_t) flags,
+				static_cast<int32_t>(flags),
 				AccessPtr::put(returnTextFormat)
 			);
 
@@ -1363,7 +1363,7 @@ public:
 			fontStyle,
 			fontStretch,
 			bodyHeight,
-			(int32_t) flags,
+			static_cast<int32_t>(flags),
 			AccessPtr::put(returnTextFormat)
 		);
 
@@ -1467,7 +1467,7 @@ public:
 	LinearGradientBrush createLinearGradientBrush(LinearGradientBrushProperties linearGradientBrushProperties, BrushProperties brushProperties, GradientstopCollection gradientStopCollection)
 	{
 		LinearGradientBrush temp;
-		native->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
+		native->createLinearGradientBrush(&linearGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
 		return temp;
 	}
 
@@ -1477,7 +1477,7 @@ public:
         LinearGradientBrushProperties linearGradientBrushProperties{startPoint, endPoint};
 
 		LinearGradientBrush temp;
-		native->createLinearGradientBrush((gmpi::drawing::LinearGradientBrushProperties*) &linearGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
+		native->createLinearGradientBrush(&linearGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
 		return temp;
 	}
 
@@ -1507,7 +1507,7 @@ public:
 	RadialGradientBrush createRadialGradientBrush(RadialGradientBrushProperties radialGradientBrushProperties, BrushProperties brushProperties, GradientstopCollection gradientStopCollection)
 	{
 		RadialGradientBrush temp;
-		native->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*)&radialGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
+		native->createRadialGradientBrush(&radialGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
 		return temp;
 	}
 
@@ -1520,7 +1520,7 @@ public:
 		radialGradientBrushProperties.radiusY = radius;
 
 		RadialGradientBrush temp;
-		native->createRadialGradientBrush((gmpi::drawing::RadialGradientBrushProperties*) &radialGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
+		native->createRadialGradientBrush(&radialGradientBrushProperties, &brushProperties, AccessPtr::get(gradientStopCollection), AccessPtr::put(temp));
 		return temp;
 	}
 
@@ -1555,12 +1555,12 @@ public:
 
 	void drawLine(Point point0, Point point1, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
-		native->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
+		native->drawLine(point0, point1, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
 	void drawLine(Point point0, Point point1, IHasBrush& brush, float strokeWidth = 1.0f)
 	{
-		native->drawLine((gmpi::drawing::Point) point0, (gmpi::drawing::Point) point1, brush.getBrush(), strokeWidth, nullptr);
+		native->drawLine(point0, point1, brush.getBrush(), strokeWidth, nullptr);
 	}
 
 	void drawLine(float x1, float y1, float x2, float y2, IHasBrush& brush, float strokeWidth = 1.0f)

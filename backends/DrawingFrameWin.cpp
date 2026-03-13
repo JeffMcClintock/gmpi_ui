@@ -1528,6 +1528,12 @@ class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
 	gmpi::drawing::Rect editrect_s{};
 	int32_t selectedId;
 	std::vector<int32_t> menuIds;
+	struct MenuCallback
+	{
+		int32_t localId{};
+		gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+	};
+	std::vector<MenuCallback> callbacks;
 
 public:
 	// Might need to apply DPI to Text size, like text-entry does.
@@ -1549,6 +1555,9 @@ public:
 
 	gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* callback) override
 	{
+       gmpi::shared_ptr<gmpi::api::IUnknown> itemcallback;
+		itemcallback = callback;
+
 		UINT nativeFlags = MF_STRING;
 		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
 		{
@@ -1586,6 +1595,7 @@ public:
 		else
 		{
 			menuIds.push_back(id);
+          callbacks.push_back({ id, itemcallback });
 			AppendMenu(hmenus.back(), nativeFlags, menuIds.size(), privateStuff::Utf8ToWstring(text).c_str());
 		}
 
@@ -1615,6 +1625,16 @@ public:
 
 		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
 			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
+
+        if (index >= 0 && index < static_cast<int32_t>(callbacks.size()) && callbacks[index].callback)
+		{
+			gmpi::shared_ptr<gmpi::api::IPopupMenuCallback> itemcallback;
+			callbacks[index].callback->queryInterface(&gmpi::api::IPopupMenuCallback::guid, itemcallback.put_void());
+			if (itemcallback)
+			{
+				itemcallback->onComplete(gmpi::ReturnCode::Ok, callbacks[index].localId);
+			}
+		}
 
 #if 0 // not required
 		else if (auto callback = unknown.as<gmpi::api::ILegacyCompletionCallback>(); callback)

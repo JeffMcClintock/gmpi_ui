@@ -146,17 +146,17 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-inline bool [[nodiscard]] overlaps(const Rect& a, const Rect& b)
+[[nodiscard]] inline bool overlaps(const Rect& a, const Rect& b)
 {
 	return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
-inline bool [[nodiscard]] overlaps(const RectL& a, const RectL& b)
+[[nodiscard]] inline bool overlaps(const RectL& a, const RectL& b)
 {
 	return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
-inline [[nodiscard]] Point transformPoint(const Matrix3x2& transform, Point point)
+[[nodiscard]] inline Point transformPoint(const Matrix3x2& transform, Point point)
 {
     return {
         point.x * transform._11 + point.y * transform._21 + transform._31,
@@ -164,7 +164,7 @@ inline [[nodiscard]] Point transformPoint(const Matrix3x2& transform, Point poin
     };
 }
 
-inline [[nodiscard]] Rect transformRect(const Matrix3x2& transform, Rect rect)
+[[nodiscard]] inline Rect transformRect(const Matrix3x2& transform, Rect rect)
 {
     return {
         rect.left * transform._11 + rect.top * transform._21 + transform._31,
@@ -174,13 +174,13 @@ inline [[nodiscard]] Rect transformRect(const Matrix3x2& transform, Rect rect)
     };
 }
 
-inline [[nodiscard]] bool pointInRect(Point point, Rect rect)
+[[nodiscard]] inline bool pointInRect(Point point, Rect rect)
 {
 	return point.x >= rect.left && point.x <= rect.right &&
 		   point.y >= rect.top && point.y <= rect.bottom;
 }
 
-inline [[nodiscard]] Point operator+(Point point, Size size)
+[[nodiscard]] inline Point operator+(Point point, Size size)
 {
 	return {
 		point.x + size.width,
@@ -188,18 +188,18 @@ inline [[nodiscard]] Point operator+(Point point, Size size)
 	};
 }
 
-inline [[nodiscard]] Point operator+(Size size, Point point)
+[[nodiscard]] inline Point operator+(Size size, Point point)
 {
 	return point + size;
 }
 
-inline [[nodiscard]] Point& operator+=(Point& lhs, Size rhs)
+[[nodiscard]] inline Point& operator+=(Point& lhs, Size rhs)
 {
 	lhs = lhs + rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Point operator-(Point point, Size size)
+[[nodiscard]] inline Point operator-(Point point, Size size)
 {
 	return {
 		point.x - size.width,
@@ -207,13 +207,13 @@ inline [[nodiscard]] Point operator-(Point point, Size size)
 	};
 }
 
-inline [[nodiscard]] Point& operator-=(Point& lhs, Size rhs)
+[[nodiscard]] inline Point& operator-=(Point& lhs, Size rhs)
 {
 	lhs = lhs - rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Size operator-(Point lhs, Point rhs)
+[[nodiscard]] inline Size operator-(Point lhs, Point rhs)
 {
 	return {
 		lhs.x - rhs.x,
@@ -221,7 +221,7 @@ inline [[nodiscard]] Size operator-(Point lhs, Point rhs)
 	};
 }
 
-inline [[nodiscard]] Size operator+(Size lhs, Size rhs)
+[[nodiscard]] inline Size operator+(Size lhs, Size rhs)
 {
 	return {
 		lhs.width + rhs.width,
@@ -229,13 +229,13 @@ inline [[nodiscard]] Size operator+(Size lhs, Size rhs)
 	};
 }
 
-inline [[nodiscard]] Size& operator+=(Size& lhs, Size rhs)
+[[nodiscard]] inline Size& operator+=(Size& lhs, Size rhs)
 {
 	lhs = lhs + rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Size operator-(Size lhs, Size rhs)
+[[nodiscard]] inline Size operator-(Size lhs, Size rhs)
 {
 	return {
 		lhs.width - rhs.width,
@@ -243,13 +243,13 @@ inline [[nodiscard]] Size operator-(Size lhs, Size rhs)
 	};
 }
 
-inline [[nodiscard]] Size& operator-=(Size& lhs, Size rhs)
+[[nodiscard]] inline Size& operator-=(Size& lhs, Size rhs)
 {
 	lhs = lhs - rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Rect operator+(Rect rect, Size offset)
+[[nodiscard]] inline Rect operator+(Rect rect, Size offset)
 {
 	return {
 		rect.left + offset.width,
@@ -259,13 +259,13 @@ inline [[nodiscard]] Rect operator+(Rect rect, Size offset)
 	};
 }
 
-inline [[nodiscard]] Rect& operator+=(Rect& lhs, Size rhs)
+[[nodiscard]] inline Rect& operator+=(Rect& lhs, Size rhs)
 {
 	lhs = lhs + rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Rect operator-(Rect rect, Size offset)
+[[nodiscard]] inline Rect operator-(Rect rect, Size offset)
 {
 	return {
 		rect.left - offset.width,
@@ -275,13 +275,13 @@ inline [[nodiscard]] Rect operator-(Rect rect, Size offset)
 	};
 }
 
-inline [[nodiscard]] Rect& operator-=(Rect& lhs, Size rhs)
+[[nodiscard]] inline Rect& operator-=(Rect& lhs, Size rhs)
 {
 	lhs = lhs - rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
+[[nodiscard]] inline Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
 {
 	return {
 		lhs._11 * rhs._11 + lhs._12 * rhs._21,
@@ -293,13 +293,13 @@ inline [[nodiscard]] Matrix3x2 operator*(Matrix3x2 lhs, Matrix3x2 rhs)
 	};
 }
 
-inline [[nodiscard]] Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
+[[nodiscard]] inline Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Point operator*(Point point, Matrix3x2 transform)
+[[nodiscard]] inline Point operator*(Point point, Matrix3x2 transform)
 {
 	return {
 		point.x * transform._11 + point.y * transform._21 + transform._31,
@@ -307,13 +307,13 @@ inline [[nodiscard]] Point operator*(Point point, Matrix3x2 transform)
 	};
 }
 
-inline [[nodiscard]] Point& operator*=(Point& lhs, Matrix3x2 rhs)
+[[nodiscard]] inline Point& operator*=(Point& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Rect operator*(Rect rect, Matrix3x2 transform)
+[[nodiscard]] inline Rect operator*(Rect rect, Matrix3x2 transform)
 {
 	return {
 		rect.left * transform._11 + rect.top * transform._21 + transform._31,
@@ -323,13 +323,13 @@ inline [[nodiscard]] Rect operator*(Rect rect, Matrix3x2 transform)
 	};
 }
 
-inline [[nodiscard]] Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
+[[nodiscard]] inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-inline [[nodiscard]] Matrix3x2 invert(const Matrix3x2& transform)
+[[nodiscard]] inline Matrix3x2 invert(const Matrix3x2& transform)
 {
 	const auto det = transform._11 * transform._22 - transform._12 * transform._21;
 	const auto s = 1.0f / det;
@@ -344,7 +344,7 @@ inline [[nodiscard]] Matrix3x2 invert(const Matrix3x2& transform)
 	};
 }
 
-inline [[nodiscard]] Matrix3x2 makeTranslation(Size size)
+[[nodiscard]] inline Matrix3x2 makeTranslation(Size size)
 {
 	return {
 		1.0f,
@@ -356,7 +356,7 @@ inline [[nodiscard]] Matrix3x2 makeTranslation(Size size)
 	};
 }
 
-inline [[nodiscard]] Matrix3x2 makeTranslation(
+[[nodiscard]] inline Matrix3x2 makeTranslation(
 	float x,
 	float y
 )
@@ -364,7 +364,7 @@ inline [[nodiscard]] Matrix3x2 makeTranslation(
     return makeTranslation(Size{x, y});
 }
 
-inline [[nodiscard]] Matrix3x2 makeScale(
+[[nodiscard]] inline Matrix3x2 makeScale(
 	Size size,
 	Point center = {}
 )
@@ -379,7 +379,7 @@ inline [[nodiscard]] Matrix3x2 makeScale(
 	return scale;
 }
 
-inline [[nodiscard]] Matrix3x2 makeScale(
+[[nodiscard]] inline Matrix3x2 makeScale(
 	float x,
 	float y,
 	Point center = {}
@@ -388,7 +388,7 @@ inline [[nodiscard]] Matrix3x2 makeScale(
 	return makeScale(Size{ x, y }, center);
 }
 
-inline [[nodiscard]] Matrix3x2 makeScale(
+[[nodiscard]] inline Matrix3x2 makeScale(
 	float scale,
 	Point center = {}
 )
@@ -396,7 +396,7 @@ inline [[nodiscard]] Matrix3x2 makeScale(
 	return makeScale(Size{ scale, scale }, center);
 }
 
-inline [[nodiscard]] Matrix3x2 makeRotation(
+[[nodiscard]] inline Matrix3x2 makeRotation(
 	float angleRadians,
 	Point center = {}
 )
@@ -418,7 +418,7 @@ inline [[nodiscard]] Matrix3x2 makeRotation(
 	};
 }
 
-inline [[nodiscard]] Matrix3x2 makeSkew(
+[[nodiscard]] inline Matrix3x2 makeSkew(
 	float angleX,
 	float angleY,
 	Point center = Point()
@@ -431,7 +431,7 @@ inline [[nodiscard]] Matrix3x2 makeSkew(
 	return skew;
 }
 
-inline [[nodiscard]] Rect offsetRect(Rect r, Size offset)
+[[nodiscard]] inline Rect offsetRect(Rect r, Size offset)
 {
 	return
 	{
@@ -442,7 +442,7 @@ inline [[nodiscard]] Rect offsetRect(Rect r, Size offset)
 	};
 }
 
-inline [[nodiscard]] RectL offsetRect(RectL r, SizeL offset)
+[[nodiscard]] inline RectL offsetRect(RectL r, SizeL offset)
 {
 	return
 	{
@@ -599,11 +599,19 @@ inline Color colorFromHexString(const std::string_view s)
 	// If Alpha not specified, default to 1.0
 	float alpha = 1.0f;
 	if (s.size() > 6)
-	{
 		alpha = static_cast<float>(hex >> 24) / 255.0f;
-	}
 
 	return colorFromHex(hex, alpha);
+}
+
+inline Color interpolateColor(Color a, Color b, float fraction)
+{
+	return {
+		a.r + (b.r - a.r) * fraction,
+		a.g + (b.g - a.g) * fraction,
+		a.b + (b.b - a.b) * fraction,
+		a.a + (b.a - a.a) * fraction
+	};
 }
 
 namespace Colors

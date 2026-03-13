@@ -310,25 +310,25 @@ inline void premultiplyAlpha(IWICBitmapLock* bitmapLock)
 	bitmapLock->GetStride(&bytesPerRow);
     bitmapLock->GetDataPointer(&bufferSize, &pixel);
 
-	const auto height = bufferSize / bytesPerRow;
-    const auto totalPixels = height * bytesPerRow / sizeof(uint32_t);
+    if (!pixel || bytesPerRow == 0 || bufferSize < sizeof(uint32_t))
+        return;
 
-    for (int i = 0; i < totalPixels; ++i)
+    for (size_t offset = 0; offset + (sizeof(uint32_t) - 1) < bufferSize; offset += sizeof(uint32_t))
     {
-        if (pixel[3] == 0)
+        auto* p = pixel + offset;
+
+        if (p[3] == 0)
         {
-            pixel[0] = 0;
-            pixel[1] = 0;
-            pixel[2] = 0;
+            p[0] = 0;
+            p[1] = 0;
+            p[2] = 0;
         }
         else
         {
-            pixel[0] = fast8bitScale(pixel[0], pixel[3]);
-            pixel[1] = fast8bitScale(pixel[1], pixel[3]);
-            pixel[2] = fast8bitScale(pixel[2], pixel[3]);
+            p[0] = fast8bitScale(p[0], p[3]);
+            p[1] = fast8bitScale(p[1], p[3]);
+            p[2] = fast8bitScale(p[2], p[3]);
         }
-
-        pixel += sizeof(uint32_t);
     }
 }
 
@@ -340,18 +340,19 @@ inline void unpremultiplyAlpha(IWICBitmapLock* bitmapLock)
     bitmapLock->GetStride(&bytesPerRow);
     bitmapLock->GetDataPointer(&bufferSize, &pixel);
 
-    const auto height = bufferSize / bytesPerRow;
-    const auto totalPixels = height * bytesPerRow / sizeof(uint32_t);
+    if (!pixel || bytesPerRow == 0 || bufferSize < sizeof(uint32_t))
+        return;
 
-    for (int i = 0; i < totalPixels; ++i)
+    for (size_t offset = 0; offset + (sizeof(uint32_t) - 1) < bufferSize; offset += sizeof(uint32_t))
     {
-        if (pixel[3] != 0)
+        auto* p = pixel + offset;
+
+        if (p[3] != 0)
         {
-            pixel[0] = (uint32_t)(pixel[0] * 255) / pixel[3];
-            pixel[1] = (uint32_t)(pixel[1] * 255) / pixel[3];
-            pixel[2] = (uint32_t)(pixel[2] * 255) / pixel[3];
+            p[0] = (uint32_t)(p[0] * 255) / p[3];
+            p[1] = (uint32_t)(p[1] * 255) / p[3];
+            p[2] = (uint32_t)(p[2] * 255) / p[3];
         }
-        pixel += sizeof(uint32_t);
     }
 }
 

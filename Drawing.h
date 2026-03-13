@@ -193,7 +193,7 @@ inline Rect inflateRect(Rect a, float extra)
 	return point + size;
 }
 
-[[nodiscard]] inline Point& operator+=(Point& lhs, Size rhs)
+inline Point& operator+=(Point& lhs, Size rhs)
 {
 	lhs = lhs + rhs;
 	return lhs;
@@ -207,7 +207,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Point& operator-=(Point& lhs, Size rhs)
+inline Point& operator-=(Point& lhs, Size rhs)
 {
 	lhs = lhs - rhs;
 	return lhs;
@@ -229,7 +229,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Size& operator+=(Size& lhs, Size rhs)
+inline Size& operator+=(Size& lhs, Size rhs)
 {
 	lhs = lhs + rhs;
 	return lhs;
@@ -243,7 +243,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Size& operator-=(Size& lhs, Size rhs)
+inline Size& operator-=(Size& lhs, Size rhs)
 {
 	lhs = lhs - rhs;
 	return lhs;
@@ -259,7 +259,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Rect& operator+=(Rect& lhs, Size rhs)
+inline Rect& operator+=(Rect& lhs, Size rhs)
 {
 	lhs = lhs + rhs;
 	return lhs;
@@ -275,7 +275,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Rect& operator-=(Rect& lhs, Size rhs)
+inline Rect& operator-=(Rect& lhs, Size rhs)
 {
 	lhs = lhs - rhs;
 	return lhs;
@@ -293,7 +293,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
+inline Matrix3x2& operator*=(Matrix3x2& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
@@ -307,7 +307,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Point& operator*=(Point& lhs, Matrix3x2 rhs)
+inline Point& operator*=(Point& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;
@@ -323,7 +323,7 @@ inline Rect inflateRect(Rect a, float extra)
 	};
 }
 
-[[nodiscard]] inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
+inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 {
 	lhs = lhs * rhs;
 	return lhs;

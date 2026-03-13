@@ -83,9 +83,15 @@ inline NSRect gmpiRectToViewRect(NSRect viewbounds, gmpi::drawing::Rect const* r
 
 class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClient
 {
+    struct MenuCallback
+    {
+        int32_t localId{};
+        gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+    };
+
     int32_t selectedId;
     NSView* view;
-    std::vector<int32_t> menuIds;
+    std::vector<MenuCallback> callbacks;
     GMPI_EVENT_HELPER_CLASSNAME_03* eventhelper{};
     gmpi::api::IUnknown* returnCallback{};
     NSPopUpButton* button;
@@ -118,9 +124,10 @@ public:
     void CallbackFromCocoa(NSObject* sender) override
     {
         int index = static_cast<int>([((NSMenuItem*) sender) tag]) - 1;
-        if (index >= 0 && index < menuIds.size())
+        const bool validIndex = index >= 0 && index < static_cast<int>(callbacks.size());
+        if (validIndex)
         {
-            selectedId = menuIds[index];
+            selectedId = callbacks[index].localId;
         }
 
         [button removeFromSuperview];
@@ -128,14 +135,20 @@ public:
         gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
 		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
 		{
-			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
+         callback->onComplete(validIndex ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
 		}
+
+        if (validIndex && callbacks[index].callback)
+        {
+            if(auto callback = callbacks[index].callback.as<gmpi::api::IPopupMenuCallback>(); callback)
+            {
+                callback->onComplete(gmpi::ReturnCode::Ok, selectedId);
+            }
+        }
     }
 
-    gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
+    gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* callback) override
     {
-        menuIds.push_back(id);
-
 		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
         {
             [menuStack.back() addItem:[NSMenuItem separatorItem] ];
@@ -162,6 +175,9 @@ public:
             }
             else
             {
+                gmpi::shared_ptr<gmpi::api::IUnknown> itemcallback(callback);
+                callbacks.push_back({ id, itemcallback });
+
                 NSMenuItem* menuItem;
 		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
                 {
@@ -173,7 +189,7 @@ public:
                 }
                 
                 [menuItem setTarget : eventhelper];
-                [menuItem setTag: menuIds.size()]; // successive tags, starting at 1
+                [menuItem setTag: callbacks.size()]; // successive tags, starting at 1
                 
 		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
                 {

@@ -415,7 +415,8 @@ public:
             gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
             
             gmpi::drawing::Graphics g(&context);
-            auto tf = g.getFactory().createTextFormat(16, "Arial", gmpi::drawing::FontWeight::Normal);
+            const std::string_view fontFamily = "Arial";
+            auto tf = g.getFactory().createTextFormat(16, std::span<const std::string_view>(&fontFamily, 1), gmpi::drawing::FontWeight::Normal);
             auto brush = g.createSolidColorBrush(gmpi::drawing::Colors::Black);
             g.fillRectangle(0,0,40,40, brush);
             brush.setColor(gmpi::drawing::Colors::White);

@@ -7,6 +7,8 @@
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
 #include "helpers/IController.h"
+#include <array>
+#include <string_view>
 
 struct EventHelperClient
 {
@@ -126,17 +128,17 @@ public:
         [button removeFromSuperview];
 
         gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
-		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
-		{
-			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
-		}
+        if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
+        {
+            callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
+        }
     }
 
     gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags) override
     {
         menuIds.push_back(id);
 
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
+        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
         {
             [menuStack.back() addItem:[NSMenuItem separatorItem] ];
         }
@@ -144,9 +146,9 @@ public:
         {
             NSString* nsstr = [NSString stringWithCString : text encoding : NSUTF8StringEncoding];
 
-		    const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
-		    const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;	
-    		if (isSubMenuStart || isSubMenuEnd)
+            const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
+            const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;
+            if (isSubMenuStart || isSubMenuEnd)
             {
                 if (isSubMenuStart)
                 {
@@ -163,7 +165,7 @@ public:
             else
             {
                 NSMenuItem* menuItem;
-		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
+                if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
                 {
                     menuItem = [menuStack.back() addItemWithTitle:nsstr action : nil keyEquivalent:@""];
                 }
@@ -175,7 +177,7 @@ public:
                 [menuItem setTarget : eventhelper];
                 [menuItem setTag: menuIds.size()]; // successive tags, starting at 1
                 
-		        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
+                if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
                 {
                     [menuItem setState:NSControlStateValueOn];
                 }
@@ -185,7 +187,7 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* preturnCallback) override
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* preturnCallback) override
     {
         returnCallback = preturnCallback;
         
@@ -292,7 +294,7 @@ class DrawingFrameCocoa :
     public DrawingFrameCommon,
     public gmpi::api::IDrawingHost,
     public gmpi::api::IInputHost,
-	public gmpi::api::IDialogHost
+    public gmpi::api::IDialogHost
 
 //#ifdef GMPI_HOST_POINTER_SUPPORT
 //    public gmpi_gui::IMpGraphicsHost,
@@ -399,7 +401,8 @@ public:
             gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
             
             gmpi::drawing::Graphics g(&context);
-            auto tf = g.getFactory().createTextFormat(16, "Arial", gmpi::drawing::FontWeight::Normal);
+            constexpr std::array<std::string_view, 1> fontnames{std::string_view{"Arial"}};
+            auto tf = g.getFactory().createTextFormat(16, fontnames, gmpi::drawing::FontWeight::Normal);
             auto brush = g.createSolidColorBrush(gmpi::drawing::Colors::Black);
             g.fillRectangle(0,0,40,40, brush);
             brush.setColor(gmpi::drawing::Colors::White);
@@ -642,19 +645,19 @@ public:
             addRef();
             return gmpi::ReturnCode::Ok;
         }
-		if (*iid == IInputHost::guid)
-		{
-			// important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-			*returnInterface = reinterpret_cast<void*>(static_cast<IInputHost*>(this));
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-		if (*iid == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = this;
-			addRef();
-			return gmpi::ReturnCode::Ok;
-		}
+        if (*iid == IInputHost::guid)
+        {
+            // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
+            *returnInterface = reinterpret_cast<void*>(static_cast<IInputHost*>(this));
+            addRef();
+            return gmpi::ReturnCode::Ok;
+        }
+        if (*iid == gmpi::api::IUnknown::guid)
+        {
+            *returnInterface = this;
+            addRef();
+            return gmpi::ReturnCode::Ok;
+        }
 #endif
 #if 0
         if (iid == gmpi::MP_IID_UI_HOST2)
@@ -703,7 +706,7 @@ public:
         // kCGColorSpaceGenericRGB - actually sRGB
         // kCGColorSpaceExtendedLinearSRGB caused image to turn dark after intial draw, like OS was compressing non-extended colors
 
-        CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);        
+        CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
         NSColorSpace *linearRGBColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
 
         NSBitmapImageRep* imagerep1 = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
@@ -934,7 +937,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
  
     int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
     flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
-	flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
+    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     const auto p = mouseToGmpi(self, theEvent);
@@ -961,10 +964,10 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     if(drawingFrame.inputClient)
         r = drawingFrame.inputClient->onPointerDown(p, flags);
 
-	if (r == gmpi::ReturnCode::Unhandled)
-	{
+    if (r == gmpi::ReturnCode::Unhandled)
+    {
         drawingFrame.doContextMenu(p, flags);
-	}
+    }
 }
 
 - (void)rightMouseUp:(NSEvent *)theEvent
@@ -1083,7 +1086,7 @@ void* createNativeView(void* parent, class IUnknown* paramHost, class IUnknown* 
     
     NSView* native = [[GMPI_VIEW_CLASS alloc] initWithClient:client parameterHost:paramHost preferredSize:inPreferredSize];
     
-    if(parent) // JUCE creates the view then *later* adds it to the parent. GMPI adds it here.
+    if(parent) // JUCE creates the view then *later* adds it to the parent. GMPI adds it here
     {
         NSView* parentView = (NSView*) parent;
         [parentView addSubview:native];

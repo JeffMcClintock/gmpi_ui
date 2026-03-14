@@ -136,10 +136,10 @@ public:
 
         gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
 
-		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
-		{
+        if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
+        {
          callback->onComplete(validIndex ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
-		}
+        }
 
         if (validIndex && callbacks[index].callback)
         {
@@ -152,9 +152,7 @@ public:
 
     gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* callback) override
     {
-        menuIds.push_back(id);
-
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
+        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
         {
             [menuStack.back() addItem:[NSMenuItem separatorItem] ];
         }

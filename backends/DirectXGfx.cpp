@@ -834,22 +834,24 @@ void applyPreMultiplyCorrection(IWICBitmap* bitmap)
 	lock->GetDataPointer(&bufferSize, &sourcePixels);
 	lock->GetStride(&stride);
 
-	size_t totalPixels = rcLock.Height * stride / sizeof(uint32_t);
+	if(!sourcePixels || bufferSize < sizeof(uint32_t))
+		return;
 
 	constexpr float over255 = 1.0f / 255.0f;
-	for (size_t i = 0; i < totalPixels; ++i)
+	for(size_t offset = 0; offset + (sizeof(uint32_t) - 1) < bufferSize; offset += sizeof(uint32_t))
 	{
-		const int alpha = sourcePixels[3];
+		auto* pixel = sourcePixels + offset;
+		const int alpha = pixel[3];
 
-		if (alpha != 255 && alpha != 0)
+		if(alpha != 255 && alpha != 0)
 		{
 			const float AlphaNorm = alpha * over255;
 			const float overAlphaNorm = 1.f / AlphaNorm;
 
-			for (int j = 0; j < 3; ++j)
+			for(int j = 0; j < 3; ++j)
 			{
-				int p = sourcePixels[j];
-				if (p != 0)
+				int p = pixel[j];
+				if(p != 0)
 				{
 					float originalPixel = p * overAlphaNorm; // un-premultiply.
 
@@ -859,12 +861,10 @@ void applyPreMultiplyCorrection(IWICBitmap* bitmap)
 					cf *= AlphaNorm;						// pre-multiply (correctly).
 
 					// back to SRGB
-					sourcePixels[j] = gmpi::drawing::linearPixelToSRGB(cf);
+					pixel[j] = gmpi::drawing::linearPixelToSRGB(cf);
 				}
 			}
 		}
-
-		sourcePixels += sizeof(uint32_t);
 	}
 }
 

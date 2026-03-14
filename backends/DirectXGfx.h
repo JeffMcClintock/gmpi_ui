@@ -472,7 +472,7 @@ public:
 
     ReturnCode getSizeU(drawing::SizeU* returnSize) override
     {
-        HRESULT r{ LONG_ERROR };
+        HRESULT r{ E_FAIL };
 
         if (diBitmap_)
         {

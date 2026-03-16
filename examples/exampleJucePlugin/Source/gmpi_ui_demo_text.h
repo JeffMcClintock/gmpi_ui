@@ -42,9 +42,9 @@ void drawTextDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 
 	for (auto& option : options)
 	{
-		gmpi::drawing::Factory::FontStack stack{ {"Segoe"} }; // non-existant font name, will fallback to Arial
+		std::array<std::string_view, 1> fontFamilies{ "Segoe" }; // non-existent font name, will fallback to Arial
 
-		auto font = g.getFactory().createTextFormat(textheight, stack, option.weight, option.style, option.stretch);
+		auto font = g.getFactory().createTextFormat(textheight, fontFamilies, option.weight, option.style, option.stretch);
 
 		const auto textSize = font.getTextExtentU(option.name);
 		textRect.right = textRect.left + textSize.width + 1;

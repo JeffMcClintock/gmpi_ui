@@ -1083,7 +1083,7 @@ public:
 	{
 		*returnInterface = {};
 
-        GMPI_QUERYINTERFACE(gmpi::drawing::api::IBrush);
+        // GMPI_QUERYINTERFACE(gmpi::drawing::api::IBrush);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::IResource);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::ISolidColorBrush);
 
@@ -1279,8 +1279,16 @@ public:
 		return gmpi::ReturnCode::Ok;
     }
 
+    // GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::ILinearGradientBrush);
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        GMPI_QUERYINTERFACE(drawing::api::ILinearGradientBrush);
+        return ReturnCode::NoSupport;
+    }
     GMPI_REFCOUNT;
-    GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::ILinearGradientBrush);
 };
 
 class RadialGradientBrush : public gmpi::drawing::api::IRadialGradientBrush, public CocoaBrushBase, public Gradient
@@ -1340,7 +1348,7 @@ public:
 	{
 		*returnInterface = {};
 
-        GMPI_QUERYINTERFACE(gmpi::drawing::api::IBrush);
+        // GMPI_QUERYINTERFACE(gmpi::drawing::api::IBrush);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::IResource);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::IRadialGradientBrush);
 

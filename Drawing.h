@@ -1003,16 +1003,15 @@ public:
 	}
 
 	// Conversion assignment from any derived brush type
-	template<typename T>
-	Brush& operator=(const T& derived)
-	{
-		native = {};
-		if (auto ptr = AccessPtr::get(derived); ptr)
-		{
-			ptr->queryInterface(&api::IBrush::guid, native.put_void());
-		}
-		return *this;
-	}
+    template<typename T>
+    Brush& operator=(const T& derived)
+    {
+        native = {};
+        if (auto ptr = AccessPtr::get(derived); ptr)
+             native = static_cast<api::IBrush*>(ptr);
+        return *this;
+    }
+    
 	operator bool() const
 	{
 		return native != nullptr;

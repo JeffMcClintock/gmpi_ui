@@ -174,6 +174,16 @@ inline Rect inflateRect(Rect a, float extra)
     };
 }
 
+[[nodiscard]] inline RectL getSmallestIntegerContainer(Rect rect)
+{
+	return {
+		static_cast<int32_t>(floorf(rect.left)),
+		static_cast<int32_t>(floorf(rect.top)),
+		static_cast<int32_t>(ceilf(rect.right)),
+		static_cast<int32_t>(ceilf(rect.bottom))
+	};
+}
+
 [[nodiscard]] inline bool pointInRect(Point point, Rect rect)
 {
 	return point.x >= rect.left && point.x <= rect.right &&

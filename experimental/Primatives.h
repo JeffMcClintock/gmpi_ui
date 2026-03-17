@@ -171,6 +171,9 @@ public:
 
 	void setBounds(gmpi::drawing::Rect pbounds)
 	{
+		if(bounds == pbounds) // fix incesant redraws
+			return;
+
 		auto invalidateArea = unionRect(bounds, pbounds);
 		bounds = pbounds;
 		if(parent)

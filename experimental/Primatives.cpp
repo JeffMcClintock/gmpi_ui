@@ -315,7 +315,11 @@ gmpi::drawing::Rect Portal::getContentRect() const
 
 void Portal::setScroll(float dx, float dy)
 {
-	transform = makeTranslation({ bounds.left + dx, bounds.top + dy });
+	const auto newTransform = makeTranslation({ bounds.left + dx, bounds.top + dy });
+	if(transform == newTransform) // prevent constant repaints.
+		return;
+
+	transform = newTransform;
 	reverseTransform = makeTranslation({ -bounds.left - dx, -bounds.top - dy });
 	Invalidate(bounds);
 }

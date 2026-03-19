@@ -1920,12 +1920,16 @@ public:
 
                 [transform concat];
 
+                // Disable font smoothing to match Windows Direct2D text weight.
+                CGContextSetShouldSmoothFonts((CGContextRef)[[NSGraphicsContext currentContext] graphicsPort], false);
+
                 // Draw in the flipped coordinate system
                 [str drawInRect : bounds withAttributes : textformat->native2];
 
                 // Restore the original graphics state
                 [[NSGraphicsContext currentContext] restoreGraphicsState];
 #else
+                CGContextSetShouldSmoothFonts((CGContextRef)[[NSGraphicsContext currentContext] graphicsPort], false);
                 [str drawInRect : bounds withAttributes : textformat->native2];
 #endif
                 
@@ -1940,7 +1944,7 @@ public:
                     [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
                     
                     NSSize logicalsize = bounds.size;
-                    NSSize pysicalsize = [info.view convertRectToBacking:bounds].size;
+                    NSSize pysicalsize = info.view ? [info.view convertRectToBacking:bounds].size : logicalsize;
                     
                     // Create a grayscale context for the mask
                     CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
@@ -1970,7 +1974,8 @@ public:
                         [transform scaleXBy:scale yBy:scale];
                         [transform concat];
                     }
-                    
+
+                    CGContextSetShouldSmoothFonts(maskContext, false);
                     [str drawInRect: NSMakeRect(0, 0, bounds.size.width, bounds.size.height) withAttributes : textformat->native2];
                     
                     // Switch back to the window's context

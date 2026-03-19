@@ -46,7 +46,7 @@ void RoundedRectangle::Draw(gmpi::drawing::Graphics& g) const
 {
 	style->Init(g);
 
-	gmpi::drawing::RoundedRect roundedRect(bounds, radiusX, radiusY);
+	gmpi::drawing::RoundedRect roundedRect{bounds, radiusX, radiusY};
 
 	g.fillRoundedRectangle(roundedRect, style->fill);
 	g.drawRoundedRectangle(roundedRect, style->stroke);

@@ -22,6 +22,7 @@
 
 #include <map>
 #include <d2d1_2.h>
+#include <d3d11.h>
 #include <dwrite.h>
 #include <Wincodec.h>
 #include <unordered_map>
@@ -1241,15 +1242,15 @@ void createBitmapRenderTarget(
     , IWICImagingFactory* wicFactory
     , gmpi::directx::ComPtr<IWICBitmap>& returnWicBitmap
     , gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
-    , gmpi::directx::ComPtr<ID2D1Bitmap1>& returnRenderBitmap
-    , gmpi::directx::ComPtr<ID2D1Bitmap1>& returnStagingBitmap
+    , gmpi::directx::ComPtr<ID3D11Device>& returnD3dDevice
+    , gmpi::directx::ComPtr<ID3D11Texture2D>& returnRenderTex
 );
 
 class BitmapRenderTarget final : public GraphicsContext_base // emulated by careful layout: public IBitmapRenderTarget
 {
     gmpi::directx::ComPtr<IWICBitmap> wicBitmap;
-    gmpi::directx::ComPtr<ID2D1Bitmap1> renderBitmap_;  // 64bpp render target (D2D1_BITMAP_OPTIONS_TARGET)
-    gmpi::directx::ComPtr<ID2D1Bitmap1> stagingBitmap_; // 64bpp staging for CPU readback (D2D1_BITMAP_OPTIONS_CPU_READ)
+    gmpi::directx::ComPtr<ID3D11Device> d3dDevice_;    // 64bpp path: WARP D3D11 device
+    gmpi::directx::ComPtr<ID3D11Texture2D> renderTex_; // 64bpp path: render target texture
     ID2D1DeviceContext* originalContext{};
 
 public:

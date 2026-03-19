@@ -925,8 +925,8 @@ void createBitmapRenderTarget(
 	, IWICImagingFactory* wicFactory
 	, gmpi::directx::ComPtr<IWICBitmap>& returnWicBitmap
 	, gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
-	, gmpi::directx::ComPtr<ID2D1Bitmap1>& returnRenderBitmap
-	, gmpi::directx::ComPtr<ID2D1Bitmap1>& returnStagingBitmap
+	, gmpi::directx::ComPtr<ID3D11Device>& returnD3dDevice
+	, gmpi::directx::ComPtr<ID3D11Texture2D>& returnRenderTex
 )
 {
 	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
@@ -951,52 +951,45 @@ void createBitmapRenderTarget(
 
 		if (!eightBitPixels && !oneChannelMask)
 		{
-			// 64bppPRGBAHalf path: CreateWicBitmapRenderTarget is unreliable with this format
-			// (D2D writes to a different buffer than WIC Lock() returns).
-			// Instead, use a WARP D3D11 device with a CPU-readable D2D bitmap.
-			// After EndDraw(), BitmapRenderTarget::endDraw() maps the D2D bitmap and
-			// copies the float pixels into the WIC bitmap so lockPixels() works correctly.
+			// 64bppPRGBAHalf path: CreateWicBitmapRenderTarget is unreliable with this format.
+			// Use a D3D11 WARP texture as the render target so D2D uses the original d2dFactory
+			// (keeping stroke styles and path geometries compatible), and use a staging texture
+			// for CPU readback. After EndDraw(), pixels are copied to the WIC bitmap.
 
-			gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
-			HRESULT hr11 = D3D11CreateDevice(
+			// 1. WARP D3D11 device (D3D11_CREATE_DEVICE_BGRA_SUPPORT required for D2D interop).
+			if (FAILED(D3D11CreateDevice(
 				nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
-				D3D11_CREATE_DEVICE_BGRA_SUPPORT,   // required for D2D interop
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT,
 				nullptr, 0, D3D11_SDK_VERSION,
-				d3dDevice.put(), nullptr, nullptr
+				returnD3dDevice.put(), nullptr, nullptr
+			))) return;
+
+			// 2. D3D11 render target texture: R16G16B16A16_FLOAT, default usage, bindable as render target.
+			D3D11_TEXTURE2D_DESC texDesc = {};
+			texDesc.Width            = width;
+			texDesc.Height           = height;
+			texDesc.MipLevels        = 1;
+			texDesc.ArraySize        = 1;
+			texDesc.Format           = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			texDesc.SampleDesc.Count = 1;
+			texDesc.Usage            = D3D11_USAGE_DEFAULT;
+			texDesc.BindFlags        = D3D11_BIND_RENDER_TARGET;
+			if (FAILED(returnD3dDevice->CreateTexture2D(&texDesc, nullptr, returnRenderTex.put()))) return;
+
+			// 3. D2D render target from the DXGI surface — uses the original d2dFactory so all
+			//    factory-level resources (stroke styles, geometries) remain compatible.
+			auto surface = returnRenderTex.as<IDXGISurface>();
+			if (!surface.get()) return;
+
+			D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
+				D2D1_RENDER_TARGET_TYPE_DEFAULT,
+				D2D1::PixelFormat(DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED)
 			);
-			if (FAILED(hr11)) return;
 
-			auto dxgiDevice = d3dDevice.as<IDXGIDevice>();
-			if (!dxgiDevice.get()) return;
+			gmpi::directx::ComPtr<ID2D1RenderTarget> renderTarget;
+			if (FAILED(d2dFactory->CreateDxgiSurfaceRenderTarget(surface.get(), &rtProps, renderTarget.put()))) return;
 
-			gmpi::directx::ComPtr<ID2D1Device> d2dDevice;
-			if (FAILED(D2D1CreateDevice(dxgiDevice.get(), nullptr, d2dDevice.put()))) return;
-
-			gmpi::directx::ComPtr<ID2D1DeviceContext> deviceContext;
-			if (FAILED(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, deviceContext.put()))) return;
-
-			const D2D1_SIZE_U sizeU{ width, height };
-
-			// Render target bitmap: GPU-side target for D2D rendering.
-			D2D1_BITMAP_PROPERTIES1 renderProps = {};
-			renderProps.pixelFormat.format    = DXGI_FORMAT_R16G16B16A16_FLOAT;
-			renderProps.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-			renderProps.dpiX                  = 96.0f;
-			renderProps.dpiY                  = 96.0f;
-			renderProps.bitmapOptions         = D2D1_BITMAP_OPTIONS_TARGET;
-			if (FAILED(deviceContext->CreateBitmap(sizeU, nullptr, 0, &renderProps, returnRenderBitmap.put()))) return;
-
-			// Staging bitmap: CPU-readable copy, populated after EndDraw via CopyFromBitmap.
-			D2D1_BITMAP_PROPERTIES1 stagingProps = {};
-			stagingProps.pixelFormat.format    = DXGI_FORMAT_R16G16B16A16_FLOAT;
-			stagingProps.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-			stagingProps.dpiX                  = 96.0f;
-			stagingProps.dpiY                  = 96.0f;
-			stagingProps.bitmapOptions         = D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-			if (FAILED(deviceContext->CreateBitmap(sizeU, nullptr, 0, &stagingProps, returnStagingBitmap.put()))) return;
-
-			deviceContext->SetTarget(returnRenderBitmap.get());
-			returnContext = deviceContext;
+			returnContext = renderTarget.as<ID2D1DeviceContext>();
 		}
 		else
 		{
@@ -1043,8 +1036,8 @@ BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::S
 		, lfactory.getWicFactory()
 		, wicBitmap
 		, context_
-		, renderBitmap_
-		, stagingBitmap_
+		, d3dDevice_
+		, renderTex_
 	);
 
 	clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
@@ -1054,15 +1047,27 @@ gmpi::ReturnCode BitmapRenderTarget::endDraw()
 {
 	context_->EndDraw();
 
-	// For the 64bppPRGBAHalf path, copy rendered pixels from the GPU render target
-	// into the CPU-readable staging bitmap, then into the WIC bitmap for lockPixels().
-	if (renderBitmap_ && stagingBitmap_ && wicBitmap)
+	// For the 64bppPRGBAHalf path, copy rendered pixels via a D3D11 staging texture
+	// into the WIC bitmap so that lockPixels() returns the correct data.
+	if (d3dDevice_ && renderTex_ && wicBitmap)
 	{
-		// GPU → staging: CopyFromBitmap transfers the render target pixels to the staging bitmap.
-		stagingBitmap_->CopyFromBitmap(nullptr, renderBitmap_, nullptr);
+		// Create a staging texture (CPU-readable copy of the render target).
+		D3D11_TEXTURE2D_DESC desc{};
+		renderTex_->GetDesc(&desc);
+		desc.Usage          = D3D11_USAGE_STAGING;
+		desc.BindFlags      = 0;
+		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
-		D2D1_MAPPED_RECT mapped{};
-		if (SUCCEEDED(stagingBitmap_->Map(D2D1_MAP_OPTIONS_READ, &mapped)))
+		gmpi::directx::ComPtr<ID3D11Texture2D> stagingTex;
+		if (FAILED(d3dDevice_->CreateTexture2D(&desc, nullptr, stagingTex.put()))) return ReturnCode::Ok;
+
+		gmpi::directx::ComPtr<ID3D11DeviceContext> d3dContext;
+		d3dDevice_->GetImmediateContext(d3dContext.put());
+
+		d3dContext->CopyResource(stagingTex.get(), renderTex_.get());
+
+		D3D11_MAPPED_SUBRESOURCE mapped{};
+		if (SUCCEEDED(d3dContext->Map(stagingTex.get(), 0, D3D11_MAP_READ, 0, &mapped)))
 		{
 			UINT w{}, h{};
 			wicBitmap->GetSize(&w, &h);
@@ -1077,13 +1082,16 @@ gmpi::ReturnCode BitmapRenderTarget::endDraw()
 				lock->GetStride(&wicStride);
 				lock->GetDataPointer(&wicSize, &wicData);
 
-				const UINT rowBytes = mapped.pitch < wicStride ? mapped.pitch : wicStride;
+				const UINT rowBytes = mapped.RowPitch < wicStride ? mapped.RowPitch : wicStride;
 				for (UINT row = 0; row < h; ++row)
-					std::memcpy(wicData + row * wicStride, mapped.bits + row * mapped.pitch, rowBytes);
+					std::memcpy(
+						wicData + row * wicStride,
+						static_cast<const BYTE*>(mapped.pData) + row * mapped.RowPitch,
+						rowBytes);
 
 				lock->Release();
 			}
-			stagingBitmap_->Unmap();
+			d3dContext->Unmap(stagingTex.get(), 0);
 		}
 	}
 

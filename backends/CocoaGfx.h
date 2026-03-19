@@ -2370,8 +2370,9 @@ public:
 class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout public gmpi::drawing::api::IBitmapRenderTarget
 {
 	NSImage* image{};
+	NSBitmapImageRep* backingRep{};
     int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::EightBitPixels;
-    
+
 public:
 	BitmapRenderTarget(const gmpi::drawing::Size* size, int32_t flags, cocoa::Factory* pfactory) :
 		GraphicsContext(nullptr, pfactory)
@@ -2383,33 +2384,46 @@ public:
 
         NSSize s = NSMakeSize(size->width, size->height);
         NSRect r = NSMakeRect(0.0, 0.0, s.width, s.height);
-        
+
         if(oneChannelMask)
         {
-            NSBitmapImageRep* bitmap =
+            backingRep =
             [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
             pixelsWide:s.width pixelsHigh:s.height bitsPerSample:8
             samplesPerPixel:1 hasAlpha:NO isPlanar:NO
             colorSpaceName:NSCalibratedWhiteColorSpace bytesPerRow:0
             bitsPerPixel:8];
-            
-            image = [[NSImage alloc] initWithSize:s];
-            [image addRepresentation:bitmap];
         }
         else
         {
-            image = [[NSImage alloc]initWithSize:s];
+            backingRep =
+            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+            pixelsWide:s.width pixelsHigh:s.height bitsPerSample:8
+            samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+            colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0
+            bitsPerPixel:32];
         }
-        
+
+        image = [[NSImage alloc] initWithSize:s];
+        [image addRepresentation:backingRep];
+
         info.currentTransform = [NSAffineTransform transform];
         info.clipRectStack.push_back({ 0, 0, size->width, size->height });
 	}
 
     gmpi::ReturnCode beginDraw() override
 	{
-		// To match Flipped View, Flip Bitmap Context too.
-		// (Alternative is [image setFlipped:TRUE] in constructor, but that method is deprected).
-		[image lockFocusFlipped : TRUE] ;
+		// Draw directly into the bitmap rep to avoid macOS creating a
+		// retina 2x backing store (which causes blurry downsampled output).
+		NSGraphicsContext* ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:backingRep];
+		[NSGraphicsContext saveGraphicsState];
+		[NSGraphicsContext setCurrentContext:ctx];
+
+		// Flip coordinate system to match Direct2D (top-down).
+		NSAffineTransform* flip = [NSAffineTransform transform];
+		[flip translateXBy:0.0 yBy:[backingRep pixelsHigh]];
+		[flip scaleXBy:1.0 yBy:-1.0];
+		[flip concat];
 
 		return GraphicsContext::beginDraw();
 	}
@@ -2417,7 +2431,7 @@ public:
 	gmpi::ReturnCode endDraw() override
 	{
 		auto r = GraphicsContext::endDraw();
-		[image unlockFocus];
+		[NSGraphicsContext restoreGraphicsState];
 		return r;
 	}
 
@@ -2591,8 +2605,17 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
             context = [NSGraphicsContext graphicsContextWithBitmapImageRep : bitmap2];
             [NSGraphicsContext saveGraphicsState] ;
             [NSGraphicsContext setCurrentContext : context] ;
+
+            // The BitmapRenderTarget draws with lockFocusFlipped:TRUE (top-down),
+            // but the bitmap rep context is bottom-up.  Flip the context so the
+            // pixel readback matches the top-down (Windows) coordinate system.
+            NSAffineTransform* flip = [NSAffineTransform transform];
+            [flip translateXBy:0.0 yBy:s.height];
+            [flip scaleXBy:1.0 yBy:-1.0];
+            [flip concat];
+
             [*inBitmap_ drawAtPoint : NSZeroPoint fromRect : NSZeroRect operation : NSCompositingOperationCopy fraction : 1.0] ;
-            
+
             [NSGraphicsContext restoreGraphicsState] ;
         }
     }

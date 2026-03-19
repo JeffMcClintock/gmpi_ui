@@ -1241,11 +1241,15 @@ void createBitmapRenderTarget(
     , IWICImagingFactory* wicFactory
     , gmpi::directx::ComPtr<IWICBitmap>& returnWicBitmap
     , gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
+    , gmpi::directx::ComPtr<ID2D1Bitmap1>& returnRenderBitmap
+    , gmpi::directx::ComPtr<ID2D1Bitmap1>& returnStagingBitmap
 );
 
 class BitmapRenderTarget final : public GraphicsContext_base // emulated by careful layout: public IBitmapRenderTarget
 {
     gmpi::directx::ComPtr<IWICBitmap> wicBitmap;
+    gmpi::directx::ComPtr<ID2D1Bitmap1> renderBitmap_;  // 64bpp render target (D2D1_BITMAP_OPTIONS_TARGET)
+    gmpi::directx::ComPtr<ID2D1Bitmap1> stagingBitmap_; // 64bpp staging for CPU readback (D2D1_BITMAP_OPTIONS_CPU_READ)
     ID2D1DeviceContext* originalContext{};
 
 public:
@@ -1254,6 +1258,8 @@ public:
     // HACK, to be ABI compatible with IBitmapRenderTarget we need this virtual function,
     // and it needs to be in the vtable right after all virtual functions of GraphicsContext
     virtual ReturnCode getBitmap(drawing::api::IBitmap** returnBitmap);
+
+    ReturnCode endDraw() override;
 
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {

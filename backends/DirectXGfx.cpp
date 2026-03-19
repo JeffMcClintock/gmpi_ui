@@ -2,6 +2,7 @@
 
 #include <sstream>
 #include <optional>
+#include <d3d11.h>
 #include "./DirectXGfx.h"
 #include "d2d1helper.h"
 
@@ -924,6 +925,8 @@ void createBitmapRenderTarget(
 	, IWICImagingFactory* wicFactory
 	, gmpi::directx::ComPtr<IWICBitmap>& returnWicBitmap
 	, gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
+	, gmpi::directx::ComPtr<ID2D1Bitmap1>& returnRenderBitmap
+	, gmpi::directx::ComPtr<ID2D1Bitmap1>& returnStagingBitmap
 )
 {
 	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
@@ -932,9 +935,6 @@ void createBitmapRenderTarget(
 
 	if (lockAblePixels) // pixels can be read by CPU
 	{
-		// Create a WIC render target. Modifyable by CPU (lock pixels). More expensive.
-		// 8-bit giving wrong gamma but consistent w SE 1.5. 16-bit much nicer and consistant colors with GPU rendering.
-
 		GUID format{ GUID_WICPixelFormat64bppPRGBAHalf };
 
 		if (oneChannelMask)
@@ -942,34 +942,83 @@ void createBitmapRenderTarget(
 		else if (eightBitPixels)
 			format = GUID_WICPixelFormat32bppPBGRA;
 
-		// Create a WIC bitmap to draw on.
-		[[maybe_unused]] auto hr =
-			wicFactory->CreateBitmap(
-				width
-				, height
-				, format
-				, eightBitPixels ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
-				, returnWicBitmap.put()
+		// Create the WIC bitmap as pixel storage for lockPixels().
+		wicFactory->CreateBitmap(
+			width, height, format,
+			WICBitmapCacheOnLoad,
+			returnWicBitmap.put()
+		);
+
+		if (!eightBitPixels && !oneChannelMask)
+		{
+			// 64bppPRGBAHalf path: CreateWicBitmapRenderTarget is unreliable with this format
+			// (D2D writes to a different buffer than WIC Lock() returns).
+			// Instead, use a WARP D3D11 device with a CPU-readable D2D bitmap.
+			// After EndDraw(), BitmapRenderTarget::endDraw() maps the D2D bitmap and
+			// copies the float pixels into the WIC bitmap so lockPixels() works correctly.
+
+			gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
+			HRESULT hr11 = D3D11CreateDevice(
+				nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT,   // required for D2D interop
+				nullptr, 0, D3D11_SDK_VERSION,
+				d3dDevice.put(), nullptr, nullptr
+			);
+			if (FAILED(hr11)) return;
+
+			auto dxgiDevice = d3dDevice.as<IDXGIDevice>();
+			if (!dxgiDevice.get()) return;
+
+			gmpi::directx::ComPtr<ID2D1Device> d2dDevice;
+			if (FAILED(D2D1CreateDevice(dxgiDevice.get(), nullptr, d2dDevice.put()))) return;
+
+			gmpi::directx::ComPtr<ID2D1DeviceContext> deviceContext;
+			if (FAILED(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, deviceContext.put()))) return;
+
+			const D2D1_SIZE_U sizeU{ width, height };
+
+			// Render target bitmap: GPU-side target for D2D rendering.
+			D2D1_BITMAP_PROPERTIES1 renderProps = {};
+			renderProps.pixelFormat.format    = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			renderProps.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+			renderProps.dpiX                  = 96.0f;
+			renderProps.dpiY                  = 96.0f;
+			renderProps.bitmapOptions         = D2D1_BITMAP_OPTIONS_TARGET;
+			if (FAILED(deviceContext->CreateBitmap(sizeU, nullptr, 0, &renderProps, returnRenderBitmap.put()))) return;
+
+			// Staging bitmap: CPU-readable copy, populated after EndDraw via CopyFromBitmap.
+			D2D1_BITMAP_PROPERTIES1 stagingProps = {};
+			stagingProps.pixelFormat.format    = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			stagingProps.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+			stagingProps.dpiX                  = 96.0f;
+			stagingProps.dpiY                  = 96.0f;
+			stagingProps.bitmapOptions         = D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+			if (FAILED(deviceContext->CreateBitmap(sizeU, nullptr, 0, &stagingProps, returnStagingBitmap.put()))) return;
+
+			deviceContext->SetTarget(returnRenderBitmap.get());
+			returnContext = deviceContext;
+		}
+		else
+		{
+			// 32bppPBGRA and 8bppAlpha paths: CreateWicBitmapRenderTarget is reliable for these formats.
+			D2D1_RENDER_TARGET_PROPERTIES renderTargetProperties = D2D1::RenderTargetProperties(
+				D2D1_RENDER_TARGET_TYPE_DEFAULT,
+				D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN)
 			);
 
-		D2D1_RENDER_TARGET_PROPERTIES renderTargetProperties = D2D1::RenderTargetProperties(
-			D2D1_RENDER_TARGET_TYPE_DEFAULT,
-			D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN) //use8bit ? D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN) : D2D1::PixelFormat(DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED)
-		);
+			gmpi::directx::ComPtr<ID2D1RenderTarget> wikBitmapRenderTarget;
+			d2dFactory->CreateWicBitmapRenderTarget(
+				returnWicBitmap.get(),
+				renderTargetProperties,
+				wikBitmapRenderTarget.put()
+			);
 
-		gmpi::directx::ComPtr<ID2D1RenderTarget> wikBitmapRenderTarget;
-		d2dFactory->CreateWicBitmapRenderTarget(
-			returnWicBitmap.get(),
-			renderTargetProperties,
-			wikBitmapRenderTarget.put()
-		);
-
-		returnContext = wikBitmapRenderTarget.as<ID2D1DeviceContext>();
+			returnContext = wikBitmapRenderTarget.as<ID2D1DeviceContext>();
+		}
 	}
 	else
 	{
 		// not bothering with different formats here, since they can't be read by CPU ATM anyhow.
-
 		const D2D1_SIZE_F desiredSize = D2D1::SizeF(static_cast<float>(width), static_cast<float>(height));
 
 		// Create a render target on the GPU. Not modifyable by CPU.
@@ -994,9 +1043,51 @@ BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::S
 		, lfactory.getWicFactory()
 		, wicBitmap
 		, context_
+		, renderBitmap_
+		, stagingBitmap_
 	);
 
 	clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
+}
+
+gmpi::ReturnCode BitmapRenderTarget::endDraw()
+{
+	context_->EndDraw();
+
+	// For the 64bppPRGBAHalf path, copy rendered pixels from the GPU render target
+	// into the CPU-readable staging bitmap, then into the WIC bitmap for lockPixels().
+	if (renderBitmap_ && stagingBitmap_ && wicBitmap)
+	{
+		// GPU → staging: CopyFromBitmap transfers the render target pixels to the staging bitmap.
+		stagingBitmap_->CopyFromBitmap(nullptr, renderBitmap_, nullptr);
+
+		D2D1_MAPPED_RECT mapped{};
+		if (SUCCEEDED(stagingBitmap_->Map(D2D1_MAP_OPTIONS_READ, &mapped)))
+		{
+			UINT w{}, h{};
+			wicBitmap->GetSize(&w, &h);
+
+			WICRect rc{ 0, 0, static_cast<INT>(w), static_cast<INT>(h) };
+			IWICBitmapLock* lock{};
+			if (SUCCEEDED(wicBitmap->Lock(&rc, WICBitmapLockWrite, &lock)))
+			{
+				UINT wicStride{};
+				UINT wicSize{};
+				BYTE* wicData{};
+				lock->GetStride(&wicStride);
+				lock->GetDataPointer(&wicSize, &wicData);
+
+				const UINT rowBytes = mapped.pitch < wicStride ? mapped.pitch : wicStride;
+				for (UINT row = 0; row < h; ++row)
+					std::memcpy(wicData + row * wicStride, mapped.bits + row * mapped.pitch, rowBytes);
+
+				lock->Release();
+			}
+			stagingBitmap_->Unmap();
+		}
+	}
+
+	return ReturnCode::Ok;
 }
 
 gmpi::ReturnCode BitmapRenderTarget::getBitmap(gmpi::drawing::api::IBitmap** returnBitmap)

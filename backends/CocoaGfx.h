@@ -2627,14 +2627,6 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
             [NSGraphicsContext saveGraphicsState] ;
             [NSGraphicsContext setCurrentContext : context] ;
 
-            // The BitmapRenderTarget draws with lockFocusFlipped:TRUE (top-down),
-            // but the bitmap rep context is bottom-up.  Flip the context so the
-            // pixel readback matches the top-down (Windows) coordinate system.
-            NSAffineTransform* flip = [NSAffineTransform transform];
-            [flip translateXBy:0.0 yBy:s.height];
-            [flip scaleXBy:1.0 yBy:-1.0];
-            [flip concat];
-
             [*inBitmap_ drawAtPoint : NSZeroPoint fromRect : NSZeroRect operation : NSCompositingOperationCopy fraction : 1.0] ;
 
             [NSGraphicsContext restoreGraphicsState] ;

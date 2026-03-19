@@ -997,7 +997,7 @@ public:
 
 struct IHasBrush
 {
-	virtual api::IBrush* getBrush() = 0;
+	virtual api::IBrush* getBrush() const = 0;
 };
 
 class Brush : public IHasBrush
@@ -1007,7 +1007,7 @@ class Brush : public IHasBrush
 public:
 	Brush() = default;
 
-	api::IBrush* getBrush() override
+	api::IBrush* getBrush() const override
 	{
 		return native.get();
 	}
@@ -1047,7 +1047,7 @@ public:
 	}
 
 protected:
-	api::IBrush* getBrush() override
+	api::IBrush* getBrush() const override
 	{
 		return native.get();
 	}
@@ -1078,7 +1078,7 @@ public:
 	}
 
 protected:
-	api::IBrush* getBrush() override
+	api::IBrush* getBrush() const override
 	{
 		return native.get();
 	}
@@ -1108,7 +1108,7 @@ public:
 	}
 
 protected:
-	api::IBrush* getBrush() override
+	api::IBrush* getBrush() const override
 	{
 		return native.get();
 	}
@@ -1148,7 +1148,7 @@ public:
 	}
 
 protected:
-	api::IBrush* getBrush() override
+	api::IBrush* getBrush() const override
 	{
 		return native.get();
 	}
@@ -1344,7 +1344,7 @@ public:
 	}
 
 	// createTextFormat by default scales the bounding box of the font, so that it is always the same height as Arial.
-	// This is useful if you’re drawing text in a box(e.g.a Text - Entry module). The text will always have nice vertical alignment,
+	// This is useful if youâ€™re drawing text in a box(e.g.a Text - Entry module). The text will always have nice vertical alignment,
 	// even when the font 'falls back' to a font with different metrics. use FontFlags::SystemHeight for legacy behaviour
 	TextFormat createTextFormat(
 		float bodyHeight = 12.0f,
@@ -1574,104 +1574,104 @@ public:
 		return createRadialGradientBrush(radialGradientBrushProperties, bp, gradientStopCollection);
 	}
 
-	void drawLine(Point point0, Point point1, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawLine(Point point0, Point point1, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		native->drawLine(point0, point1, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawLine(Point point0, Point point1, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawLine(Point point0, Point point1, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		native->drawLine(point0, point1, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawLine(float x1, float y1, float x2, float y2, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawLine(float x1, float y1, float x2, float y2, const IHasBrush& brush, float strokeWidth = 1.0f)
     {
         native->drawLine({x1, y1}, {x2, y2}, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawRectangle(Rect rect, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawRectangle(Rect rect, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		native->drawRectangle(&rect, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawRectangle(Rect rect, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawRectangle(Rect rect, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		native->drawRectangle(&rect, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void fillRectangle(Rect rect, IHasBrush& brush)
+	void fillRectangle(Rect rect, const IHasBrush& brush)
 	{
 		native->fillRectangle(&rect, brush.getBrush());
 	}
 
-	void fillRectangle(float top, float left, float right, float bottom, IHasBrush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
+	void fillRectangle(float top, float left, float right, float bottom, const IHasBrush& brush) // TODO!!! using references hinders the caller creating the brush in the function call.
 	{
         Rect rect{top, left, right, bottom};
 		native->fillRectangle(&rect, brush.getBrush());
 	}
-	void drawRoundedRectangle(RoundedRect roundedRect, IHasBrush& brush, float strokeWidth, StrokeStyle& strokeStyle)
+	void drawRoundedRectangle(RoundedRect roundedRect, const IHasBrush& brush, float strokeWidth, StrokeStyle& strokeStyle)
 	{
 		native->drawRoundedRectangle(&roundedRect, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawRoundedRectangle(RoundedRect roundedRect, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawRoundedRectangle(RoundedRect roundedRect, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		native->drawRoundedRectangle(&roundedRect, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void fillRoundedRectangle(RoundedRect roundedRect, IHasBrush& brush)
+	void fillRoundedRectangle(RoundedRect roundedRect, const IHasBrush& brush)
 	{
 		native->fillRoundedRectangle(&roundedRect, brush.getBrush());
 	}
 
-	void drawEllipse(Ellipse ellipse, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawEllipse(Ellipse ellipse, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		native->drawEllipse(&ellipse, brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void drawEllipse(Ellipse ellipse, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawEllipse(Ellipse ellipse, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		native->drawEllipse(&ellipse, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawCircle(Point point, float radius, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawCircle(Point point, float radius, const IHasBrush& brush, float strokeWidth = 1.0f)
     {
         Ellipse ellipse{point, radius, radius};
 		native->drawEllipse(&ellipse, brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void fillEllipse(Ellipse ellipse, IHasBrush& brush)
+	void fillEllipse(Ellipse ellipse, const IHasBrush& brush)
 	{
 		native->fillEllipse(&ellipse, brush.getBrush());
 	}
 
-	void fillCircle(Point point, float radius, IHasBrush& brush)
+	void fillCircle(Point point, float radius, const IHasBrush& brush)
     {
         Ellipse ellipse{point, radius, radius};
 		native->fillEllipse(&ellipse, brush.getBrush());
 	}
 
-	void drawGeometry(PathGeometry& geometry, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawGeometry(PathGeometry& geometry, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		native->drawGeometry(AccessPtr::get(geometry), brush.getBrush(), strokeWidth, nullptr);
 	}
 
-	void drawGeometry(PathGeometry& geometry, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
+	void drawGeometry(PathGeometry& geometry, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle)
 	{
 		native->drawGeometry(AccessPtr::get(geometry), brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void fillGeometry(PathGeometry& geometry, IHasBrush& brush, IHasBrush& opacityBrush)
+	void fillGeometry(PathGeometry& geometry, const IHasBrush& brush, const IHasBrush& opacityBrush)
 	{
 		native->fillGeometry(AccessPtr::get(geometry), brush.getBrush(), opacityBrush.getBrush());
 	}
 
-	void fillGeometry(PathGeometry& geometry, IHasBrush& brush)
+	void fillGeometry(PathGeometry& geometry, const IHasBrush& brush)
 	{
 		native->fillGeometry(AccessPtr::get(geometry), brush.getBrush(), nullptr);
 	}
 
-	void drawPolygon(std::span<const Point> points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolygon(std::span<const Point> points, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
 		assert(!points.empty());
 
@@ -1682,7 +1682,7 @@ public:
 		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
-	void drawPolyline(std::span<const Point> points, IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
+	void drawPolyline(std::span<const Point> points, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
 	{
 		assert(!points.empty());
 
@@ -1717,7 +1717,7 @@ public:
 	}
 
 	// todo should options be int to allow bitwise combining??? !!!
-	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, IHasBrush& brush, int32_t options = DrawTextOptions::None)
+	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, const IHasBrush& brush, int32_t options = DrawTextOptions::None)
 	{
 		native->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), AccessPtr::get(textFormat), &layoutRect, brush.getBrush(), options/*, measuringMode*/);
 	}
@@ -1772,7 +1772,7 @@ public:
 	}
 
 	// Composit convenience methods.
-	void fillPolygon(std::span<const Point> points, IHasBrush& brush)
+	void fillPolygon(std::span<const Point> points, const IHasBrush& brush)
 	{
 		assert(!points.empty());
 
@@ -1785,7 +1785,7 @@ public:
 		fillGeometry(geometry, brush);
 	}
 
-	void drawPolygon(std::span<const Point> points, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawPolygon(std::span<const Point> points, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		assert(!points.empty());
 
@@ -1796,7 +1796,7 @@ public:
 		drawGeometry(geometry, brush, strokeWidth);
 	}
 
-	void drawLines(std::span<const Point> points, IHasBrush& brush, float strokeWidth = 1.0f)
+	void drawLines(std::span<const Point> points, const IHasBrush& brush, float strokeWidth = 1.0f)
 	{
 		assert(points.size() > 1);
 

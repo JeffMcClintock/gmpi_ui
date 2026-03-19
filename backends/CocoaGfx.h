@@ -2488,7 +2488,8 @@ inline gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, int3
 inline gmpi::ReturnCode Factory::createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget)
 {
     gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-// TODO !!!    b2.attach(new BitmapRenderTarget(&size, flags, this ));
+    gmpi::drawing::Size sizeF{ static_cast<float>(size.width), static_cast<float>(size.height) };
+    b2.attach(new BitmapRenderTarget(&sizeF, flags, this));
 
     return b2->queryInterface(&gmpi::drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(returnBitmapRenderTarget));
 }
@@ -2549,8 +2550,9 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
     int samplesPerPixel = 4;
     auto hasAlpha = YES;
     auto colorSpace = NSCalibratedRGBColorSpace;
-    const bool isMask = 0 != (flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
-    
+    // Use the bitmap's creation flags (not the lock flags) to determine the pixel format.
+    const bool isMask = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
+
     if(isMask)
     {
         samplesPerPixel = 1;
@@ -2598,7 +2600,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
 
 inline BitmapPixels::~BitmapPixels()
 {
-    const bool isMask = 0 != (flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
+    const bool isMask = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
 
 	if (!isMask && 0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Write))
 	{

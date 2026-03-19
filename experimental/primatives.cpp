@@ -137,7 +137,7 @@ void Knob::Draw(gmpi::drawing::Graphics& g /*, Style style */) const
 	// 0.0 12 o'clock
 	const auto turn = -0.3f + 0.6f * normalized;
 	const auto radius = getWidth(bounds) * 0.3f;
-	Point tickPoint(centerPoint.x + radius * gmpi_sdk::tsin(turn), centerPoint.y - radius * gmpi_sdk::tcos(turn));
+	Point tickPoint{centerPoint.x + radius * gmpi_sdk::tsin(turn), centerPoint.y - radius * gmpi_sdk::tcos(turn)};
 
 	g.fillCircle(tickPoint, getWidth(bounds) * 0.1f, outlineBrush);
 }

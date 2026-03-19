@@ -100,15 +100,36 @@ inline void setNativePenStrokeStyle(NSBezierPath * path, gmpi::drawing::api::ISt
         case gmpi::drawing::CapStyle::Flat:
             [ path setLineCapStyle:NSLineCapStyleButt ];
             break;
-                    
+
         case gmpi::drawing::CapStyle::Square:
             [ path setLineCapStyle:NSLineCapStyleSquare ];
             break;
-                    
+
 //        case gmpi::drawing::CapStyle::Triangle:
         case gmpi::drawing::CapStyle::Round:
             [ path setLineCapStyle:NSLineCapStyleRound ];
             break;
+    }
+
+    if(strokeStyle != nullptr)
+    {
+        gmpi::drawing::LineJoin lineJoin = ((se::generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.lineJoin;
+        switch(lineJoin)
+        {
+            default:
+            case gmpi::drawing::LineJoin::Miter:
+            case gmpi::drawing::LineJoin::MiterOrBevel:
+                [ path setLineJoinStyle:NSLineJoinStyleMiter ];
+                break;
+
+            case gmpi::drawing::LineJoin::Bevel:
+                [ path setLineJoinStyle:NSLineJoinStyleBevel ];
+                break;
+
+            case gmpi::drawing::LineJoin::Round:
+                [ path setLineJoinStyle:NSLineJoinStyleRound ];
+                break;
+        }
     }
 }
     

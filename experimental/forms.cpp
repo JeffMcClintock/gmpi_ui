@@ -142,7 +142,7 @@ void Form::setKeyboardHandler(std::function<void(std::string glyph)> pOnKey)
 
 gmpi::ReturnCode Form::setHost(IUnknown* phost)
 {
-	assert(false); // is this redundant???
+	// assert(false); // is this redundant??? yes, but it's gonna get called. we need to resolve the open() vs setHost() thing at some time.
 	phost->queryInterface(&gmpi::api::IDrawingHost::guid, reinterpret_cast<void**>(&host));
 	phost->queryInterface(&gmpi::api::IInputHost::guid, reinterpret_cast<void**>(&inputhost));
 	return gmpi::ReturnCode::Ok;

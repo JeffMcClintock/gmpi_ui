@@ -70,49 +70,70 @@ struct cachedBlur
                 }
 #endif
 
-                // create bitmap
-                buffer2 = g.getFactory().createImage(mysize, (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels);
+                // Create output bitmap.  Use default flags (0) so lockPixels
+                // returns the platform-native linear format (float on macOS,
+                // half-float on Windows).  This avoids an extra sRGB→linear
+                // conversion when the bitmap is composited into the render target.
+                buffer2 = g.getFactory().createImage(mysize, 0);
                 {
                     auto destdata = buffer2.lockPixels(drawing::BitmapLockFlags::Write);
                     auto imageSize = buffer2.getSize();
-                    constexpr int pixelSize = 4; // 8 bytes per pixel for half-float, 4 for 8-bit
                     auto stride = destdata.getBytesPerRow();
-                    auto format = destdata.getPixelFormat();
-                    const int totalPixels = (int)imageSize.height * stride / pixelSize;
-
-                    const int pixelSizeTest = stride / imageSize.width; // 8 for half-float RGB, 4 for 8-bit sRGB, 1 for alpha mask
+                    const int pixelSize = stride / imageSize.width;
+                    const int totalPixels = (int)imageSize.height * (int)imageSize.width;
 
                     auto pixelsrc = data.getAddress();
-                    //   auto pixeldest = (half*)destdata.getAddress();
-                    auto pixeldest = destdata.getAddress();
 
                     float tintf[4] = { tint.r, tint.g, tint.b, tint.a };
 
                     constexpr float inv255 = 1.0f / 255.0f;
 
-                    for (int i = 0; i < totalPixels; ++i)
+                    if (pixelSize == 16)
                     {
-                        const auto alpha = *pixelsrc;
-                        if (alpha == 0)
+                        // 128bpp float RGBA (macOS): write premultiplied linear directly.
+                        auto pixeldest = reinterpret_cast<float*>(destdata.getAddress());
+                        for (int i = 0; i < totalPixels; ++i)
                         {
-                            pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
-                        }
-                        else
-                        {
-                            const float AlphaNorm = alpha * inv255 * tintf[3];
-                            for (int j = 0; j < 3; ++j)
+                            const auto alpha = *pixelsrc;
+                            if (alpha == 0)
                             {
-                                // pre-multiply by mask and tint alpha.
-                                auto cf = tintf[j] * AlphaNorm;
-
-                                // to sRGB
-                                pixeldest[j] = drawing::linearPixelToSRGB(cf);
+                                pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0.0f;
                             }
-                            pixeldest[3] = static_cast<uint8_t>(alpha * tintf[3]);
+                            else
+                            {
+                                const float AlphaNorm = alpha * inv255 * tintf[3];
+                                for (int j = 0; j < 3; ++j)
+                                    pixeldest[j] = tintf[j] * AlphaNorm;
+                                pixeldest[3] = AlphaNorm;
+                            }
+                            pixelsrc++;
+                            pixeldest += 4;
                         }
-
-                        pixelsrc++;
-                        pixeldest += 4;
+                    }
+                    else
+                    {
+                        // 32bpp sRGB RGBA (fallback): premultiplied sRGB bytes.
+                        auto pixeldest = destdata.getAddress();
+                        for (int i = 0; i < totalPixels; ++i)
+                        {
+                            const auto alpha = *pixelsrc;
+                            if (alpha == 0)
+                            {
+                                pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
+                            }
+                            else
+                            {
+                                const float AlphaNorm = alpha * inv255 * tintf[3];
+                                for (int j = 0; j < 3; ++j)
+                                {
+                                    auto cf = tintf[j] * AlphaNorm;
+                                    pixeldest[j] = drawing::linearPixelToSRGB(cf);
+                                }
+                                pixeldest[3] = static_cast<uint8_t>(alpha * tintf[3]);
+                            }
+                            pixelsrc++;
+                            pixeldest += 4;
+                        }
                     }
                 }
             }

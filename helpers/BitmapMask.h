@@ -80,7 +80,15 @@ inline void applyMask(Bitmap& image, Bitmap& mask)
             if (maskVal >= 1.0f) continue;
 
             uint8_t* px = imageData + y * imageBpr + x * imageBpp;
-            if (imageBpp == 8)
+            if (imageBpp == 16)
+            {
+                // 128bpp float: premultiplied RGBA 32-bit float (macOS default RT).
+                float ch[4]; std::memcpy(ch, px, 16);
+                for (int c = 0; c < 4; ++c)
+                    ch[c] *= maskVal;
+                std::memcpy(px, ch, 16);
+            }
+            else if (imageBpp == 8)
             {
                 // 64bppPRGBAHalf: premultiplied RGBA half-float.
                 uint16_t ch[4]; std::memcpy(ch, px, 8);

@@ -1193,6 +1193,24 @@ public:
 		addPolygon(points, figureBegin);
 	}
 
+	void addRoundedRect(RoundedRect rr, FigureBegin figureBegin = FigureBegin::Filled)
+	{
+		const float l = rr.rect.left,  t = rr.rect.top;
+		const float r = rr.rect.right, b = rr.rect.bottom;
+		const float rx = rr.radiusX,   ry = rr.radiusY;
+
+		beginFigure({l + rx, t}, figureBegin);
+		addLine({r - rx, t});                                                                        // top →
+		addArc({{r, t + ry}, {rx, ry}, 0.f, SweepDirection::Clockwise, ArcSize::Small});            // TR
+		addLine({r, b - ry});                                                                        // right ↓
+		addArc({{r - rx, b}, {rx, ry}, 0.f, SweepDirection::Clockwise, ArcSize::Small});            // BR
+		addLine({l + rx, b});                                                                        // bottom ←
+		addArc({{l, b - ry}, {rx, ry}, 0.f, SweepDirection::Clockwise, ArcSize::Small});            // BL
+		addLine({l, t + ry});                                                                        // left ↑
+		addArc({{l + rx, t}, {rx, ry}, 0.f, SweepDirection::Clockwise, ArcSize::Small});            // TL
+		endFigure();
+	}
+
 	void addPolygon(std::span<const Point> points, FigureBegin figureBegin = FigureBegin::Hollow)
 	{
 		assert(!points.empty());

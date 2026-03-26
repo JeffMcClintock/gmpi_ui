@@ -2406,7 +2406,7 @@ public:
 	{
         const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
         const bool lockAblePixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
-        const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels;
+        const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels;
 
         NSSize s = NSMakeSize(size->width, size->height);
         NSRect r = NSMakeRect(0.0, 0.0, s.width, s.height);
@@ -2429,6 +2429,10 @@ public:
             colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0
             bitsPerPixel:32];
         }
+
+        // Zero-initialize pixel data (DirectX render targets start at transparent black).
+        memset([backingRep bitmapData], 0,
+            [backingRep bytesPerRow] * (NSInteger)s.height);
 
         image = [[NSImage alloc] initWithSize:s];
         [image addRepresentation:backingRep];
@@ -2645,79 +2649,9 @@ inline BitmapPixels::~BitmapPixels()
 
 	if (!isMask && 0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Write))
 	{
-		// scan for overbright pixels
-		bool hasOverbright = false;
-		{
-			gmpi::drawing::SizeU imageSize{};
-			seBitmap->getSizeU(&imageSize);
-            
-            int32_t bytesPerRow{};
-            getBytesPerRow(&bytesPerRow);
-            
-			const int totalPixels = imageSize.height * bytesPerRow / sizeof(uint32_t);
-
-            uint32_t* destPixels{};
-            getAddress((uint8_t**) &destPixels);
-
-			for (int i = 0; i < totalPixels; ++i)
-			{
-				uint8_t* p = (uint8_t*)destPixels;
-				auto& alpha = p[3];
-				if (alpha != 255 && *destPixels != 0) // skip solid or blank pixels.
-				{
-					if (p[0] > alpha || p[1] > alpha || p[2] > alpha)
-					{
-						hasOverbright = true;
-						break;
-					}
-				}
-
-				++destPixels;
-			}
-		}
-
-		if (hasOverbright)
-		{
-			// create and populate the additive bitmap
-			NSSize s = [bitmap2 size];
-
-			constexpr int bitsPerSample = 8;
-			constexpr int samplesPerPixel = 4;
-			constexpr int bitsPerPixel = bitsPerSample * samplesPerPixel;
-
-			NSBitmapImageRep* initial_bitmap = [[NSBitmapImageRep alloc]initWithBitmapDataPlanes:nil
-				pixelsWide : s.width
-				pixelsHigh : s.height
-				bitsPerSample : bitsPerSample
-				samplesPerPixel : samplesPerPixel
-				hasAlpha : YES
-				isPlanar : NO
-				colorSpaceName : NSCalibratedRGBColorSpace
-				bitmapFormat : 0
-				bytesPerRow : bytesPerRow
-				bitsPerPixel : bitsPerPixel];
-
-			auto source = (uint32_t*)([bitmap2 bitmapData]);
-			auto dest = (uint32_t*)([initial_bitmap bitmapData]);
-
-			const int totalPixels = s.height * bytesPerRow / sizeof(uint32_t);
-
-			for (int i = 0; i < totalPixels; ++i)
-			{
-				// Retain Alpha of bitmap2, but black-out RGB. Copy RGB to additiveBitmap_ and set alpha to 255.
-				*dest = 0xFF000000 | *source; //0x88008888;
-				*source &= 0xFF000000;
-
-				++source;
-				++dest;
-			}
-			seBitmap->additiveBitmap_ = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace : NSColorSpace.sRGBColorSpace];
-
-			[seBitmap->additiveBitmap_ retain] ;
-		}
-
-		// replace bitmap with a fresh one, and add pixels to it.
-		*inBitmap_ = [[NSImage alloc]init];
+		// Write back modified pixels to the NSImage.
+		for (NSImageRep* rep in [[*inBitmap_ representations] copy])
+			[*inBitmap_ removeRepresentation:rep];
 		[*inBitmap_ addRepresentation : bitmap2] ;
 	}
 	else

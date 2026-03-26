@@ -99,19 +99,16 @@ struct cachedBlur
                         }
                         else
                         {
-                            const float AlphaNorm = alpha * inv255;
+                            const float AlphaNorm = alpha * inv255 * tintf[3];
                             for (int j = 0; j < 3; ++j)
                             {
-                                // To linear
-                                auto cf = tintf[j];
+                                // pre-multiply by mask and tint alpha.
+                                auto cf = tintf[j] * AlphaNorm;
 
-                                // pre-multiply in linear space.
-                                cf *= AlphaNorm;
-
-                                // back to SRGB
+                                // to sRGB
                                 pixeldest[j] = drawing::linearPixelToSRGB(cf);
                             }
-                            pixeldest[3] = alpha;
+                            pixeldest[3] = static_cast<uint8_t>(alpha * tintf[3]);
                         }
 
                         pixelsrc++;

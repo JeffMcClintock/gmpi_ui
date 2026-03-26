@@ -747,15 +747,6 @@ ID2D1Bitmap* bitmapToNative(
 			else if (std::memcmp(&formatGuid, &GUID_WICPixelFormat8bppAlpha, sizeof(formatGuid)) == 0)
 			{
 				assert(false); // this is an 8-bit mask, not suitable for drawing directly on D2D context.
-
-				//props.pixelFormat.format = DXGI_FORMAT_A8_UNORM;
-				//props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_STRAIGHT;
-
-				hr = nativeContext->CreateBitmapFromWicBitmap(
-					diBitmap,
-					//&props,
-					nativeBitmap.put()
-				);
 			}
 			else
 			{

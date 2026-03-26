@@ -1857,6 +1857,7 @@ public:
 #endif
 };
 
+// see also: BitmapRenderTargetFlags
 inline BitmapRenderTarget Factory::createCpuRenderTarget(SizeU size, int32_t flags)
 {
 	BitmapRenderTarget temp;

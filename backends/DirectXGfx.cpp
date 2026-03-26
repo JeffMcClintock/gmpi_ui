@@ -490,27 +490,25 @@ std::wstring fontMatchHelper(
 gmpi::ReturnCode Factory_base::createImage(int32_t width, int32_t height, int32_t flags, gmpi::drawing::api::IBitmap** returnDiBitmap)
 {
 	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
-	const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels;
+	const bool srgbPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels;
 
 	// 8-bit giving wrong gamma but consistent w SE 1.5. 16-bit much nicer and consistant colors with GPU rendering.
 
 	GUID format{ GUID_WICPixelFormat64bppPRGBAHalf };
 
 	if (oneChannelMask)
-		format = GUID_WICPixelFormat8bppAlpha; // only eightBitPixels masks supported by D2D1
-	else if (eightBitPixels)
+		format = GUID_WICPixelFormat8bppAlpha; // 8bpp monochrome (alpha-only), the only single-channel format supported by D2D1
+	else if (srgbPixels)
 		format = GUID_WICPixelFormat32bppPBGRA;
 
 	IWICBitmap* wicBitmap{};
-
-//	auto hr = info.wicFactory->CreateBitmap(width, height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &wicBitmap); // pre-muliplied alpha
 
 	[[maybe_unused]] auto hr =
 		info.wicFactory->CreateBitmap(
 			width
 			, height
 			, format
-			, eightBitPixels ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
+			, (oneChannelMask || srgbPixels) ? WICBitmapCacheOnDemand : WICBitmapCacheOnLoad
 			, &wicBitmap
 		);
 
@@ -746,7 +744,15 @@ ID2D1Bitmap* bitmapToNative(
 			}
 			else if (std::memcmp(&formatGuid, &GUID_WICPixelFormat8bppAlpha, sizeof(formatGuid)) == 0)
 			{
-				assert(false); // this is an 8-bit mask, not suitable for drawing directly on D2D context.
+				// 8bpp alpha-only: D2D renders this as a monochrome alpha mask.
+				props.pixelFormat.format = DXGI_FORMAT_A8_UNORM;
+				props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+
+				hr = nativeContext->CreateBitmapFromWicBitmap(
+					diBitmap,
+					&props,
+					nativeBitmap.put()
+				);
 			}
 			else
 			{
@@ -922,15 +928,15 @@ void createBitmapRenderTarget(
 {
 	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
 	const bool lockAblePixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
-	const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels;
+	const bool srgbPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels;
 
 	if (lockAblePixels) // pixels can be read by CPU
 	{
 		GUID format{ GUID_WICPixelFormat64bppPRGBAHalf };
 
 		if (oneChannelMask)
-			format = GUID_WICPixelFormat8bppAlpha; // only eightBitPixels masks supported by D2D1
-		else if (eightBitPixels)
+			format = GUID_WICPixelFormat8bppAlpha; // 8bpp monochrome (alpha-only), the only single-channel format supported by D2D1
+		else if (srgbPixels)
 			format = GUID_WICPixelFormat32bppPBGRA;
 
 		// Create the WIC bitmap as pixel storage for lockPixels().
@@ -940,7 +946,7 @@ void createBitmapRenderTarget(
 			returnWicBitmap.put()
 		);
 
-		if (!eightBitPixels && !oneChannelMask)
+		if (!oneChannelMask && !srgbPixels)
 		{
 			// 64bppPRGBAHalf path: CreateWicBitmapRenderTarget is unreliable with this format.
 			// Use a D3D11 WARP texture as the render target so D2D uses the original d2dFactory

@@ -34,11 +34,9 @@ struct cachedBlur
         {
             auto dc = g.createCompatibleRenderTarget(mysize2, (int32_t)drawing::BitmapRenderTargetFlags::Mask | (int32_t)drawing::BitmapRenderTargetFlags::CpuReadable );
 
-            drawing::Graphics gbitmap(gmpi::drawing::AccessPtr::get(dc));
-
             dc.beginDraw();
 
-            drawer(gbitmap);
+            drawer(dc);
 
             dc.endDraw();
             buffer = dc.getBitmap();
@@ -73,7 +71,7 @@ struct cachedBlur
 #endif
 
                 // create bitmap
-                buffer2 = g.getFactory().createImage(mysize, (int32_t)drawing::BitmapRenderTargetFlags::EightBitPixels);
+                buffer2 = g.getFactory().createImage(mysize, (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels);
                 {
                     auto destdata = buffer2.lockPixels(drawing::BitmapLockFlags::Write);
                     auto imageSize = buffer2.getSize();
@@ -97,7 +95,7 @@ struct cachedBlur
                         const auto alpha = *pixelsrc;
                         if (alpha == 0)
                         {
-                            pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0.0f;
+                            pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
                         }
                         else
                         {

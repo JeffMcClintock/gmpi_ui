@@ -1458,15 +1458,26 @@ public:
 	class BitmapRenderTarget createCpuRenderTarget(SizeU size, int32_t flags);
 };
 
-template <typename BASE_INTERFACE>
-class Graphics_base
+class Graphics
 {
 	friend class AccessPtr;
 
 protected:
-	gmpi::shared_ptr<BASE_INTERFACE> native;
+	gmpi::shared_ptr<api::IDeviceContext> native;
 
 public:
+	Graphics() = default;
+
+	Graphics(gmpi::api::IUnknown* drawingContext)
+	{
+		if (gmpi::ReturnCode::NoSupport == drawingContext->queryInterface(&api::IDeviceContext::guid, native.put_void()))
+		{
+			// throw?				return MP_NOSUPPORT;
+		}
+	}
+
+	class BitmapRenderTarget createCompatibleRenderTarget(Size desiredSize, int32_t flags = 0);
+
 	Factory getFactory()
 	{
 		Factory temp;
@@ -1697,7 +1708,7 @@ public:
 		auto sink = geometry.open();
 		sink.addPolygon(points, FigureBegin::Filled);
 		sink.close();
-		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
+		drawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
 	void drawPolyline(std::span<const Point> points, const IHasBrush& brush, float strokeWidth, StrokeStyle strokeStyle) // NEW!!!
@@ -1711,7 +1722,7 @@ public:
 
 		sink.endFigure(FigureEnd::Open);
 		sink.close();
-		DrawGeometry(geometry, brush, strokeWidth, strokeStyle);
+		drawGeometry(geometry, brush, strokeWidth, strokeStyle);
 	}
 
 	void drawBitmap(Bitmap bitmap, Rect destinationRectangle, Rect sourceRectangle, float opacity = 1.0f, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode::Linear)
@@ -1828,70 +1839,35 @@ public:
 	}
 };
 
-class BitmapRenderTarget : public Graphics_base<api::IBitmapRenderTarget>
+class BitmapRenderTarget : public Graphics
 {
 public:
-	BitmapRenderTarget() = default;
-
-#if 0
-	// define operator=
-	void operator=(const BitmapRenderTarget& other) { m_ptr = const_cast<BitmapRenderTarget*>(&other)->get(); }
-#endif
 
 	Bitmap getBitmap()
 	{
+		auto extra = native.as<api::IBitmapRenderTarget>();
 		Bitmap temp;
-		native->getBitmap(AccessPtr::put(temp));
+		extra->getBitmap(AccessPtr::put(temp));
 		return temp;
 	}
-#if 0
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override {
-		*returnInterface = {};
-		if ((*iid) == api::IDeviceContext::guid || (*iid) == api::IBitmapRenderTarget::guid || (*iid) == gmpi::api::IUnknown::guid) {
-			*returnInterface = static_cast<api::IBitmapRenderTarget*>(this); addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-		return gmpi::ReturnCode::NoSupport;
-	}
-	GMPI_REFCOUNT;
-#endif
 };
+
+inline BitmapRenderTarget Graphics::createCompatibleRenderTarget(Size desiredSize, int32_t flags)
+{
+	BitmapRenderTarget temp;
+	auto native_ptr = (gmpi::drawing::api::IBitmapRenderTarget**) AccessPtr::put(temp);
+	native->createCompatibleRenderTarget(desiredSize, flags, native_ptr);
+	return temp;
+}
 
 // see also: BitmapRenderTargetFlags
 inline BitmapRenderTarget Factory::createCpuRenderTarget(SizeU size, int32_t flags)
 {
 	BitmapRenderTarget temp;
-	native->createCpuRenderTarget(size, flags, AccessPtr::put(temp));
+	auto native_ptr = (gmpi::drawing::api::IBitmapRenderTarget**) AccessPtr::put(temp); // hack to allow BitmapRenderTarget to be substituted for a Graphics
+	native->createCpuRenderTarget(size, flags, native_ptr);
 	return temp;
 }
-
-class Graphics : public Graphics_base<api::IDeviceContext>
-{
-public:
-	Graphics()
-	{
-	}
-
-	Graphics(gmpi::api::IUnknown* drawingContext)
-	{
-		if (gmpi::ReturnCode::NoSupport == drawingContext->queryInterface(&api::IDeviceContext::guid, native.put_void()))
-		{
-			// throw?				return MP_NOSUPPORT;
-		}
-	}
-
-	BitmapRenderTarget createCompatibleRenderTarget(Size desiredSize, int32_t flags = 0)
-	{
-		BitmapRenderTarget temp;
-		native->createCompatibleRenderTarget(desiredSize, flags, AccessPtr::put(temp));
-		return temp;
-	}
-
-	//BitmapRenderTarget createCompatibleRenderTarget(SizeU desiredSize, int32_t flags = 0)
-	//{
-	//	return createCompatibleRenderTarget(Size{ (float) desiredSize.width, (float) desiredSize.height }, flags);
-	//}
-};
 
 inline Factory PathGeometry::getFactory()
 {

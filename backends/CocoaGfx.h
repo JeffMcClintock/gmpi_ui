@@ -545,7 +545,7 @@ class Bitmap final : public gmpi::drawing::api::IBitmap
 public:
     NSImage* nativeBitmap_ = nullptr;
     NSBitmapImageRep* additiveBitmap_ = nullptr;
-    int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::EightBitPixels;
+    int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels;
     
     Bitmap(gmpi::drawing::api::IFactory* pfactory, const char* utf8Uri) :
         nativeBitmap_(nullptr)
@@ -606,7 +606,7 @@ public:
     Bitmap(
            gmpi::drawing::api::IFactory* pfactory
            , NSImage* native
-           , int32_t pCreationFlags = (int32_t)gmpi::drawing::BitmapRenderTargetFlags::EightBitPixels
+           , int32_t pCreationFlags = (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels
            )
         : nativeBitmap_(native)
         , factory(pfactory)
@@ -2397,7 +2397,7 @@ class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout
 {
 	NSImage* image{};
 	NSBitmapImageRep* backingRep{};
-    int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::EightBitPixels;
+    int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels;
 
 public:
 	BitmapRenderTarget(const gmpi::drawing::Size* size, int32_t flags, cocoa::Factory* pfactory) :

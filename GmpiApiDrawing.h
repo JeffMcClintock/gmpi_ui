@@ -100,9 +100,10 @@ enum class BitmapLockFlags : int32_t
 enum class BitmapRenderTargetFlags : int32_t
 {
     None,
-    Mask = 1,           // 1 plane 8-bit monochrome
+    Mask = 1,           // 8bpp alpha-only (1 byte per pixel)
     CpuReadable = 2,
-    EightBitPixels = 4, // sRGB, 8 bit per color
+    SRGBPixels = 4,     // sRGB, 8 bits per channel, 32bpp PBGRA
+    // default (no format flag) = 64bppPRGBAHalf (half-float)
 };
 
 enum class Gamma : int32_t

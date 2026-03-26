@@ -59,7 +59,7 @@ namespace detail
 //
 // Both bitmaps must be the same dimensions and CPU-readable.
 // The mask must be 8bpp (1 byte per pixel), e.g. created with
-// BitmapRenderTargetFlags::EightBitPixels | CpuReadable.
+// BitmapRenderTargetFlags::Mask | CpuReadable.
 inline void applyMask(Bitmap& image, Bitmap& mask)
 {
     auto imagePx = image.lockPixels(BitmapLockFlags::ReadWrite);

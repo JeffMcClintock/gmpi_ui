@@ -2904,6 +2904,64 @@ inline BitmapPixels::~BitmapPixels()
 		// Write back modified pixels to the NSImage.
 		for (NSImageRep* rep in [[*inBitmap_ representations] copy])
 			[*inBitmap_ removeRepresentation:rep];
+
+        // Half-float data stored in a 16-bit integer NSBitmapImageRep is not
+        // renderable by macOS — it interprets the bit pattern as an integer
+        // (e.g. half 1.0 = 0x3C00 = 15360 → 15360/65535 ≈ 0.23).  Convert
+        // to a 32-bit float rep so NSImage can render correctly.
+        if (wantHalfFloat)
+        {
+            const NSInteger w = [bitmap2 pixelsWide];
+            const NSInteger hh = [bitmap2 pixelsHigh];
+            const NSInteger srcBpr = [bitmap2 bytesPerRow];
+
+            NSBitmapImageRep* floatRep = [[NSBitmapImageRep alloc]
+                initWithBitmapDataPlanes:nil
+                pixelsWide:w pixelsHigh:hh
+                bitsPerSample:32 samplesPerPixel:4
+                hasAlpha:YES isPlanar:NO
+                colorSpaceName:NSDeviceRGBColorSpace
+                bitmapFormat:NSBitmapFormatFloatingPointSamples
+                bytesPerRow:0 bitsPerPixel:128];
+
+            auto halfToFloat = [](uint16_t h) -> float {
+                const uint32_t sign = (h >> 15) & 0x1u;
+                const uint32_t exp  = (h >> 10) & 0x1fu;
+                const uint32_t mant = h & 0x3ffu;
+                uint32_t bits;
+                if (exp == 0) {
+                    if (mant == 0) { bits = sign << 31; }
+                    else {
+                        uint32_t e = 0, m = mant;
+                        while (!(m & 0x400u)) { m <<= 1; ++e; }
+                        bits = (sign << 31) | ((127 - 15 - e + 1) << 23) | ((m & 0x3ffu) << 13);
+                    }
+                } else if (exp == 31) {
+                    bits = (sign << 31) | 0x7f800000u | (mant << 13);
+                } else {
+                    bits = (sign << 31) | ((exp + (127 - 15)) << 23) | (mant << 13);
+                }
+                float f; std::memcpy(&f, &bits, 4); return f;
+            };
+
+            const NSInteger dstBpr = [floatRep bytesPerRow];
+            for (NSInteger row = 0; row < hh; ++row)
+            {
+                const uint16_t* src = reinterpret_cast<const uint16_t*>(
+                    reinterpret_cast<const uint8_t*>([bitmap2 bitmapData]) + row * srcBpr);
+                float* dst = reinterpret_cast<float*>(
+                    reinterpret_cast<uint8_t*>([floatRep bitmapData]) + row * dstBpr);
+                for (NSInteger col = 0; col < w * 4; ++col)
+                    dst[col] = halfToFloat(src[col]);
+            }
+
+            NSBitmapImageRep* tagged = [floatRep bitmapImageRepByRetaggingWithColorSpace:
+                static_cast<cocoa::Factory*>(seBitmap->factory)->info.gmpiColorSpace];
+            [tagged retain];
+            [bitmap2 release];
+            bitmap2 = tagged;
+        }
+
 		[*inBitmap_ addRepresentation : bitmap2] ;
 	}
 	else

@@ -1010,6 +1010,66 @@ public:
 
 class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush, public CocoaBrushBase
 {
+    // NSColor colorWithPatternImage: has a 1-pixel seam bug when tiling a
+    // 32-bit float NSBitmapImageRep in a flipped context and the fill rect
+    // doesn't start at the tile origin.  We avoid the problem by always
+    // handing NSColor an 8-bit sRGB copy of the source image for tiling.
+    NSImage* patternImage_ = nullptr;
+
+    static NSImage* makePatternImage(NSImage* src)
+    {
+        // NSColor colorWithPatternImage: has a 1-pixel seam bug when tiling a
+        // 32-bit float-backed NSImage in a flipped context and the fill rect
+        // doesn't start at a tile boundary.  Rasterising to a plain 8-bit sRGB
+        // NSImage first avoids the artefact at no visible quality cost.
+        //
+        // IMPORTANT: the result must be NSBitmapImageRep-backed.  If we wrap
+        // the rasterised data with [[NSImage alloc] initWithCGImage:…] we get
+        // a CGImage-backed rep; NSColor's pattern tiler renders that rep via
+        // CGContextDrawImage, which reverses the y-axis relative to the
+        // NSBitmapImageRep code path — producing a phase-shifted checkerboard.
+        // Copying the pixels into a real NSBitmapImageRep ensures identical
+        // tiling behaviour to the original image.
+        NSSize s = src.size;
+        NSInteger w = (NSInteger)s.width, h = (NSInteger)s.height;
+
+        // Get a CGImage from the source (handles any backing format, incl. float).
+        NSRect srcRect = NSMakeRect(0, 0, s.width, s.height);
+        CGImageRef cgSrc = [src CGImageForProposedRect:&srcRect context:nil hints:nil];
+
+        // Rasterise into a temporary 8-bit sRGB CGBitmapContext.
+        // CGContextDrawImage places CGImage row 0 at the bottom of the dest rect
+        // (standard CG bottom-up convention), which is what we want: the float
+        // NSBitmapImageRep stores its data bottom-up (GMPI bottom = memory row 0)
+        // so this single CGContextDrawImage without any flip lands the data in the
+        // same orientation as a native 8-bit NSBitmapImageRep.
+        CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGColorSpaceRelease(srgb);
+        CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), cgSrc);
+
+        // Copy pixel data into a new NSBitmapImageRep so that NSColor tiles the
+        // image via the same NSBitmapImageRep code path as the original source.
+        const size_t bpr  = CGBitmapContextGetBytesPerRow(ctx);
+        const void*  data = CGBitmapContextGetData(ctx);
+
+        NSBitmapImageRep* dstRep = [[NSBitmapImageRep alloc]
+            initWithBitmapDataPlanes:NULL
+            pixelsWide:w pixelsHigh:h
+            bitsPerSample:8 samplesPerPixel:4
+            hasAlpha:YES isPlanar:NO
+            colorSpaceName:NSDeviceRGBColorSpace
+            bytesPerRow:(NSInteger)bpr bitsPerPixel:32];
+        memcpy([dstRep bitmapData], data, bpr * (size_t)h);
+        CGContextRelease(ctx);
+
+        NSImage* img = [[NSImage alloc] initWithSize:s];
+        [img addRepresentation:dstRep];
+        [dstRep release];
+        return img;
+    }
+
 public:
     gmpi::cocoa::Bitmap bitmap_;
     gmpi::drawing::BrushProperties brushProperties_;
@@ -1023,11 +1083,17 @@ public:
         bitmap_(factory, ((Bitmap*)bitmap)->nativeBitmap_),
         brushProperties_(*brushProperties)
     {
+        patternImage_ = makePatternImage(bitmap_.nativeBitmap_);
+    }
+
+    ~BitmapBrush()
+    {
+        [patternImage_ release];
     }
 
     void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
-        [[NSColor colorWithPatternImage : bitmap_.nativeBitmap_]set];
+        [[NSColor colorWithPatternImage : patternImage_]set];
 
         [nsPath setLineWidth : strokeWidth] ;
         setNativePenStrokeStyle(nsPath, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
@@ -2609,7 +2675,7 @@ inline void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath
     // also need to apply current drawing transform for modules not at [0,0]
     
     [[NSGraphicsContext currentContext] setPatternPhase:NSMakePoint(offset.x, yOffset - offset.y)];
-    [[NSColor colorWithPatternImage:bitmap_.nativeBitmap_] set];
+    [[NSColor colorWithPatternImage:patternImage_] set];
     [nsPath fill];
 
     [NSGraphicsContext restoreGraphicsState];

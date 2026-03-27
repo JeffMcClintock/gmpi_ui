@@ -2665,28 +2665,41 @@ inline void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath
 {
     [NSGraphicsContext saveGraphicsState];
 
-    auto view = context->getNativeView();
-    
-#if USE_BACKING_BUFFER
-    gmpi::drawing::SizeU bitmapSize{};
-    const_cast<Bitmap&>(bitmap_).getSizeU(&bitmapSize);
-    // Adjust offset to be relative to the top (Windows) not bottom (mac)
-    CGFloat yOffset = view.bounds.size.height - bitmapSize.height;
-#else
-    // convert to Core Grapics co-ords
-    CGFloat yOffset = NSMaxY([view convertRect:view.bounds toView:nil]);
-#endif
+    // Clip to the fill path, then tile the pattern manually.
+    // Both NSColor colorWithPatternImage: and CGContextDrawTiledImage have
+    // a 1-pixel seam bug at the first horizontal tile boundary on macOS,
+    // so we draw each tile individually using CGContextDrawImage.
+    [nsPath addClip];
+
     gmpi::drawing::Matrix3x2 moduleTransform;
     context->getTransform(&moduleTransform);
     auto offset = gmpi::drawing::transformPoint(moduleTransform, {0.0f, 0.0f});
-    // apply brushes transfer. we support only translation on mac
     offset = gmpi::drawing::transformPoint(brushProperties_.transform, offset);
-    
-    // also need to apply current drawing transform for modules not at [0,0]
-    
-    [[NSGraphicsContext currentContext] setPatternPhase:NSMakePoint(offset.x, yOffset - offset.y)];
-    [[NSColor colorWithPatternImage:patternImage_] set];
-    [nsPath fill];
+
+    CGContextRef cgCtx = [[NSGraphicsContext currentContext] CGContext];
+    NSRect proposedRect = NSMakeRect(0, 0, patternImage_.size.width, patternImage_.size.height);
+    CGImageRef tileImage = [patternImage_ CGImageForProposedRect:&proposedRect
+                                                         context:[NSGraphicsContext currentContext]
+                                                           hints:nil];
+
+    const CGFloat tileW = patternImage_.size.width;
+    const CGFloat tileH = patternImage_.size.height;
+    const NSRect bounds = [nsPath bounds];
+
+    const CGFloat startX = offset.x + floor((NSMinX(bounds) - offset.x) / tileW) * tileW;
+    const CGFloat startY = offset.y + floor((NSMinY(bounds) - offset.y) / tileH) * tileH;
+
+    // In the flipped context (y-down), CGContextDrawImage draws each CGImage
+    // upside-down. Compensate by flipping each tile in place.
+    for (CGFloat y = startY; y < NSMaxY(bounds); y += tileH) {
+        for (CGFloat x = startX; x < NSMaxX(bounds); x += tileW) {
+            CGContextSaveGState(cgCtx);
+            CGContextTranslateCTM(cgCtx, x, y + tileH);
+            CGContextScaleCTM(cgCtx, 1.0, -1.0);
+            CGContextDrawImage(cgCtx, CGRectMake(0, 0, tileW, tileH), tileImage);
+            CGContextRestoreGState(cgCtx);
+        }
+    }
 
     [NSGraphicsContext restoreGraphicsState];
 }

@@ -2467,6 +2467,12 @@ public:
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
+// macOS-internal creationFlags extension (not part of the public BitmapRenderTargetFlags API).
+// Marks a bitmap that is backed by a 128bpp float NSBitmapImageRep (used for render targets).
+// Bitmaps created via Factory::createImage() (flags=0) do NOT carry this bit and use the
+// API-specified 64bppPRGBAHalf format instead.
+static constexpr int32_t kMacFloatRT = 0x80;
+
 // https://stackoverflow.com/questions/10627557/mac-os-x-drawing-into-an-offscreen-nsgraphicscontext-using-cgcontextref-c-funct
 class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout public gmpi::drawing::api::IBitmapRenderTarget
 {
@@ -2525,6 +2531,10 @@ public:
             backingRep = [initial bitmapImageRepByRetaggingWithColorSpace:
                 pfactory->info.gmpiColorSpace];
             [backingRep retain];
+
+            // Mark the bitmap as float-backed so BitmapPixels knows to use
+            // 128bpp float format when locking pixels (rather than 64bppPRGBAHalf).
+            creationFlags |= kMacFloatRT;
         }
 
         // Zero-initialize pixel data (DirectX render targets start at transparent black).
@@ -2694,10 +2704,12 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
     // Use the bitmap's creation flags (not the lock flags) to determine the pixel format.
     const bool isMask = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
     const bool isSRGB = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels );
-    // Default render targets (no Mask, no SRGBPixels) return float-linear RGBA
-    // to match Windows 64bppPRGBAHalf.  This ensures pixel manipulation (masking,
-    // blur, etc.) happens in linear space — critical for colour fidelity.
-    const bool wantLinearFloat = !isMask && !isSRGB;
+    // BitmapRenderTargets with the default (flags=0) format are tagged kMacFloatRT and
+    // use 128bpp float for gamma-correct compositing.  Plain bitmaps created via
+    // Factory::createImage() (flags=0, no kMacFloatRT) use the API-specified
+    // 64bppPRGBAHalf format so that callers can access channels as uint16_t half-floats.
+    const bool wantLinearFloat = 0 != (seBitmap->creationFlags & kMacFloatRT);
+    const bool wantHalfFloat   = !isMask && !isSRGB && !wantLinearFloat;
 
     if(isMask)
     {
@@ -2722,6 +2734,25 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
         bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace:
             static_cast<cocoa::Factory*>(sebitmap->factory)->info.gmpiColorSpace];
         [bitmap2 retain];
+    }
+    else if (wantHalfFloat)
+    {
+        // 64bppPRGBAHalf: 4 × 16-bit channels stored in a 16-bps NSBitmapImageRep.
+        // NSBitmapImageRep treats the samples as 16-bit integers; callers read/write
+        // them as half-float (uint16_t) via gmpi::drawing::detail::floatToHalf /
+        // halfToFloat — this is the standard gmpi 64bppPRGBAHalf format.
+        auto initial_bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil
+            pixelsWide:s.width pixelsHigh:s.height
+            bitsPerSample:16 samplesPerPixel:4
+            hasAlpha:YES isPlanar:NO
+            colorSpaceName:NSDeviceRGBColorSpace
+            bitmapFormat:0
+            bytesPerRow:0 bitsPerPixel:64];
+
+        bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace:
+            static_cast<cocoa::Factory*>(sebitmap->factory)->info.gmpiColorSpace];
+        [bitmap2 retain];
+        bytesPerRow = (int32_t)[bitmap2 bytesPerRow]; // actual stride (may include padding)
     }
     else
     {
@@ -2765,10 +2796,98 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool 
 
 inline BitmapPixels::~BitmapPixels()
 {
-    const bool isMask = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
+    const bool isMask        = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask);
+    const bool isSRGB        = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels);
+    const bool wantLinearFloat = 0 != (seBitmap->creationFlags & kMacFloatRT);
+    const bool wantHalfFloat = !isMask && !isSRGB && !wantLinearFloat;
 
 	if (!isMask && 0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Write))
 	{
+        // For 64bppPRGBAHalf bitmaps, scan for "overbright" pixels — pixels where
+        // premultiplied RGB > alpha (which is impossible in normal Porter-Duff but
+        // valid for additive / HDR rendering with alpha=0).  Split these into a
+        // separate 32bpp-float additive NSBitmapImageRep drawn later with
+        // NSCompositingOperationPlusLighter, while the main bitmap retains only the
+        // normal (alpha-premultiplied) pixels.
+        if (wantHalfFloat)
+        {
+            // IEEE 754 half-float → float.
+            auto h2f = [](uint16_t h) -> float {
+                const uint32_t sign = (h >> 15) & 0x1u;
+                const uint32_t exp  = (h >> 10) & 0x1fu;
+                const uint32_t mant = h & 0x3ffu;
+                uint32_t bits;
+                if (exp == 0) {
+                    if (mant == 0) { bits = sign << 31; }
+                    else {
+                        uint32_t e = 0, m = mant;
+                        while (!(m & 0x400u)) { m <<= 1; ++e; }
+                        bits = (sign << 31) | ((127 - 15 - e + 1) << 23) | ((m & 0x3ffu) << 13);
+                    }
+                } else if (exp == 31) {
+                    bits = (sign << 31) | 0x7f800000u | (mant << 13);
+                } else {
+                    bits = (sign << 31) | ((exp + (127 - 15)) << 23) | (mant << 13);
+                }
+                float f; std::memcpy(&f, &bits, 4); return f;
+            };
+
+            const NSInteger w = [bitmap2 pixelsWide];
+            const NSInteger h = [bitmap2 pixelsHigh];
+            const NSInteger srcBpr = [bitmap2 bytesPerRow];
+
+            bool hasOverbright = false;
+            for (NSInteger row = 0; row < h && !hasOverbright; ++row)
+            {
+                const uint16_t* p = reinterpret_cast<const uint16_t*>(
+                    reinterpret_cast<const uint8_t*>([bitmap2 bitmapData]) + row * srcBpr);
+                for (NSInteger col = 0; col < w; ++col, p += 4)
+                {
+                    // Skip fully transparent or fully opaque pixels.
+                    if (p[3] == 0 && (p[0] | p[1] | p[2]) != 0) { hasOverbright = true; break; }
+                    if (p[3] != 0 && (p[0] > p[3] || p[1] > p[3] || p[2] > p[3])) { hasOverbright = true; break; }
+                }
+            }
+
+            if (hasOverbright)
+            {
+                // Build a 32-bit float additive NSBitmapImageRep (alpha=1 everywhere)
+                // containing the overbright RGB values, and zero out those pixels in the
+                // main bitmap so the normal Porter-Duff draw has no effect on them.
+                NSBitmapImageRep* addRep = [[NSBitmapImageRep alloc]
+                    initWithBitmapDataPlanes:nil
+                    pixelsWide:w pixelsHigh:h
+                    bitsPerSample:32 samplesPerPixel:4
+                    hasAlpha:YES isPlanar:NO
+                    colorSpaceName:NSDeviceRGBColorSpace
+                    bitmapFormat:NSBitmapFormatFloatingPointSamples
+                    bytesPerRow:0 bitsPerPixel:128];
+
+                const NSInteger dstBpr = [addRep bytesPerRow];
+                for (NSInteger row = 0; row < h; ++row)
+                {
+                    uint16_t* src = reinterpret_cast<uint16_t*>(
+                        reinterpret_cast<uint8_t*>([bitmap2 bitmapData]) + row * srcBpr);
+                    float* dst = reinterpret_cast<float*>(
+                        reinterpret_cast<uint8_t*>([addRep bitmapData]) + row * dstBpr);
+
+                    for (NSInteger col = 0; col < w; ++col, src += 4, dst += 4)
+                    {
+                        // Copy RGB to additive bitmap (full opacity), zero out main bitmap.
+                        dst[0] = h2f(src[0]);
+                        dst[1] = h2f(src[1]);
+                        dst[2] = h2f(src[2]);
+                        dst[3] = 1.0f;          // fully opaque for PlusLighter
+                        src[0] = src[1] = src[2] = 0; // remove from main (keep alpha)
+                    }
+                }
+
+                seBitmap->additiveBitmap_ = [addRep bitmapImageRepByRetaggingWithColorSpace:
+                    static_cast<cocoa::Factory*>(seBitmap->factory)->info.gmpiColorSpace];
+                [seBitmap->additiveBitmap_ retain];
+            }
+        }
+
 		// Write back modified pixels to the NSImage.
 		for (NSImageRep* rep in [[*inBitmap_ representations] copy])
 			[*inBitmap_ removeRepresentation:rep];

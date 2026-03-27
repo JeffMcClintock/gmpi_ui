@@ -1,5 +1,6 @@
 #pragma once
 #include "Drawing.h"
+#include "BitmapMask.h"
 #include "GinBlur.h"
 
 namespace drawing = gmpi::drawing;
@@ -101,10 +102,32 @@ struct cachedBlur
                             }
                             else
                             {
-                                const float AlphaNorm = alpha * inv255 * tintf[3];
+                                const float AlphaNorm = alpha * inv255;
                                 for (int j = 0; j < 3; ++j)
                                     pixeldest[j] = tintf[j] * AlphaNorm;
                                 pixeldest[3] = AlphaNorm;
+                            }
+                            pixelsrc++;
+                            pixeldest += 4;
+                        }
+                    }
+                    else if (pixelSize == 8)
+                    {
+                        // 64bppPRGBAHalf (Windows): premultiplied RGBA half-float.
+                        auto pixeldest = reinterpret_cast<uint16_t*>(destdata.getAddress());
+                        for (int i = 0; i < totalPixels; ++i)
+                        {
+                            const auto alpha = *pixelsrc;
+                            if (alpha == 0)
+                            {
+                                pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
+                            }
+                            else
+                            {
+                                const float AlphaNorm = alpha * inv255;
+                                for (int j = 0; j < 3; ++j)
+                                    pixeldest[j] = drawing::detail::floatToHalf(tintf[j] * AlphaNorm);
+                                pixeldest[3] = drawing::detail::floatToHalf(AlphaNorm);
                             }
                             pixelsrc++;
                             pixeldest += 4;
@@ -123,13 +146,13 @@ struct cachedBlur
                             }
                             else
                             {
-                                const float AlphaNorm = alpha * inv255 * tintf[3];
+                                const float AlphaNorm = alpha * inv255;
                                 for (int j = 0; j < 3; ++j)
                                 {
                                     auto cf = tintf[j] * AlphaNorm;
                                     pixeldest[j] = drawing::linearPixelToSRGB(cf);
                                 }
-                                pixeldest[3] = static_cast<uint8_t>(alpha * tintf[3]);
+                                pixeldest[3] = alpha;
                             }
                             pixelsrc++;
                             pixeldest += 4;

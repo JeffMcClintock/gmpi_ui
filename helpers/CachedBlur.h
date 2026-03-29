@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include "Drawing.h"
 #include "BitmapMask.h"
 #include "GinBlur.h"
@@ -102,7 +103,7 @@ struct cachedBlur
                             }
                             else
                             {
-                                const float AlphaNorm = alpha * inv255;
+                                const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
                                 for (int j = 0; j < 3; ++j)
                                     pixeldest[j] = tintf[j] * AlphaNorm;
                                 pixeldest[3] = AlphaNorm;
@@ -124,7 +125,7 @@ struct cachedBlur
                             }
                             else
                             {
-                                const float AlphaNorm = alpha * inv255;
+                                const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
                                 for (int j = 0; j < 3; ++j)
                                     pixeldest[j] = drawing::detail::floatToHalf(tintf[j] * AlphaNorm);
                                 pixeldest[3] = drawing::detail::floatToHalf(AlphaNorm);
@@ -146,13 +147,13 @@ struct cachedBlur
                             }
                             else
                             {
-                                const float AlphaNorm = alpha * inv255;
+                                const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
                                 for (int j = 0; j < 3; ++j)
                                 {
                                     auto cf = tintf[j] * AlphaNorm;
                                     pixeldest[j] = drawing::linearPixelToSRGB(cf);
                                 }
-                                pixeldest[3] = alpha;
+                                pixeldest[3] = static_cast<uint8_t>(255.0f * AlphaNorm + 0.5f);
                             }
                             pixelsrc++;
                             pixeldest += 4;

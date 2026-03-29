@@ -10,369 +10,547 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <span>
 #include <dxgi1_6.h>
 #include <d3d11_1.h>
 #include <dwmapi.h>
+#include <Windowsx.h>
 #include "DirectXGfx.h"
+#include "helpers/NativeUi.h"
 #include "helpers/Timer.h"
-#include "DrawingFrameCommon.h"
+#include "GmpiSdkCommon.h"
 
 namespace gmpi
 {
 
 namespace hosting
 {
-	// utility functions
-	std::wstring RegisterWindowsClass(HINSTANCE dllHandle, WNDPROC windowProc);
-	HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWND parentWnd, RECT r, LONG_PTR userData);
+// utility functions
+std::wstring RegisterWindowsClass(HINSTANCE dllHandle, WNDPROC windowProc);
+HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWND parentWnd, RECT r, LONG_PTR userData);
 
-	class UpdateRegionWinGdi
+class UpdateRegionWinGdi
+{
+	HRGN hRegion = 0;
+	std::string regionDataBuffer;
+	std::vector<gmpi::drawing::RectL> rects;
+	gmpi::drawing::RectL bounds;
+
+public:
+	UpdateRegionWinGdi();
+	~UpdateRegionWinGdi();
+
+	void copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize);
+	void optimizeRects();
+
+	inline std::vector<gmpi::drawing::RectL>& getUpdateRects()
 	{
-		HRGN hRegion = 0;
-		std::string regionDataBuffer;
-		std::vector<gmpi::drawing::RectL> rects;
-		gmpi::drawing::RectL bounds;
-
-	public:
-		UpdateRegionWinGdi();
-		~UpdateRegionWinGdi();
-
-		void copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize);
-		void optimizeRects();
-
-		inline std::vector<gmpi::drawing::RectL>& getUpdateRects()
-		{
-			return rects;
-		}
-		inline gmpi::drawing::RectL& getBoundingRect()
-		{
-			return bounds;
-		}
-	};
-
-	// helper
-	inline float calcWhiteLevelForHwnd(HWND windowHandle)
+		return rects;
+	}
+	inline gmpi::drawing::RectL& getBoundingRect()
 	{
-		// get bounds of plugin window
-		auto parent = ::GetAncestor(windowHandle, GA_ROOT);
-		RECT m_windowBoundsRoot;
-		GetWindowRect(parent, &m_windowBoundsRoot);
+		return bounds;
+	}
+};
 
-		RECT m_windowBounds;
-		DwmGetWindowAttribute(parent, DWMWA_EXTENDED_FRAME_BOUNDS, &m_windowBounds, sizeof(m_windowBounds));
+class DirtyRectQueue
+{
+	std::vector<gmpi::drawing::RectL> rects;
 
-// not DPI aware		GetWindowRect(windowHandle, &m_windowBounds);
-		gmpi::drawing::RectL appWindowRect{ m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
-
-		// get all the monitor paths.
-		uint32_t numPathArrayElements{};
-		uint32_t numModeArrayElements{};
-
-		GetDisplayConfigBufferSizes(
-			QDC_ONLY_ACTIVE_PATHS,
-			&numPathArrayElements,
-			&numModeArrayElements
-		);
-
-		std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
-		std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
-
-		pathInfo.resize(numPathArrayElements);
-		modeInfo.resize(numModeArrayElements);
-
-		QueryDisplayConfig(
-			QDC_ONLY_ACTIVE_PATHS,
-			&numPathArrayElements,
-			pathInfo.data(),
-			&numModeArrayElements,
-			modeInfo.data(),
-			nullptr
-		);
-
-		DISPLAYCONFIG_TARGET_DEVICE_NAME targetName{};
-		targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
-		targetName.header.size = sizeof(targetName);
-
-		DISPLAYCONFIG_SDR_WHITE_LEVEL white_level{};
-		white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
-		white_level.header.size = sizeof(white_level);
-
-		// check against each path (monitor)
-		float whiteMult{ 1.0f };
-		int bestIntersectArea = -1;
-		for (auto& path : pathInfo)
-		{
-			const int idx = path.sourceInfo.modeInfoIdx;
-
-			if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
-				continue;
-
-			const auto& sourceMode = modeInfo[idx].sourceMode;
-
-			const gmpi::drawing::RectL outputRect
-			{
-				  sourceMode.position.x
-				, sourceMode.position.y
-				, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
-				, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
-			};
-
-			const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
-			const int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
-			if (intersectArea <= bestIntersectArea)
-				continue;
-
-			// Get monitor handle for this path's target
-			targetName.header.adapterId = path.targetInfo.adapterId;
-			white_level.header.adapterId = path.targetInfo.adapterId;
-			targetName.header.id = path.targetInfo.id;
-			white_level.header.id = path.targetInfo.id;
-
-			if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
-				continue;
-
-			if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
-				continue;
-
-			// divide by 1000 to get a factor
-			const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
-
-//			_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
-
-			bestIntersectArea = intersectArea;
-			whiteMult = lwhiteMult;
-		}
-//		_RPTWN(0, L"Best white level %f\n", whiteMult);
-
-		return whiteMult;
+public:
+	void clear()
+	{
+		rects.clear();
 	}
 
-
-	// Swapchain Manager: stuff we can share between DxDrawingFrameBase (GMPI-UI) and SynthEditlib DrawingFrameBase2 (SDK3)
-	struct tempSharedD2DBase : public gmpi::api::IDrawingHost
+	bool empty() const
 	{
-		enum { FallBack_8bit, Fallback_Software };
+		return rects.empty();
+	}
 
-		// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
-		const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
-		const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
+	std::span<gmpi::drawing::RectL> get()
+	{
+		return { rects.data(), rects.size() };
+	}
 
-//		gmpi::drawing::Matrix3x2 viewTransform;
-//		gmpi::drawing::Matrix3x2 inv_viewTransform;
-		gmpi::drawing::Matrix3x2 DipsToWindow;
-		gmpi::drawing::Matrix3x2 WindowToDips;
+	std::span<const gmpi::drawing::RectL> get() const
+	{
+		return { rects.data(), rects.size() };
+	}
 
-		// HDR support. Above swapChain so these get released first.
-		gmpi::directx::ComPtr<ID2D1Effect> hdrWhiteScaleEffect;
-		gmpi::directx::ComPtr<ID2D1BitmapRenderTarget> hdrRenderTarget;
-		directx::ComPtr<::ID2D1DeviceContext> hdrRenderTargetDC; // we need to keep this, else if we requery it, it's address will change, crashing Bitmap::GetNativeBitmap() when it's checks for a consistant device context.
-		gmpi::directx::ComPtr<ID2D1Bitmap> hdrBitmap;
+	void add(gmpi::drawing::RectL rect);
+	void add(const gmpi::drawing::Rect* invalidRect, const gmpi::drawing::Matrix3x2& dipsToWindow);
+	void replace(gmpi::drawing::RectL rect);
+};
 
-		directx::ComPtr<::IDXGISwapChain2> swapChain;
-		directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
+class ToolTipManager
+{
+	bool shown = false;
+	HWND windowHandle = {};
+	int timer = 0;
+	std::wstring text;
+	static const int timerInit = 40; // x/60 Hz
 
-		gmpi::drawing::SizeL swapChainSize = {};
-		inline static bool m_disable_gpu = false;
-		inline static bool m_disable_deep_color = false;
-		inline static int m_fallbackStrategy = Fallback_Software;
-		bool reentrant = false;
-		bool lowDpiMode = {};
-		bool firstPresent = false;
-		float windowWhiteLevel{};
-		bool monitorChanged = false;
-		std::function<void()> clientInvalidated; // called from Paint if monitor white-level changed since last check.
+public:
+	void init(HMODULE instanceHandle, HWND parentWindow);
+	void onMouseActivity(HWND parentWindow);
+	void show(HWND parentWindow);
+	void hide(HWND parentWindow);
+	bool readyToShow()
+	{
+		return timer-- == 0 && !shown;
+	}
+	bool isShown() const
+	{
+		return shown;
+	}
+	std::wstring& getText()
+	{
+		return text;
+	}
+};
 
-		virtual float calcWhiteLevel() = 0;
+// helper
+inline float calcWhiteLevelForHwnd(HWND windowHandle)
+{
+	// get bounds of plugin window
+	auto parent = ::GetAncestor(windowHandle, GA_ROOT);
+	RECT m_windowBoundsRoot;
+	GetWindowRect(parent, &m_windowBoundsRoot);
+
+	RECT m_windowBounds;
+	DwmGetWindowAttribute(parent, DWMWA_EXTENDED_FRAME_BOUNDS, &m_windowBounds, sizeof(m_windowBounds));
+
+	// not DPI aware		GetWindowRect(windowHandle, &m_windowBounds);
+	gmpi::drawing::RectL appWindowRect{ m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+
+	// get all the monitor paths.
+	uint32_t numPathArrayElements{};
+	uint32_t numModeArrayElements{};
+
+	GetDisplayConfigBufferSizes(
+		QDC_ONLY_ACTIVE_PATHS,
+		&numPathArrayElements,
+		&numModeArrayElements
+	);
+
+	std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
+	std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
+
+	pathInfo.resize(numPathArrayElements);
+	modeInfo.resize(numModeArrayElements);
+
+	QueryDisplayConfig(
+		QDC_ONLY_ACTIVE_PATHS,
+		&numPathArrayElements,
+		pathInfo.data(),
+		&numModeArrayElements,
+		modeInfo.data(),
+		nullptr
+	);
+
+	DISPLAYCONFIG_TARGET_DEVICE_NAME targetName{};
+	targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+	targetName.header.size = sizeof(targetName);
+
+	DISPLAYCONFIG_SDR_WHITE_LEVEL white_level{};
+	white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+	white_level.header.size = sizeof(white_level);
+
+	// check against each path (monitor)
+	float whiteMult{ 1.0f };
+	int bestIntersectArea = -1;
+	for(auto& path : pathInfo)
+	{
+		const int idx = path.sourceInfo.modeInfoIdx;
+
+		if(idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+			continue;
+
+		const auto& sourceMode = modeInfo[idx].sourceMode;
+
+		const gmpi::drawing::RectL outputRect
+		{
+			  sourceMode.position.x
+			, sourceMode.position.y
+			, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
+			, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
+		};
+
+		const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
+		const int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
+		if(intersectArea <= bestIntersectArea)
+			continue;
+
+		// Get monitor handle for this path's target
+		targetName.header.adapterId = path.targetInfo.adapterId;
+		white_level.header.adapterId = path.targetInfo.adapterId;
+		targetName.header.id = path.targetInfo.id;
+		white_level.header.id = path.targetInfo.id;
+
+		if(DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
+			continue;
+
+		if(DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
+			continue;
+
+		// divide by 1000 to get a factor
+		const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
+
+		//			_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
+
+		bestIntersectArea = intersectArea;
+		whiteMult = lwhiteMult;
+	}
+	//		_RPTWN(0, L"Best white level %f\n", whiteMult);
+
+	return whiteMult;
+}
+
+
+// Swapchain Manager: stuff we can share between DxDrawingFrameBase (GMPI-UI) and SynthEditlib DrawingFrameBase2 (SDK3)
+struct tempSharedD2DBase : public gmpi::api::IDrawingHost
+{
+	enum { FallBack_8bit, Fallback_Software };
+
+	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
+	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
+	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
+
+	gmpi::drawing::Matrix3x2 DipsToWindow;
+	gmpi::drawing::Matrix3x2 WindowToDips;
+
+	// HDR support. Above swapChain so these get released first.
+	gmpi::directx::ComPtr<ID2D1Effect> hdrWhiteScaleEffect;
+	gmpi::directx::ComPtr<ID2D1BitmapRenderTarget> hdrRenderTarget;
+	directx::ComPtr<::ID2D1DeviceContext> hdrRenderTargetDC; // we need to keep this, else if we requery it, it's address will change, crashing Bitmap::GetNativeBitmap() when it's checks for a consistant device context.
+	gmpi::directx::ComPtr<ID2D1Bitmap> hdrBitmap;
+
+	directx::ComPtr<::IDXGISwapChain2> swapChain;
+	directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
+
+	gmpi::drawing::SizeL swapChainSize = {};
+	inline static bool m_disable_gpu = false;
+	inline static bool m_disable_deep_color = false;
+	inline static int m_fallbackStrategy = Fallback_Software;
+	bool reentrant = false;
+	bool lowDpiMode = {};
+	bool firstPresent = false;
+	float windowWhiteLevel{};
+	bool monitorChanged = false;
+	std::function<void()> clientInvalidated; // called from Paint if monitor white-level changed since last check.
+
+	virtual float calcWhiteLevel()
+	{
+		return calcWhiteLevelForHwnd(getWindowHandle());
+	}
 
 #ifdef _DEBUG
-		std::string debugName;
+	std::string debugName;
 #endif
 
-		// override these please.
-		virtual HWND getWindowHandle() = 0;
-		virtual HRESULT createNativeSwapChain
-		(
-			IDXGIFactory2* factory,
-			ID3D11Device* d3dDevice,
-			DXGI_SWAP_CHAIN_DESC1* desc,
-			IDXGISwapChain1** returnSwapChain
-		) = 0;
+	// override these please.
+	virtual HWND getWindowHandle() = 0;
+	virtual HRESULT createNativeSwapChain
+	(
+		IDXGIFactory2* factory,
+		ID3D11Device* d3dDevice,
+		DXGI_SWAP_CHAIN_DESC1* desc,
+		IDXGISwapChain1** returnSwapChain
+	) = 0;
 
-		void recreateSwapChainAndClientAsync();
-		void setWhiteLevel(float newWhiteLevel);
-		void CreateSwapPanel(ID2D1Factory1* d2dFactory);
-		void CreateDeviceSwapChainBitmap();
-		void OnSize(UINT width, UINT height);
-		virtual void OnSwapChainCreated() = 0;
-		virtual void sizeClientDips(float width, float height) = 0;
-
-		// to help re-create device when lost.
-		void ReleaseDevice()
-		{
-			if (hdrWhiteScaleEffect)
-			{
-				hdrWhiteScaleEffect->SetInput(0, nullptr);
-				hdrWhiteScaleEffect = nullptr;
-			}
-			hdrBitmap = nullptr;
-			hdrRenderTargetDC = nullptr;
-			hdrRenderTarget = nullptr;
-			d2dDeviceContext = nullptr;
-			swapChain = nullptr;
-		}
-		HMODULE getDllHandle();
-
-		// IDrawingHost
-		void invalidateMeasure() override {}
-	};
-
-	// Base class for JuceDrawingFrameBase, DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
-	class DxDrawingFrameBase :
-		public tempSharedD2DBase,
-		public DrawingFrameCommon,
-//		public gmpi::api::IDrawingHost,
-		public gmpi::api::IInputHost,
-		public gmpi::api::IDialogHost,
-		public gmpi::TimerClient
+	void recreateSwapChainAndClientAsync();
+	void setWhiteLevel(float newWhiteLevel);
+	void CreateSwapPanel(ID2D1Factory1* d2dFactory);
+	void CreateDeviceSwapChainBitmap();
+	void OnSize(UINT width, UINT height);
+	void PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects);
+	virtual ID2D1Factory1* getD2dFactory() = 0;
+	virtual bool canPaint(std::span<gmpi::drawing::RectL> dirtyRects) = 0;
+	virtual bool preparePaint(std::span<gmpi::drawing::RectL> dirtyRects)
 	{
-		std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
-		UpdateRegionWinGdi updateRegion_native;
-
-	protected:
-		gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
-
-		// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
-		std::vector<gmpi::drawing::RectL> backBufferDirtyRects;
-		int toolTiptimer = 0;
-		bool toolTipShown;
-		HWND tooltipWindow;
-		static const int toolTiptimerInit = 40; // x/60 Hz
-		std::wstring toolTipText;
-		bool isTrackingMouse = false;
-		gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
-
-	public:
-		static const int viewDimensions = 7968; // DIPs (divisible by grids 60x60 + 2 24 pixel borders)
-		gmpi::directx::Factory DrawingFactory;
-
-		DxDrawingFrameBase() :
-			 toolTipShown(false)
-			, tooltipWindow(0)
-		{
-		}
-
-		virtual ~DxDrawingFrameBase()
-		{
-			stopTimer();
-
-			ReleaseDevice();
-		}
-
-		// provids a default message handler. Note that some clients provide their own. e.g. MyFrameWndDirectX
-		LRESULT WindowProc(
-			HWND hwnd,
-			UINT message,
-			WPARAM wParam,
-			LPARAM lParam);
-
-		HRESULT createNativeSwapChain
-		(
-			IDXGIFactory2* factory,
-			ID3D11Device* d3dDevice,
-			DXGI_SWAP_CHAIN_DESC1* desc,
-			IDXGISwapChain1** returnSwapChain
-		) override;
-
-		void OnSwapChainCreated() override;
-
-		void setFallbackHost(gmpi::api::IUnknown* paramHost)
-		{
-			parameterHost = paramHost;
-		}
-
-		void attachClient(gmpi::api::IUnknown* gfx);
-		void detachAndRecreate();
-
-		void OnPaint();
-
-		// IMpGraphicsHost
-		void invalidateRect(const gmpi::drawing::Rect * invalidRect) override;
-		float getRasterizationScale() override; // DPI scaling
-		gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
-		{
-			*returnFactory = &DrawingFactory;
-			return gmpi::ReturnCode::Ok;
-		}
-
-		// IInputHost
-		gmpi::ReturnCode setCapture() override;
-		gmpi::ReturnCode getCapture(bool& returnValue) override;
-		gmpi::ReturnCode releaseCapture() override;
-
-		//gmpi::ReturnCode getFocus() override;
-		//gmpi::ReturnCode releaseFocus() override;
-
-		// IDialogHost
-		gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override;
-		gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu) override;
-		gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) override;
-		gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
-		gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;
-
-		// IUnknown methods
-		gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-		{
-			*returnInterface = {};
-
-			GMPI_QUERYINTERFACE(IDrawingHost);
-			GMPI_QUERYINTERFACE(IInputHost);
-			GMPI_QUERYINTERFACE(IDialogHost);
-
-			if (parameterHost)
-			{
-				return parameterHost->queryInterface(iid, returnInterface);
-			}
-
-			return gmpi::ReturnCode::NoSupport;
-		}
-
-		GMPI_REFCOUNT_NO_DELETE;
-
-		void initTooltip();
-		void TooltipOnMouseActivity();
-		void ShowToolTip();
-		void HideToolTip();
-		void sizeClientDips(float width, float height) override;
-		bool onTimer() override;
-		virtual void autoScrollStart() {}
-		virtual void autoScrollStop() {}
-	};
-
-	// This is used in GMPI VST3. Native HWND window frame.
-	class DrawingFrame : public DxDrawingFrameBase
+		return true;
+	}
+	virtual bool recreateDeviceOnPaint() const
 	{
-	protected:
-		HWND windowHandle = {};
-		HWND parentWnd = {};
+		return false;
+	}
+	virtual void renderFrame(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects) = 0;
+	virtual void OnSwapChainCreated() = 0;
+	virtual void sizeClientDips(float width, float height) = 0;
 
-	public:
-		
-		HWND getWindowHandle() override
+	// to help re-create device when lost.
+	void ReleaseDevice()
+	{
+		if(hdrWhiteScaleEffect)
 		{
-			return windowHandle;
+			hdrWhiteScaleEffect->SetInput(0, nullptr);
+			hdrWhiteScaleEffect = nullptr;
+		}
+		hdrBitmap = nullptr;
+		hdrRenderTargetDC = nullptr;
+		hdrRenderTarget = nullptr;
+		d2dDeviceContext = nullptr;
+		swapChain = nullptr;
+	}
+	HMODULE getDllHandle();
+
+	// IDrawingHost
+	void invalidateMeasure() override {}
+};
+
+// Base class for JuceDrawingFrameBase, DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
+class DxDrawingFrameBase :
+	public tempSharedD2DBase,
+	public gmpi::api::IInputHost,
+	public gmpi::api::IDialogHost,
+	public gmpi::TimerClient
+{
+	std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
+	UpdateRegionWinGdi updateRegion_native;
+	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
+
+protected:
+   gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
+	gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
+	gmpi::api::IUnknown* parameterHost{};
+	gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
+
+	// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
+	DirtyRectQueue backBufferDirtyRects;
+	ToolTipManager tooltip;
+	bool isTrackingMouse = false;
+	gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
+
+public:
+	static const int viewDimensions = 7968; // DIPs (divisible by grids 60x60 + 2 24 pixel borders)
+	gmpi::directx::Factory DrawingFactory;
+
+	virtual ~DxDrawingFrameBase()
+	{
+		stopTimer();
+
+		ReleaseDevice();
+	}
+
+	// provids a default message handler. Note that some clients provide their own. e.g. MyFrameWndDirectX
+	LRESULT WindowProc(
+		HWND hwnd,
+		UINT message,
+		WPARAM wParam,
+		LPARAM lParam);
+
+	HRESULT createNativeSwapChain
+	(
+		IDXGIFactory2* factory,
+		ID3D11Device* d3dDevice,
+		DXGI_SWAP_CHAIN_DESC1* desc,
+		IDXGISwapChain1** returnSwapChain
+	) override;
+	ID2D1Factory1* getD2dFactory() override
+	{
+		return DrawingFactory.getD2dFactory();
+	}
+	bool canPaint(std::span<gmpi::drawing::RectL> dirtyRects) override;
+	void renderFrame(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects) override;
+
+	void OnSwapChainCreated() override;
+
+	void setFallbackHost(gmpi::api::IUnknown* paramHost)
+	{
+		parameterHost = paramHost;
+	}
+
+	void attachClient(gmpi::api::IUnknown* gfx);
+	void detachAndRecreate();
+	void doContextMenu(gmpi::drawing::Point point, int32_t flags);
+
+	void OnPaint();
+
+	// IMpGraphicsHost
+	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;
+	float getRasterizationScale() override; // DPI scaling
+	gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
+	{
+		*returnFactory = &DrawingFactory;
+		return gmpi::ReturnCode::Ok;
+	}
+
+	// IInputHost
+	gmpi::ReturnCode setCapture() override;
+	gmpi::ReturnCode getCapture(bool& returnValue) override;
+	gmpi::ReturnCode releaseCapture() override;
+
+	// IDialogHost
+	gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override;
+	gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu) override;
+	gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) override;
+	gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
+	gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;
+
+	// IUnknown methods
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+
+		GMPI_QUERYINTERFACE(IDrawingHost);
+		GMPI_QUERYINTERFACE(IInputHost);
+		GMPI_QUERYINTERFACE(IDialogHost);
+
+		if(parameterHost)
+		{
+			return parameterHost->queryInterface(iid, returnInterface);
 		}
 
-		void open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize = {});
-		void reSize(int left, int top, int right, int bottom);
-		virtual void doClose() {}
+		return gmpi::ReturnCode::NoSupport;
+	}
 
-		// tempSharedD2DBase
-		float calcWhiteLevel() override;
-	};
+	GMPI_REFCOUNT_NO_DELETE;
+
+	void initTooltip();
+	void TooltipOnMouseActivity();
+	void ShowToolTip();
+	void HideToolTip();
+	void sizeClientDips(float width, float height) override;
+	bool onTimer() override;
+	virtual void autoScrollStart() {}
+	virtual void autoScrollStop() {}
+};
+
+// This is used in GMPI VST3. Native HWND window frame.
+class DrawingFrame : public DxDrawingFrameBase
+{
+protected:
+	HWND windowHandle = {};
+	HWND parentWnd = {};
+
+public:
+
+	HWND getWindowHandle() override
+	{
+		return windowHandle;
+	}
+
+	void open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize = {});
+	void reSize(int left, int top, int right, int bottom);
+	virtual void doClose() {}
+
+};
 
 
 namespace win32
 {
+inline gmpi::drawing::Point pointFromLParam(LPARAM lParam, const gmpi::drawing::Matrix3x2& windowToDips)
+{
+	gmpi::drawing::Point point{ static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)) };
+	return transformPoint(windowToDips, point);
+}
+
+inline gmpi::drawing::Point pointFromScreenLParam(HWND hwnd, LPARAM lParam, const gmpi::drawing::Matrix3x2& windowToDips)
+{
+	POINT pos = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+	MapWindowPoints(NULL, hwnd, &pos, 1);
+	return transformPoint(windowToDips, gmpi::drawing::Point{ static_cast<float>(pos.x), static_cast<float>(pos.y) });
+}
+
+inline bool isDuplicateMouseMove(UINT message, const gmpi::drawing::Point& point, gmpi::drawing::Point& previousPoint)
+{
+	if(message == WM_MOUSEMOVE)
+	{
+		if(previousPoint == point)
+			return true;
+
+		previousPoint = point;
+	}
+	else
+	{
+		previousPoint = { -1, -1 };
+	}
+
+	return false;
+}
+
+inline void beginMouseTracking(HWND hwnd, bool& isTrackingMouse)
+{
+	if(isTrackingMouse)
+		return;
+
+	TRACKMOUSEEVENT tme{};
+	tme.cbSize = sizeof(TRACKMOUSEEVENT);
+	tme.dwFlags = TME_LEAVE;
+	tme.hwndTrack = hwnd;
+
+	if(::TrackMouseEvent(&tme))
+	{
+		isTrackingMouse = true;
+	}
+}
+
+inline int32_t makePointerFlags(UINT message)
+{
+	int32_t flags = gmpi::api::GG_POINTER_FLAG_INCONTACT | gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
+
+	switch(message)
+	{
+	case WM_MBUTTONDOWN:
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+		flags |= gmpi::api::GG_POINTER_FLAG_NEW;
+		break;
+	}
+
+	switch(message)
+	{
+	case WM_LBUTTONUP:
+	case WM_LBUTTONDOWN:
+		flags |= gmpi::api::GG_POINTER_FLAG_FIRSTBUTTON;
+		break;
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+		flags |= gmpi::api::GG_POINTER_FLAG_SECONDBUTTON;
+		break;
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP:
+		flags |= gmpi::api::GG_POINTER_FLAG_THIRDBUTTON;
+		break;
+	}
+
+	if(GetKeyState(VK_SHIFT) < 0)
+	{
+		flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
+	}
+	if(GetKeyState(VK_CONTROL) < 0)
+	{
+		flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
+	}
+	if(GetKeyState(VK_MENU) < 0)
+	{
+		flags |= gmpi::api::GG_POINTER_KEY_ALT;
+	}
+
+	return flags;
+}
+
+inline int32_t makeWheelFlags(UINT message, WPARAM wParam)
+{
+	int32_t flags = gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
+
+	if(WM_MOUSEHWHEEL == message)
+		flags |= gmpi::api::GG_POINTER_SCROLL_HORIZ;
+
+	const auto fwKeys = GET_KEYSTATE_WPARAM(wParam);
+	if(MK_SHIFT & fwKeys)
+	{
+		flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
+	}
+	if(MK_CONTROL & fwKeys)
+	{
+		flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
+	}
+
+	return flags;
+}
+
 struct hasWindowProc
 {
 	virtual LRESULT WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) = 0;

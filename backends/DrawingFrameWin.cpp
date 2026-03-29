@@ -2,17 +2,13 @@
 
 #include <d2d1_2.h>
 #include <d3d11_1.h>
-#include <dxgi1_6.h>
 #include <wrl.h> // Comptr
-#include <Windowsx.h>
 #include <commctrl.h>
 #include "./DrawingFrameWin.h"
 
 using namespace std;
 using namespace gmpi;
 using namespace gmpi::drawing;
-
-//using namespace Microsoft::WRL;
 using namespace D2D1;
 
 namespace gmpi
@@ -59,6 +55,35 @@ HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWN
 	}
 
 	return windowHandle;
+}
+
+void DxDrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t flags)
+{
+	auto r = inputClient->onPointerDown(point, flags);
+
+	// Handle right-click on background. (right-click on objects is handled by object itself).
+	if (r == gmpi::ReturnCode::Unhandled && (flags & gmpi::api::GG_POINTER_FLAG_SECONDBUTTON) != 0 && inputClient)
+	{
+		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
+
+		// create menu popup
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		createPopupMenu(&rect, unknown.put());
+		contextMenu = unknown.as<gmpi::api::IPopupMenu>();
+
+		// populate menu
+		r = inputClient->populateContextMenu(point, contextMenu.get());
+
+		// show menu
+		contextMenu->showAsync(
+			new gmpi::sdk::PopupMenuCallback(
+				[this](int32_t selectedId)
+				{
+					inputClient->onContextMenu(selectedId);
+				}
+			)
+		);
+	}
 }
 
 void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)
@@ -153,6 +178,142 @@ UpdateRegionWinGdi::~UpdateRegionWinGdi()
 		DeleteObject(hRegion);
 }
 
+void DirtyRectQueue::add(gmpi::drawing::RectL rect)
+{
+	const auto width = rect.right - rect.left;
+	const auto height = rect.bottom - rect.top;
+	if (width <= 0 || height <= 0)
+		return;
+
+	const auto area1 = width * height;
+
+	for (auto& dirtyRect : rects)
+	{
+		const auto area2 = getWidth(dirtyRect) * getHeight(dirtyRect);
+
+		gmpi::drawing::RectL unionrect(dirtyRect);
+		unionrect.top = (std::min)(unionrect.top, rect.top);
+		unionrect.bottom = (std::max)(unionrect.bottom, rect.bottom);
+		unionrect.left = (std::min)(unionrect.left, rect.left);
+		unionrect.right = (std::max)(unionrect.right, rect.right);
+
+		const auto unionarea = getWidth(unionrect) * getHeight(unionrect);
+		if (unionarea <= area1 + area2)
+		{
+			dirtyRect = unionrect;
+			return;
+		}
+	}
+
+	rects.push_back(rect);
+}
+
+void DirtyRectQueue::add(const gmpi::drawing::Rect* invalidRect, const gmpi::drawing::Matrix3x2& dipsToWindow)
+{
+	if (!invalidRect)
+		return;
+
+	const auto actualRect = *invalidRect * dipsToWindow;
+	add({
+		static_cast<int32_t>(floorf(actualRect.left)),
+		static_cast<int32_t>(floorf(actualRect.top)),
+		static_cast<int32_t>(ceilf(actualRect.right)),
+		static_cast<int32_t>(ceilf(actualRect.bottom))
+	});
+}
+
+void DirtyRectQueue::replace(gmpi::drawing::RectL rect)
+{
+	rects.clear();
+	add(rect);
+}
+
+void ToolTipManager::init(HMODULE instanceHandle, HWND parentWindow)
+{
+	if (windowHandle != nullptr || !parentWindow)
+		return;
+
+	TOOLINFO ti{};
+	HWND hwndTT = CreateWindow(TOOLTIPS_CLASS, TEXT(""),
+		WS_POPUP,
+		CW_USEDEFAULT, CW_USEDEFAULT,
+		CW_USEDEFAULT, CW_USEDEFAULT,
+		NULL, (HMENU)NULL, instanceHandle,
+		NULL);
+
+	ti.cbSize = TTTOOLINFO_V1_SIZE;
+	ti.uFlags = TTF_SUBCLASS;
+	ti.hwnd = parentWindow;
+	ti.uId = 0;
+	ti.hinst = instanceHandle;
+	ti.lpszText = const_cast<TCHAR*>(TEXT("This is a tooltip"));
+	ti.rect.left = ti.rect.top = ti.rect.bottom = ti.rect.right = 0;
+
+	if (!SendMessage(hwndTT, TTM_ADDTOOL, 0, (LPARAM)&ti))
+	{
+		DestroyWindow(hwndTT);
+		return;
+	}
+
+	windowHandle = hwndTT;
+}
+
+void ToolTipManager::onMouseActivity(HWND parentWindow)
+{
+	if (shown)
+	{
+		if (timer < -20)
+		{
+			hide(parentWindow);
+			timer = timerInit;
+		}
+	}
+	else
+	{
+		timer = timerInit;
+	}
+}
+
+void ToolTipManager::show(HWND parentWindow)
+{
+	auto platformObject = windowHandle;
+	if (!platformObject)
+		return;
+
+	RECT rc;
+	rc.left = 0;
+	rc.top = 0;
+	rc.right = 100000;
+	rc.bottom = 100000;
+	TOOLINFO ti{};
+	ti.cbSize = TTTOOLINFO_V1_SIZE;
+	ti.hwnd = parentWindow;
+	ti.uId = 0;
+	ti.rect = rc;
+	ti.lpszText = (TCHAR*)(const TCHAR*)text.c_str();
+	SendMessage(platformObject, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
+	SendMessage(platformObject, TTM_NEWTOOLRECT, 0, (LPARAM)&ti);
+	SendMessage(platformObject, TTM_POPUP, 0, 0);
+
+	shown = true;
+}
+
+void ToolTipManager::hide(HWND parentWindow)
+{
+	shown = false;
+
+	if (!windowHandle)
+		return;
+
+	TOOLINFO ti{};
+	ti.cbSize = TTTOOLINFO_V1_SIZE;
+	ti.hwnd = parentWindow;
+	ti.uId = 0;
+	ti.lpszText = 0;
+	SendMessage(windowHandle, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
+	SendMessage(windowHandle, TTM_POP, 0, 0);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 LRESULT CALLBACK DrawingFrameWindowProc(
@@ -229,98 +390,22 @@ float DxDrawingFrameBase::getRasterizationScale()
 
 void DxDrawingFrameBase::initTooltip()
 {
-	if (tooltipWindow == nullptr && getWindowHandle())
-	{
-		auto instanceHandle = getDllHandle();
-		{
-			TOOLINFO ti{};
-
-			// Create the ToolTip control.
-			HWND hwndTT = CreateWindow(TOOLTIPS_CLASS, TEXT(""),
-				WS_POPUP,
-				CW_USEDEFAULT, CW_USEDEFAULT,
-				CW_USEDEFAULT, CW_USEDEFAULT,
-				NULL, (HMENU)NULL, instanceHandle,
-				NULL);
-
-			// Prepare TOOLINFO structure for use as tracking ToolTip.
-			ti.cbSize = TTTOOLINFO_V1_SIZE; // win 7 compatible. sizeof(TOOLINFO);
-			ti.uFlags = TTF_SUBCLASS;
-			ti.hwnd = (HWND)getWindowHandle();
-			ti.uId = (UINT)0;
-			ti.hinst = instanceHandle;
-			ti.lpszText = const_cast<TCHAR*> (TEXT("This is a tooltip"));
-			ti.rect.left = ti.rect.top = ti.rect.bottom = ti.rect.right = 0;
-
-			// Add the tool to the control
-			if (!SendMessage(hwndTT, TTM_ADDTOOL, 0, (LPARAM)&ti))
-			{
-				DestroyWindow(hwndTT);
-				return;
-			}
-
-			tooltipWindow = hwndTT;
-		}
-	}
+  tooltip.init(getDllHandle(), getWindowHandle());
 }
 
 void DxDrawingFrameBase::TooltipOnMouseActivity()
 {
-	if(toolTipShown)
-	{
-		if (toolTiptimer < -20) // ignore spurious MouseMove when Tooltip shows
-		{
-			HideToolTip();
-			toolTiptimer = toolTiptimerInit;
-		}
-	}
-	else
-		toolTiptimer = toolTiptimerInit;
+    tooltip.onMouseActivity(getWindowHandle());
 }
 
 void DxDrawingFrameBase::ShowToolTip()
 {
-//	_RPT0(_CRT_WARN, "YEAH!\n");
-
-	//UTF8StringHelper tooltipText(tooltip);
-	//if (platformObject)
-	{
-		auto platformObject = tooltipWindow;
-
-		RECT rc;
-		rc.left = (LONG)0;
-		rc.top = (LONG)0;
-		rc.right = (LONG)100000;
-		rc.bottom = (LONG)100000;
-		TOOLINFO ti = { 0 };
-		ti.cbSize = TTTOOLINFO_V1_SIZE; // win 7 compatible. sizeof(TOOLINFO);
-		ti.hwnd = (HWND)getWindowHandle(); // frame->getSystemWindow();
-		ti.uId = 0;
-		ti.rect = rc;
-		ti.lpszText = (TCHAR*)(const TCHAR*)toolTipText.c_str();
-		SendMessage((HWND)platformObject, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
-		SendMessage((HWND)platformObject, TTM_NEWTOOLRECT, 0, (LPARAM)&ti);
-		SendMessage((HWND)platformObject, TTM_POPUP, 0, 0);
-	}
-
-	toolTipShown = true;
+    tooltip.show(getWindowHandle());
 }
 
 void DxDrawingFrameBase::HideToolTip()
 {
-	toolTipShown = false;
-//	_RPT0(_CRT_WARN, "NUH!\n");
-
-	if (tooltipWindow)
-	{
-		TOOLINFO ti = { 0 };
-		ti.cbSize = TTTOOLINFO_V1_SIZE; // win 7 compatible. sizeof(TOOLINFO);
-		ti.hwnd = (HWND)getWindowHandle(); // frame->getSystemWindow();
-		ti.uId = 0;
-		ti.lpszText = 0;
-		SendMessage((HWND)tooltipWindow, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
-		SendMessage((HWND)tooltipWindow, TTM_POP, 0, 0);
-	}
+   tooltip.hide(getWindowHandle());
 }
 
 LRESULT DxDrawingFrameBase::WindowProc(
@@ -344,65 +429,15 @@ LRESULT DxDrawingFrameBase::WindowProc(
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONUP:
 		{
-			Point p{ static_cast<float>(GET_X_LPARAM(lParam)), static_cast<float>(GET_Y_LPARAM(lParam)) };
-			p = transformPoint(WindowToDips, p);
-
-			// Cubase sends spurious mouse move messages when transport running.
-			// This prevents tooltips working.
-			if (message == WM_MOUSEMOVE)
+          Point p = win32::pointFromLParam(lParam, WindowToDips);
+			if (win32::isDuplicateMouseMove(message, p, cubaseBugPreviousMouseMove))
 			{
-				if (cubaseBugPreviousMouseMove.x == p.x && cubaseBugPreviousMouseMove.y == p.y)
-				{
-					return TRUE;
-				}
-				cubaseBugPreviousMouseMove = p;
-			}
-			else
-			{
-				cubaseBugPreviousMouseMove = Point{ -1, -1 };
+				return TRUE;
 			}
 
 			TooltipOnMouseActivity();
 
-			int32_t flags = gmpi::api::GG_POINTER_FLAG_INCONTACT | gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
-
-			switch (message)
-			{
-				case WM_MBUTTONDOWN:
-				case WM_LBUTTONDOWN:
-				case WM_RBUTTONDOWN:
-					flags |= gmpi::api::GG_POINTER_FLAG_NEW;
-					break;
-			}
-
-			switch (message)
-			{
-			case WM_LBUTTONUP:
-			case WM_LBUTTONDOWN:
-				flags |= gmpi::api::GG_POINTER_FLAG_FIRSTBUTTON;
-				break;
-			case WM_RBUTTONDOWN:
-			case WM_RBUTTONUP:
-				flags |= gmpi::api::GG_POINTER_FLAG_SECONDBUTTON;
-				break;
-			case WM_MBUTTONDOWN:
-			case WM_MBUTTONUP:
-				flags |= gmpi::api::GG_POINTER_FLAG_THIRDBUTTON;
-				break;
-			}
-
-			if (GetKeyState(VK_SHIFT) < 0)
-			{
-				flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
-			}
-			if (GetKeyState(VK_CONTROL) < 0)
-			{
-				flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
-			}
-			if (GetKeyState(VK_MENU) < 0)
-			{
-				flags |= gmpi::api::GG_POINTER_KEY_ALT;
-			}
+          int32_t flags = win32::makePointerFlags(message);
 
 			gmpi::ReturnCode r;
 			switch (message)
@@ -414,15 +449,7 @@ LRESULT DxDrawingFrameBase::WindowProc(
 					// get notified when mouse leaves window
 					if (!isTrackingMouse)
 					{
-						TRACKMOUSEEVENT tme{};
-						tme.cbSize = sizeof(TRACKMOUSEEVENT);
-						tme.dwFlags = TME_LEAVE;
-						tme.hwndTrack = hwnd;
-
-						if (::TrackMouseEvent(&tme))
-						{
-							isTrackingMouse = true;
-						}
+                      win32::beginMouseTracking(hwnd, isTrackingMouse);
 						inputClient->setHover(true);
 					}
 				}
@@ -460,34 +487,12 @@ LRESULT DxDrawingFrameBase::WindowProc(
 	case WM_MOUSEWHEEL:
 	case WM_MOUSEHWHEEL:
 		{
-			// supplied point is relative to *screen* not window.
-			POINT pos = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-			MapWindowPoints(NULL, getWindowHandle(), &pos, 1); // !!! ::ScreenToClient() might be more correct. ref MyFrameWndDirectX::OnMouseWheel
-
-			Point p{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
-			p = transformPoint(WindowToDips, p);
+           Point p = win32::pointFromScreenLParam(getWindowHandle(), lParam, WindowToDips);
 
             //The wheel rotation will be a multiple of WHEEL_DELTA, which is set at 120. This is the threshold for action to be taken, and one such action (for example, scrolling one increment) should occur for each delta.
 			const auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
 
-			int32_t flags = gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
-
-			if (WM_MOUSEHWHEEL == message)
-				flags |= gmpi::api::GG_POINTER_SCROLL_HORIZ;
-
-			const auto fwKeys = GET_KEYSTATE_WPARAM(wParam);
-			if (MK_SHIFT & fwKeys)
-			{
-				flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
-			}
-			if (MK_CONTROL & fwKeys)
-			{
-				flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
-			}
-			//if (GetKeyState(VK_MENU) < 0)
-			//{
-			//	flags |= gmpi::api::GG_POINTER_KEY_ALT;
-			//}
+         int32_t flags = win32::makeWheelFlags(message, wParam);
 
 			/*auto r =*/ inputClient->onMouseWheel(p, flags, zDelta);
 		}
@@ -562,9 +567,10 @@ bool DxDrawingFrameBase::onTimer()
 	// Queue pending drawing updates to backbuffer.
 	const BOOL bErase = FALSE;
 
-	for (auto& invalidRect : backBufferDirtyRects)
+  for (const auto& invalidRect : backBufferDirtyRects.get())
 	{
-		::InvalidateRect(hwnd, reinterpret_cast<RECT*>(&invalidRect), bErase);
+      RECT rect{ invalidRect.left, invalidRect.top, invalidRect.right, invalidRect.bottom };
+		::InvalidateRect(hwnd, &rect, bErase);
 	}
 	backBufferDirtyRects.clear();
 
@@ -601,165 +607,138 @@ void RenderLog(ID2D1RenderTarget* context_, IDWriteFactory* writeFactory, ID2D1F
 {
 } // RenderLog ====================================================
 
+bool DxDrawingFrameBase::canPaint(std::span<gmpi::drawing::RectL> dirtyRects)
+{
+  return drawingClient != nullptr;
+}
+
+void DxDrawingFrameBase::renderFrame(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects)
+{
+	gmpi::directx::GraphicsContext context1(deviceContext, &DrawingFactory);
+	Graphics graphics(&context1);
+
+	graphics.beginDraw();
+
+	for (auto& r : dirtyRects)
+	{
+		auto r2 = transformRect(WindowToDips, drawing::Rect{ static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom) });
+
+		drawing::Rect temp;
+		temp.left = floorf(r2.left);
+		temp.top = floorf(r2.top);
+		temp.right = ceilf(r2.right);
+		temp.bottom = ceilf(r2.bottom);
+
+		graphics.pushAxisAlignedClip(temp);
+		drawingClient->render(&context1);
+		graphics.popAxisAlignedClip();
+	}
+
+	const bool displayFrameRate = false;
+	if (displayFrameRate)
+	{
+		static int frameCount = 0;
+		static char frameCountString[100] = "";
+		if (++frameCount == 60)
+		{
+			auto timenow = std::chrono::steady_clock::now();
+			auto elapsed = std::chrono::steady_clock::now() - frameCountTime;
+			auto elapsedSeconds = 0.001f * (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+
+			float frameRate = frameCount / elapsedSeconds;
+			sprintf_s(frameCountString, sizeof(frameCountString), "%3.1f FPS", frameRate);
+			frameCountTime = timenow;
+			frameCount = 0;
+
+			auto brush = graphics.createSolidColorBrush(Colors::Black);
+			auto fpsRect = drawing::Rect{ 0, 0, 50, 18 };
+			graphics.fillRectangle(fpsRect, brush);
+			brush.setColor(Colors::White);
+			graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);
+
+			backBufferDirtyRects.add({ 0, 0, 100, 36 });
+		}
+	}
+
+	graphics.endDraw();
+}
+
 void DxDrawingFrameBase::OnPaint()
 {
-	// First clear update region (else windows will pound on this repeatedly).
 	updateRegion_native.copyDirtyRects(getWindowHandle(), swapChainSize);
-	ValidateRect(getWindowHandle(), NULL); // Clear invalid region for next frame.
+	ValidateRect(getWindowHandle(), NULL);
 
-	auto& dirtyRects = updateRegion_native.getUpdateRects();
+	auto dirtyRects = updateRegion_native.getUpdateRects();
+	PaintFrame({ dirtyRects.data(), dirtyRects.size() });
+}
 
-	// prevent infinite assert dialog boxes when assert happens during painting.
-	if (monitorChanged || reentrant || !drawingClient || dirtyRects.empty())
+void tempSharedD2DBase::PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects)
+{
+	if (reentrant || dirtyRects.empty() || !canPaint(dirtyRects))
 	{
 		return;
 	}
+
+	if (!preparePaint(dirtyRects) || monitorChanged)
+	{
+		return;
+	}
+
 	reentrant = true;
 
-	//	_RPT1(_CRT_WARN, "OnPaint(); %d dirtyRects\n", dirtyRects.size() );
-#if 0
-	if (!d2dDeviceContext) // not quite right, also need to re-create any resources (brushes etc) else most object draw blank. Could refresh the view in this case.
+	if (!d2dDeviceContext && recreateDeviceOnPaint())
 	{
-		CreateSwapPanel(DrawingFactory.getD2dFactory());
+		if (auto* d2dFactory = getD2dFactory())
+		{
+			CreateSwapPanel(d2dFactory);
+		}
 	}
-#endif
 
-	gmpi::directx::ComPtr <ID2D1DeviceContext> deviceContext;
+	if (!d2dDeviceContext)
+	{
+		reentrant = false;
+		return;
+	}
 
-	gmpi::directx::ComPtr<ID2D1Bitmap> pSourceBitmap;
-	if (hdrRenderTarget) // draw onto intermediate buffer, then pass that through an effect to scale white.
+	gmpi::directx::ComPtr<ID2D1DeviceContext> deviceContext;
+	if (hdrRenderTarget)
 	{
 		d2dDeviceContext->BeginDraw();
-		deviceContext = hdrRenderTargetDC; // hdrRenderTarget.as<ID2D1DeviceContext>();
+		deviceContext = hdrRenderTargetDC;
 	}
-	else // draw directly on the swapchain bitmap.
+	else
 	{
 		deviceContext = d2dDeviceContext;
 	}
 
-	{
-		gmpi::directx::GraphicsContext context1(deviceContext.get(), &DrawingFactory);
-		Graphics graphics(&context1);
+	renderFrame(deviceContext.get(), dirtyRects);
 
-		graphics.beginDraw();
-//		graphics.setTransform(viewTransform);
-
-		// clip and draw each rect individually (causes some objects to redraw several times)
-		for (auto& r : dirtyRects)
-		{
-			auto r2 = transformRect(WindowToDips, drawing::Rect{ static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom) });
-
-			// Snap to whole DIPs.
-			drawing::Rect temp;
-			temp.left = floorf(r2.left);
-			temp.top = floorf(r2.top);
-			temp.right = ceilf(r2.right);
-			temp.bottom = ceilf(r2.bottom);
-
-			graphics.pushAxisAlignedClip(temp);
-
-			drawingClient->render(&context1);
-
-			graphics.popAxisAlignedClip();
-		}
-
-		// Print OS Version.
-
-		// Print Frame Rate
-//		const bool displayFrameRate = true;
-		const bool displayFrameRate = false;
-		//		static int presentTimeMs = 0;
-		if (displayFrameRate)
-		{
-			static int frameCount = 0;
-			static char frameCountString[100] = "";
-			if (++frameCount == 60)
-			{
-				auto timenow = std::chrono::steady_clock::now();
-				auto elapsed = std::chrono::steady_clock::now() - frameCountTime;
-				auto elapsedSeconds = 0.001f * (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-
-				float frameRate = frameCount / elapsedSeconds;
-
-				//				spr intf(frameCountString, "%3.1f FPS. %dms PT", frameRate, presentTimeMs);
-				sprintf_s(frameCountString, sizeof(frameCountString), "%3.1f FPS", frameRate);
-				frameCountTime = timenow;
-				frameCount = 0;
-
-				auto brush = graphics.createSolidColorBrush(Colors::Black);
-				auto fpsRect = drawing::Rect{ 0, 0, 50, 18 };
-				graphics.fillRectangle(fpsRect, brush);
-				brush.setColor(Colors::White);
-				graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);
-
-				dirtyRects.push_back({ 0, 0, 100, 36 });
-			}
-		}
-
-		graphics.endDraw();
-	}
-
-	// draw the filtered intermediate buffer onto the swapchain.
 	if (hdrRenderTarget)
 	{
 		assert(hdrWhiteScaleEffect);
-
-		// Draw the effect output to the screen
-		const D2D1_RECT_F destRect(0, 0, static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
 		d2dDeviceContext->DrawImage(
-			  hdrWhiteScaleEffect.get()
-			, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR
-			, D2D1_COMPOSITE_MODE_SOURCE_COPY
+			hdrWhiteScaleEffect.get(),
+			D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+			D2D1_COMPOSITE_MODE_SOURCE_COPY
 		);
-
 		d2dDeviceContext->EndDraw();
 	}
 
-	// Present the backbuffer (if it has some new content)
 	if (firstPresent)
 	{
 		firstPresent = false;
 		const auto hr = swapChain->Present(1, 0);
 		if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
 		{
-			// DXGI_ERROR_INVALID_CALL 0x887A0001L
 			ReleaseDevice();
 		}
 	}
 	else
 	{
-		HRESULT hr = S_OK;
-		{
-			assert(!dirtyRects.empty());
-			DXGI_PRESENT_PARAMETERS presetParameters{ (UINT)dirtyRects.size(), reinterpret_cast<RECT*>(dirtyRects.data()), nullptr, nullptr, };
-/*
-			presetParameters.pScrollRect = nullptr;
-			presetParameters.pScrollOffset = nullptr;
-			presetParameters.DirtyRectsCount = (UINT) dirtyRects.size();
-			presetParameters.pDirtyRects = reinterpret_cast<RECT*>(dirtyRects.data()); // should be exact same layout.
-*/
-			// checkout DXGI_PRESENT_DO_NOT_WAIT
-//				hr = m_swapChain->Present1(1, DXGI_PRESENT_TEST, &presetParameters);
-//				_RPT1(_CRT_WARN, "Present1() test = %x\n", hr);
-/* NEVER returns DXGI_ERROR_WAS_STILL_DRAWING
-//			_RPT1(_CRT_WARN, "Present1() DirtyRectsCount = %d\n", presetParameters.DirtyRectsCount);
-			hr = m_swapChain->Present1(1, DXGI_PRESENT_DO_NOT_WAIT, &presetParameters);
-			if (hr == DXGI_ERROR_WAS_STILL_DRAWING)
-			{
-				_RPT1(_CRT_WARN, "Present1() Blocked\n", hr);
-*/
-				// Present(0... improves framerate only from 60 -> 64 FPS, so must be blocking a little with "1".
-//				auto timeA = std::chrono::steady_clock::now();
-			hr = swapChain->Present1(1, 0, &presetParameters);
-			//auto elapsed = std::chrono::steady_clock::now() - timeA;
-			//presentTimeMs = (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-//				}
-/* could put this in timer to reduce blocking, agregating dirty rects until call successful.
-*/			}
-
+		DXGI_PRESENT_PARAMETERS presetParameters{ static_cast<UINT>(dirtyRects.size()), reinterpret_cast<RECT*>(dirtyRects.data()), nullptr, nullptr };
+		const auto hr = swapChain->Present1(1, 0, &presetParameters);
 		if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
 		{
-			// DXGI_ERROR_INVALID_CALL 0x887A0001L
 			ReleaseDevice();
 		}
 	}
@@ -1225,12 +1204,6 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 	}
 }
 
-// see also DrawingFrameHwndBase::calcWhiteLevel()
-float DrawingFrame::calcWhiteLevel()
-{
-	return gmpi::hosting::calcWhiteLevelForHwnd(getWindowHandle());
-}
-
 // Convert to an integer rect, ensuring it surrounds all partial pixels.
 inline drawing::RectL RectToIntegerLarger(gmpi::drawing::Rect f)
 {
@@ -1243,43 +1216,16 @@ inline drawing::RectL RectToIntegerLarger(gmpi::drawing::Rect f)
 
 void DxDrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 {
-	drawing::RectL r;
 	if (invalidRect)
 	{
-		//_RPT4(_CRT_WARN, "invalidateRect r[ %d %d %d %d]\n", (int)invalidRect->left, (int)invalidRect->top, (int)invalidRect->right, (int)invalidRect->bottom);
-		r = RectToIntegerLarger( transformRect(DipsToWindow , *invalidRect) );
+       backBufferDirtyRects.add(invalidRect, DipsToWindow);
 	}
 	else
 	{
+        drawing::RectL r;
 		GetClientRect(getWindowHandle(), reinterpret_cast<RECT*>( &r ));
+       backBufferDirtyRects.add(r);
 	}
-
-	auto area1 = getWidth(r) * getHeight(r);
-
-	for (auto& dirtyRect : backBufferDirtyRects )
-	{
-		auto area2 = getWidth(dirtyRect) * getHeight(dirtyRect);
-
-		drawing::RectL unionrect(dirtyRect);
-
-		unionrect.top = (std::min)(unionrect.top, r.top);
-		unionrect.bottom = (std::max)(unionrect.bottom, r.bottom);
-		unionrect.left = (std::min)(unionrect.left, r.left);
-		unionrect.right = (std::max)(unionrect.right, r.right);
-
-		auto unionarea = getWidth(unionrect) * getHeight(unionrect);
-
-		if (unionarea <= area1 + area2)
-		{
-			// replace existing rect with combined rect
-			dirtyRect = unionrect;
-			return;
-			break;
-		}
-	}
-
-	// no optimisation found, add new rect.
-	backBufferDirtyRects.push_back(r);
 }
 
 gmpi::ReturnCode DxDrawingFrameBase::setCapture()
@@ -1700,66 +1646,3 @@ gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::
 
 #endif // skip compilation on macOS
 
-
-/*
-*  child window DPI awareness, needs to be TOP level window I think, not the frame.
-*     // Store the current thread's DPI-awareness context. Windows 10 only
-	// DPI_AWARENESS_CONTEXT previousDpiContext = SetThreadDpiAwarenessContext(context);
-	//HINSTANCE h_kernal = GetModuleHandle(_T("Kernel32.DLL"));
-	HMODULE hUser32 = GetModuleHandleW(L"user32");
-	typedef int32_t DPI_AWARENESS_CONTEXT;
-	typedef int32_t DPI_HOSTING_BEHAVIOR;
-	typedef DPI_AWARENESS_CONTEXT ( WINAPI * PFN_SETTHREADDPIAWARENESS)(DPI_AWARENESS_CONTEXT param);
-	PFN_SETTHREADDPIAWARENESS p_SetThreadDpiAwarenessContext = (PFN_SETTHREADDPIAWARENESS)GetProcAddress(hUser32, "SetThreadDpiAwarenessContext");
-	PFN_SETTHREADDPIAWARENESS p_SetThreadDpiHostingBehavior = (PFN_SETTHREADDPIAWARENESS)GetProcAddress(hUser32, "SetThreadDpiHostingBehavior");
-	DPI_AWARENESS_CONTEXT previousDpiContext = {};
-	if(p_SetThreadDpiAwarenessContext)
-	{
-		// DPI_AWARENESS_CONTEXT_SYSTEM_AWARE - System DPI aware. This window does not scale for DPI changes. It will query for the DPI once and use that value for the lifetime of the process.
-		const auto DPI_AWARENESS_CONTEXT_SYSTEM_AWARE = (DPI_AWARENESS_CONTEXT) -1;
-		previousDpiContext = p_SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
-	}
-	struct CreateParams
-	{
-		BOOL bEnableNonClientDpiScaling;
-		BOOL bChildWindowDpiIsolation;
-	};
-	CreateParams createParams{TRUE, TRUE};
-
-	// Windows 10 (1803) supports child-HWND DPI-mode isolation. This enables
-	// child HWNDs to run in DPI-scaling modes that are isolated from that of
-	// their parent (or host) HWND. Without child-HWND DPI isolation, all HWNDs
-	// in an HWND tree must have the same DPI-scaling mode.
-	DPI_HOSTING_BEHAVIOR previousDpiHostingBehavior = {};
-	if (p_SetThreadDpiAwarenessContext) // &&bChildWindowDpiIsolation)
-	{
-		const int32_t DPI_HOSTING_BEHAVIOR_MIXED = 2;
-		previousDpiHostingBehavior = p_SetThreadDpiHostingBehavior(DPI_HOSTING_BEHAVIOR_MIXED);
-	}
-
-	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
-		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		parentWnd, NULL, getDllHandle(), &createParams);// NULL);
-
-	if (windowHandle)
-	{
-		SetWindowLongPtr(windowHandle, GWLP_USERDATA, (__int3264)(LONG_PTR)this);
-		//		RegisterDragDrop(windowHandle, new CDropTarget(this));
-
-		// Restore the current thread's DPI awareness context
-		if(p_SetThreadDpiAwarenessContext)
-		{
-			p_SetThreadDpiAwarenessContext(previousDpiContext);
-
-			// Restore the current thread DPI hosting behavior, if we changed it.
-			//if(bChildWindowDpiIsolation)
-			{
-				p_SetThreadDpiHostingBehavior(previousDpiHostingBehavior);
-			}
-		}
-
-		CreateRenderTarget();
-
-		initTooltip();
-	}
-*/

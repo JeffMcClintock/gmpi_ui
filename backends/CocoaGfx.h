@@ -259,6 +259,16 @@ public:
     float ascent = {};
     float baselineCorrection = {};
 
+    // Custom line spacing (negative = use natural/default).
+    float lineSpacing_ = -1.f;
+    float customBaseline_ = 0.f;
+
+    // Windows-equivalent natural line height, computed once from OS/2 font table.
+    // DirectWrite uses sTypo metrics; cached here so drawTextU/getTextExtentU are fast.
+    float winNaturalLineHeight_    = -1.f;  // negative = not yet computed
+    float winNaturalBaseline_      = 0.f;
+    float winNaturalTopAdjustment_ = 0.f;   // topAdjustment when using winNaturalLineHeight_
+
     NSMutableDictionary* native2 = {};
     NSMutableParagraphStyle* nativeStyle = {};
 
@@ -417,6 +427,74 @@ public:
         {
             baselineCorrection += 0.5f;
         }
+
+        // Compute the Windows-equivalent natural line height from the font's OS/2 sTypo
+        // metrics — the same values DirectWrite uses for its default line spacing.
+        // Result is cached so drawing is fast on repeated calls.
+        {
+            CTFontRef ctFont = (__bridge CTFontRef)(native2[NSFontAttributeName]);
+            CFDataRef os2Data  = CTFontCopyTable(ctFont, kCTFontTableOS2,  kCTFontTableOptionNoOptions);
+            CFDataRef headData = CTFontCopyTable(ctFont, kCTFontTableHead, kCTFontTableOptionNoOptions);
+            CFDataRef hheaData = CTFontCopyTable(ctFont, kCTFontTableHhea, kCTFontTableOptionNoOptions);
+            if (os2Data && headData)
+            {
+                const uint8_t* os2  = CFDataGetBytePtr(os2Data);
+                const uint8_t* head = CFDataGetBytePtr(headData);
+
+                // OS/2 table: sTypoAscender @68, sTypoDescender @70, sTypoLineGap @72
+                // head table: unitsPerEm @18
+                const int16_t  sTypoAscender  = static_cast<int16_t>((os2[68]  << 8) | os2[69]);
+                const int16_t  sTypoDescender = static_cast<int16_t>((os2[70]  << 8) | os2[71]); // negative
+                const int16_t  sTypoLineGap   = static_cast<int16_t>((os2[72]  << 8) | os2[73]);
+                const uint16_t unitsPerEm     = static_cast<uint16_t>((head[18] << 8) | head[19]);
+
+                // Check USE_TYPO_METRICS flag (OS/2 fsSelection bit 7).
+                // When set, DirectWrite uses sTypo metrics.
+                // When clear, DirectWrite uses hhea Ascender/Descender/LineGap.
+                const uint16_t fsSelection = static_cast<uint16_t>((os2[62] << 8) | os2[63]);
+                const bool useTypoMetrics  = (fsSelection & 0x0080) != 0;
+
+                const float scale = fontSize / unitsPerEm;
+
+                if (!useTypoMetrics && hheaData)
+                {
+                    // DirectWrite falls back to hhea metrics when USE_TYPO_METRICS is clear.
+                    // hhea table: Ascender @4, Descender @6, LineGap @8 (all int16)
+                    const uint8_t* hhea = CFDataGetBytePtr(hheaData);
+                    const int16_t  hheaAscender  = static_cast<int16_t>((hhea[4] << 8) | hhea[5]);
+                    const int16_t  hheaDescender = static_cast<int16_t>((hhea[6] << 8) | hhea[7]); // negative
+                    const int16_t  hheaLineGap   = static_cast<int16_t>((hhea[8] << 8) | hhea[9]);
+                    winNaturalLineHeight_ = (hheaAscender - hheaDescender + hheaLineGap) * scale;
+                    winNaturalBaseline_   = hheaAscender * scale;
+                }
+                else
+                {
+                    winNaturalLineHeight_ = (sTypoAscender - sTypoDescender + sTypoLineGap) * scale;
+                    winNaturalBaseline_   = sTypoAscender * scale;
+                }
+            }
+            else
+            {
+                // Font tables unavailable — fall back to Cocoa metrics.
+                winNaturalLineHeight_ = boundingBoxSize.height;
+                winNaturalBaseline_   = fontMetrics.ascent;
+            }
+            if (os2Data)  CFRelease(os2Data);
+            if (headData) CFRelease(headData);
+            if (hheaData) CFRelease(hheaData);
+
+            // Compute topAdjustment for the Windows natural line height.
+            // Temporarily apply the line height so sizeWithAttributes measures correctly.
+            const CGFloat savedMin = [nativeStyle minimumLineHeight];
+            const CGFloat savedMax = [nativeStyle maximumLineHeight];
+            [nativeStyle setMinimumLineHeight:winNaturalLineHeight_];
+            [nativeStyle setMaximumLineHeight:winNaturalLineHeight_];
+            auto winNaturalBox = [@"A" sizeWithAttributes:native2];
+            [nativeStyle setMinimumLineHeight:savedMin];
+            [nativeStyle setMaximumLineHeight:savedMax];
+            winNaturalTopAdjustment_ = static_cast<float>(winNaturalBox.height)
+                                       - (fontMetrics.ascent + fontMetrics.descent);
+        }
     }
 
 	gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment ptextAlignment) override
@@ -482,17 +560,44 @@ public:
 
         auto r = [str sizeWithAttributes : native2];
         returnSize->width = r.width;
-        returnSize->height = r.height;// - topAdjustment;
+        returnSize->height = r.height;
 
-//      if (!useLegacyBaseLineSnapping)
-        returnSize->height -= topAdjustment;
+        if (lineSpacing_ < 0.f)
+        {
+            // Natural spacing: compute line count from Cocoa's measurement, then
+            // return height using the Windows-equivalent line height (from OS/2 sTypo
+            // metrics) so that paragraph alignment calculations match DirectWrite.
+            const float cocoaLineH = ascent + (-[((NSFont*)native2[NSFontAttributeName]) descender])
+                                     + [((NSFont*)native2[NSFontAttributeName]) leading];
+            const float numLines   = std::round(r.height / cocoaLineH);
+            returnSize->height = numLines * winNaturalLineHeight_;
+        }
+        // Custom spacing: sizeWithAttributes returns exactly N * lineSpacing_ (the
+        // extra space is inside each line box, not tacked on top), matching DirectWrite.
 
         return gmpi::ReturnCode::Ok;
     }
 	
     gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) override
     {
-        return gmpi::ReturnCode::NoSupport;
+        lineSpacing_ = lineSpacing;
+        customBaseline_ = baseline;
+
+        if (lineSpacing >= 0.f)
+        {
+            [nativeStyle setMinimumLineHeight:lineSpacing];
+            [nativeStyle setMaximumLineHeight:lineSpacing];
+        }
+        else
+        {
+            // Restore natural line height.
+            [nativeStyle setMinimumLineHeight:0];
+            [nativeStyle setMaximumLineHeight:0];
+        }
+
+        // topAdjustment must be recomputed — it depends on the line box height.
+        CalculateTopAdjustment();
+        return gmpi::ReturnCode::Ok;
     }
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::ITextFormat);
@@ -1807,6 +1912,13 @@ public:
 
 		const bool clipToRect = options & gmpi::drawing::DrawTextOptions::Clip;
 
+		// When not clipping, extend height so Cocoa doesn't vertically clip overflow lines.
+		// DirectWrite overflows the layout rect by default; Cocoa always clips to it.
+		if (!clipToRect && textSize.height > bounds.size.height)
+		{
+			bounds.size.height = textSize.height;
+		}
+
 		if (textformat->wordWrapping == gmpi::drawing::WordWrapping::NoWrap)
 		{
 			// Mac will always clip to rect, so we turn 'off' clipping by extending rect to the right.
@@ -1849,12 +1961,39 @@ public:
 				// macOS draws extra padding at top of text bounds. Compensate for it.
 //		if (!textformat->getUseLegacyBaseLineSnapping())
 		{
-			bounds.origin.y -= textformat->topAdjustment;
-			bounds.size.height += textformat->topAdjustment;
+			// Capture the paragraph-adjusted layout top before we apply the topAdjustment
+			// shift.  For Near alignment this equals layoutRect->top; for Far/Center it
+			// includes the paragraph shift.  Used by the snap formula below so that the
+			// baseline is snapped relative to the actual first-line origin, not the
+			// layout rect origin (which would give a wrong result when the paragraph shift
+			// has a fractional part).
+			const float effectiveLayoutTop = static_cast<float>(bounds.origin.y);
+
+			// For natural spacing we draw with the Windows-equivalent line height,
+			// which has a different top-padding from Cocoa's natural spacing.
+			const float effectiveTopAdj = (textformat->lineSpacing_ < 0.f)
+				? textformat->winNaturalTopAdjustment_
+				: textformat->topAdjustment;
+			bounds.origin.y -= effectiveTopAdj;
+			bounds.size.height += effectiveTopAdj;
+
+			// With custom line spacing, after the topAdjustment the mac baseline lands at
+			// layoutRect->top + ascent, but DirectWrite puts it at layoutRect->top + customBaseline_.
+			// Apply the difference so subsequent lines also land correctly.
+			if (textformat->lineSpacing_ >= 0.f)
+			{
+				bounds.origin.y += textformat->customBaseline_ - textformat->ascent;
+			}
 
 			// Adjust text baseline vertically to match Windows.
 #if 1
 			const float scale = 0.5f; // Hi DPI x2
+
+			// When custom line spacing is set, Windows places the first baseline at
+			// layoutRect->top + customBaseline_; otherwise it uses the natural ascent.
+			const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
+				? textformat->customBaseline_
+				: textformat->ascent;
 
 			float winBaseline{};
 			{
@@ -1867,7 +2006,7 @@ public:
 					fontMetrics.bodyHeight() < useHintingThreshold ? offsetHinted : offsetVertAA;
 				*/
 				const float offset = -0.25f;;
-				winBaseline = layoutRect->top + textformat->ascent;
+				winBaseline = effectiveLayoutTop + effectiveAscent;
 				winBaseline = floorf((offset + winBaseline) / scale) * scale;
 			}
 #if 0
@@ -1889,11 +2028,15 @@ public:
 
 			float macBaselineCorrection = roundPixel(winBaseline - macBaseline, scale);
 #else
-            const float baseline = layoutRect->top + textformat->ascent;
+            const float baseline = effectiveLayoutTop + effectiveAscent;
             float macBaselineCorrection{};
             if (logicProFix)
             {
-                macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + 1;
+                // The +1 correction applies only for natural spacing.
+                // Custom line spacing uses a different ascent reference (customBaseline_)
+                // which doesn't need the extra +1 offset.
+                const float naturalSpacingFix = (textformat->lineSpacing_ >= 0.f) ? 0.f : 1.f;
+                macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + naturalSpacingFix;
             }
             else
             {
@@ -1921,6 +2064,14 @@ public:
 			g.DrawRectangle(Rect(bounds.origin.x, bounds.origin.y, bounds.origin.x + bounds.size.width, bounds.origin.y + bounds.size.height), brush);
 		}
 #endif
+
+		// For natural spacing, apply the Windows-equivalent line height so that
+		// inter-line spacing matches DirectWrite.  Restored after drawing.
+		if (textformat->lineSpacing_ < 0.f)
+		{
+			[textformat->nativeStyle setMinimumLineHeight:textformat->winNaturalLineHeight_];
+			[textformat->nativeStyle setMaximumLineHeight:textformat->winNaturalLineHeight_];
+		}
 
 		// do last so don't affect font metrics.
 //              [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:testLineHeightMultiplier];
@@ -2104,7 +2255,13 @@ public:
             }
             
 
-            
+		// Restore natural line spacing after drawing.
+		if (textformat->lineSpacing_ < 0.f)
+		{
+			[textformat->nativeStyle setMinimumLineHeight:0];
+			[textformat->nativeStyle setMaximumLineHeight:0];
+		}
+
 //        }
 		//               [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:1.0f];
 

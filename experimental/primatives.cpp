@@ -349,7 +349,8 @@ void Portal::Invalidate(gmpi::drawing::Rect r) const
 	if (!parent) // still under construction
 		return;
 
-	auto r2 = transformRect(reverseTransform, r);
+//	auto r2 = transformRect(reverseTransform, r);
+	auto r2 = transformRect(transform, r);
 	parent->Invalidate(r2);
 }
 

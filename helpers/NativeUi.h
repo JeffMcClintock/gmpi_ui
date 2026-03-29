@@ -52,6 +52,15 @@ struct IDrawingClient : gmpi::api::IUnknown
 	{ 0xe922d16f, 0x447b, 0x4e82, { 0xb0, 0xb1, 0xfd, 0x99, 0x5c, 0xa4, 0x21, 0xe } };
 };
 
+struct IDrawingLayer : gmpi::api::IUnknown
+{
+	virtual ReturnCode renderLayer(gmpi::drawing::api::IDeviceContext* drawingContext, int32_t layer) = 0;
+
+	// {E5A12A5B-54C0-4DDA-AF75-378867A8C7CB}
+	inline static const gmpi::api::Guid guid =
+	{ 0xe5a12a5b, 0x54c0, 0x4dda, { 0xaf, 0x75, 0x37, 0x88, 0x67, 0xa8, 0xc7, 0xcb } };
+};
+
 // TODO GMPIfy
 enum GG_POINTER_FLAGS {
 	GG_POINTER_FLAG_NONE = 0,

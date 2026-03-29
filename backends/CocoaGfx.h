@@ -259,6 +259,10 @@ public:
     float ascent = {};
     float baselineCorrection = {};
 
+    // Custom line spacing (negative = use natural/default).
+    float lineSpacing_ = -1.f;
+    float customBaseline_ = 0.f;
+
     NSMutableDictionary* native2 = {};
     NSMutableParagraphStyle* nativeStyle = {};
 
@@ -482,17 +486,40 @@ public:
 
         auto r = [str sizeWithAttributes : native2];
         returnSize->width = r.width;
-        returnSize->height = r.height;// - topAdjustment;
+        returnSize->height = r.height;
 
-//      if (!useLegacyBaseLineSnapping)
-        returnSize->height -= topAdjustment;
+        if (lineSpacing_ < 0.f)
+        {
+            // Natural spacing: Cocoa adds a one-time top-padding above the first line
+            // that DirectWrite does not include in its measurement. Remove it.
+            returnSize->height -= topAdjustment;
+        }
+        // Custom spacing: sizeWithAttributes returns exactly N * lineSpacing_ (the
+        // extra space is inside each line box, not tacked on top), matching DirectWrite.
 
         return gmpi::ReturnCode::Ok;
     }
 	
     gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) override
     {
-        return gmpi::ReturnCode::NoSupport;
+        lineSpacing_ = lineSpacing;
+        customBaseline_ = baseline;
+
+        if (lineSpacing >= 0.f)
+        {
+            [nativeStyle setMinimumLineHeight:lineSpacing];
+            [nativeStyle setMaximumLineHeight:lineSpacing];
+        }
+        else
+        {
+            // Restore natural line height.
+            [nativeStyle setMinimumLineHeight:0];
+            [nativeStyle setMaximumLineHeight:0];
+        }
+
+        // topAdjustment must be recomputed — it depends on the line box height.
+        CalculateTopAdjustment();
+        return gmpi::ReturnCode::Ok;
     }
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::ITextFormat);
@@ -1807,6 +1834,13 @@ public:
 
 		const bool clipToRect = options & gmpi::drawing::DrawTextOptions::Clip;
 
+		// When not clipping, extend height so Cocoa doesn't vertically clip overflow lines.
+		// DirectWrite overflows the layout rect by default; Cocoa always clips to it.
+		if (!clipToRect && textSize.height > bounds.size.height)
+		{
+			bounds.size.height = textSize.height;
+		}
+
 		if (textformat->wordWrapping == gmpi::drawing::WordWrapping::NoWrap)
 		{
 			// Mac will always clip to rect, so we turn 'off' clipping by extending rect to the right.
@@ -1852,9 +1886,23 @@ public:
 			bounds.origin.y -= textformat->topAdjustment;
 			bounds.size.height += textformat->topAdjustment;
 
+			// With custom line spacing, after the topAdjustment the mac baseline lands at
+			// layoutRect->top + ascent, but DirectWrite puts it at layoutRect->top + customBaseline_.
+			// Apply the difference so subsequent lines also land correctly.
+			if (textformat->lineSpacing_ >= 0.f)
+			{
+				bounds.origin.y += textformat->customBaseline_ - textformat->ascent;
+			}
+
 			// Adjust text baseline vertically to match Windows.
 #if 1
 			const float scale = 0.5f; // Hi DPI x2
+
+			// When custom line spacing is set, Windows places the first baseline at
+			// layoutRect->top + customBaseline_; otherwise it uses the natural ascent.
+			const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
+				? textformat->customBaseline_
+				: textformat->ascent;
 
 			float winBaseline{};
 			{
@@ -1867,7 +1915,7 @@ public:
 					fontMetrics.bodyHeight() < useHintingThreshold ? offsetHinted : offsetVertAA;
 				*/
 				const float offset = -0.25f;;
-				winBaseline = layoutRect->top + textformat->ascent;
+				winBaseline = layoutRect->top + effectiveAscent;
 				winBaseline = floorf((offset + winBaseline) / scale) * scale;
 			}
 #if 0
@@ -1889,11 +1937,15 @@ public:
 
 			float macBaselineCorrection = roundPixel(winBaseline - macBaseline, scale);
 #else
-            const float baseline = layoutRect->top + textformat->ascent;
+            const float baseline = layoutRect->top + effectiveAscent;
             float macBaselineCorrection{};
             if (logicProFix)
             {
-                macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + 1;
+                // The +1 correction applies only for natural spacing.
+                // Custom line spacing uses a different ascent reference (customBaseline_)
+                // which doesn't need the extra +1 offset.
+                const float naturalSpacingFix = (textformat->lineSpacing_ >= 0.f) ? 0.f : 1.f;
+                macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + naturalSpacingFix;
             }
             else
             {

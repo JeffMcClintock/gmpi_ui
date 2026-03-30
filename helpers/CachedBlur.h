@@ -9,6 +9,7 @@ namespace drawing = gmpi::drawing;
 struct cachedBlur
 {
     drawing::Color tint = drawing::colorFromHex(0xd4c1ffu);
+	int blurRadius = 5;
 
     drawing::Bitmap buffer2;
 
@@ -62,13 +63,13 @@ struct cachedBlur
                 {
                     // half-float pixels.
                     auto pixel = (half*)data.getAddress();
-                    ginARGB(pixel, imageSize.width, imageSize.height, 5);
+                    ginARGB(pixel, imageSize.width, imageSize.height, blurRadius);
                 }
 #else
                 {
                     // create a blurred mask of the image.
                     auto pixel = data.getAddress();
-                    ginSingleChannel(pixel, imageSize.width, imageSize.height, 5);
+                    ginSingleChannel(pixel, imageSize.width, imageSize.height, blurRadius, stride);
                 }
 #endif
 

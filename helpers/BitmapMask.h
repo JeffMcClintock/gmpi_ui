@@ -99,6 +99,22 @@ struct RgbaHalfPixel
     {
         alpha = detail::floatToHalf(value);
     }
+
+    void getRGBA(float* values) const
+    {
+        values[0] = detail::halfToFloat(red);
+        values[1] = detail::halfToFloat(green);
+        values[2] = detail::halfToFloat(blue);
+        values[3] = detail::halfToFloat(alpha);
+    }
+
+    void setRGBA(const float* values)
+    {
+        red   = detail::floatToHalf(values[0]);
+        green = detail::floatToHalf(values[1]);
+        blue  = detail::floatToHalf(values[2]);
+        alpha = detail::floatToHalf(values[3]);
+    }
 };
 
 template<typename TPixel>

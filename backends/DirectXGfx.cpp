@@ -776,9 +776,7 @@ gmpi::ReturnCode Bitmap::lockPixels(gmpi::drawing::api::IBitmapPixels** returnIn
 
 	// GPU-only bitpmaps can't be locked.
 	if (!diBitmap_)
-	{
 		return gmpi::ReturnCode::Fail;
-	}
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 	b2.attach(new BitmapPixels(nativeBitmap_, diBitmap_, true, flags));

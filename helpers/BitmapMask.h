@@ -1,6 +1,7 @@
 #pragma once
 #include "Drawing.h"
 #include <cstring>
+#include <iterator>
 
 namespace gmpi { namespace drawing {
 
@@ -50,6 +51,168 @@ namespace detail
         }
         float f; std::memcpy(&f, &bits, 4); return f;
     }
+}
+
+struct RgbaHalfPixel
+{
+    uint16_t red;
+    uint16_t green;
+    uint16_t blue;
+    uint16_t alpha;
+
+    float r() const
+    {
+        return detail::halfToFloat(red);
+    }
+
+    void setR(float value)
+    {
+        red = detail::floatToHalf(value);
+    }
+
+    float g() const
+    {
+        return detail::halfToFloat(green);
+    }
+
+    void setG(float value)
+    {
+        green = detail::floatToHalf(value);
+    }
+
+    float b() const
+    {
+        return detail::halfToFloat(blue);
+    }
+
+    void setB(float value)
+    {
+        blue = detail::floatToHalf(value);
+    }
+
+    float a() const
+    {
+        return detail::halfToFloat(alpha);
+    }
+
+    void setA(float value)
+    {
+        alpha = detail::floatToHalf(value);
+    }
+};
+
+template<typename TPixel>
+struct PixelPosition
+{
+    TPixel* pixel = {};
+    int32_t x = 0;
+    int32_t y = 0;
+
+    TPixel& value() const
+    {
+        return *pixel;
+    }
+
+    TPixel& operator*() const
+    {
+        return *pixel;
+    }
+
+    TPixel* operator->() const
+    {
+        return pixel;
+    }
+};
+
+template<typename TPixel>
+class PixelRange
+{
+    BitmapPixels& pixels;
+
+public:
+    explicit PixelRange(BitmapPixels& pixels) : pixels(pixels)
+    {
+    }
+
+    class iterator
+    {
+        uint8_t* data = {};
+        int32_t bytesPerRow = 0;
+        uint32_t width = 0;
+        size_t index = 0;
+        size_t total = 0;
+        PixelPosition<TPixel> current;
+
+        void updateCurrent()
+        {
+            if(index >= total)
+                return;
+
+            current.x = static_cast<int32_t>(index % width);
+            current.y = static_cast<int32_t>(index / width);
+            auto row = data + static_cast<size_t>(current.y) * bytesPerRow;
+            current.pixel = reinterpret_cast<TPixel*>(row) + current.x;
+        }
+
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = PixelPosition<TPixel>;
+        using difference_type = std::ptrdiff_t;
+        using reference = PixelPosition<TPixel>&;
+        using pointer = PixelPosition<TPixel>*;
+
+        iterator(BitmapPixels& pixels, size_t index) : data(pixels.getAddress()), bytesPerRow(pixels.getBytesPerRow()), index(index)
+        {
+            const auto size = pixels.getSize();
+            width = size.width;
+            total = static_cast<size_t>(size.width) * size.height;
+            updateCurrent();
+        }
+
+        reference operator*()
+        {
+            return current;
+        }
+
+        pointer operator->()
+        {
+            return &current;
+        }
+
+        iterator& operator++()
+        {
+            ++index;
+            updateCurrent();
+            return *this;
+        }
+
+        bool operator==(const iterator& other) const
+        {
+            return data == other.data && index == other.index;
+        }
+
+        bool operator!=(const iterator& other) const
+        {
+            return !(*this == other);
+        }
+    };
+
+    iterator begin()
+    {
+        return iterator{ pixels, 0 };
+    }
+
+    iterator end()
+    {
+        const auto size = pixels.getSize();
+        return iterator{ pixels, static_cast<size_t>(size.width) * size.height };
+    }
+};
+
+template<typename TPixel>
+inline PixelRange<TPixel> pixelIterator(BitmapPixels& pixels)
+{
+    return PixelRange<TPixel>(pixels);
 }
 
 // Apply an 8-bit monochrome mask to a colour bitmap, pixel-by-pixel.

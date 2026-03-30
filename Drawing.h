@@ -867,6 +867,7 @@ class BitmapPixels
 	// cache data for faster setPixel etc.
 	uint32_t* data = {};
 	size_t pixelPerRow = {};
+	SizeU bitmapSize = {};
 
 protected:
 	void init()
@@ -898,6 +899,10 @@ public:
 		int32_t ret{};
 		native->getPixelFormat(&ret);
 		return ret;
+	}
+ 	SizeU getSize() const
+	{
+		return bitmapSize;
 	}
 	uint32_t getPixel(int x, int y)
 	{
@@ -975,6 +980,7 @@ public:
 	BitmapPixels lockPixels(BitmapLockFlags flags = BitmapLockFlags::Read)
 	{
         BitmapPixels ret;
+		ret.bitmapSize = getSize();
 		native->lockPixels(AccessPtr::put(ret), static_cast<int32_t>(flags));
 		ret.init();
         return ret;

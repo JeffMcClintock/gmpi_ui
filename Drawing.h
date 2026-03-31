@@ -36,6 +36,10 @@ namespace gmpi
 {
 namespace drawing
 {
+// forward declarations
+class Factory;
+class BitmapRenderTarget;
+
 // maths on Rects
 inline float getWidth(Rect r)
 {
@@ -950,7 +954,7 @@ class Bitmap
 	gmpi::shared_ptr<api::IBitmap> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -993,7 +997,7 @@ class GradientstopCollection
 	gmpi::shared_ptr<api::IGradientstopCollection> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -1045,7 +1049,7 @@ class BitmapBrush : public IHasBrush
 	gmpi::shared_ptr<api::IBitmapBrush> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -1065,7 +1069,7 @@ class SolidColorBrush : public IHasBrush
 	gmpi::shared_ptr<api::ISolidColorBrush> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -1096,7 +1100,7 @@ class LinearGradientBrush : public IHasBrush
 	gmpi::shared_ptr<api::ILinearGradientBrush> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -1126,7 +1130,7 @@ class RadialGradientBrush : public IHasBrush
 	gmpi::shared_ptr<api::IRadialGradientBrush> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -1279,7 +1283,7 @@ class StrokeStyle
 	gmpi::shared_ptr<api::IStrokeStyle> native;
 
 public:
-	class Factory getFactory();
+	Factory getFactory();
 
 	operator bool() const
 	{
@@ -1317,7 +1321,7 @@ public:
 #endif
 
 
-	class Factory getFactory();
+	Factory getFactory();
 
 	GeometrySink open()
 	{
@@ -1461,7 +1465,7 @@ public:
 		return temp;
 	}
 
-	class BitmapRenderTarget createCpuRenderTarget(SizeU size, int32_t flags);
+	BitmapRenderTarget createCpuRenderTarget(SizeU size, int32_t flags);
 };
 
 class Graphics
@@ -1482,7 +1486,7 @@ public:
 		}
 	}
 
-	class BitmapRenderTarget createCompatibleRenderTarget(Size desiredSize, int32_t flags = 0);
+	BitmapRenderTarget createCompatibleRenderTarget(Size desiredSize, int32_t flags = 0);
 
 	Factory getFactory()
 	{

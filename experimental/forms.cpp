@@ -1,6 +1,7 @@
 #include "forms.h"
 #include "builders.h"
 #include "helpers/unicode_conversion.h"
+#include "theme.h"
 
 using namespace gmpi::forms;
 
@@ -57,6 +58,13 @@ void Form::renderVisuals()
 
 void Form::DoUpdates()
 {
+	// Check if theme changed and mark all views dirty if so
+	if (gmpi::ui::consumeThemeChanged())
+	{
+		for (auto& view : childViews)
+			view->setDirty();
+	}
+
 	// why dialog host part of env, perhaps move it.
 
 	bool childWasDirty = false;

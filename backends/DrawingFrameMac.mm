@@ -401,20 +401,30 @@ public:
                 drawingClient->arrange(&finalRect);
         }
 
+        if(!backBuffer)
+            return; // bitmap creation failed, nothing to draw
+
         // draw onto linear back buffer.
+        // Wrap the CGBitmapContext in an NSGraphicsContext so that SDK3 code
+        // (and any legacy code using [NSGraphicsContext currentContext]) can
+        // still obtain the CGContext via the AppKit API.
+        [NSGraphicsContext saveGraphicsState];
+        NSGraphicsContext* nsCtx = [NSGraphicsContext graphicsContextWithCGContext:backBuffer flipped:NO];
+        [NSGraphicsContext setCurrentContext:nsCtx];
+
         CGContextSaveGState(backBuffer);
 
         // Flip coordinate system to match Direct2D (top-down).
         CGContextTranslateCTM(backBuffer, 0, backBufferHeight);
         CGContextScaleCTM(backBuffer, 1, -1);
 
-        // Scale from physical to logical coordinates.
+        // Scale from physical to logical coordinates so plugin draws in logical (point) units.
         NSSize logicalsize = view.frame.size;
         NSSize physicalsize = [view convertRectToBacking:[view bounds]].size;
-        if (physicalsize.width != logicalsize.width)
+        const CGFloat dpiScale = (logicalsize.width > 0) ? physicalsize.width / logicalsize.width : 1.0;
+        if (dpiScale != 1.0)
         {
-            CGFloat s = physicalsize.width / logicalsize.width;
-            CGContextScaleCTM(backBuffer, s, s);
+            CGContextScaleCTM(backBuffer, dpiScale, dpiScale);
         }
 
         if(-1 == gmpi::cocoa::GraphicsContext::logicProFix)
@@ -434,21 +444,40 @@ public:
             brush.setColor(gmpi::drawing::Colors::White);
             g.drawTextU("_", tf, {0, 0, 40, 40}, brush);
 
-            // Read pixels from the backing buffer to detect Logic Pro text baseline bug
-            uint8_t const* pixels = 1 + (uint8_t const*)CGBitmapContextGetData(backBuffer);
+            // Read pixels from the backing buffer to detect Logic Pro text baseline bug.
+            // The back buffer may be 16-bit int or 32-bit float per component; we need
+            // to read the green channel (component index 1) at the correct stride.
+            const size_t bpc = CGBitmapContextGetBitsPerComponent(backBuffer);
             const auto stride = CGBitmapContextGetBytesPerRow(backBuffer);
+            uint8_t const* rawPixels = (uint8_t const*)CGBitmapContextGetData(backBuffer);
+
             int bestBrightness = 0;
             int bestRow = 1;
 
             for(int y = 0 ; y < 40 ; ++y)
             {
-                if(*pixels > bestBrightness)
-                {
-                    bestBrightness = *pixels;
-                    bestRow = y;
+                int brightness = 0;
+                const uint8_t* rowBase = rawPixels + y * stride;
+                if (bpc == 32) {
+                    // 32-bit float: read green channel (component 1)
+                    float fval;
+                    memcpy(&fval, rowBase + sizeof(float), sizeof(float));
+                    brightness = (int)(fval * 255.0f);
+                } else if (bpc == 16) {
+                    // 16-bit integer: read green channel (component 1)
+                    uint16_t ival;
+                    memcpy(&ival, rowBase + sizeof(uint16_t), sizeof(uint16_t));
+                    brightness = ival >> 8; // scale to 0-255
+                } else {
+                    // 8-bit: read green channel
+                    brightness = rowBase[1];
                 }
 
-                pixels += stride;
+                if(brightness > bestBrightness)
+                {
+                    bestBrightness = brightness;
+                    bestRow = y;
+                }
             }
 
             gmpi::cocoa::GraphicsContext::logicProFix = (int) (bestRow != 17 && bestRow != 33); // SD / HD (will be 18 / 35 for buggy situation)
@@ -480,12 +509,13 @@ public:
 
         CGContextRestoreGState(backBuffer);
 
+        // Restore AppKit graphics state (pops the NSGraphicsContext we pushed).
+        [NSGraphicsContext restoreGraphicsState];
+
         // blit back buffer onto screen.
-        // Create a CGImage from the back buffer and draw it into the current NSGraphicsContext
         CGImageRef backImage = CGBitmapContextCreateImage(backBuffer);
         if (backImage)
         {
-            // We need to draw into the current AppKit graphics context
             CGContextRef screenCtx = [[NSGraphicsContext currentContext] CGContext];
             CGContextDrawImage(screenCtx, [view bounds], backImage);
             CGImageRelease(backImage);
@@ -738,10 +768,22 @@ public:
 
         CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
 
+        // CGBitmapContextCreate doesn't support 16-bit float.
+        // Use 16-bit integer per component in linear space for correct blending with good precision,
+        // or fall back to 32-bit float if that fails.
         backBuffer = CGBitmapContextCreate(NULL,
             (size_t)physicalsize.width, (size_t)physicalsize.height,
             16, 0, colorSpace,
-            kCGImageAlphaNoneSkipLast | kCGBitmapFloatComponents | kCGBitmapByteOrder16Host);
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder16Big);
+
+        if (!backBuffer)
+        {
+            // Fallback to 32-bit float (always supported)
+            backBuffer = CGBitmapContextCreate(NULL,
+                (size_t)physicalsize.width, (size_t)physicalsize.height,
+                32, 0, colorSpace,
+                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+        }
 
         backBufferHeight = physicalsize.height;
 

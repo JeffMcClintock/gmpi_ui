@@ -59,7 +59,7 @@ void Form::renderVisuals()
 void Form::DoUpdates()
 {
 	// Check if theme changed and mark all views dirty if so
-	if (gmpi::ui::consumeThemeChanged())
+	if (gmpi::ui::consumeThemeChanged(lastSeenThemeVersion_))
 	{
 		for (auto& view : childViews)
 			view->setDirty();

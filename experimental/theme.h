@@ -12,6 +12,7 @@ enum class ThemeMode
 
 struct ColorTheme
 {
+	gmpi::drawing::Color panelBackground;    // background for panels (properties, module browser)
 	gmpi::drawing::Color labelText;          // muted text (labels, headings)
 	gmpi::drawing::Color controlText;        // text in editors, combos, buttons, checkboxes
 	gmpi::drawing::Color controlBackground;  // background for editors, combos, buttons, checkboxes
@@ -22,6 +23,7 @@ struct ColorTheme
 
 inline const ColorTheme darkTheme
 {
+	gmpi::drawing::colorFromHex(0x2C2C2Cu),        // panelBackground
 	gmpi::drawing::colorFromHex(0xBFBDBFu),        // labelText
 	gmpi::drawing::colorFromHex(0xEEEEEEu),        // controlText
 	gmpi::drawing::colorFromHex(0x383838u),         // controlBackground
@@ -32,6 +34,7 @@ inline const ColorTheme darkTheme
 
 inline const ColorTheme lightTheme
 {
+	gmpi::drawing::colorFromHex(0xF3F3F3u),         // panelBackground
 	gmpi::drawing::colorFromHex(0x404040u),         // labelText
 	gmpi::drawing::colorFromHex(0x111111u),         // controlText
 	gmpi::drawing::colorFromHex(0xE0E0E0u),         // controlBackground
@@ -46,10 +49,10 @@ inline ThemeMode& themeModeStorage()
 	return mode;
 }
 
-inline bool& themeChangedFlag()
+inline uint32_t& themeVersion()
 {
-	static bool changed = false;
-	return changed;
+	static uint32_t version = 0;
+	return version;
 }
 
 inline const ColorTheme& currentTheme()
@@ -62,15 +65,28 @@ inline void setThemeMode(ThemeMode mode)
 	if (themeModeStorage() != mode)
 	{
 		themeModeStorage() = mode;
-		themeChangedFlag() = true; // Signal views to redraw
+		++themeVersion(); // Signal all views to redraw
 	}
 }
 
+// Each caller should store and compare against its own lastSeenVersion.
+// Returns true if the theme has changed since lastSeenVersion was captured.
+inline bool consumeThemeChanged(uint32_t& lastSeenVersion)
+{
+	const auto current = themeVersion();
+	if (lastSeenVersion != current)
+	{
+		lastSeenVersion = current;
+		return true;
+	}
+	return false;
+}
+
+// Legacy overload for callers that don't track version (first call always returns false)
 inline bool consumeThemeChanged()
 {
-	const bool changed = themeChangedFlag();
-	themeChangedFlag() = false;
-	return changed;
+	static uint32_t localVersion = themeVersion();
+	return consumeThemeChanged(localVersion);
 }
 
 } // namespace gmpi::ui

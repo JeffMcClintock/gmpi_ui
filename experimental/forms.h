@@ -37,6 +37,8 @@ protected:
 	std::function<void(std::string)> onKey;
 	std::function<void(gmpi::drawing::Size)> onMouseMove;
 
+	uint32_t lastSeenThemeVersion_ = 0;
+
 	bool onTimer() override;
 
 	void DoUpdates();

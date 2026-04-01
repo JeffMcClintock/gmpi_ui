@@ -405,13 +405,6 @@ public:
             return; // bitmap creation failed, nothing to draw
 
         // draw onto linear back buffer.
-        // Wrap the CGBitmapContext in an NSGraphicsContext so that SDK3 code
-        // (and any legacy code using [NSGraphicsContext currentContext]) can
-        // still obtain the CGContext via the AppKit API.
-        [NSGraphicsContext saveGraphicsState];
-        NSGraphicsContext* nsCtx = [NSGraphicsContext graphicsContextWithCGContext:backBuffer flipped:NO];
-        [NSGraphicsContext setCurrentContext:nsCtx];
-
         CGContextSaveGState(backBuffer);
 
         // Flip coordinate system to match Direct2D (top-down).
@@ -508,9 +501,6 @@ public:
         }
 
         CGContextRestoreGState(backBuffer);
-
-        // Restore AppKit graphics state (pops the NSGraphicsContext we pushed).
-        [NSGraphicsContext restoreGraphicsState];
 
         // blit back buffer onto screen.
         CGImageRef backImage = CGBitmapContextCreateImage(backBuffer);

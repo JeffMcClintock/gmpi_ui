@@ -1464,6 +1464,7 @@ public:
 struct ContextInfo
 {
 	std::vector<gmpi::drawing::Rect> clipRectStack;
+    CGContextRef cgContext = nullptr; // shared with SDK3 so it can draw without NSGraphicsContext
 #if TARGET_OS_OSX
     // SDK3 backward compatibility — legacy code sends Obj-C messages to this.
     NSAffineTransform* currentTransform = nullptr;
@@ -1509,6 +1510,7 @@ public:
     void setCGContext(CGContextRef ctx)
     {
         cgContext_ = ctx;
+        info.cgContext = ctx; // also available to SDK3 code via ContextInfo
     }
 
     CGContextRef getCGContext() const

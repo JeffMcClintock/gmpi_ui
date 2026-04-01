@@ -329,7 +329,8 @@ public:
 
     gmpi::cocoa::Factory drawingFactory;
     NSView* view;
-    NSBitmapImageRep* backBuffer{}; // backing buffer with linear colorspace for correct blending.
+    CGContextRef backBuffer{}; // backing buffer with linear colorspace for correct blending.
+    CGFloat backBufferHeight{}; // for coordinate flipping
     
     void Init(gmpi::api::IUnknown* paramHost, gmpi::api::IUnknown* pclient)
     {
@@ -399,24 +400,30 @@ public:
             if(drawingClient)
                 drawingClient->arrange(&finalRect);
         }
-        
-        // draw onto linear back buffer.
-        [NSGraphicsContext saveGraphicsState];
-        [backBuffer retain];
-        NSGraphicsContext *g = [NSGraphicsContext graphicsContextWithBitmapImageRep:backBuffer];
-        [NSGraphicsContext setCurrentContext:g];
 
-        auto flipper = [NSAffineTransform transform];
-        [flipper scaleXBy:1 yBy:-1];
-        [flipper translateXBy:0.0 yBy:-[frame bounds].size.height];
-        [flipper concat];
+        // draw onto linear back buffer.
+        CGContextSaveGState(backBuffer);
+
+        // Flip coordinate system to match Direct2D (top-down).
+        CGContextTranslateCTM(backBuffer, 0, backBufferHeight);
+        CGContextScaleCTM(backBuffer, 1, -1);
+
+        // Scale from physical to logical coordinates.
+        NSSize logicalsize = view.frame.size;
+        NSSize physicalsize = [view convertRectToBacking:[view bounds]].size;
+        if (physicalsize.width != logicalsize.width)
+        {
+            CGFloat s = physicalsize.width / logicalsize.width;
+            CGContextScaleCTM(backBuffer, s, s);
+        }
 
         if(-1 == gmpi::cocoa::GraphicsContext::logicProFix)
         {
             gmpi::cocoa::GraphicsContext::logicProFix = 0;
-            
+
             gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
-            
+            context.setCGContext(backBuffer);
+
             gmpi::drawing::Graphics g(&context);
 
             constexpr std::array<std::string_view, 1> fontnames{std::string_view{"Arial"}};
@@ -426,12 +433,13 @@ public:
             g.fillRectangle(0,0,40,40, brush);
             brush.setColor(gmpi::drawing::Colors::White);
             g.drawTextU("_", tf, {0, 0, 40, 40}, brush);
-            
-            uint8_t const* pixels = 1 + [backBuffer bitmapData];
-            const auto stride = [backBuffer bytesPerRow];
+
+            // Read pixels from the backing buffer to detect Logic Pro text baseline bug
+            uint8_t const* pixels = 1 + (uint8_t const*)CGBitmapContextGetData(backBuffer);
+            const auto stride = CGBitmapContextGetBytesPerRow(backBuffer);
             int bestBrightness = 0;
             int bestRow = 1;
-            
+
             for(int y = 0 ; y < 40 ; ++y)
             {
                 if(*pixels > bestBrightness)
@@ -439,17 +447,18 @@ public:
                     bestBrightness = *pixels;
                     bestRow = y;
                 }
-                
+
                 pixels += stride;
             }
-            
+
             gmpi::cocoa::GraphicsContext::logicProFix = (int) (bestRow != 17 && bestRow != 33); // SD / HD (will be 18 / 35 for buggy situation)
         }
 #endif
         // context must be disposed before restoring state, because it's destructor also restores state
         {
             gmpi::cocoa::GraphicsContext context(frame, &drawingFactory);
-            
+            context.setCGContext(backBuffer);
+
             // JUCE standalone tends to draw over window non-client area on macOS. clip drawing.
             const auto r = [frame bounds];
             const gmpi::drawing::Rect bounds{
@@ -458,21 +467,29 @@ public:
                 (float) (r.origin.x + r.size.width),
                 (float) (r.origin.y + r.size.height)
             };
-            
+
             const gmpi::drawing::Rect dirtyClipped = intersectRect(bounds, *dirtyRect);
 
             context.pushAxisAlignedClip(&dirtyClipped);
 
            if(drawingClient)
                drawingClient->render(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
-            
+
             context.popAxisAlignedClip();
         }
-        
-        [NSGraphicsContext restoreGraphicsState];
-        
+
+        CGContextRestoreGState(backBuffer);
+
         // blit back buffer onto screen.
-        [backBuffer drawInRect:[view bounds]]; // copes with DPI
+        // Create a CGImage from the back buffer and draw it into the current NSGraphicsContext
+        CGImageRef backImage = CGBitmapContextCreateImage(backBuffer);
+        if (backImage)
+        {
+            // We need to draw into the current AppKit graphics context
+            CGContextRef screenCtx = [[NSGraphicsContext currentContext] CGContext];
+            CGContextDrawImage(screenCtx, [view bounds], backImage);
+            CGImageRelease(backImage);
+        }
     }
 #if 0
     // Inherited via IMpUserInterfaceHost2
@@ -717,41 +734,25 @@ public:
     
     void initBackingBitmap()
     {
-        NSSize logicalsize = view.frame.size;
-        NSSize pysicalsize = [view convertRectToBacking:[view bounds]].size;
-
-        // kCGColorSpaceGenericRGBLinear - middle gray is darker, blend seems correct.
-        // kCGColorSpaceExtendedLinearSRGB, kCGColorSpaceLinearDisplayP3 - same
-        // kCGColorSpaceGenericRGB - actually sRGB
-        // kCGColorSpaceExtendedLinearSRGB caused image to turn dark after intial draw, like OS was compressing non-extended colors
+        NSSize physicalsize = [view convertRectToBacking:[view bounds]].size;
 
         CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
-        NSColorSpace *linearRGBColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
 
-        NSBitmapImageRep* imagerep1 = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
-           pixelsWide:pysicalsize.width
-           pixelsHigh:pysicalsize.height
-           bitsPerSample:16 //8     // 1, 2, 4, 8, 12, or 16.
-           samplesPerPixel:3
-           hasAlpha:NO
-           isPlanar:NO
-           colorSpaceName: NSCalibratedRGBColorSpace // makes no difference if we retag it later anyhow.
-           bitmapFormat: NSBitmapFormatFloatingPointSamples //NSAlphaFirstBitmapFormat
-           bytesPerRow:0    // 0 = don't care  800 * 4
-           bitsPerPixel:64 ];
-        
-        backBuffer = [imagerep1 bitmapImageRepByRetaggingWithColorSpace:linearRGBColorSpace];
-        [backBuffer setSize: logicalsize]; // Communicates DPI
+        backBuffer = CGBitmapContextCreate(NULL,
+            (size_t)physicalsize.width, (size_t)physicalsize.height,
+            16, 0, colorSpace,
+            kCGImageAlphaNoneSkipLast | kCGBitmapFloatComponents | kCGBitmapByteOrder16Host);
 
-        // Release the resources
+        backBufferHeight = physicalsize.height;
+
         CGColorSpaceRelease(colorSpace);
     }
     
     void onResize()
     {
         if(backBuffer)
-            [backBuffer release];
-        backBuffer = nil;
+            CGContextRelease(backBuffer);
+        backBuffer = nullptr;
      }
     
     GMPI_REFCOUNT_NO_DELETE;

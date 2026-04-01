@@ -21,11 +21,20 @@
 */
 #include <cmath>
 #include <map>
-//#include <locale>
+#include <set>
 #include <codecvt>
+#include <cstring>
+#include <TargetConditionals.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <CoreText/CoreText.h>
+#include <ImageIO/ImageIO.h>
 #include "../Drawing.h"
 #include "../backends/Gfx_base.h"
 #define USE_BACKING_BUFFER 1
+
+#if TARGET_OS_OSX
+#import <AppKit/AppKit.h>
+#endif
 
 /* TODO
 investigate CGContextSetShouldSmoothFonts, CGContextSetAllowsFontSmoothing (for less heavy fonts)
@@ -36,34 +45,26 @@ namespace gmpi
 namespace cocoa
 {
 class Factory;
-    
-// Conversion utilities.
-    
-inline NSPoint toNative(gmpi::drawing::Point p)
-{
-    return NSMakePoint(p.x, p.y);
-}
-    
-//inline gmpi::drawing::Rect RectFromNSRect(NSRect nsr)
-//{
-//    return{
-//        static_cast<float>(nsr.origin.x),
-//        static_cast<float>(nsr.origin.y),
- //       static_cast<float>(nsr.origin.x + nsr.size.width),
-//        static_cast<float>(nsr.origin.y + nsr.size.height)
-//    };
-//}
 
-inline NSRect NSRectFromRect(gmpi::drawing::Rect rect)
+// Conversion utilities.
+
+inline CGPoint toNative(gmpi::drawing::Point p)
 {
-	return NSMakeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+    return CGPointMake(p.x, p.y);
 }
-        
-inline CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in some cases.
+
+inline CGRect CGRectFromRect(gmpi::drawing::Rect rect)
+{
+	return CGRectMake(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+}
+
+#if TARGET_OS_OSX
+// Legacy helper for SDK3 backward compatibility — converts NSBezierPath to CGPath.
+inline CGMutablePathRef NsToCGPath(NSBezierPath* geometry)
 {
     CGMutablePathRef cgPath = CGPathCreateMutable();
     NSInteger n = [geometry elementCount];
-            
+
     for (NSInteger i = 0; i < n; i++) {
         NSPoint ps[3];
         switch ([geometry elementAtIndex:i associatedPoints:ps]) {
@@ -89,26 +90,37 @@ inline CGMutablePathRef NsToCGPath(NSBezierPath* geometry) // could be cached in
     }
     return cgPath;
 }
-        
-// helper
-inline void setNativePenStrokeStyle(NSBezierPath * path, gmpi::drawing::api::IStrokeStyle* strokeStyle)
+
+// Legacy helper for SDK3 backward compatibility
+inline NSPoint toNativeNS(gmpi::drawing::Point p)
+{
+    return NSMakePoint(p.x, p.y);
+}
+
+inline NSRect NSRectFromRect(gmpi::drawing::Rect rect)
+{
+    return NSMakeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+}
+#endif
+
+// helper: apply stroke style properties to a CGContext
+inline void applyCGStrokeStyle(CGContextRef ctx, gmpi::drawing::api::IStrokeStyle* strokeStyle)
 {
     gmpi::drawing::CapStyle capstyle = strokeStyle == nullptr ? gmpi::drawing::CapStyle::Flat : ((se::generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.lineCap;
-            
+
     switch(capstyle)
     {
         default:
         case gmpi::drawing::CapStyle::Flat:
-            [ path setLineCapStyle:NSLineCapStyleButt ];
+            CGContextSetLineCap(ctx, kCGLineCapButt);
             break;
 
         case gmpi::drawing::CapStyle::Square:
-            [ path setLineCapStyle:NSLineCapStyleSquare ];
+            CGContextSetLineCap(ctx, kCGLineCapSquare);
             break;
 
-//        case gmpi::drawing::CapStyle::Triangle:
         case gmpi::drawing::CapStyle::Round:
-            [ path setLineCapStyle:NSLineCapStyleRound ];
+            CGContextSetLineCap(ctx, kCGLineCapRound);
             break;
     }
 
@@ -120,38 +132,35 @@ inline void setNativePenStrokeStyle(NSBezierPath * path, gmpi::drawing::api::ISt
             default:
             case gmpi::drawing::LineJoin::Miter:
             case gmpi::drawing::LineJoin::MiterOrBevel:
-                [ path setLineJoinStyle:NSLineJoinStyleMiter ];
+                CGContextSetLineJoin(ctx, kCGLineJoinMiter);
                 break;
 
             case gmpi::drawing::LineJoin::Bevel:
-                [ path setLineJoinStyle:NSLineJoinStyleBevel ];
+                CGContextSetLineJoin(ctx, kCGLineJoinBevel);
                 break;
 
             case gmpi::drawing::LineJoin::Round:
-                [ path setLineJoinStyle:NSLineJoinStyleRound ];
+                CGContextSetLineJoin(ctx, kCGLineJoinRound);
                 break;
         }
     }
 }
-    
-inline void applyDashStyleToPath(NSBezierPath* path, const gmpi::drawing::api::IStrokeStyle* strokeStyleIm, float strokeWidth)
+
+inline void applyCGDashStyle(CGContextRef ctx, const gmpi::drawing::api::IStrokeStyle* strokeStyleIm, float strokeWidth)
 {
     gmpi::drawing::StrokeStyleProperties style;
 
     auto strokeStyle = (se::generic_graphics::StrokeStyle*)strokeStyleIm;
     if(strokeStyle)
         style = strokeStyle->strokeStyleProperties;
-    
-//    const auto dashStyle = strokeStyle ? strokeStyle->getDashStyle() : gmpi::drawing::DashStyle::Solid;
-//    const auto phase = strokeStyle ? strokeStyle->getDashOffset() : 0.0f;
-            
+
     std::vector<CGFloat> dashes;
-            
+
     switch(style.dashStyle)
     {
         case gmpi::drawing::DashStyle::Solid:
             break;
-                    
+
         case gmpi::drawing::DashStyle::Custom:
         {
             for(auto d : strokeStyle->dashes)
@@ -160,19 +169,19 @@ inline void applyDashStyleToPath(NSBezierPath* path, const gmpi::drawing::api::I
             }
         }
         break;
-                    
+
         case gmpi::drawing::DashStyle::Dot:
             dashes.push_back(0.0f);
             dashes.push_back(strokeWidth * 2.f);
             break;
-                    
+
         case gmpi::drawing::DashStyle::DashDot:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(0.f);
             dashes.push_back(strokeWidth * 2.f);
             break;
-                    
+
         case gmpi::drawing::DashStyle::DashDotDot:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
@@ -181,15 +190,40 @@ inline void applyDashStyleToPath(NSBezierPath* path, const gmpi::drawing::api::I
             dashes.push_back(0.f);
             dashes.push_back(strokeWidth * 2.f);
             break;
-                    
+
         case gmpi::drawing::DashStyle::Dash:
         default:
             dashes.push_back(strokeWidth * 2.f);
             dashes.push_back(strokeWidth * 2.f);
             break;
     };
-                        
-    [path setLineDash: dashes.data() count: dashes.size() phase: style.dashOffset];
+
+    CGContextSetLineDash(ctx, style.dashOffset, dashes.data(), dashes.size());
+}
+
+// CGLineCap/CGLineJoin from stroke style
+inline CGLineCap cgLineCapFromStyle(gmpi::drawing::api::IStrokeStyle* strokeStyle)
+{
+    if (!strokeStyle) return kCGLineCapButt;
+    auto cap = ((se::generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.lineCap;
+    switch(cap)
+    {
+        case gmpi::drawing::CapStyle::Square: return kCGLineCapSquare;
+        case gmpi::drawing::CapStyle::Round:  return kCGLineCapRound;
+        default: return kCGLineCapButt;
+    }
+}
+
+inline CGLineJoin cgLineJoinFromStyle(gmpi::drawing::api::IStrokeStyle* strokeStyle)
+{
+    if (!strokeStyle) return kCGLineJoinMiter;
+    auto join = ((se::generic_graphics::StrokeStyle*)strokeStyle)->strokeStyleProperties.lineJoin;
+    switch(join)
+    {
+        case gmpi::drawing::LineJoin::Bevel: return kCGLineJoinBevel;
+        case gmpi::drawing::LineJoin::Round: return kCGLineJoinRound;
+        default: return kCGLineJoinMiter;
+    }
 }
 
 #if 1
@@ -202,12 +236,6 @@ protected:
 
 	virtual ~CocoaWrapper()
 	{
-#if !__has_feature(objc_arc)
-        if (native_)
-		{
-//					[native_ release];
-		}
-#endif
 	}
 
 public:
@@ -243,7 +271,7 @@ class nothing
 };
 #endif
 
-class TextFormat final : public gmpi::drawing::api::ITextFormat // : public CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>
+class TextFormat final : public gmpi::drawing::api::ITextFormat
 {
 public:
     std::string fontFamilyName;
@@ -265,13 +293,17 @@ public:
     float customBaseline_ = 0.f;
 
     // Windows-equivalent natural line height, computed once from OS/2 font table.
-    // DirectWrite uses sTypo metrics; cached here so drawTextU/getTextExtentU are fast.
-    float winNaturalLineHeight_    = -1.f;  // negative = not yet computed
+    float winNaturalLineHeight_    = -1.f;
     float winNaturalBaseline_      = 0.f;
-    float winNaturalTopAdjustment_ = 0.f;   // topAdjustment when using winNaturalLineHeight_
+    float winNaturalTopAdjustment_ = 0.f;
 
-    NSMutableDictionary* native2 = {};
-    NSMutableParagraphStyle* nativeStyle = {};
+    CTFontRef ctFont_ = nullptr;
+    CTParagraphStyleRef ctParagraphStyle_ = nullptr;
+    CTTextAlignment ctAlignment_ = kCTTextAlignmentLeft;
+
+    // cached line spacing for paragraph style
+    CGFloat ctLineHeightMin_ = 0;
+    CGFloat ctLineHeightMax_ = 0;
 
     static const char* fontSubstitute(const char* windowsFont)
     {
@@ -285,7 +317,6 @@ public:
             {"Lucida Sans Unicode", "Lucida Grande"},
             {"Palatino Linotype",   "Palatino"},
             {"Book Antiqua",        "Palatino"},
-            //nope                    {"Verdana UI",          "Verdana"},
         };
 
         const auto it = substitutes.find(windowsFont);
@@ -298,129 +329,154 @@ public:
     }
 
     TextFormat(const char* pfontFamilyName, gmpi::drawing::FontWeight pfontWeight, gmpi::drawing::FontStyle pfontStyle, gmpi::drawing::FontStretch pfontStretch, float pfontSize) :
-        //				CocoaWrapper<drawing::api::ITextFormat, const __CFDictionary>(nullptr)
         fontWeight(pfontWeight)
         , fontStyle(pfontStyle)
         , fontStretch(pfontStretch)
         , fontSize(pfontSize)
     {
-        //_RPT1(0, "TextFormat() %d\n", this);
-
         fontFamilyName = fontSubstitute(pfontFamilyName);
 
-        NSFontTraitMask fontTraits = 0;
+        textAlignment = gmpi::drawing::TextAlignment::Leading;
+        paragraphAlignment = gmpi::drawing::ParagraphAlignment::Near;
+
+        // Create CTFont using CoreText
+        CFStringRef cfFamilyName = CFStringCreateWithCString(kCFAllocatorDefault, fontFamilyName.c_str(), kCFStringEncodingUTF8);
+
+        // Build font traits dictionary
+        CTFontSymbolicTraits symbolicTraits = 0;
         if (pfontWeight >= gmpi::drawing::FontWeight::DemiBold)
-            fontTraits |= NSBoldFontMask;
-
+            symbolicTraits |= kCTFontBoldTrait;
         if (pfontStyle == gmpi::drawing::FontStyle::Italic || pfontStyle == gmpi::drawing::FontStyle::Oblique)
-            fontTraits |= NSItalicFontMask;
+            symbolicTraits |= kCTFontItalicTrait;
 
-        auto nsFontName = [NSString stringWithCString : fontFamilyName.c_str() encoding : NSUTF8StringEncoding];
-        NSFont* nativefont = {};
+        // Map GMPI font weight to CoreText weight
+        static const CGFloat weightConversion[] = {
+            -0.8,  // FontWeight_THIN = 100
+            -0.6,  // FontWeight_ULTRA_LIGHT = 200
+            -0.4,  // FontWeight_LIGHT = 300
+             0.0,  // FontWeight_NORMAL = 400
+             0.23, // FontWeight_MEDIUM = 500
+             0.3,  // FontWeight_SEMI_BOLD = 600
+             0.4,  // FontWeight_BOLD = 700
+             0.56, // FontWeight_BLACK = 900
+             0.62  // FontWeight_ULTRA_BLACK = 950
+        };
 
-        // AU plugin on Logic Pro (ARM) asserts first time here with a memory error.
-        // not sure why, but ignoring it seems to work OK.
+        const int arrMax = (int)std::size(weightConversion) - 1;
+        const int roundNearest = 50;
+        const int nativeFontWeightIndex
+            = std::max(0, std::min(arrMax, -1 + ((int) pfontWeight + roundNearest) / 100));
+        const CGFloat ctWeight = weightConversion[nativeFontWeightIndex];
+
+        // Create font descriptor with traits
+        CFMutableDictionaryRef traits = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+        CFNumberRef weightNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberCGFloatType, &ctWeight);
+        CFDictionarySetValue(traits, kCTFontWeightTrait, weightNum);
+        CFRelease(weightNum);
+
+        if (symbolicTraits != 0) {
+            CFNumberRef symTraitsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &symbolicTraits);
+            CFDictionarySetValue(traits, kCTFontSymbolicTrait, symTraitsNum);
+            CFRelease(symTraitsNum);
+        }
+
+        CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFDictionarySetValue(attrs, kCTFontFamilyNameAttribute, cfFamilyName);
+        CFDictionarySetValue(attrs, kCTFontTraitsAttribute, traits);
+        CFRelease(traits);
+
+        CTFontDescriptorRef descriptor = CTFontDescriptorCreateWithAttributes(attrs);
+        CFRelease(attrs);
+
         try
         {
-            /*
-                weight
-                A hint for the weight desired, on a scale of 0 to 15: a value of 5 indicates a normal or book weight, and 9 or more a bold or heavier weight. The weight is ignored if fontTraitMask includes NSBoldFontMask.
-
-                // from chrome
-
-                NSInteger ToNSFontManagerWeight(Weight weight) {
-                switch (weight) {
-                    case Weight::THIN:
-                    return 2;
-                    case Weight::EXTRA_LIGHT:
-                    return 3;
-                    case Weight::LIGHT:
-                    return 4;
-                    case Weight::INVALID:
-                    case Weight::NORMAL:
-                    return 5;
-                    case Weight::MEDIUM:
-                    return 6;
-                    case Weight::SEMIBOLD:
-                    return 8;
-                    case Weight::BOLD:
-                    return 9;
-                    case Weight::EXTRA_BOLD:
-                    return 10;
-                    case Weight::BLACK:
-                    return 11;
-                }
-                */
-
-            const int roundNearest = 50;
-            const int nativeFontWeight = 1 + ((int) pfontWeight + roundNearest) / 100;
-
-            nativefont = [[NSFontManager sharedFontManager]fontWithFamily:nsFontName traits : fontTraits weight : nativeFontWeight size : fontSize];
+            ctFont_ = CTFontCreateWithFontDescriptor(descriptor, fontSize, nullptr);
         }
         catch (...)
         {
-            //_RPT0(0, "NSFontManager threw!");
-        } // Logic Pro may throw an Memory exception here. Don't know why. Maybe due to it using a AU2 wrapper.
+        }
+        CFRelease(descriptor);
 
-        // fallback to system font if nesc.
-        if (!nativefont)
+        // fallback to system font if necessary
+        if (!ctFont_)
         {
-            static const CGFloat weightConversion[] = {
-                NSFontWeightUltraLight, // FontWeight_THIN = 100
-                NSFontWeightThin,       // FontWeight_ULTRA_LIGHT = 200
-                NSFontWeightLight,      // FontWeight_LIGHT = 300
-                NSFontWeightRegular,    // FontWeight_NORMAL = 400
-                NSFontWeightMedium,     // FontWeight_MEDIUM = 500
-                NSFontWeightSemibold,   // FontWeight_SEMI_BOLD = 600
-                NSFontWeightBold,       // FontWeight_BOLD = 700
-                NSFontWeightHeavy,      // FontWeight_BLACK = 900
-                NSFontWeightBlack       // FontWeight_ULTRA_BLACK = 950
-            };
-
-            const int arrMax = std::size(weightConversion) - 1;
-            const int roundNearest = 50;
-            const int nativeFontWeightIndex
-                = std::max(0, std::min(arrMax, -1 + ((int) pfontWeight + roundNearest) / 100));
-            const auto nativeFontWeight = weightConversion[nativeFontWeightIndex];
-
-            // final fallback. system font.
-            nativefont = [NSFont systemFontOfSize : fontSize weight : nativeFontWeight];
+            ctFont_ = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize, nullptr);
         }
 
-        nativeStyle = [[NSMutableParagraphStyle alloc]init];
-        [nativeStyle setAlignment : NSTextAlignmentLeft] ;
+        CFRelease(cfFamilyName);
 
-        native2 = [[NSMutableDictionary alloc]initWithObjectsAndKeys:
-        nativefont, NSFontAttributeName,
-            nativeStyle, NSParagraphStyleAttributeName,
-            nil];
-
+        rebuildParagraphStyle();
         CalculateTopAdjustment();
     }
 
     ~TextFormat()
     {
-        //_RPT1(0, "~TextFormat() %d\n", this);
+        if (ctFont_) CFRelease(ctFont_);
+        if (ctParagraphStyle_) CFRelease(ctParagraphStyle_);
+    }
 
-#if !__has_feature(objc_arc)
-//                [native2 release];
-#endif
-        [native2 release];
-        [nativeStyle release] ;
+    void rebuildParagraphStyle()
+    {
+        if (ctParagraphStyle_) CFRelease(ctParagraphStyle_);
+
+        std::vector<CTParagraphStyleSetting> settings;
+
+        settings.push_back({kCTParagraphStyleSpecifierAlignment, sizeof(ctAlignment_), &ctAlignment_});
+
+        if (ctLineHeightMin_ > 0) {
+            settings.push_back({kCTParagraphStyleSpecifierMinimumLineHeight, sizeof(ctLineHeightMin_), &ctLineHeightMin_});
+        }
+        if (ctLineHeightMax_ > 0) {
+            settings.push_back({kCTParagraphStyleSpecifierMaximumLineHeight, sizeof(ctLineHeightMax_), &ctLineHeightMax_});
+        }
+
+        CTLineBreakMode lineBreak = (wordWrapping == gmpi::drawing::WordWrapping::NoWrap) ? kCTLineBreakByClipping : kCTLineBreakByWordWrapping;
+        settings.push_back({kCTParagraphStyleSpecifierLineBreakMode, sizeof(lineBreak), &lineBreak});
+
+        ctParagraphStyle_ = CTParagraphStyleCreate(settings.data(), settings.size());
+    }
+
+    // Build a CFAttributedString for measuring/drawing
+    CFDictionaryRef createAttributes() const
+    {
+        const void* keys[] = { kCTFontAttributeName, kCTParagraphStyleAttributeName };
+        const void* values[] = { ctFont_, ctParagraphStyle_ };
+        return CFDictionaryCreate(kCFAllocatorDefault, keys, values, 2,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    }
+
+    // Build attributes with a foreground color
+    CFDictionaryRef createAttributesWithColor(CGColorRef color) const
+    {
+        const void* keys[] = { kCTFontAttributeName, kCTParagraphStyleAttributeName, kCTForegroundColorAttributeName };
+        const void* values[] = { ctFont_, ctParagraphStyle_, color };
+        return CFDictionaryCreate(kCFAllocatorDefault, keys, values, 3,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     }
 
     void CalculateTopAdjustment()
     {
-        // Calculate compensation for different bounding box height between mac and direct2D.
-        // On Direct2D boudning rect height is typicaly much less than Cocoa.
-        // I don't know any algorithm for converting the extra height.
-        // Fix is to disregard extra height on both platforms.
         gmpi::drawing::FontMetrics fontMetrics{};
         getFontMetrics(&fontMetrics);
 
-        auto boundingBoxSize = [@"A" sizeWithAttributes : native2];
+        // Measure "A" to get bounding box height
+        CFDictionaryRef attributes = createAttributes();
+        CFStringRef str = CFSTR("A");
+        CFAttributedStringRef attrStr = CFAttributedStringCreate(kCFAllocatorDefault, str, attributes);
+        CTLineRef line = CTLineCreateWithAttributedString(attrStr);
 
-        topAdjustment = boundingBoxSize.height - (fontMetrics.ascent + fontMetrics.descent);
+        CGFloat ascent_ct, descent_ct, leading_ct;
+        CTLineGetTypographicBounds(line, &ascent_ct, &descent_ct, &leading_ct);
+        CGFloat boundingBoxHeight = ascent_ct + descent_ct + leading_ct;
+
+        CFRelease(line);
+        CFRelease(attrStr);
+        CFRelease(attributes);
+
+        topAdjustment = boundingBoxHeight - (fontMetrics.ascent + fontMetrics.descent);
         ascent = fontMetrics.ascent;
 
         baselineCorrection = 0.5f;
@@ -429,29 +485,21 @@ public:
             baselineCorrection += 0.5f;
         }
 
-        // Compute the Windows-equivalent natural line height from the font's OS/2 sTypo
-        // metrics — the same values DirectWrite uses for its default line spacing.
-        // Result is cached so drawing is fast on repeated calls.
+        // Compute the Windows-equivalent natural line height from the font's OS/2 sTypo metrics.
         {
-            CTFontRef ctFont = (__bridge CTFontRef)(native2[NSFontAttributeName]);
-            CFDataRef os2Data  = CTFontCopyTable(ctFont, kCTFontTableOS2,  kCTFontTableOptionNoOptions);
-            CFDataRef headData = CTFontCopyTable(ctFont, kCTFontTableHead, kCTFontTableOptionNoOptions);
-            CFDataRef hheaData = CTFontCopyTable(ctFont, kCTFontTableHhea, kCTFontTableOptionNoOptions);
+            CFDataRef os2Data  = CTFontCopyTable(ctFont_, kCTFontTableOS2,  kCTFontTableOptionNoOptions);
+            CFDataRef headData = CTFontCopyTable(ctFont_, kCTFontTableHead, kCTFontTableOptionNoOptions);
+            CFDataRef hheaData = CTFontCopyTable(ctFont_, kCTFontTableHhea, kCTFontTableOptionNoOptions);
             if (os2Data && headData)
             {
                 const uint8_t* os2  = CFDataGetBytePtr(os2Data);
                 const uint8_t* head = CFDataGetBytePtr(headData);
 
-                // OS/2 table: sTypoAscender @68, sTypoDescender @70, sTypoLineGap @72
-                // head table: unitsPerEm @18
                 const int16_t  sTypoAscender  = static_cast<int16_t>((os2[68]  << 8) | os2[69]);
-                const int16_t  sTypoDescender = static_cast<int16_t>((os2[70]  << 8) | os2[71]); // negative
+                const int16_t  sTypoDescender = static_cast<int16_t>((os2[70]  << 8) | os2[71]);
                 const int16_t  sTypoLineGap   = static_cast<int16_t>((os2[72]  << 8) | os2[73]);
                 const uint16_t unitsPerEm     = static_cast<uint16_t>((head[18] << 8) | head[19]);
 
-                // Check USE_TYPO_METRICS flag (OS/2 fsSelection bit 7).
-                // When set, DirectWrite uses sTypo metrics.
-                // When clear, DirectWrite uses hhea Ascender/Descender/LineGap.
                 const uint16_t fsSelection = static_cast<uint16_t>((os2[62] << 8) | os2[63]);
                 const bool useTypoMetrics  = (fsSelection & 0x0080) != 0;
 
@@ -459,11 +507,9 @@ public:
 
                 if (!useTypoMetrics && hheaData)
                 {
-                    // DirectWrite falls back to hhea metrics when USE_TYPO_METRICS is clear.
-                    // hhea table: Ascender @4, Descender @6, LineGap @8 (all int16)
                     const uint8_t* hhea = CFDataGetBytePtr(hheaData);
                     const int16_t  hheaAscender  = static_cast<int16_t>((hhea[4] << 8) | hhea[5]);
-                    const int16_t  hheaDescender = static_cast<int16_t>((hhea[6] << 8) | hhea[7]); // negative
+                    const int16_t  hheaDescender = static_cast<int16_t>((hhea[6] << 8) | hhea[7]);
                     const int16_t  hheaLineGap   = static_cast<int16_t>((hhea[8] << 8) | hhea[9]);
                     winNaturalLineHeight_ = (hheaAscender - hheaDescender + hheaLineGap) * scale;
                     winNaturalBaseline_   = hheaAscender * scale;
@@ -476,8 +522,7 @@ public:
             }
             else
             {
-                // Font tables unavailable — fall back to Cocoa metrics.
-                winNaturalLineHeight_ = boundingBoxSize.height;
+                winNaturalLineHeight_ = boundingBoxHeight;
                 winNaturalBaseline_   = fontMetrics.ascent;
             }
             if (os2Data)  CFRelease(os2Data);
@@ -485,16 +530,31 @@ public:
             if (hheaData) CFRelease(hheaData);
 
             // Compute topAdjustment for the Windows natural line height.
-            // Temporarily apply the line height so sizeWithAttributes measures correctly.
-            const CGFloat savedMin = [nativeStyle minimumLineHeight];
-            const CGFloat savedMax = [nativeStyle maximumLineHeight];
-            [nativeStyle setMinimumLineHeight:winNaturalLineHeight_];
-            [nativeStyle setMaximumLineHeight:winNaturalLineHeight_];
-            auto winNaturalBox = [@"A" sizeWithAttributes:native2];
-            [nativeStyle setMinimumLineHeight:savedMin];
-            [nativeStyle setMaximumLineHeight:savedMax];
-            winNaturalTopAdjustment_ = static_cast<float>(winNaturalBox.height)
-                                       - (fontMetrics.ascent + fontMetrics.descent);
+            {
+                // Temporarily apply line height to measure
+                CGFloat savedMin = ctLineHeightMin_;
+                CGFloat savedMax = ctLineHeightMax_;
+                ctLineHeightMin_ = winNaturalLineHeight_;
+                ctLineHeightMax_ = winNaturalLineHeight_;
+                rebuildParagraphStyle();
+
+                CFDictionaryRef winAttrs = createAttributes();
+                CFAttributedStringRef winAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, CFSTR("A"), winAttrs);
+                CTLineRef winLine = CTLineCreateWithAttributedString(winAttrStr);
+                CGFloat wa, wd, wl;
+                CTLineGetTypographicBounds(winLine, &wa, &wd, &wl);
+                CGFloat winBoxHeight = wa + wd + wl;
+                CFRelease(winLine);
+                CFRelease(winAttrStr);
+                CFRelease(winAttrs);
+
+                ctLineHeightMin_ = savedMin;
+                ctLineHeightMax_ = savedMax;
+                rebuildParagraphStyle();
+
+                winNaturalTopAdjustment_ = static_cast<float>(winBoxHeight)
+                                           - (fontMetrics.ascent + fontMetrics.descent);
+            }
         }
     }
 
@@ -504,17 +564,18 @@ public:
 
         switch (textAlignment)
         {
-            case gmpi::drawing::TextAlignment::Leading: // Left.
-            [native2[NSParagraphStyleAttributeName] setAlignment:NSTextAlignmentLeft] ;
-            break;
-            case gmpi::drawing::TextAlignment::Trailing: // Right
-            [native2[NSParagraphStyleAttributeName] setAlignment:NSTextAlignmentRight] ;
-            break;
+            case gmpi::drawing::TextAlignment::Leading:
+                ctAlignment_ = kCTTextAlignmentLeft;
+                break;
+            case gmpi::drawing::TextAlignment::Trailing:
+                ctAlignment_ = kCTTextAlignmentRight;
+                break;
             case gmpi::drawing::TextAlignment::Center:
-            [native2[NSParagraphStyleAttributeName] setAlignment:NSTextAlignmentCenter] ;
-            break;
+                ctAlignment_ = kCTTextAlignmentCenter;
+                break;
         }
 
+        rebuildParagraphStyle();
         return gmpi::ReturnCode::Ok;
     }
 
@@ -527,58 +588,55 @@ public:
 	gmpi::ReturnCode setWordWrapping(gmpi::drawing::WordWrapping pwordWrapping) override
     {
         wordWrapping = pwordWrapping;
+        rebuildParagraphStyle();
         return gmpi::ReturnCode::Ok;
     }
 
 
     gmpi::ReturnCode getFontMetrics(gmpi::drawing::FontMetrics* returnFontMetrics) override
     {
-        NSFont* font = native2[NSFontAttributeName];  // get font from dictionary.
-        returnFontMetrics->xHeight = [font xHeight];
-        returnFontMetrics->ascent = [font ascender];
-        returnFontMetrics->descent = -[font descender]; // Descent is negative on OSX (positive on Windows)
-        returnFontMetrics->lineGap = [font leading];
-        returnFontMetrics->capHeight = [font capHeight];
-        returnFontMetrics->underlinePosition = [font underlinePosition];
-        returnFontMetrics->underlineThickness = [font underlineThickness];
+        returnFontMetrics->ascent = static_cast<float>(CTFontGetAscent(ctFont_));
+        returnFontMetrics->descent = static_cast<float>(CTFontGetDescent(ctFont_));
+        returnFontMetrics->lineGap = static_cast<float>(CTFontGetLeading(ctFont_));
+        returnFontMetrics->capHeight = static_cast<float>(CTFontGetCapHeight(ctFont_));
+        returnFontMetrics->xHeight = static_cast<float>(CTFontGetXHeight(ctFont_));
+        returnFontMetrics->underlinePosition = static_cast<float>(CTFontGetUnderlinePosition(ctFont_));
+        returnFontMetrics->underlineThickness = static_cast<float>(CTFontGetUnderlineThickness(ctFont_));
         returnFontMetrics->strikethroughPosition = returnFontMetrics->xHeight / 2;
         returnFontMetrics->strikethroughThickness = returnFontMetrics->underlineThickness;
-        /* same
-                    auto fontRef = CGFontCreateWithFontName((CFStringRef) [font fontName]);
-                    float d = CGFontGetDescent(fontRef);
-                    float x = CGFontGetUnitsPerEm(fontRef);
-                    float descent = d/x;
-                    float descent2 = descent * fontSize;
-                    CFRelease(fontRef);
-        */
         return gmpi::ReturnCode::Ok;
     }
 
-    // TODO!!!: Probly needs to accept constraint rect like DirectWrite. !!!
     gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize) override
     {
-        auto str = [NSString stringWithCString : utf8String encoding : NSUTF8StringEncoding];
+        CFStringRef str = CFStringCreateWithBytes(kCFAllocatorDefault,
+            (const UInt8*)utf8String, stringLength, kCFStringEncodingUTF8, false);
 
-        auto r = [str sizeWithAttributes : native2];
-        returnSize->width = r.width;
-        returnSize->height = r.height;
+        CFDictionaryRef attributes = createAttributes();
+        CFAttributedStringRef attrStr = CFAttributedStringCreate(kCFAllocatorDefault, str, attributes);
+        CTLineRef line = CTLineCreateWithAttributedString(attrStr);
+
+        CGFloat ascent_ct, descent_ct, leading_ct;
+        double width = CTLineGetTypographicBounds(line, &ascent_ct, &descent_ct, &leading_ct);
+
+        returnSize->width = static_cast<float>(width);
+        returnSize->height = static_cast<float>(ascent_ct + descent_ct + leading_ct);
 
         if (lineSpacing_ < 0.f)
         {
-            // Natural spacing: compute line count from Cocoa's measurement, then
-            // return height using the Windows-equivalent line height (from OS/2 sTypo
-            // metrics) so that paragraph alignment calculations match DirectWrite.
-            const float cocoaLineH = ascent + (-[((NSFont*)native2[NSFontAttributeName]) descender])
-                                     + [((NSFont*)native2[NSFontAttributeName]) leading];
-            const float numLines   = std::round(r.height / cocoaLineH);
+            const float cocoaLineH = static_cast<float>(ascent_ct + descent_ct + leading_ct);
+            const float numLines   = std::round(returnSize->height / cocoaLineH);
             returnSize->height = numLines * winNaturalLineHeight_;
         }
-        // Custom spacing: sizeWithAttributes returns exactly N * lineSpacing_ (the
-        // extra space is inside each line box, not tacked on top), matching DirectWrite.
+
+        CFRelease(line);
+        CFRelease(attrStr);
+        CFRelease(attributes);
+        CFRelease(str);
 
         return gmpi::ReturnCode::Ok;
     }
-	
+
     gmpi::ReturnCode setLineSpacing(float lineSpacing, float baseline) override
     {
         lineSpacing_ = lineSpacing;
@@ -586,17 +644,16 @@ public:
 
         if (lineSpacing >= 0.f)
         {
-            [nativeStyle setMinimumLineHeight:lineSpacing];
-            [nativeStyle setMaximumLineHeight:lineSpacing];
+            ctLineHeightMin_ = lineSpacing;
+            ctLineHeightMax_ = lineSpacing;
         }
         else
         {
-            // Restore natural line height.
-            [nativeStyle setMinimumLineHeight:0];
-            [nativeStyle setMaximumLineHeight:0];
+            ctLineHeightMin_ = 0;
+            ctLineHeightMax_ = 0;
         }
 
-        // topAdjustment must be recomputed — it depends on the line box height.
+        rebuildParagraphStyle();
         CalculateTopAdjustment();
         return gmpi::ReturnCode::Ok;
     }
@@ -609,17 +666,17 @@ class BitmapPixels final : public gmpi::drawing::api::IBitmapPixels
 {
     int bytesPerRow;
     class Bitmap* seBitmap = {};
-    NSImage** inBitmap_;
-    NSBitmapImageRep* bitmap2 = {};
+    CGImageRef* inImage_;
+    CGContextRef pixelContext_ = nullptr;
     int32_t flags;
 
 public:
-    BitmapPixels(Bitmap* bitmap /*NSImage** inBitmap*/, bool _alphaPremultiplied, int32_t pflags);
+    BitmapPixels(Bitmap* bitmap, bool _alphaPremultiplied, int32_t pflags);
     ~BitmapPixels();
 
     gmpi::ReturnCode getAddress(uint8_t** returnAddress) override
     {
-        *returnAddress = static_cast<uint8_t*>([bitmap2 bitmapData]);
+        *returnAddress = static_cast<uint8_t*>(CGBitmapContextGetData(pixelContext_));
 		return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) override
@@ -637,7 +694,7 @@ public:
     inline uint8_t fast8bitScale(uint8_t a, uint8_t b) const
     {
         int t = (int)a * (int)b;
-        return (uint8_t)((t + 1 + (t >> 8)) >> 8); // fast way to divide by 255
+        return (uint8_t)((t + 1 + (t >> 8)) >> 8);
     }
 
     GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IBitmapPixels);
@@ -648,49 +705,35 @@ class Bitmap final : public gmpi::drawing::api::IBitmap
 {
 public:
     gmpi::drawing::api::IFactory* factory = nullptr;
-    NSImage* nativeBitmap_ = nullptr;
-    NSBitmapImageRep* additiveBitmap_ = nullptr;
+    CGImageRef nativeBitmap_ = nullptr;
+    CGImageRef additiveBitmap_ = nullptr;
     int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels;
-    
+    uint32_t pixelWidth_ = 0;
+    uint32_t pixelHeight_ = 0;
+
     Bitmap(gmpi::drawing::api::IFactory* pfactory, const char* utf8Uri) :
         nativeBitmap_(nullptr)
         , factory(pfactory)
     {
-        // is this an in-memory resource?
         std::string uriString(utf8Uri);
-        std::string binaryData;
-#if 0 // TODO !!!
-        if (uriString.find(BundleInfo::resourceTypeScheme) == 0)
+
+        // Load using ImageIO (cross-platform macOS/iOS)
+        CFStringRef cfPath = CFStringCreateWithCString(kCFAllocatorDefault, utf8Uri, kCFStringEncodingUTF8);
+        CFURLRef url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, cfPath, kCFURLPOSIXPathStyle, false);
+        CGImageSourceRef source = CGImageSourceCreateWithURL(url, nullptr);
+        CFRelease(url);
+        CFRelease(cfPath);
+
+        if (source)
         {
-            //                    _RPT1(0, "Bitmap() A1: %d\n", this);
-
-            binaryData = BundleInfo::instance()->getResource(utf8Uri + strlen(BundleInfo::resourceTypeScheme));
-
-            nativeBitmap_ = [[NSImage alloc]initWithData:[NSData dataWithBytes : (binaryData.data())
-                length : binaryData.size()] ];
+            nativeBitmap_ = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
+            CFRelease(source);
         }
-        else
-#endif
+
+        if (nativeBitmap_)
         {
-            //                    _RPT1(0, "Bitmap() A2: %d\n", this);
-
-            NSString* url = [NSString stringWithCString : utf8Uri encoding : NSUTF8StringEncoding];
-            nativeBitmap_ = [[NSImage alloc]initWithContentsOfFile:url];
-        }
-
-        // undo scaling of image (which reports scaled size, screwing up animation frame).
-        NSSize max = NSZeroSize;
-        for (NSObject* o in nativeBitmap_.representations) {
-            if ([o isKindOfClass : NSImageRep.class]) {
-                NSImageRep* r = (NSImageRep*)o;
-                if (r.pixelsWide != NSImageRepMatchesDevice && r.pixelsHigh != NSImageRepMatchesDevice) {
-                    max.width = MAX(max.width, r.pixelsWide);
-                    max.height = MAX(max.height, r.pixelsHigh);
-                }
-            }
-        }
-        if (max.width > 0 && max.height > 0) {
-            nativeBitmap_.size = max;
+            pixelWidth_ = static_cast<uint32_t>(CGImageGetWidth(nativeBitmap_));
+            pixelHeight_ = static_cast<uint32_t>(CGImageGetHeight(nativeBitmap_));
         }
     }
 
@@ -698,114 +741,76 @@ public:
            int32_t pCreationFlags = (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels)
         : factory(pfactory)
         , creationFlags(pCreationFlags)
+        , pixelWidth_(width)
+        , pixelHeight_(height)
     {
-        //                _RPT1(0, "Bitmap() B: %d\n", this);
+        // Create an empty bitmap via CGBitmapContext
+        CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGContextRef ctx = CGBitmapContextCreate(NULL, width, height, 8, 0, colorSpace,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGColorSpaceRelease(colorSpace);
 
-        nativeBitmap_ = [[NSImage alloc]initWithSize:NSMakeSize((CGFloat)width, (CGFloat)height)];
-        // not sure yet                [nativeBitmap_ setFlipped:TRUE];
-
-#if !__has_feature(objc_arc)
-//                [nativeBitmap_ retain];
-#endif
+        if (ctx)
+        {
+            // Clear to transparent
+            CGContextClearRect(ctx, CGRectMake(0, 0, width, height));
+            nativeBitmap_ = CGBitmapContextCreateImage(ctx);
+            CGContextRelease(ctx);
+        }
     }
 
-    // from a bitmap render target
+    // from a bitmap render target (takes ownership of the CGImage)
     Bitmap(
            gmpi::drawing::api::IFactory* pfactory
-           , NSImage* native
+           , CGImageRef native
            , int32_t pCreationFlags = (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels
            )
         : nativeBitmap_(native)
         , factory(pfactory)
         , creationFlags(pCreationFlags)
     {
-        //               _RPT1(0, "Bitmap() C: %d\n", this);
-        [nativeBitmap_ retain] ;
-#if !__has_feature(objc_arc)
-        //                [nativeBitmap_ retain];
-#endif
+        if (nativeBitmap_)
+        {
+            CGImageRetain(nativeBitmap_);
+            pixelWidth_ = static_cast<uint32_t>(CGImageGetWidth(nativeBitmap_));
+            pixelHeight_ = static_cast<uint32_t>(CGImageGetHeight(nativeBitmap_));
+        }
     }
 
     bool isLoaded()
     {
-        return nativeBitmap_ != nil;
+        return nativeBitmap_ != nullptr;
     }
 
     virtual ~Bitmap()
     {
-        //                _RPT1(0, "~Bitmap() %d\n", this);
-
-#if !__has_feature(objc_arc)
-//                [nativeBitmap_ release];
-#endif
         if (nativeBitmap_)
-        {
-            [nativeBitmap_ release] ;
-        }
+            CGImageRelease(nativeBitmap_);
         if (additiveBitmap_)
-        {
-            [additiveBitmap_ release] ;
-        }
+            CGImageRelease(additiveBitmap_);
     }
 
-    inline NSImage* getNativeBitmap()
+    inline CGImageRef getNativeBitmap()
     {
         return nativeBitmap_;
     }
-/*
-    gmpi::drawing::Size getSizeF() override
-    {
-        NSSize s = [nativeBitmap_ size];
-        return Size(s.width, s.height);
-    }
-*/
 
     gmpi::ReturnCode getSizeU(gmpi::drawing::SizeU* returnSize) override
     {
-        NSSize s = [nativeBitmap_ size];
-
-        returnSize->width = static_cast<uint32_t>(0.5f + s.width);
-        returnSize->height = static_cast<uint32_t>(0.5f + s.height);
-
-        /* hmm, assumes image representation at index 0 is actual size. size is already set correctly in constructor.
-            *
-#ifdef _DEBUG
-            // Check images NOT scaled by cocoa.
-            // https://stackoverflow.com/questions/2190027/nsimage-acting-weird
-            NSImageRep *rep = [[nativeBitmap_ representations] objectAtIndex:0];
-
-            assert(returnSize->width == rep.pixelsWide);
-            assert(returnSize->height == rep.pixelsHigh);
-#endif
-                */
+        returnSize->width = pixelWidth_;
+        returnSize->height = pixelHeight_;
         return gmpi::ReturnCode::Ok;
     }
-#if 0
-    gmpi::ReturnCode lockPixelsOld(gmpi::drawing::api::IBitmapPixels** returnInterface, bool alphaPremultiplied) override
-    {
-        *returnInterface = 0;
-        return gmpi::ReturnCode::Fail;
-        /* TODO!!!
-                    gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-                    b2.Attach(new bitmapPixels(&nativeBitmap_, alphaPremultiplied, gmpi::drawing::MP1_BITMAP_LOCK_READ | gmpi::drawing::MP1_BITMAP_LOCK_WRITE));
-
-                    return b2->queryInterface(gmpi::drawing::SE_IID_BITMAP_PIXELS_MPGUI, (void**)(returnInterface));
-        */
-    }
-#endif
 
     gmpi::ReturnCode lockPixels(gmpi::drawing::api::IBitmapPixels** returnPixels, int32_t flags) override
     {
-        //               _RPT1(0, "Bitmap() lockPixels: %d\n", this);
         *returnPixels = 0;
 
         gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-        b2.attach(new BitmapPixels(this /*&nativeBitmap_*/, true, flags));
+        b2.attach(new BitmapPixels(this, true, flags));
 
         return b2->queryInterface(&gmpi::drawing::api::IBitmapPixels::guid, (void**)(returnPixels));
     }
-
-//    void ApplyAlphaCorrection() override {}
 
     void ApplyAlphaCorrection2() {}
 
@@ -834,20 +839,23 @@ public:
     GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IGradientstopCollection);
 };
 
-// shared beween SDK3 and GMPI-UI factorys
+// shared between SDK3 and GMPI-UI factories
 struct FactoryInfo
 {
     std::vector<std::string> supportedFontFamilies;
-    NSColorSpace* gmpiColorSpace{};
+    CGColorSpaceRef cgColorSpace = nullptr;
+#if TARGET_OS_OSX
+    // SDK3 backward compatibility — legacy code references gmpiColorSpace as NSColorSpace*
+    NSColorSpace* gmpiColorSpace = nullptr;
+#endif
 };
 
 inline void initFactoryHelper(FactoryInfo& info)
 {
-    auto temp = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // kCGColorSpaceExtendedLinearSRGB);
-    info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:temp];
-        
-    if(temp)
-        CFRelease(temp);
+    info.cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
+#if TARGET_OS_OSX
+    info.gmpiColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:info.cgColorSpace];
+#endif
 }
 
 class Factory : public gmpi::drawing::api::IFactory
@@ -859,167 +867,18 @@ public:
     {
         initFactoryHelper(info);
     }
-#if 0
-    void setBestColorSpace(NSWindow* window)
+
+    ~Factory()
     {
-        /* even non-wide displays benifit from kCGColorSpaceExtendedLinearSRGB, they appear to dither to approximate it
-
-        bool hasWideGamutScreen = true;
-        for ( NSScreen* screen in [NSScreen screens] )
-        {
-            if ( FALSE == [screen canRepresentDisplayGamut:NSDisplayGamutP3] )
-            {
-                hasWideGamutScreen = false;
-            }
-        }
-            */
-            
-#if 0
-        //colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB); // bitmap washed-out on big sur
-        // colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB); // too dark
-
-/* The name of the "Generic" linear RGB color space. This is the same as
-    `kCGColorSpaceGenericRGB' but with a 1.0 gamma. */
-
-CG_EXTERN const CFStringRef kCGColorSpaceGenericRGBLinear
-CG_AVAILABLE_STARTING(10.5, 9.0);
-
-CG_EXTERN const CFStringRef kCGColorSpaceLinearDisplayP3
-CG_AVAILABLE_STARTING(12.0, 15.0);
-
-CG_EXTERN const CFStringRef kCGColorSpaceExtendedLinearDisplayP3
-CG_AVAILABLE_STARTING(10.14.3, 12.3);
-/*  The name of the sRGB color space variant with linear gamma */
-
-CG_EXTERN const CFStringRef kCGColorSpaceLinearSRGB
-CG_AVAILABLE_STARTING(10.12, 10.0);
-
-/*  The name of the extended sRGB color space variant with linear gamma */
-
-CG_EXTERN const CFStringRef kCGColorSpaceExtendedLinearSRGB
-CG_AVAILABLE_STARTING(10.12, 10.0);
-
-#endif
-
-#if 0
-// !!!DISABLE WINDOW COLORSPACE AS IT CAUSES FLICKERING TITLE BAR. !!! TODO research problem, log bug with Apple whatever
-
-#if 0 // ndef _DEBUG
-        NSOperatingSystemVersion minimumSupportedOSVersion = { .majorVersion = 10, .minorVersion = 12, .patchVersion = 2 };
-        const BOOL isSupported = [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:minimumSupportedOSVersion];
-        colorSpace = CGColorSpaceCreateWithName(isSupported ? kCGColorSpaceGenericRGBLinear : kCGColorSpaceSRGB);
-#else
-
-        const CFStringRef preferedColorSpaces[] =
-        {                                                   // BIGSUR (Intel)   MONT (M1)         CATALINA (Mini Intel)
-//              CFSTR("kCGColorSpaceExtendedLinearDisplayP3"),  // too bright       *good             *good
-            CFSTR("kCGColorSpaceExtendedLinearSRGB"),       // too bright       *good             *good
-            kCGColorSpaceGenericRGBLinear, // AKA Gen HDR   // *good (16bit)    good/banded(8bit) same
-            CFSTR("kCGColorSpaceLinearSRGB"), // sRGB IEC   // *good 8b         good/banded 8b    good/banded (8bit)
-            CFSTR("kCGColorSpaceSRGB"),// most generic      // brushes OK, gradients very bad. mild-banding all systems
-        };
-        const int fallbackCount = sizeof(preferedColorSpaces)/sizeof(preferedColorSpaces[0]);
-/*
-        static int test = 0;
-        const int safeindex = test % fallbackCount;
-        colorSpace = CGColorSpaceCreateWithName(preferedColorSpaces[safeindex]);
-        ++test;
-*/
-        NSOperatingSystemVersion minimumSupportedOSVersion = { .majorVersion = 12, .minorVersion = 0, .patchVersion = 1 };
-        const BOOL isMonterey = [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:minimumSupportedOSVersion];
-        const int bestColorspaceIndex = isMonterey ? 0 : 1;
-        CGColorSpaceRef colorSpace = {};
-        for(int i = bestColorspaceIndex ; !colorSpace && i < fallbackCount; ++i)
-        {
-            colorSpace = CGColorSpaceCreateWithName(preferedColorSpaces[i]);
-        }
-#endif
-
-        if(colorSpace)
-        {
-            nsColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
-            [window setColorSpace:nsColorSpace];
-        }
-#endif
-/* don't work
-
-        const bool failed = (colorSpace != [[window colorSpace] CGColorSpace]);
-            
-        if(!failed)
-        {
-            return;
-        }
-            
-        colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceGenericRGBLinear);
-        nsColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
-        [window setColorSpace:nsColorSpace];
-*/
-/*
-//nope            const auto bpp = NSBitsPerSampleFromDepth( [window depthLimit] );
-        // hasWideGamutScreen works, but kCGColorSpaceExtendedLinearSRGB seems fine on those screens anyhow (Waves laptop)
-        if(true) // hasWideGamutScreen) //8 < bpp)
-        {
-            // linear gradients, no banding.
-            colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
-        }
-        else
-        {
-            // proper linear gradients, but banding on dark-grey gradient bitmap due to lack of precision.
-            colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceGenericRGBLinear);
-        }
-            
-        nsColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
-            
-        [window setColorSpace:nsColorSpace];
-            
-        auto test = [window colorSpace];
-        auto cgcs = [test CGColorSpace];
-        */
-//          return nsColorSpace;
+        if (info.cgColorSpace)
+            CGColorSpaceRelease(info.cgColorSpace);
     }
-#endif
-    
-    // utility
-    inline NSColor* toNative(const gmpi::drawing::Color& color)
+
+    // utility: create a CGColor in the linear sRGB color space
+    inline CGColorRef toNativeCGColor(const gmpi::drawing::Color& color)
     {
-/*
-        // This should be equivalent to sRGB, except it allows extended color components beyond 0.0 - 1.0
-        // for plain old sRGB, colorWithCalibratedRed would be next best.
-            
-        return [NSColor colorWithDisplayP3Red:
-                (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.r))
-                green : (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.g))
-                blue : (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.b))
-                alpha : (CGFloat)color.a];
-            
-        // nativec_ = [NSColor colorWithRed:color.r green:color.g blue:color.b alpha:color.a]; // wrong gamma
-*/
-//            native2 = [[NSGradient alloc] initWithColors:colors atLocations: locations2.data() colorSpace: nsColorSpace];
-            
-        // same as manual sRGB conversion, but not linear alpha blending
-//           return [NSColor colorWithCalibratedRed:color.r green:color.g blue:color.b alpha:color.a];
-// too dark in all screen spaces            return [NSColor colorWithCalibratedRed:color.r green:color.g blue:color.b alpha:color.a ];
-#if 0
-        // looks correct in all screen spaces, at least for brushes. shows quantization from conversion routines is only weakness.
-        return [NSColor colorWithSRGBRed:
-                (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.r))
-                green : (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.g))
-                blue : (CGFloat)se_sdk::FastGamma::pixelToNormalised(se_sdk::FastGamma::float_to_sRGB(color.b))
-                alpha : (CGFloat)color.a];
-        
-        // or, without quantization, but slower.
-        return [NSColor colorWithSRGBRed:
-                        (CGFloat)se_sdk::FastGamma::linearToSrgb(color.r)
-                green : (CGFloat)se_sdk::FastGamma::linearToSrgb(color.g)
-                blue  : (CGFloat)se_sdk::FastGamma::linearToSrgb(color.b)
-                alpha : (CGFloat)color.a];
-#endif
         const CGFloat components[4] = {color.r, color.g, color.b, color.a};
-        return [NSColor colorWithColorSpace:info.gmpiColorSpace components:components count:4];
-            
-// I think this is wrong because it's saying that the gmpi color is in the screen's color space. Which is a crapshoot out of our control.
-// we need to supply our color in a known color space, then let the OS convert it to whatever unknown color-space the screen is using.
-//            return [NSColor colorWithColorSpace:nsColorSpace components:components count:4]; // washed-out on big Sur (with extended linier) good with genericlinier
+        return CGColorCreate(info.cgColorSpace, components);
     }
 
     gmpi::ReturnCode createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry) override;
@@ -1040,33 +899,41 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         return b2->queryInterface(&gmpi::drawing::api::IStrokeStyle::guid, reinterpret_cast<void **>(returnValue));
     }
 
-    // IMpFactory2
     gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnString) override
     {
         if(info.supportedFontFamilies.empty())
         {
-            NSFontManager* fontManager = [NSFontManager sharedFontManager];
-/*
-            auto fontNames = [fontManager availableFonts]; // tends to add "-bold" or "-italic" on end of name
-*/
-            //for IOS see [UIFont familynames]
-            NSArray* fontFamilies = nil;
-            try
-            {
-                fontFamilies = [fontManager availableFontFamilies];
-            }
-            catch(...)
-            {
-                //_RPT0(0, "NSFontManager threw!");
-            } // Logic Pro may throw an Memory exception here. Don't know why. Maybe due to it using a AU2 wrapper.
+            // Use CoreText to enumerate font families (works on both macOS and iOS)
+            CTFontCollectionRef collection = CTFontCollectionCreateFromAvailableFonts(nullptr);
+            CFArrayRef descriptors = CTFontCollectionCreateMatchingFontDescriptors(collection);
 
-            for( NSString* familyName in fontFamilies)
+            if (descriptors)
             {
-                info.supportedFontFamilies.push_back([familyName UTF8String]);
+                std::set<std::string> familySet;
+                CFIndex count = CFArrayGetCount(descriptors);
+                for (CFIndex i = 0; i < count; ++i)
+                {
+                    CTFontDescriptorRef desc = (CTFontDescriptorRef)CFArrayGetValueAtIndex(descriptors, i);
+                    CFStringRef familyName = (CFStringRef)CTFontDescriptorCopyAttribute(desc, kCTFontFamilyNameAttribute);
+                    if (familyName)
+                    {
+                        char buf[256];
+                        if (CFStringGetCString(familyName, buf, sizeof(buf), kCFStringEncodingUTF8))
+                        {
+                            familySet.insert(buf);
+                        }
+                        CFRelease(familyName);
+                    }
+                }
+                CFRelease(descriptors);
+
+                for (const auto& name : familySet)
+                    info.supportedFontFamilies.push_back(name);
             }
+            CFRelease(collection);
         }
-            
-        if (fontIndex < 0 || fontIndex >= info.supportedFontFamilies.size())
+
+        if (fontIndex < 0 || fontIndex >= (int32_t)info.supportedFontFamilies.size())
         {
             return gmpi::ReturnCode::Fail;
         }
@@ -1074,7 +941,7 @@ CG_AVAILABLE_STARTING(10.12, 10.0);
         returnString->setData(info.supportedFontFamilies[fontIndex].data(), static_cast<int32_t>(info.supportedFontFamilies[fontIndex].size()));
         return gmpi::ReturnCode::Ok;
     }
-    
+
     gmpi::ReturnCode getPlatformPixelFormat(gmpi::drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
     {
         *returnPixelFormat = gmpi::drawing::api::IBitmapPixels::kBGRA;
@@ -1099,81 +966,43 @@ public:
 
     virtual ~CocoaBrushBase() {}
 
-    virtual void fillPath(class GraphicsContext* context, NSBezierPath* nsPath) const = 0;
+    virtual void fillPath(class GraphicsContext* context, CGPathRef cgPath) const = 0;
 
-    // Default to black fill for fancy brushes that don't implement line drawing yet.
-    virtual void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const
+    virtual void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const
     {
-        [[NSColor blackColor]set]; /// !!!TODO!!!, color set to black always.
+        CGContextSaveGState(ctx);
 
-        [nsPath setLineWidth : strokeWidth] ;
-        setNativePenStrokeStyle(nsPath, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        const CGFloat black[] = {0, 0, 0, 1};
+        CGContextSetStrokeColor(ctx, black);
+        CGContextSetLineWidth(ctx, strokeWidth);
+        applyCGStrokeStyle(ctx, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        applyCGDashStyle(ctx, strokeStyle, strokeWidth);
+        CGContextAddPath(ctx, cgPath);
+        CGContextStrokePath(ctx);
 
-        [nsPath stroke] ;
+        CGContextRestoreGState(ctx);
     }
 };
 
 
 class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush, public CocoaBrushBase
 {
-    // NSColor colorWithPatternImage: has a 1-pixel seam bug when tiling a
-    // 32-bit float NSBitmapImageRep in a flipped context and the fill rect
-    // doesn't start at the tile origin.  We avoid the problem by always
-    // handing NSColor an 8-bit sRGB copy of the source image for tiling.
-    NSImage* patternImage_ = nullptr;
+    CGImageRef patternImage_ = nullptr;
 
-    static NSImage* makePatternImage(NSImage* src)
+    static CGImageRef makePatternImage(CGImageRef src)
     {
-        // NSColor colorWithPatternImage: has a 1-pixel seam bug when tiling a
-        // 32-bit float-backed NSImage in a flipped context and the fill rect
-        // doesn't start at a tile boundary.  Rasterising to a plain 8-bit sRGB
-        // NSImage first avoids the artefact at no visible quality cost.
-        //
-        // IMPORTANT: the result must be NSBitmapImageRep-backed.  If we wrap
-        // the rasterised data with [[NSImage alloc] initWithCGImage:…] we get
-        // a CGImage-backed rep; NSColor's pattern tiler renders that rep via
-        // CGContextDrawImage, which reverses the y-axis relative to the
-        // NSBitmapImageRep code path — producing a phase-shifted checkerboard.
-        // Copying the pixels into a real NSBitmapImageRep ensures identical
-        // tiling behaviour to the original image.
-        NSSize s = src.size;
-        NSInteger w = (NSInteger)s.width, h = (NSInteger)s.height;
+        size_t w = CGImageGetWidth(src);
+        size_t h = CGImageGetHeight(src);
 
-        // Get a CGImage from the source (handles any backing format, incl. float).
-        NSRect srcRect = NSMakeRect(0, 0, s.width, s.height);
-        CGImageRef cgSrc = [src CGImageForProposedRect:&srcRect context:nil hints:nil];
-
-        // Rasterise into a temporary 8-bit sRGB CGBitmapContext.
-        // CGContextDrawImage places CGImage row 0 at the bottom of the dest rect
-        // (standard CG bottom-up convention), which is what we want: the float
-        // NSBitmapImageRep stores its data bottom-up (GMPI bottom = memory row 0)
-        // so this single CGContextDrawImage without any flip lands the data in the
-        // same orientation as a native 8-bit NSBitmapImageRep.
         CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
             kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(srgb);
-        CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), cgSrc);
 
-        // Copy pixel data into a new NSBitmapImageRep so that NSColor tiles the
-        // image via the same NSBitmapImageRep code path as the original source.
-        const size_t bpr  = CGBitmapContextGetBytesPerRow(ctx);
-        const void*  data = CGBitmapContextGetData(ctx);
-
-        NSBitmapImageRep* dstRep = [[NSBitmapImageRep alloc]
-            initWithBitmapDataPlanes:NULL
-            pixelsWide:w pixelsHigh:h
-            bitsPerSample:8 samplesPerPixel:4
-            hasAlpha:YES isPlanar:NO
-            colorSpaceName:NSDeviceRGBColorSpace
-            bytesPerRow:(NSInteger)bpr bitsPerPixel:32];
-        memcpy([dstRep bitmapData], data, bpr * (size_t)h);
+        CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), src);
+        CGImageRef result = CGBitmapContextCreateImage(ctx);
         CGContextRelease(ctx);
-
-        NSImage* img = [[NSImage alloc] initWithSize:s];
-        [img addRepresentation:dstRep];
-        [dstRep release];
-        return img;
+        return result;
     }
 
 public:
@@ -1194,19 +1023,42 @@ public:
 
     ~BitmapBrush()
     {
-        [patternImage_ release];
+        if (patternImage_) CGImageRelease(patternImage_);
     }
 
-    void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
-        [[NSColor colorWithPatternImage : patternImage_]set];
+        // For pattern brush stroke, we use clip-to-stroke approach
+        CGContextSaveGState(ctx);
 
-        [nsPath setLineWidth : strokeWidth] ;
-        setNativePenStrokeStyle(nsPath, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        CGContextSetLineWidth(ctx, strokeWidth);
+        applyCGStrokeStyle(ctx, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        applyCGDashStyle(ctx, strokeStyle, strokeWidth);
 
-        [nsPath stroke] ;
+        // Create stroke path and clip to it
+        CGContextAddPath(ctx, cgPath);
+        CGContextReplacePathWithStrokedPath(ctx);
+        CGContextClip(ctx);
+
+        // Tile the pattern image
+        CGRect bounds = CGPathGetBoundingBox(cgPath);
+        CGFloat tileW = CGImageGetWidth(patternImage_);
+        CGFloat tileH = CGImageGetHeight(patternImage_);
+
+        for (CGFloat y = floor(bounds.origin.y / tileH) * tileH; y < CGRectGetMaxY(bounds); y += tileH) {
+            for (CGFloat x = floor(bounds.origin.x / tileW) * tileW; x < CGRectGetMaxX(bounds); x += tileW) {
+                CGContextSaveGState(ctx);
+                CGContextTranslateCTM(ctx, x, y + tileH);
+                CGContextScaleCTM(ctx, 1.0, -1.0);
+                CGContextDrawImage(ctx, CGRectMake(0, 0, tileW, tileH), patternImage_);
+                CGContextRestoreGState(ctx);
+            }
+        }
+
+        CGContextRestoreGState(ctx);
     }
-    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override;
+
+    void fillPath(GraphicsContext* context, CGPathRef cgPath) const override;
 
     gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
     {
@@ -1221,12 +1073,12 @@ public:
 class SolidColorBrush : public gmpi::drawing::api::ISolidColorBrush, public CocoaBrushBase
 {
     gmpi::drawing::Color color;
-    NSColor* nativec_ = nullptr;
+    CGColorRef nativec_ = nullptr;
 
     inline void setNativeColor()
     {
-        nativec_ = factory_->toNative(color);
-        [nativec_ retain] ;
+        if (nativec_) CGColorRelease(nativec_);
+        nativec_ = factory_->toNativeCGColor(color);
     }
 
 public:
@@ -1236,29 +1088,28 @@ public:
         setNativeColor();
     }
 
-    inline NSColor* nativeColor() const
+    inline CGColorRef nativeColor() const
     {
         return nativec_;
     }
 
-    void fillPath(GraphicsContext* context, NSBezierPath* nsPath) const override
-    {
-        [nativec_ set] ;
-        [nsPath fill] ;
-    }
+    void fillPath(GraphicsContext* context, CGPathRef cgPath) const override;
 
-    void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
+    void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
-        [nativec_ set] ;
-        [nsPath setLineWidth : strokeWidth] ;
-        setNativePenStrokeStyle(nsPath, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
-
-        [nsPath stroke] ;
+        CGContextSaveGState(ctx);
+        CGContextSetStrokeColorWithColor(ctx, nativec_);
+        CGContextSetLineWidth(ctx, strokeWidth);
+        applyCGStrokeStyle(ctx, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        applyCGDashStyle(ctx, strokeStyle, strokeWidth);
+        CGContextAddPath(ctx, cgPath);
+        CGContextStrokePath(ctx);
+        CGContextRestoreGState(ctx);
     }
 
     ~SolidColorBrush()
     {
-        [nativec_ release] ;
+        if (nativec_) CGColorRelease(nativec_);
     }
 
 	void setColor(const gmpi::drawing::Color* pcolor) override
@@ -1277,7 +1128,6 @@ public:
 	{
 		*returnInterface = {};
 
-        // GMPI_QUERYINTERFACE(gmpi::drawing::api::IBrush);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::IResource);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::ISolidColorBrush);
 
@@ -1290,88 +1140,65 @@ public:
 class Gradient
 {
 protected:
-    NSGradient* native2 = {};
+    CGGradientRef cgGradient_ = nullptr;
+    cocoa::Factory* gradientFactory_;
 
 public:
-    Gradient(cocoa::Factory* factory, const gmpi::drawing::api::IGradientstopCollection* gradientStopCollection)
+    Gradient(cocoa::Factory* factory, const gmpi::drawing::api::IGradientstopCollection* gradientStopCollection) :
+        gradientFactory_(factory)
     {
         auto stops = static_cast<const GradientstopCollection*>(gradientStopCollection);
 
-        NSMutableArray* colors = [NSMutableArray array];
-        std::vector<CGFloat> locations2;
+        const size_t count = stops->gradientstops.size();
+        std::vector<CGFloat> components(count * 4);
+        std::vector<CGFloat> locations(count);
 
         // reversed, so radial gradient draws same as PC
-        for (auto it = stops->gradientstops.rbegin(); it != stops->gradientstops.rend(); ++it)//  auto& stop : stops->gradientstops)
+        for (size_t i = 0; i < count; ++i)
         {
-            const auto& stop = *it;
-            [colors addObject : factory->toNative(stop.color)] ;
-            locations2.push_back(1.0 - stop.position);
+            const auto& stop = stops->gradientstops[count - 1 - i];
+            components[i * 4 + 0] = stop.color.r;
+            components[i * 4 + 1] = stop.color.g;
+            components[i * 4 + 2] = stop.color.b;
+            components[i * 4 + 3] = stop.color.a;
+            locations[i] = 1.0 - stop.position;
         }
-        /* faded on big sur
-                CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceGenericRGBLinear);
-                NSColorSpace* nsColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:colorSpace];
 
-                native2 = [[NSGradient alloc] initWithColors:colors atLocations: locations2.data() colorSpace: nsColorSpace];
-        */
-        //native2 = [[NSGradient alloc] initWithColors:colors atLocations: locations2.data() colorSpace: [NSColorSpace genericRGBColorSpace]]; // too dark on genericlinier window cs
-
-//                CFRelease(colorSpace);
-
-        native2 = [[NSGradient alloc]initWithColors:colors atLocations : locations2.data() colorSpace : factory->info.gmpiColorSpace];
+        cgGradient_ = CGGradientCreateWithColorComponents(factory->info.cgColorSpace,
+            components.data(), locations.data(), count);
     }
 
-    virtual void drawGradient() const = 0;
+    virtual void drawGradient(CGContextRef ctx) const = 0;
 
     ~Gradient()
     {
-        [native2 release] ;
-    }
-    
-    void fillPath(NSBezierPath* nsPath) const
-    {
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        [nsPath addClip];
-        
-        drawGradient();
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
+        if (cgGradient_) CGGradientRelease(cgGradient_);
     }
 
-    void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const
+    void fillPath(CGContextRef ctx, CGPathRef cgPath) const
     {
-        setNativePenStrokeStyle(nsPath, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        CGContextSaveGState(ctx);
+        CGContextAddPath(ctx, cgPath);
+        CGContextClip(ctx);
+        drawGradient(ctx);
+        CGContextRestoreGState(ctx);
+    }
 
-        // convert NSPath to CGPath
-        CGPathRef strokePath;
-        {
-            CGMutablePathRef cgPath = NsToCGPath(nsPath);
+    void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const
+    {
+        CGContextSaveGState(ctx);
 
-            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
-                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
-            CGPathRelease(cgPath);
-        }
-
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
-
-        CGContextAddPath(ctx, strokePath);
+        // Create stroked version of path and clip to it
+        CGContextSetLineWidth(ctx, strokeWidth);
+        applyCGStrokeStyle(ctx, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
+        applyCGDashStyle(ctx, strokeStyle, strokeWidth);
+        CGContextAddPath(ctx, cgPath);
+        CGContextReplacePathWithStrokedPath(ctx);
         CGContextClip(ctx);
 
-        drawGradient();
-        
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
+        drawGradient(ctx);
 
-        CGPathRelease(strokePath);
+        CGContextRestoreGState(ctx);
     }
 };
 
@@ -1393,12 +1220,6 @@ public:
 
 public:
 
-    float getAngle() const
-    {
-        // TODO cache. e.g. nan = not calculated yet.
-        return (180.0f / M_PI) * atan2(brushProperties.endPoint.y - brushProperties.startPoint.y, brushProperties.endPoint.x - brushProperties.startPoint.x);
-    }
-
 	void setStartPoint(gmpi::drawing::Point startPoint) override
     {
         brushProperties.startPoint = startPoint;
@@ -1408,63 +1229,19 @@ public:
         brushProperties.endPoint = endPoint;
     }
 
-    void drawGradient() const override
+    void drawGradient(CGContextRef ctx) const override
     {
-        // assuming the caller has applied a clipping path, just draw the gradient.
-        [native2 drawFromPoint : toNative(brushProperties.endPoint) toPoint : toNative(brushProperties.startPoint) options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation] ;
+        CGContextDrawLinearGradient(ctx, cgGradient_,
+            toNative(brushProperties.endPoint),
+            toNative(brushProperties.startPoint),
+            kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
     }
 
-    void fillPath(GraphicsContext*, NSBezierPath* nsPath) const override
+    void fillPath(GraphicsContext*, CGPathRef cgPath) const override;
+
+    void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
-        Gradient::fillPath(nsPath);
-#if 0
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        [nsPath addClip] ;
-
-        drawGradient();
-
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-#endif
-    }
-
-    void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        Gradient::strokePath(nsPath, strokeWidth, strokeStyle);
-#if 0
-        setNativePenStrokeStyle(nsPath, (gmpi::drawing::api::IStrokeStyle*)strokeStyle);
-
-        // convert NSPath to CGPath
-        CGPathRef strokePath;
-        {
-            CGMutablePathRef cgPath = NsToCGPath(nsPath);
-
-            strokePath = CGPathCreateCopyByStrokingPath(cgPath, NULL, strokeWidth, (CGLineCap)[nsPath lineCapStyle],
-                (CGLineJoin)[nsPath lineJoinStyle], [nsPath miterLimit]);
-            CGPathRelease(cgPath);
-        }
-
-
-        // If you plan to do more drawing later, it's a good idea
-        // to save the graphics state before clipping.
-        [NSGraphicsContext saveGraphicsState];
-
-        // clip following output to the path
-        CGContextRef ctx = (CGContextRef) [[NSGraphicsContext currentContext]graphicsPort];
-
-        CGContextAddPath(ctx, strokePath);
-        CGContextClip(ctx);
-
-        drawGradient();
-        
-        // restore clip region
-        [NSGraphicsContext restoreGraphicsState] ;
-
-        CGPathRelease(strokePath);
-#endif
-        
+        Gradient::strokePath(ctx, cgPath, strokeWidth, strokeStyle);
     }
 
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
@@ -1473,11 +1250,9 @@ public:
 		return gmpi::ReturnCode::Ok;
     }
 
-    // GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::ILinearGradientBrush);
     ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};
-        // GMPI_QUERYINTERFACE(drawing::api::IBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         GMPI_QUERYINTERFACE(drawing::api::ILinearGradientBrush);
         return ReturnCode::NoSupport;
@@ -1496,19 +1271,18 @@ public:
         , gradientProperties(*radialGradientBrushProperties)
     {
     }
-    
-    void drawGradient() const override
+
+    void drawGradient(CGContextRef ctx) const override
     {
-        const auto origin = NSMakePoint(
+        const CGPoint center = toNative(gradientProperties.center);
+        const CGPoint origin = CGPointMake(
             gradientProperties.center.x + gradientProperties.gradientOriginOffset.x,
             gradientProperties.center.y + gradientProperties.gradientOriginOffset.y);
 
-        // assuming the caller has applied a clipping path, just draw the gradient.
-        [native2 drawFromCenter : toNative(gradientProperties.center)
-            radius : gradientProperties.radiusX
-            toCenter : origin
-            radius : 0.0
-            options : NSGradientDrawsBeforeStartingLocation | NSGradientDrawsAfterEndingLocation];
+        CGContextDrawRadialGradient(ctx, cgGradient_,
+            center, gradientProperties.radiusX,
+            origin, 0.0,
+            kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
     }
 
     void setCenter(gmpi::drawing::Point center) override
@@ -1529,27 +1303,22 @@ public:
     {
         gradientProperties.radiusY = radiusY;
     }
-    void fillPath(GraphicsContext*, NSBezierPath* nsPath) const override
+
+    void fillPath(GraphicsContext*, CGPathRef cgPath) const override;
+
+    void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
-        Gradient::fillPath(nsPath);
+        Gradient::strokePath(ctx, cgPath, strokeWidth, strokeStyle);
     }
-    void strokePath(NSBezierPath* nsPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
-    {
-        Gradient::strokePath(nsPath, strokeWidth, strokeStyle);
-    }
-    
+
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-
-        // GMPI_QUERYINTERFACE(gmpi::drawing::api::IBrush);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::IResource);
         GMPI_QUERYINTERFACE(gmpi::drawing::api::IRadialGradientBrush);
-
         return gmpi::ReturnCode::NoSupport;
 	}
 
-	// IResource
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
     {
         *factory = factory_;
@@ -1561,35 +1330,21 @@ public:
 
 class GeometrySink final : public se::generic_graphics::GeometrySink
 {
-	NSBezierPath* geometry_;
+	CGMutablePathRef geometry_;
 
 public:
-	GeometrySink(NSBezierPath* geometry) : geometry_(geometry)
+	GeometrySink(CGMutablePathRef geometry) : geometry_(geometry)
 	{}
 
 	void setFillMode(gmpi::drawing::FillMode fillMode) override
 	{
-		switch (fillMode)
-		{
-            case gmpi::drawing::FillMode::Alternate:
-                [geometry_ setWindingRule : NSWindingRuleEvenOdd] ;
-			break;
+		// Fill mode is applied at fill time via CGContext, not stored on the path.
+        // We store it in the PathGeometry instead.
+	}
 
-            case gmpi::drawing::FillMode::Winding:
-                [geometry_ setWindingRule : NSWindingRuleNonZero] ;
-			break;
-		}
-	}
-#if 0
-	void setSegmentFlags(gmpi::drawing::MP1_PATH_SEGMENT vertexFlags)
-	{
-		//		geometrysink_->setSegmentFlags((D2D1_PATH_SEGMENT)vertexFlags);
-	}
-#endif
 	void beginFigure(gmpi::drawing::Point startPoint, gmpi::drawing::FigureBegin figureBegin) override
 	{
-		[geometry_ moveToPoint : NSMakePoint(startPoint.x, startPoint.y)] ;
-
+		CGPathMoveToPoint(geometry_, nullptr, startPoint.x, startPoint.y);
 		lastPoint = startPoint;
 	}
 
@@ -1597,36 +1352,35 @@ public:
 	{
 		if (figureEnd == gmpi::drawing::FigureEnd::Closed)
 		{
-			[geometry_ closePath] ;
+			CGPathCloseSubpath(geometry_);
 		}
 	}
 
 	void addLine(gmpi::drawing::Point point) override
 	{
-		[geometry_ lineToPoint : NSMakePoint(point.x, point.y)] ;
-
+		CGPathAddLineToPoint(geometry_, nullptr, point.x, point.y);
 		lastPoint = point;
 	}
 
 	void addBezier(const gmpi::drawing::BezierSegment* bezier) override
 	{
-		[geometry_ curveToPoint : NSMakePoint(bezier->point3.x, bezier->point3.y)
-			controlPoint1 : NSMakePoint(bezier->point1.x, bezier->point1.y)
-			controlPoint2 : NSMakePoint(bezier->point2.x, bezier->point2.y)] ;
-
+		CGPathAddCurveToPoint(geometry_, nullptr,
+			bezier->point1.x, bezier->point1.y,
+			bezier->point2.x, bezier->point2.y,
+			bezier->point3.x, bezier->point3.y);
 		lastPoint = bezier->point3;
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IGeometrySink);
-
 	GMPI_REFCOUNT;
 };
 
 
 class PathGeometry final : public gmpi::drawing::api::IPathGeometry
 {
-	NSBezierPath* geometry_ = {};
+	CGMutablePathRef geometry_ = nullptr;
 
+    gmpi::drawing::FillMode fillMode_ = gmpi::drawing::FillMode::Alternate;
     gmpi::drawing::DashStyle currentDashStyle = gmpi::drawing::DashStyle::Solid;
 	std::vector<float> currentCustomDashStyle;
 	float currentDashPhase = {};
@@ -1634,59 +1388,51 @@ class PathGeometry final : public gmpi::drawing::api::IPathGeometry
 public:
 	PathGeometry()
 	{
-#if !__has_feature(objc_arc)
-		//                [geometry_ retain];
-#endif
 	}
 
 	~PathGeometry()
 	{
-		//	auto release pool handles it?
-#if !__has_feature(objc_arc)
-//                [geometry_ release];
-#endif
 		if (geometry_)
 		{
-			[geometry_ release] ;
+			CGPathRelease(geometry_);
 		}
 	}
 
-	inline NSBezierPath* native()
+	inline CGPathRef native() const
 	{
 		return geometry_;
 	}
+
+    gmpi::drawing::FillMode getFillMode() const { return fillMode_; }
 
 	gmpi::ReturnCode open(gmpi::drawing::api::IGeometrySink** returnGeometrySink) override
 	{
 		if (geometry_)
 		{
-			[geometry_ release] ;
+			CGPathRelease(geometry_);
 		}
-		geometry_ = [NSBezierPath bezierPath];
-		[geometry_ retain] ;
+		geometry_ = CGPathCreateMutable();
 
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-		b2.attach(new GeometrySink(geometry_));
+		auto sink = new GeometrySink(geometry_);
+		b2.attach(sink);
 
 		return b2->queryInterface(&gmpi::drawing::api::IGeometrySink::guid, reinterpret_cast<void**>(returnGeometrySink));
 	}
 
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
 	{
-		//		native_->getFactory((ID2D1Factory**)factory);
         return gmpi::ReturnCode::NoSupport;
     }
 
 	gmpi::ReturnCode strokeContainsPoint(gmpi::drawing::Point point, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle, const gmpi::drawing::Matrix3x2* worldTransform, bool* returnContains) override
 	{
-		auto cgPath2 = NsToCGPath(geometry_);
-
-		CGPathRef hitTargetPath = CGPathCreateCopyByStrokingPath(cgPath2, NULL, (CGFloat)strokeWidth, (CGLineCap)[geometry_ lineCapStyle], (CGLineJoin)[geometry_ lineJoinStyle], [geometry_ miterLimit]);
-
-		CGPathRelease(cgPath2);
+		CGPathRef hitTargetPath = CGPathCreateCopyByStrokingPath(geometry_, NULL, (CGFloat)strokeWidth,
+            cgLineCapFromStyle(strokeStyle), cgLineJoinFromStyle(strokeStyle), 10.0);
 
 		CGPoint cgpoint = CGPointMake(point.x, point.y);
-		*returnContains = (bool)CGPathContainsPoint(hitTargetPath, NULL, cgpoint, (bool)[geometry_ windingRule]);
+		bool useEOFill = (fillMode_ == gmpi::drawing::FillMode::Alternate);
+		*returnContains = (bool)CGPathContainsPoint(hitTargetPath, NULL, cgpoint, useEOFill);
 
 		CGPathRelease(hitTargetPath);
 		return gmpi::ReturnCode::Ok;
@@ -1694,50 +1440,21 @@ public:
 
 	gmpi::ReturnCode fillContainsPoint(gmpi::drawing::Point point, const gmpi::drawing::Matrix3x2* worldTransform, bool* returnContains) override
 	{
-		*returnContains = [geometry_ containsPoint : NSMakePoint(point.x, point.y)];
+		bool useEOFill = (fillMode_ == gmpi::drawing::FillMode::Alternate);
+		*returnContains = CGPathContainsPoint(geometry_, NULL, CGPointMake(point.x, point.y), useEOFill);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode getWidenedBounds(float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle, const gmpi::drawing::Matrix3x2* worldTransform, gmpi::drawing::Rect* returnBounds) override
 	{
 		const float radius = ceilf(strokeWidth * 0.5f);
-		auto nativeRect = [geometry_ bounds];
+		auto nativeRect = CGPathGetBoundingBox(geometry_);
 		returnBounds->left = nativeRect.origin.x - radius;
 		returnBounds->top = nativeRect.origin.y - radius;
 		returnBounds->right = nativeRect.origin.x + nativeRect.size.width + radius;
 		returnBounds->bottom = nativeRect.origin.y + nativeRect.size.height + radius;
 
 		return gmpi::ReturnCode::Ok;
-	}
-
-	void applyDashStyle(const gmpi::drawing::api::IStrokeStyle* strokeStyleIm, float strokeWidth)
-	{
-        gmpi::drawing::StrokeStyleProperties style;
-
-        auto strokeStyle = (se::generic_graphics::StrokeStyle*)strokeStyleIm;
-        if(strokeStyle)
-            style = strokeStyle->strokeStyleProperties;
-
-		bool changed = currentDashStyle != style.dashStyle;
-		currentDashStyle = style.dashStyle;
-
-		if (!changed && currentDashStyle == gmpi::drawing::DashStyle::Custom)
-		{
-            changed |= currentCustomDashStyle != strokeStyle->dashes;
-		}
-
-		if (currentDashStyle != gmpi::drawing::DashStyle::Solid) // i.e. 'none'
-		{
-			changed |= style.dashOffset != currentDashPhase;
-			currentDashPhase = style.dashOffset;
-		}
-
-		if (!changed)
-		{
-			return;
-		}
-
-		applyDashStyleToPath(geometry_, strokeStyle, strokeWidth);
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IPathGeometry);
@@ -1747,8 +1464,11 @@ public:
 struct ContextInfo
 {
 	std::vector<gmpi::drawing::Rect> clipRectStack;
-    NSAffineTransform* currentTransform{};
-    NSView* view{};
+#if TARGET_OS_OSX
+    // SDK3 backward compatibility — legacy code sends Obj-C messages to this.
+    NSAffineTransform* currentTransform = nullptr;
+    NSView* view = nullptr;
+#endif
 };
 
 class GraphicsContext : public gmpi::drawing::api::IDeviceContext
@@ -1756,21 +1476,45 @@ class GraphicsContext : public gmpi::drawing::api::IDeviceContext
 protected:
     cocoa::Factory* factory{};
     ContextInfo info;
+    CGContextRef cgContext_ = nullptr;
+    CGAffineTransform cgCurrentTransform_ = CGAffineTransformIdentity;
+
+    // For macOS, we need the view to get DPI for mask rendering
+#if TARGET_OS_OSX
+    NSView* view_ = nullptr;
+#endif
 
 public:
     inline static int logicProFix = -1;
 
+#if TARGET_OS_OSX
 	GraphicsContext(NSView* pview, cocoa::Factory* pfactory) :
 		factory(pfactory)
-	{
+    {
+        view_ = pview;
         info.view = pview;
-		info.currentTransform = [NSAffineTransform transform];
+    }
+#endif
+
+    GraphicsContext(cocoa::Factory* pfactory) :
+        factory(pfactory)
+    {
     }
 
 	~GraphicsContext()
 	{
-    // BitmapRenderTarget has one rect pushed. not sure if it should remove it in destructor?    assert(info.clipRectStack.size() == 0);
-	}
+    }
+
+    // Set the CGContext for this graphics context
+    void setCGContext(CGContextRef ctx)
+    {
+        cgContext_ = ctx;
+    }
+
+    CGContextRef getCGContext() const
+    {
+        return cgContext_;
+    }
 
 	gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** pfactory) override
 	{
@@ -1780,35 +1524,29 @@ public:
 
 	gmpi::ReturnCode drawRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		/*
-		auto scb = dynamic_cast<const SolidColorBrush*>(brush);
-		if (scb)
-		{
-			[scb->nativeColor() set];
-		}
-		NSBezierPath *bp = [NSBezierPath bezierPathWithRect : cocoa::NSRectFromRect(*rect)];
-		[bp stroke];
-		*/
+		CGMutablePathRef path = CGPathCreateMutable();
+		CGPathAddRect(path, nullptr, cocoa::CGRectFromRect(*rect));
 
-		NSBezierPath* path = [NSBezierPath bezierPathWithRect : cocoa::NSRectFromRect(*rect)];
-		applyDashStyleToPath(path, strokeStyle, strokeWidth);
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(cgContext_, path, strokeWidth, strokeStyle);
 		}
+		CGPathRelease(path);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
 	{
-		NSBezierPath* rectPath = [NSBezierPath bezierPathWithRect : cocoa::NSRectFromRect(*rect)];
+		CGMutablePathRef rectPath = CGPathCreateMutable();
+		CGPathAddRect(rectPath, nullptr, cocoa::CGRectFromRect(*rect));
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
 			cocoabrush->fillPath(this, rectPath);
 		}
+		CGPathRelease(rectPath);
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -1817,47 +1555,46 @@ public:
 		SolidColorBrush brush(clearColor, factory);
         gmpi::drawing::Rect r;
 		getAxisAlignedClip(&r);
-		NSBezierPath* rectPath = [NSBezierPath bezierPathWithRect : NSRectFromRect(r)];
+		CGMutablePathRef rectPath = CGPathCreateMutable();
+		CGPathAddRect(rectPath, nullptr, CGRectFromRect(r));
 		brush.fillPath(this, rectPath);
+		CGPathRelease(rectPath);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawLine(gmpi::drawing::Point point0, gmpi::drawing::Point point1, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		NSBezierPath* path = [NSBezierPath bezierPath];
-		[path moveToPoint : NSMakePoint(point0.x, point0.y)] ;
-		[path lineToPoint : NSMakePoint(point1.x, point1.y)] ;
+		CGMutablePathRef path = CGPathCreateMutable();
+		CGPathMoveToPoint(path, nullptr, point0.x, point0.y);
+		CGPathAddLineToPoint(path, nullptr, point1.x, point1.y);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			applyDashStyleToPath(path, const_cast<gmpi::drawing::api::IStrokeStyle*>(strokeStyle), strokeWidth);
-			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(cgContext_, path, strokeWidth, strokeStyle);
 		}
+		CGPathRelease(path);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawGeometry(gmpi::drawing::api::IPathGeometry* pathGeometry, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto pg = (PathGeometry*)pathGeometry;
-		pg->applyDashStyle(strokeStyle, strokeWidth);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->strokePath(pg->native(), strokeWidth, strokeStyle);
+			cocoabrush->strokePath(cgContext_, pg->native(), strokeWidth, strokeStyle);
 		}
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillGeometry(gmpi::drawing::api::IPathGeometry* pathGeometry, gmpi::drawing::api::IBrush* brush, gmpi::drawing::api::IBrush* opacityBrush) override
 	{
-		auto nsPath = ((PathGeometry*)pathGeometry)->native();
-
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->fillPath(this, nsPath);
+			cocoabrush->fillPath(this, ((PathGeometry*)pathGeometry)->native());
 		}
 		return gmpi::ReturnCode::Ok;
 	}
@@ -1879,7 +1616,7 @@ public:
         auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
         if (!cocoabrush)
             return gmpi::ReturnCode::Fail;
-                
+
 		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
 
         gmpi::drawing::Size textSize{};
@@ -1891,10 +1628,9 @@ public:
 
 		if (textformat->paragraphAlignment != gmpi::drawing::ParagraphAlignment::Near)
 		{
-			// Vertical text alignment.
 			switch (textformat->paragraphAlignment)
 			{
-                case gmpi::drawing::ParagraphAlignment::Far:    // Bottom
+                case gmpi::drawing::ParagraphAlignment::Far:
 				bounds.origin.y += bounds.size.height - textSize.height;
 				bounds.size.height = textSize.height;
 				break;
@@ -1909,12 +1645,8 @@ public:
 			}
 		}
 
-		NSString* str = [NSString stringWithCString : string encoding : NSUTF8StringEncoding];
-
 		const bool clipToRect = options & gmpi::drawing::DrawTextOptions::Clip;
 
-		// When not clipping, extend height so Cocoa doesn't vertically clip overflow lines.
-		// DirectWrite overflows the layout rect by default; Cocoa always clips to it.
 		if (!clipToRect && textSize.height > bounds.size.height)
 		{
 			bounds.size.height = textSize.height;
@@ -1922,7 +1654,6 @@ public:
 
 		if (textformat->wordWrapping == gmpi::drawing::WordWrapping::NoWrap)
 		{
-			// Mac will always clip to rect, so we turn 'off' clipping by extending rect to the right.
 			if (!clipToRect)
 			{
 				const auto extendWidth = static_cast<double>(textSize.width) - bounds.size.width;
@@ -1930,112 +1661,52 @@ public:
 				{
 					bounds.size.width += extendWidth;
 
-					// fake no-clip by extending text box.
 					switch (textformat->textAlignment)
 					{
                         case gmpi::drawing::TextAlignment::Center:
 						bounds.origin.x -= 0.5 * extendWidth;
 						break;
-                        case gmpi::drawing::TextAlignment::Trailing: // Right
+                        case gmpi::drawing::TextAlignment::Trailing:
 						bounds.origin.x -= extendWidth;
-                        case gmpi::drawing::TextAlignment::Leading: // Left
+                        case gmpi::drawing::TextAlignment::Leading:
 					default:
 						break;
 					}
 				}
 			}
-
-			[textformat->native2[NSParagraphStyleAttributeName] setLineBreakMode:NSLineBreakByClipping];
-		}
-		else
-		{
-			// 'wrap'.
-			[textformat->native2[NSParagraphStyleAttributeName] setLineBreakMode:NSLineBreakByWordWrapping] ;
 		}
 
-		//                gmpi::drawing::FontMETRICS fontMetrics;
-		//               ((gmpi::drawing::api::ITextFormat*) textFormat)->getFontMetrics(&fontMetrics);
-
-		//                float testLineHeightMultiplier = 0.5f;
-		//                float shiftUp = testLineHeightMultiplier * fontMetrics.bodyHeight();
-
-				// macOS draws extra padding at top of text bounds. Compensate for it.
-//		if (!textformat->getUseLegacyBaseLineSnapping())
 		{
-			// Capture the paragraph-adjusted layout top before we apply the topAdjustment
-			// shift.  For Near alignment this equals layoutRect->top; for Far/Center it
-			// includes the paragraph shift.  Used by the snap formula below so that the
-			// baseline is snapped relative to the actual first-line origin, not the
-			// layout rect origin (which would give a wrong result when the paragraph shift
-			// has a fractional part).
 			const float effectiveLayoutTop = static_cast<float>(bounds.origin.y);
 
-			// For natural spacing we draw with the Windows-equivalent line height,
-			// which has a different top-padding from Cocoa's natural spacing.
 			const float effectiveTopAdj = (textformat->lineSpacing_ < 0.f)
 				? textformat->winNaturalTopAdjustment_
 				: textformat->topAdjustment;
 			bounds.origin.y -= effectiveTopAdj;
 			bounds.size.height += effectiveTopAdj;
 
-			// With custom line spacing, after the topAdjustment the mac baseline lands at
-			// layoutRect->top + ascent, but DirectWrite puts it at layoutRect->top + customBaseline_.
-			// Apply the difference so subsequent lines also land correctly.
 			if (textformat->lineSpacing_ >= 0.f)
 			{
 				bounds.origin.y += textformat->customBaseline_ - textformat->ascent;
 			}
 
-			// Adjust text baseline vertically to match Windows.
 #if 1
-			const float scale = 0.5f; // Hi DPI x2
+			const float scale = 0.5f;
 
-			// When custom line spacing is set, Windows places the first baseline at
-			// layoutRect->top + customBaseline_; otherwise it uses the natural ascent.
 			const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
 				? textformat->customBaseline_
 				: textformat->ascent;
 
 			float winBaseline{};
 			{
-				// Windows baseline
-				/*
-				const float offsetHinted = -0.25f;
-				const float offsetVertAA = -0.125f;
-				const float useHintingThreshold = 10.0f;
-				const float offset =
-					fontMetrics.bodyHeight() < useHintingThreshold ? offsetHinted : offsetVertAA;
-				*/
 				const float offset = -0.25f;;
 				winBaseline = effectiveLayoutTop + effectiveAscent;
 				winBaseline = floorf((offset + winBaseline) / scale) * scale;
 			}
-#if 0
-			float macBaseline{};
-			{
-				// Mac baseline
-				// Correct, but given the assumption we intend to snap baseline o pixel grid - we
-				// can use the simpler version below.
-				float predictedBt = layoutRect->top + fontMetrics.ascent + fontMetrics.descent;
-				predictedBt = truncatePixel(predictedBt, scale);
-				macBaseline = predictedBt - fontMetrics.descent;
-				macBaseline = truncatePixel(macBaseline, scale);
-
-				if ((fontMetrics.descent - floor(fontMetrics.descent)) <= 0.5f)
-				{
-					macBaseline -= 0.5f;
-				}
-			}
-
-			float macBaselineCorrection = roundPixel(winBaseline - macBaseline, scale);
-#else
             const float baseline = effectiveLayoutTop + effectiveAscent;
             float macBaselineCorrection{};
             if (logicProFix)
             {
-                // The +1 correction applies only for natural spacing.
-                // Custom line spacing uses a different ascent reference (customBaseline_)
-                // which doesn't need the extra +1 offset.
                 const float naturalSpacingFix = (textformat->lineSpacing_ >= 0.f) ? 0.f : 1.f;
                 macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + naturalSpacingFix;
             }
@@ -2043,420 +1714,251 @@ public:
             {
                 macBaselineCorrection = winBaseline - baseline + textformat->baselineCorrection;
             }
-#endif
 
 			bounds.origin.y += macBaselineCorrection;
 #endif
-#if 0
-			if (false) // Visualize Mac Baseline prediction.
-			{
-				Graphics g(this);
-				static auto brush = g.CreateSolidColorBrush(Color::Lime);
-				g.DrawLine(Point(layoutRect->left, macBaseline + 0.25), Point(layoutRect->left + 2, macBaseline + 0.25), brush, 0.25f);
-			}
-#endif
 		}
 
-#if 0
-		if (true) // Visualize adjusted bounds.
-		{
-			Graphics g(this);
-			static auto brush = g.CreateSolidColorBrush(Color::Lime);
-			g.DrawRectangle(Rect(bounds.origin.x, bounds.origin.y, bounds.origin.x + bounds.size.width, bounds.origin.y + bounds.size.height), brush);
-		}
-#endif
+        // Build CoreText attributed string for drawing
+        auto scb = dynamic_cast<const SolidColorBrush*>(brush);
+        auto lgb = dynamic_cast<const Gradient*>(brush);
+        auto bmb = dynamic_cast<const BitmapBrush*>(brush);
 
-		// For natural spacing, apply the Windows-equivalent line height so that
-		// inter-line spacing matches DirectWrite.  Restored after drawing.
-		if (textformat->lineSpacing_ < 0.f)
-		{
-			[textformat->nativeStyle setMinimumLineHeight:textformat->winNaturalLineHeight_];
-			[textformat->nativeStyle setMaximumLineHeight:textformat->winNaturalLineHeight_];
-		}
-
-		// do last so don't affect font metrics.
-//              [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:testLineHeightMultiplier];
-//               textformat->native2[NSBaselineOffsetAttributeName] = [NSNumber numberWithFloat:shiftUp];
-#if 0
-        if(auto lgb = dynamic_cast<const Gradient*>(brush); lgb)
+        // For natural spacing, temporarily apply the Windows-equivalent line height
+        CGFloat savedMin = textformat->ctLineHeightMin_;
+        CGFloat savedMax = textformat->ctLineHeightMax_;
+        if (textformat->lineSpacing_ < 0.f)
         {
-            [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
-
-            // Create a grayscale context for the mask
-            CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
-            CGContextRef maskContext =
-            CGBitmapContextCreate(
-                NULL,
-                bounds.size.width,
-                bounds.size.height,
-                8,
-                bounds.size.width,
-                colorspace,
-                0);
-            CGColorSpaceRelease(colorspace);
-
-            // Switch to the context for drawing
-            NSGraphicsContext *maskGraphicsContext =
-                [NSGraphicsContext
-                    graphicsContextWithGraphicsPort:maskContext
-                    flipped:YES];
-            [NSGraphicsContext saveGraphicsState];
-            [NSGraphicsContext setCurrentContext:maskGraphicsContext];
-            
-            [str drawInRect: NSMakeRect(0, 0, bounds.size.width, bounds.size.height) withAttributes : textformat->native2];
-
-            // Switch back to the window's context
-            [NSGraphicsContext restoreGraphicsState];
-
-            // Create an image mask from what we've drawn so far
-            CGImageRef alphaMask = CGBitmapContextCreateImage(maskContext);
-            
-            CGContextRef windowContext = (CGContextRef) [[NSGraphicsContext currentContext] graphicsPort];
-
-            // Draw the fill, clipped by the mask
-            CGContextSaveGState(windowContext);
-            
-            CGContextClipToMask(windowContext, NSRectToCGRect(bounds), alphaMask);
-
-            lgb->drawGradient();
-            
-            CGContextRestoreGState(windowContext);
-            CGImageRelease(alphaMask);
+            const_cast<TextFormat*>(textformat)->ctLineHeightMin_ = textformat->winNaturalLineHeight_;
+            const_cast<TextFormat*>(textformat)->ctLineHeightMax_ = textformat->winNaturalLineHeight_;
+            const_cast<TextFormat*>(textformat)->rebuildParagraphStyle();
         }
-        else
+
+        if (scb)
         {
-#endif
-            if(auto scb = dynamic_cast<const SolidColorBrush*>(brush) ; scb)
-            {
-                [textformat->native2 setObject : scb->nativeColor() forKey : NSForegroundColorAttributeName];
-                
-#if USE_BACKING_BUFFER
-                // Create a flipped coordinate system
-                [[NSGraphicsContext currentContext] saveGraphicsState];
-                NSAffineTransform *transform = [NSAffineTransform transform];
-                [transform scaleXBy:1 yBy:-1];
-                [transform translateXBy:0 yBy:-2 * bounds.origin.y - bounds.size.height];
+            // Simple solid color text drawing
+            CFDictionaryRef attrs = textformat->createAttributesWithColor(scb->nativeColor());
+            CFStringRef cfStr = CFStringCreateWithBytes(kCFAllocatorDefault,
+                (const UInt8*)string, stringLength, kCFStringEncodingUTF8, false);
+            CFAttributedStringRef attrStr = CFAttributedStringCreate(kCFAllocatorDefault, cfStr, attrs);
 
-                [transform concat];
+            CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(attrStr);
+            CGMutablePathRef textPath = CGPathCreateMutable();
+            CGPathAddRect(textPath, nullptr, bounds);
+            CTFrameRef frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), textPath, nullptr);
 
-                // Disable font smoothing to match Windows Direct2D text weight.
-                CGContextSetShouldSmoothFonts((CGContextRef)[[NSGraphicsContext currentContext] graphicsPort], false);
+            CGContextSaveGState(cgContext_);
 
-                // Draw in the flipped coordinate system
-                [str drawInRect : bounds withAttributes : textformat->native2];
+            // CoreText draws in bottom-up coordinates. We're in a flipped (top-down) context,
+            // so flip just for text rendering.
+            CGContextTranslateCTM(cgContext_, 0, bounds.origin.y + bounds.size.height);
+            CGContextScaleCTM(cgContext_, 1.0, -1.0);
+            CGContextTranslateCTM(cgContext_, 0, -bounds.origin.y);
 
-                // Restore the original graphics state
-                [[NSGraphicsContext currentContext] restoreGraphicsState];
-#else
-                CGContextSetShouldSmoothFonts((CGContextRef)[[NSGraphicsContext currentContext] graphicsPort], false);
-                [str drawInRect : bounds withAttributes : textformat->native2];
-#endif
-                
+            // Disable font smoothing to match Windows Direct2D text weight.
+            CGContextSetShouldSmoothFonts(cgContext_, false);
+
+            CTFrameDraw(frame, cgContext_);
+
+            CGContextRestoreGState(cgContext_);
+
+            CFRelease(frame);
+            CGPathRelease(textPath);
+            CFRelease(framesetter);
+            CFRelease(attrStr);
+            CFRelease(cfStr);
+            CFRelease(attrs);
+        }
+        else if (lgb || bmb)
+        {
+            // Gradient or bitmap brush text: render white text into a mask, then clip & draw
+            CGColorRef white = CGColorCreateSRGB(1, 1, 1, 1);
+            CFDictionaryRef attrs = textformat->createAttributesWithColor(white);
+            CFStringRef cfStr = CFStringCreateWithBytes(kCFAllocatorDefault,
+                (const UInt8*)string, stringLength, kCFStringEncodingUTF8, false);
+            CFAttributedStringRef attrStr = CFAttributedStringCreate(kCFAllocatorDefault, cfStr, attrs);
+
+            CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(attrStr);
+            CGMutablePathRef textPath = CGPathCreateMutable();
+            CGPathAddRect(textPath, nullptr, bounds);
+            CTFrameRef frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), textPath, nullptr);
+
+            // Determine physical pixel size for the mask
+            CGSize logicalSize = bounds.size;
+            CGSize physicalSize = logicalSize;
+#if TARGET_OS_OSX
+            if (view_) {
+                NSRect lr = NSMakeRect(0, 0, logicalSize.width, logicalSize.height);
+                physicalSize = [view_ convertRectToBacking:lr].size;
             }
-            else // if(auto bmb = dynamic_cast<const BitmapBrush*>(brush) ; bmb)
-            {
-                auto lgb = dynamic_cast<const Gradient*>(brush);
-                auto bmb = dynamic_cast<const BitmapBrush*>(brush);
-                
-                if( lgb || bmb)
-                {
-                    [textformat->native2 setObject : [NSColor whiteColor] forKey : NSForegroundColorAttributeName];
-                    
-                    NSSize logicalsize = bounds.size;
-                    NSSize pysicalsize = info.view ? [info.view convertRectToBacking:bounds].size : logicalsize;
-                    
-                    // Create a grayscale context for the mask
-                    CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
-                    CGContextRef maskContext =
-                    CGBitmapContextCreate(
-                                          NULL,
-                                          pysicalsize.width,
-                                          pysicalsize.height,
-                                          8,
-                                          pysicalsize.width,
-                                          colorspace,
-                                          0);
-                    CGColorSpaceRelease(colorspace);
-                    
-                    // Switch to the context for drawing
-                    NSGraphicsContext *maskGraphicsContext =
-                    [NSGraphicsContext
-                     graphicsContextWithGraphicsPort:maskContext
-                     flipped:YES];
-                    [NSGraphicsContext saveGraphicsState];
-                    [NSGraphicsContext setCurrentContext:maskGraphicsContext];
-                    
-                    if(pysicalsize.width != logicalsize.width)
-                    {
-                        auto scale = pysicalsize.width / logicalsize.width;
-                        NSAffineTransform *transform = [NSAffineTransform transform];
-                        [transform scaleXBy:scale yBy:scale];
-                        [transform concat];
-                    }
+#endif
 
-                    CGContextSetShouldSmoothFonts(maskContext, false);
-                    [str drawInRect: NSMakeRect(0, 0, bounds.size.width, bounds.size.height) withAttributes : textformat->native2];
-                    
-                    // Switch back to the window's context
-                    [NSGraphicsContext restoreGraphicsState];
-                    
-                    // Create an image mask from what we've drawn so far
-                    CGImageRef alphaMask = CGBitmapContextCreateImage(maskContext);
-                    
-                    CGContextRef windowContext = (CGContextRef) [[NSGraphicsContext currentContext] graphicsPort];
-                    
-                    // Draw the fill, clipped by the mask
-                    CGContextSaveGState(windowContext);
-                    
-                    CGContextClipToMask(windowContext, NSRectToCGRect(bounds), alphaMask);
-                    
-                    if(bmb)
-                    {
-                        NSBezierPath* rectPath = [NSBezierPath bezierPathWithRect : bounds];
-                        bmb->fillPath(this, rectPath);
-                    }
-                    else if(lgb)
-                    {
-                        lgb->drawGradient();
-                    }
-                    
-                    CGContextRestoreGState(windowContext);
-                    CGImageRelease(alphaMask);
-#if 0
-                    
-                    [NSGraphicsContext saveGraphicsState];
-                    
-                    auto view = /*context->*/ getNativeView();
-                    
-#if USE_BACKING_BUFFER
-                    gmpi::drawing::SizeU bitmapSize{};
-                    const_cast<Bitmap&>(bmb->bitmap_).getSizeU(&bitmapSize);
-                    // Adjust offset to be relative to the top (Windows) not bottom (mac)
-                    CGFloat yOffset = view.bounds.size.height - bitmapSize.height;
-#else
-                    // convert to Core Grapics co-ords
-                    CGFloat yOffset = NSMaxY([view convertRect:view.bounds toView:nil]);
-#endif
-                    gmpi::drawing::Matrix3x2 moduleTransform;
-                    /*context->*/getTransform(&moduleTransform);
-                    auto offset = gmpi::drawing::transformPoint(moduleTransform, {0.0f, 0.0f});
-                    // apply brushes transfer. we support only translation on mac
-                    offset = gmpi::drawing::transformPoint(bmb->brushProperties_.transform, offset);
-                    
-                    // also need to apply current drawing transform for modules not at [0,0]
-                    
-                    [[NSGraphicsContext currentContext] setPatternPhase:NSMakePoint(offset.x, yOffset - offset.y)];
-                    [[NSColor colorWithPatternImage:bmb->bitmap_.nativeBitmap_] set];
-                    //                [nsPath fill];
-                    
-                    //               [NSGraphicsContext restoreGraphicsState];
-                    extraRestoreState = true;
-#endif
+            // Create grayscale mask context
+            CGColorSpaceRef graySpace = CGColorSpaceCreateDeviceGray();
+            CGContextRef maskCtx = CGBitmapContextCreate(NULL,
+                (size_t)physicalSize.width, (size_t)physicalSize.height,
+                8, (size_t)physicalSize.width, graySpace, 0);
+            CGColorSpaceRelease(graySpace);
+
+            if (maskCtx)
+            {
+                if (physicalSize.width != logicalSize.width) {
+                    CGFloat s = physicalSize.width / logicalSize.width;
+                    CGContextScaleCTM(maskCtx, s, s);
                 }
+
+                CGContextSetShouldSmoothFonts(maskCtx, false);
+
+                // CoreText draws bottom-up; set up coords for the mask
+                CGContextTranslateCTM(maskCtx, 0, bounds.size.height);
+                CGContextScaleCTM(maskCtx, 1.0, -1.0);
+
+                // Translate so drawing lands at (0,0) in the mask
+                CGContextTranslateCTM(maskCtx, -bounds.origin.x, -bounds.origin.y + bounds.origin.y);
+                // Actually we need to draw at origin in the mask's local coords
+                CGMutablePathRef maskTextPath = CGPathCreateMutable();
+                CGPathAddRect(maskTextPath, nullptr, CGRectMake(0, 0, bounds.size.width, bounds.size.height));
+                CTFrameRef maskFrame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), maskTextPath, nullptr);
+                CTFrameDraw(maskFrame, maskCtx);
+                CFRelease(maskFrame);
+                CGPathRelease(maskTextPath);
+
+                CGImageRef alphaMask = CGBitmapContextCreateImage(maskCtx);
+
+                CGContextSaveGState(cgContext_);
+                CGContextClipToMask(cgContext_, bounds, alphaMask);
+
+                if (bmb) {
+                    CGMutablePathRef fillPath = CGPathCreateMutable();
+                    CGPathAddRect(fillPath, nullptr, bounds);
+                    bmb->fillPath(this, fillPath);
+                    CGPathRelease(fillPath);
+                } else if (lgb) {
+                    lgb->drawGradient(cgContext_);
+                }
+
+                CGContextRestoreGState(cgContext_);
+                CGImageRelease(alphaMask);
+                CGContextRelease(maskCtx);
             }
-            
 
-		// Restore natural line spacing after drawing.
-		if (textformat->lineSpacing_ < 0.f)
-		{
-			[textformat->nativeStyle setMinimumLineHeight:0];
-			[textformat->nativeStyle setMaximumLineHeight:0];
-		}
+            CFRelease(frame);
+            CGPathRelease(textPath);
+            CFRelease(framesetter);
+            CFRelease(attrStr);
+            CFRelease(cfStr);
+            CFRelease(attrs);
+            CGColorRelease(white);
+        }
 
-//        }
-		//               [textformat->native2[NSParagraphStyleAttributeName] setLineHeightMultiple:1.0f];
+        // Restore natural line spacing after drawing.
+        if (textformat->lineSpacing_ < 0.f)
+        {
+            const_cast<TextFormat*>(textformat)->ctLineHeightMin_ = savedMin;
+            const_cast<TextFormat*>(textformat)->ctLineHeightMax_ = savedMax;
+            const_cast<TextFormat*>(textformat)->rebuildParagraphStyle();
+        }
 
-#if 0
-		{
-			Graphics g(this);
-			drawing::FontMETRICS fontMetrics;
-			((gmpi::drawing::api::ITextFormat*)textFormat)->getFontMetrics(&fontMetrics);
-			float pixelScale = 2.0; // DPI ish
-
-			if (true)
-			{
-				// nailed it.
-				float predictedBt = layoutRect->top + fontMetrics.ascent + fontMetrics.descent;
-				predictedBt = floor(predictedBt * pixelScale) / pixelScale;
-				float predictedBaseline = predictedBt - fontMetrics.descent;
-				predictedBaseline = floor(predictedBaseline * pixelScale) / pixelScale;
-
-				if ((fontMetrics.descent - floor(fontMetrics.descent)) < 0.5f)
-				{
-					predictedBaseline -= 0.5f;
-				}
-
-				static auto brush = g.CreateSolidColorBrush(Color::Red);
-				g.DrawLine(Point(layoutRect->left, predictedBaseline + 0.25), Point(layoutRect->left + 2, predictedBaseline + 0.25), brush, 0.25f);
-			}
-
-			// Absolute vertical position does not matter, because entire row has same error,
-			// despite different vertical offsets. Therefore error comes from font metrics.
-			if (false)
-			{
-				float topGap = textformat->topAdjustment;
-				float renderTop = layoutRect->top - topGap;
-
-				renderTop = truncatePixel(renderTop, 0.5f);
-
-				float lineHeight = fontMetrics.ascent + fontMetrics.descent;
-
-				lineHeight = truncatePixel(lineHeight, 0.5f);
-
-				float predictedBt = renderTop + topGap + lineHeight;
-
-				//predictedBt = floor(predictedBt * pixelScale) / pixelScale;
-				float predictedBaseline = truncatePixel(predictedBt - fontMetrics.descent, 0.5f);
-
-				predictedBaseline = truncatePixel(predictedBaseline, 0.5f);
-
-				static auto brush = g.CreateSolidColorBrush(Color::Red);
-				g.DrawLine(Point(layoutRect->left + 2, predictedBaseline + 0.25), Point(layoutRect->left + 4, predictedBaseline + 0.25), brush, 0.25f);
-			}
-
-			{
-				static auto brush1 = g.CreateSolidColorBrush(Color::Red);
-				static auto brush2 = g.CreateSolidColorBrush(Color::Lime);
-				static auto brush3 = g.CreateSolidColorBrush(Color::Blue);
-
-				float v = fontMetrics.descent;
-				float x = layoutRect->left + (v - floor(v)) * 10.0f;
-				float y = layoutRect->top;
-				g.DrawLine(Point(x, y), Point(x, y + 5), brush1, 0.25f);
-
-				v = fontMetrics.descent + fontMetrics.ascent;
-				x = layoutRect->left + (v - floor(v)) * 10.0f;
-				y = layoutRect->top;
-
-				g.DrawLine(Point(x, y), Point(x, y + 5), brush2, 0.25f);
-
-				v = fontMetrics.capHeight;
-				x = layoutRect->left + (v - floor(v)) * 10.0f;
-				y = layoutRect->top;
-
-				g.DrawLine(Point(x, y), Point(x, y + 5), brush3, 0.25f);
-
-			}
-		}
-#endif
         return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawBitmap(gmpi::drawing::api::IBitmap* mpBitmap, const gmpi::drawing::Rect* destinationRectangle, float opacity, gmpi::drawing::BitmapInterpolationMode interpolationMode, const gmpi::drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)mpBitmap);
-				auto bitmap = bm->getNativeBitmap();
+		auto bitmap = bm->getNativeBitmap();
 
-                gmpi::drawing::SizeU imageSize;
-                bm->getSizeU(&imageSize);
+        gmpi::drawing::SizeU imageSize;
+        bm->getSizeU(&imageSize);
 
-                auto destRect = gmpi::cocoa::NSRectFromRect(*destinationRectangle);
+        CGRect destRect = cocoa::CGRectFromRect(*destinationRectangle);
 
-                // Apply the requested interpolation mode.
-                NSImageInterpolation prevInterp = [[NSGraphicsContext currentContext] imageInterpolation];
-                [[NSGraphicsContext currentContext] setImageInterpolation:
-                    (interpolationMode == gmpi::drawing::BitmapInterpolationMode::NearestNeighbor)
-                    ? NSImageInterpolationNone : NSImageInterpolationHigh];
+        // Set interpolation quality
+        CGInterpolationQuality prevInterp = CGContextGetInterpolationQuality(cgContext_);
+        CGContextSetInterpolationQuality(cgContext_,
+            (interpolationMode == gmpi::drawing::BitmapInterpolationMode::NearestNeighbor)
+            ? kCGInterpolationNone : kCGInterpolationHigh);
 
 #if USE_BACKING_BUFFER
-                auto sourceRect = gmpi::cocoa::NSRectFromRect(*sourceRectangle);
+        // Source rect in CGImage coordinates (bottom-up)
+        CGRect sourceRect = cocoa::CGRectFromRect(*sourceRectangle);
+        sourceRect.origin.y = imageSize.height - (sourceRect.origin.y + sourceRect.size.height);
 
-                // mirror source rectangle
-                sourceRect.origin.y = imageSize.height - (sourceRect.origin.y + sourceRect.size.height);
+        CGContextSaveGState(cgContext_);
 
-                // Create a flipped coordinate system
-                [[NSGraphicsContext currentContext] saveGraphicsState];
-                NSAffineTransform *transform = [NSAffineTransform transform];
-                [transform scaleXBy:1 yBy:-1];
-                [transform translateXBy:0 yBy:-2 * destRect.origin.y - destRect.size.height];
-
-                [transform concat];
-
-                // Draw in the flipped coordinate system
+        // Flip for drawing the image (CGImage is bottom-up, our context is top-down)
+        CGContextTranslateCTM(cgContext_, 0, destRect.origin.y * 2 + destRect.size.height);
+        CGContextScaleCTM(cgContext_, 1, -1);
 #else
-                GmpiDrawing::Rect sourceRectangleFlipped(*sourceRectangle);
-		sourceRectangleFlipped.bottom = imageSize.height - sourceRectangle->top;
-		sourceRectangleFlipped.top = imageSize.height - sourceRectangle->bottom;
+        CGRect sourceRect = cocoa::CGRectFromRect(*sourceRectangle);
+        sourceRect.origin.y = imageSize.height - sourceRectangle->bottom;
 
-                auto sourceRect = gmpi::cocoa::NSRectFromRect(sourceRectangleFlipped);
-
+        CGContextSaveGState(cgContext_);
 #endif
-		if (bitmap)
-		{
-			[bitmap drawInRect : destRect fromRect : sourceRect operation : NSCompositingOperationSourceOver fraction : opacity respectFlipped : TRUE hints : nil] ;
-		}
-		if (bm->additiveBitmap_)
-		{
-#if 1
-			[bm->additiveBitmap_ drawInRect : destRect fromRect : sourceRect operation : NSCompositingOperationPlusLighter fraction : opacity respectFlipped : TRUE hints : nil];
 
-#else // imagerep (don't work due to flip
-			auto rect = cocoa::NSRectFromRect(*destinationRectangle);
+        if (bitmap)
+        {
+            // If source rect covers the whole image, draw directly.
+            // Otherwise, create a sub-image.
+            if (sourceRect.origin.x == 0 && sourceRect.origin.y == 0 &&
+                sourceRect.size.width == imageSize.width && sourceRect.size.height == imageSize.height)
+            {
+                CGContextSetAlpha(cgContext_, opacity);
+                CGContextDrawImage(cgContext_, destRect, bitmap);
+            }
+            else
+            {
+                CGImageRef subImage = CGImageCreateWithImageInRect(bitmap, sourceRect);
+                if (subImage)
+                {
+                    CGContextSetAlpha(cgContext_, opacity);
+                    CGContextDrawImage(cgContext_, destRect, subImage);
+                    CGImageRelease(subImage);
+                }
+            }
+        }
 
-			// Create a flipped coordinate system (imagerep don't understand flipped)
-			[[NSGraphicsContext currentContext]saveGraphicsState];
-			NSAffineTransform* transform = [NSAffineTransform transform];
-			[transform translateXBy : 0 yBy : rect.size.height] ;
-			[transform scaleXBy : 1 yBy : -1] ;
-			[transform concat] ;
+        if (bm->additiveBitmap_)
+        {
+            CGContextSetBlendMode(cgContext_, kCGBlendModePlusLighter);
+            CGImageRef subImage = CGImageCreateWithImageInRect(bm->additiveBitmap_, sourceRect);
+            if (subImage) {
+                CGContextSetAlpha(cgContext_, opacity);
+                CGContextDrawImage(cgContext_, destRect, subImage);
+                CGImageRelease(subImage);
+            }
+            CGContextSetBlendMode(cgContext_, kCGBlendModeNormal);
+        }
 
-			// Draw the image in the flipped coordinate system
-			[bm->additiveBitmap_ drawInRect : rect fromRect : sourceRect operation : NSCompositingOperationPlusLighter fraction : opacity respectFlipped : TRUE hints : nil] ;
+        CGContextRestoreGState(cgContext_);
 
-			// Restore the original graphics state
-			[[NSGraphicsContext currentContext]restoreGraphicsState];
-#endif
-		}
-#if USE_BACKING_BUFFER
-                // Restore the original graphics state
-                [[NSGraphicsContext currentContext] restoreGraphicsState];
-#endif
-                // Restore the previous interpolation mode.
-                [[NSGraphicsContext currentContext] setImageInterpolation:prevInterp];
+        CGContextSetInterpolationQuality(cgContext_, prevInterp);
 
         return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode setTransform(const gmpi::drawing::Matrix3x2* transform) override
 	{
-		// Remove the current transformations by applying the inverse transform.
-		try
-		{
-			[info.currentTransform invert] ;
-			[info.currentTransform concat] ;
-		}
-		catch (...)
-		{
-			// some transforms are not reversible. e.g. scaling everything down to a point.
-			// int test = 9;
-		};
+		// Remove the current transform by applying the inverse
+        CGAffineTransform inverse = CGAffineTransformInvert(cgCurrentTransform_);
+        CGContextConcatCTM(cgContext_, inverse);
 
-		NSAffineTransformStruct transformStruct{
-			transform->_11,
-			transform->_12,
-			transform->_21,
-			transform->_22,
-			transform->_31,
-			transform->_32
-		};
+        cgCurrentTransform_ = CGAffineTransformMake(
+            transform->_11, transform->_12,
+            transform->_21, transform->_22,
+            transform->_31, transform->_32);
 
-		[info.currentTransform setTransformStruct : transformStruct] ;
-
-		[info.currentTransform concat] ;
+        CGContextConcatCTM(cgContext_, cgCurrentTransform_);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode getTransform(gmpi::drawing::Matrix3x2* transform) override
 	{
-		NSAffineTransformStruct
-			transformStruct = [info.currentTransform transformStruct];
-
-		transform->_11 = transformStruct.m11;
-		transform->_12 = transformStruct.m12;
-		transform->_21 = transformStruct.m21;
-		transform->_22 = transformStruct.m22;
-		transform->_31 = transformStruct.tX;
-		transform->_32 = transformStruct.tY;
+		transform->_11 = cgCurrentTransform_.a;
+		transform->_12 = cgCurrentTransform_.b;
+		transform->_21 = cgCurrentTransform_.c;
+		transform->_22 = cgCurrentTransform_.d;
+		transform->_31 = cgCurrentTransform_.tx;
+		transform->_32 = cgCurrentTransform_.ty;
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -2466,7 +1968,6 @@ public:
 		b2.attach(new SolidColorBrush(color, factory));
 
 		return b2->queryInterface(&gmpi::drawing::api::ISolidColorBrush::guid, reinterpret_cast<void**>(returnSolidColorBrush));
-		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode createGradientstopCollection(const gmpi::drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, gmpi::drawing::ExtendMode extendMode, gmpi::drawing::api::IGradientstopCollection** returnGradientstopCollection) override
@@ -2475,7 +1976,6 @@ public:
 		b2.attach(new GradientstopCollection(factory, gradientstops, gradientstopsCount));
 
 		return b2->queryInterface(&gmpi::drawing::api::IGradientstopCollection::guid, reinterpret_cast<void**>(returnGradientstopCollection));
-		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode createLinearGradientBrush(const gmpi::drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, gmpi::drawing::api::IGradientstopCollection* gradientstopCollection, gmpi::drawing::api::ILinearGradientBrush** returnLinearGradientBrush) override
@@ -2484,16 +1984,14 @@ public:
 		b2.attach(new LinearGradientBrush(factory, linearGradientBrushProperties, brushProperties, gradientstopCollection));
 
 		return b2->queryInterface(&gmpi::drawing::api::ILinearGradientBrush::guid, reinterpret_cast<void**>(returnLinearGradientBrush));
-		return gmpi::ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode createBitmapBrush(gmpi::drawing::api::IBitmap* bitmap, /*const gmpi::drawing::BitmapBrushProperties* bitmapBrushProperties,*/ const gmpi::drawing::BrushProperties* brushProperties, gmpi::drawing::api::IBitmapBrush** returnBitmapBrush) override
+	gmpi::ReturnCode createBitmapBrush(gmpi::drawing::api::IBitmap* bitmap, const gmpi::drawing::BrushProperties* brushProperties, gmpi::drawing::api::IBitmapBrush** returnBitmapBrush) override
 	{
 		*returnBitmapBrush = nullptr;
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-		b2.attach(new BitmapBrush(factory, bitmap, /*bitmapBrushProperties,*/ brushProperties));
+		b2.attach(new BitmapBrush(factory, bitmap, brushProperties));
 		return b2->queryInterface(&gmpi::drawing::api::IBitmapBrush::guid, reinterpret_cast<void**>(returnBitmapBrush));
-		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode createRadialGradientBrush(const gmpi::drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const gmpi::drawing::BrushProperties* brushProperties, gmpi::drawing::api::IGradientstopCollection* gradientstopCollection, gmpi::drawing::api::IRadialGradientBrush** returnRadialGradientBrush) override
@@ -2502,64 +2000,67 @@ public:
 		b2.attach(new RadialGradientBrush(factory, radialGradientBrushProperties, brushProperties, gradientstopCollection));
 
 		return b2->queryInterface(&gmpi::drawing::api::IRadialGradientBrush::guid, reinterpret_cast<void**>(returnRadialGradientBrush));
-		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode createCompatibleRenderTarget(gmpi::drawing::Size desiredSize, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** bitmapRenderTarget) override;
 
 	gmpi::ReturnCode drawRoundedRectangle(const gmpi::drawing::RoundedRect* roundedRect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		NSRect r = cocoa::NSRectFromRect(roundedRect->rect);
-		NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect : r xRadius : roundedRect->radiusX yRadius : roundedRect->radiusY];
-		applyDashStyleToPath(path, strokeStyle, strokeWidth);
+		CGRect r = cocoa::CGRectFromRect(roundedRect->rect);
+		CGMutablePathRef path = CGPathCreateMutable();
+		CGPathAddRoundedRect(path, nullptr, r, roundedRect->radiusX, roundedRect->radiusY);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(cgContext_, path, strokeWidth, strokeStyle);
 		}
+		CGPathRelease(path);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillRoundedRectangle(const gmpi::drawing::RoundedRect* roundedRect, gmpi::drawing::api::IBrush* brush) override
 	{
-		NSRect r = cocoa::NSRectFromRect(roundedRect->rect);
-		NSBezierPath* rectPath = [NSBezierPath bezierPathWithRoundedRect : r xRadius : roundedRect->radiusX yRadius : roundedRect->radiusY];
+		CGRect r = cocoa::CGRectFromRect(roundedRect->rect);
+		CGMutablePathRef rectPath = CGPathCreateMutable();
+		CGPathAddRoundedRect(rectPath, nullptr, r, roundedRect->radiusX, roundedRect->radiusY);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
 			cocoabrush->fillPath(this, rectPath);
 		}
+		CGPathRelease(rectPath);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode drawEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		NSRect r = NSMakeRect(ellipse->point.x - ellipse->radiusX, ellipse->point.y - ellipse->radiusY, ellipse->radiusX * 2.0f, ellipse->radiusY * 2.0f);
-
-		NSBezierPath* path = [NSBezierPath bezierPathWithOvalInRect : r];
-		applyDashStyleToPath(path, strokeStyle, strokeWidth);
+		CGRect r = CGRectMake(ellipse->point.x - ellipse->radiusX, ellipse->point.y - ellipse->radiusY, ellipse->radiusX * 2.0f, ellipse->radiusY * 2.0f);
+		CGMutablePathRef path = CGPathCreateMutable();
+		CGPathAddEllipseInRect(path, nullptr, r);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->strokePath(path, strokeWidth, strokeStyle);
+			cocoabrush->strokePath(cgContext_, path, strokeWidth, strokeStyle);
 		}
+		CGPathRelease(path);
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode fillEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush) override
 	{
-		NSRect r = NSMakeRect(ellipse->point.x - ellipse->radiusX, ellipse->point.y - ellipse->radiusY, ellipse->radiusX * 2.0f, ellipse->radiusY * 2.0f);
-
-		NSBezierPath* rectPath = [NSBezierPath bezierPathWithOvalInRect : r];
+		CGRect r = CGRectMake(ellipse->point.x - ellipse->radiusX, ellipse->point.y - ellipse->radiusY, ellipse->radiusX * 2.0f, ellipse->radiusY * 2.0f);
+		CGMutablePathRef rectPath = CGPathCreateMutable();
+		CGPathAddEllipseInRect(rectPath, nullptr, r);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
 			cocoabrush->fillPath(this, rectPath);
 		}
+		CGPathRelease(rectPath);
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -2568,16 +2069,14 @@ public:
         gmpi::drawing::Matrix3x2 currentTransform;
         getTransform(&currentTransform);
         auto absClipRect = transformRect(currentTransform, *clipRect);
-        
+
         if (!info.clipRectStack.empty())
             absClipRect = intersectRect(absClipRect, info.clipRectStack.back());
-        
+
         info.clipRectStack.push_back(absClipRect);
-        
-        // Save the current clipping region
-        [NSGraphicsContext saveGraphicsState];
-        
-        NSRectClip(NSRectFromRect(*clipRect));
+
+        CGContextSaveGState(cgContext_);
+        CGContextClipToRect(cgContext_, CGRectFromRect(*clipRect));
 
         return gmpi::ReturnCode::Ok;
 	}
@@ -2585,9 +2084,7 @@ public:
 	gmpi::ReturnCode popAxisAlignedClip() override
 	{
         info.clipRectStack.pop_back();
-
-		// Restore the clipping region for further drawing
-		[NSGraphicsContext restoreGraphicsState] ;
+		CGContextRestoreGState(cgContext_);
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -2602,123 +2099,110 @@ public:
 
 	gmpi::ReturnCode beginDraw() override
 	{
-		//		context_->BeginDraw();
 		return gmpi::ReturnCode::Ok;
 	}
 
 	gmpi::ReturnCode endDraw() override
 	{
-		//		auto hr = context_->EndDraw();
-
-		//		return hr == S_OK ? (MP_OK) : (gmpi::ReturnCode::Fail);
 		return gmpi::ReturnCode::Ok;
 	}
 
+#if TARGET_OS_OSX
 	NSView* getNativeView()
 	{
-		return info.view;
+		return view_;
 	}
-
-	//	void InsetNewMethodHere(){}
+#endif
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IDeviceContext);
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
+// Implementations that need GraphicsContext to be fully defined
+
+inline void SolidColorBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+{
+    CGContextRef ctx = context->getCGContext();
+    CGContextSaveGState(ctx);
+    CGContextSetFillColorWithColor(ctx, nativec_);
+    CGContextAddPath(ctx, cgPath);
+    CGContextFillPath(ctx);
+    CGContextRestoreGState(ctx);
+}
+
+inline void LinearGradientBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+{
+    Gradient::fillPath(context->getCGContext(), cgPath);
+}
+
+inline void RadialGradientBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+{
+    Gradient::fillPath(context->getCGContext(), cgPath);
+}
+
 // macOS-internal creationFlags extension (not part of the public BitmapRenderTargetFlags API).
-// Marks a bitmap that is backed by a 128bpp float NSBitmapImageRep (used for render targets).
-// Bitmaps created via Factory::createImage() (flags=0) do NOT carry this bit and use the
-// API-specified 64bppPRGBAHalf format instead.
 static constexpr int32_t kMacFloatRT = 0x80;
 
-// https://stackoverflow.com/questions/10627557/mac-os-x-drawing-into-an-offscreen-nsgraphicscontext-using-cgcontextref-c-funct
-class BitmapRenderTarget : public GraphicsContext // emulated by carefull layout public gmpi::drawing::api::IBitmapRenderTarget
+class BitmapRenderTarget : public GraphicsContext
 {
-	NSImage* image{};
-	NSBitmapImageRep* backingRep{};
+	CGContextRef backingContext_ = nullptr;
     int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels;
+    CGFloat width_ = 0;
+    CGFloat height_ = 0;
 
 public:
 	BitmapRenderTarget(const gmpi::drawing::Size* size, int32_t flags, cocoa::Factory* pfactory) :
-		GraphicsContext(nullptr, pfactory)
+		GraphicsContext(pfactory)
         ,creationFlags(flags)
+        ,width_(size->width)
+        ,height_(size->height)
 	{
         const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
-        const bool lockAblePixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
         const bool eightBitPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels;
 
-        NSSize s = NSMakeSize(size->width, size->height);
-        NSRect r = NSMakeRect(0.0, 0.0, s.width, s.height);
+        size_t w = (size_t)size->width;
+        size_t h = (size_t)size->height;
 
         if(oneChannelMask)
         {
-            backingRep =
-            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
-            pixelsWide:s.width pixelsHigh:s.height bitsPerSample:8
-            samplesPerPixel:1 hasAlpha:NO isPlanar:NO
-            colorSpaceName:NSCalibratedWhiteColorSpace bytesPerRow:0
-            bitsPerPixel:8];
+            CGColorSpaceRef graySpace = CGColorSpaceCreateDeviceGray();
+            backingContext_ = CGBitmapContextCreate(NULL, w, h, 8, w, graySpace, kCGImageAlphaNone);
+            CGColorSpaceRelease(graySpace);
         }
         else if(eightBitPixels)
         {
-            // SRGBPixels: 8-bit sRGB (32bpp).
-            // Create in NSDeviceRGBColorSpace then retag to exact sRGB so
-            // compositing uses the sRGB transfer function (matching Windows).
-            NSBitmapImageRep* initial =
-            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
-            pixelsWide:s.width pixelsHigh:s.height bitsPerSample:8
-            samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-            colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0
-            bitsPerPixel:32];
-            backingRep = [initial bitmapImageRepByRetaggingWithColorSpace:
-                NSColorSpace.sRGBColorSpace];
-            [backingRep retain];
+            CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+            backingContext_ = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
+                kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            CGColorSpaceRelease(srgb);
         }
         else
         {
-            // Default: 32-bit float linear sRGB for gamma-correct compositing
-            // (matching DirectX's 64bppPRGBAHalf linear render targets).
-            NSBitmapImageRep* initial =
-            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
-            pixelsWide:s.width pixelsHigh:s.height bitsPerSample:32
-            samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-            colorSpaceName:NSDeviceRGBColorSpace
-            bitmapFormat:NSBitmapFormatFloatingPointSamples
-            bytesPerRow:0 bitsPerPixel:128];
-
-            backingRep = [initial bitmapImageRepByRetaggingWithColorSpace:
-                pfactory->info.gmpiColorSpace];
-            [backingRep retain];
-
-            // Mark the bitmap as float-backed so BitmapPixels knows to use
-            // 128bpp float format when locking pixels (rather than 64bppPRGBAHalf).
+            // 32-bit float linear sRGB for gamma-correct compositing
+            backingContext_ = CGBitmapContextCreate(NULL, w, h, 32, 0,
+                pfactory->info.cgColorSpace,
+                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
             creationFlags |= kMacFloatRT;
         }
 
-        // Zero-initialize pixel data (DirectX render targets start at transparent black).
-        memset([backingRep bitmapData], 0,
-            [backingRep bytesPerRow] * (NSInteger)s.height);
+        // Zero-initialize pixel data
+        if (backingContext_)
+        {
+            size_t bpr = CGBitmapContextGetBytesPerRow(backingContext_);
+            memset(CGBitmapContextGetData(backingContext_), 0, bpr * h);
+        }
 
-        image = [[NSImage alloc] initWithSize:s];
-        [image addRepresentation:backingRep];
-
-        info.currentTransform = [NSAffineTransform transform];
         info.clipRectStack.push_back({ 0, 0, size->width, size->height });
 	}
 
     gmpi::ReturnCode beginDraw() override
 	{
-		// Draw directly into the bitmap rep to avoid macOS creating a
-		// retina 2x backing store (which causes blurry downsampled output).
-		NSGraphicsContext* ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:backingRep];
-		[NSGraphicsContext saveGraphicsState];
-		[NSGraphicsContext setCurrentContext:ctx];
+        cgContext_ = backingContext_;
 
 		// Flip coordinate system to match Direct2D (top-down).
-		NSAffineTransform* flip = [NSAffineTransform transform];
-		[flip translateXBy:0.0 yBy:[backingRep pixelsHigh]];
-		[flip scaleXBy:1.0 yBy:-1.0];
-		[flip concat];
+        CGContextSaveGState(cgContext_);
+        CGContextTranslateCTM(cgContext_, 0, height_);
+        CGContextScaleCTM(cgContext_, 1.0, -1.0);
 
 		return GraphicsContext::beginDraw();
 	}
@@ -2726,21 +2210,23 @@ public:
 	gmpi::ReturnCode endDraw() override
 	{
 		auto r = GraphicsContext::endDraw();
-		[NSGraphicsContext restoreGraphicsState];
+        CGContextRestoreGState(cgContext_);
+        cgContext_ = nullptr;
 		return r;
 	}
 
-#if !__has_feature(objc_arc)
 	~BitmapRenderTarget()
 	{
-		[image release] ;
+        if (backingContext_) CGContextRelease(backingContext_);
 	}
-#endif
+
 	// MUST BE FIRST VIRTUAL FUNCTION!
 	virtual gmpi::ReturnCode getBitmap(gmpi::drawing::api::IBitmap** returnBitmap)
 	{
+        CGImageRef image = CGBitmapContextCreateImage(backingContext_);
 		gmpi::shared_ptr<gmpi::api::IUnknown> b;
 		b.attach(new Bitmap(factory, image, creationFlags));
+        CGImageRelease(image);
 		return b->queryInterface(&gmpi::drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
 	}
 
@@ -2749,7 +2235,6 @@ public:
 		*returnInterface = {};
         if (*iid == gmpi::drawing::api::IBitmapRenderTarget::guid)
         {
-            // non-standard. Forcing this class (which has the correct vtable) to pretend it's the emulated interface.
             *returnInterface = reinterpret_cast<gmpi::drawing::api::IBitmapRenderTarget*>(this);
             addRef();
             return gmpi::ReturnCode::Ok;
@@ -2819,149 +2304,93 @@ inline gmpi::ReturnCode Factory::loadImageU(const char* utf8Uri, gmpi::drawing::
 	return gmpi::ReturnCode::Fail;
 }
 
-inline void BitmapBrush::fillPath(GraphicsContext* context, NSBezierPath* nsPath) const
+inline void BitmapBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
 {
-    [NSGraphicsContext saveGraphicsState];
+    CGContextRef cgCtx = context->getCGContext();
+    CGContextSaveGState(cgCtx);
 
-    // Clip to the fill path, then tile the pattern manually.
-    // Both NSColor colorWithPatternImage: and CGContextDrawTiledImage have
-    // a 1-pixel seam bug at the first horizontal tile boundary on macOS,
-    // so we draw each tile individually using CGContextDrawImage.
-    [nsPath addClip];
+    CGContextAddPath(cgCtx, cgPath);
+    CGContextClip(cgCtx);
 
     gmpi::drawing::Matrix3x2 moduleTransform;
     context->getTransform(&moduleTransform);
     auto offset = gmpi::drawing::transformPoint(moduleTransform, {0.0f, 0.0f});
     offset = gmpi::drawing::transformPoint(brushProperties_.transform, offset);
 
-    CGContextRef cgCtx = [[NSGraphicsContext currentContext] CGContext];
-    NSRect proposedRect = NSMakeRect(0, 0, patternImage_.size.width, patternImage_.size.height);
-    CGImageRef tileImage = [patternImage_ CGImageForProposedRect:&proposedRect
-                                                         context:[NSGraphicsContext currentContext]
-                                                           hints:nil];
+    const CGFloat tileW = CGImageGetWidth(patternImage_);
+    const CGFloat tileH = CGImageGetHeight(patternImage_);
+    const CGRect bounds = CGPathGetBoundingBox(cgPath);
 
-    const CGFloat tileW = patternImage_.size.width;
-    const CGFloat tileH = patternImage_.size.height;
-    const NSRect bounds = [nsPath bounds];
+    const CGFloat startX = offset.x + floor((CGRectGetMinX(bounds) - offset.x) / tileW) * tileW;
+    const CGFloat startY = offset.y + floor((CGRectGetMinY(bounds) - offset.y) / tileH) * tileH;
 
-    const CGFloat startX = offset.x + floor((NSMinX(bounds) - offset.x) / tileW) * tileW;
-    const CGFloat startY = offset.y + floor((NSMinY(bounds) - offset.y) / tileH) * tileH;
-
-    // In the flipped context (y-down), CGContextDrawImage draws each CGImage
-    // upside-down. Compensate by flipping each tile in place.
-    for (CGFloat y = startY; y < NSMaxY(bounds); y += tileH) {
-        for (CGFloat x = startX; x < NSMaxX(bounds); x += tileW) {
+    for (CGFloat y = startY; y < CGRectGetMaxY(bounds); y += tileH) {
+        for (CGFloat x = startX; x < CGRectGetMaxX(bounds); x += tileW) {
             CGContextSaveGState(cgCtx);
             CGContextTranslateCTM(cgCtx, x, y + tileH);
             CGContextScaleCTM(cgCtx, 1.0, -1.0);
-            CGContextDrawImage(cgCtx, CGRectMake(0, 0, tileW, tileH), tileImage);
+            CGContextDrawImage(cgCtx, CGRectMake(0, 0, tileW, tileH), patternImage_);
             CGContextRestoreGState(cgCtx);
         }
     }
 
-    [NSGraphicsContext restoreGraphicsState];
+    CGContextRestoreGState(cgCtx);
 }
 
-inline BitmapPixels::BitmapPixels(Bitmap* sebitmap /*NSImage** inBitmap*/, bool _alphaPremultiplied, int32_t pflags) :
-	inBitmap_(&sebitmap->nativeBitmap_ /*inBitmap*/)
+inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, int32_t pflags) :
+	inImage_(&sebitmap->nativeBitmap_)
 	, flags(pflags)
 	, seBitmap(sebitmap)
 {
-	NSSize s = [*inBitmap_ size];
+    uint32_t w = sebitmap->pixelWidth_;
+    uint32_t h = sebitmap->pixelHeight_;
 
-    int samplesPerPixel = 4;
-    auto hasAlpha = YES;
-    auto colorSpace = NSCalibratedRGBColorSpace;
-    // Use the bitmap's creation flags (not the lock flags) to determine the pixel format.
     const bool isMask = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask );
     const bool isSRGB = 0 != (seBitmap->creationFlags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels );
-    // BitmapRenderTargets with the default (flags=0) format are tagged kMacFloatRT and
-    // use 128bpp float for gamma-correct compositing.  Plain bitmaps created via
-    // Factory::createImage() (flags=0, no kMacFloatRT) use the API-specified
-    // 64bppPRGBAHalf format so that callers can access channels as uint16_t half-floats.
     const bool wantLinearFloat = 0 != (seBitmap->creationFlags & kMacFloatRT);
     const bool wantHalfFloat   = !isMask && !isSRGB && !wantLinearFloat;
 
     if(isMask)
     {
-        samplesPerPixel = 1;
-        hasAlpha = NO;
-        colorSpace = NSCalibratedWhiteColorSpace;
+        CGColorSpaceRef graySpace = CGColorSpaceCreateDeviceGray();
+        bytesPerRow = w;
+        pixelContext_ = CGBitmapContextCreate(NULL, w, h, 8, bytesPerRow, graySpace, kCGImageAlphaNone);
+        CGColorSpaceRelease(graySpace);
     }
-
-    if (wantLinearFloat)
+    else if (wantLinearFloat)
     {
-        // Float-linear RGBA: 4 × 32-bit float, tagged as linear sRGB.
-        bytesPerRow = (int32_t)(s.width * 4 * sizeof(float));
-
-        auto initial_bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil
-            pixelsWide:s.width pixelsHigh:s.height
-            bitsPerSample:32 samplesPerPixel:4
-            hasAlpha:YES isPlanar:NO
-            colorSpaceName:NSDeviceRGBColorSpace
-            bitmapFormat:NSBitmapFormatFloatingPointSamples
-            bytesPerRow:bytesPerRow bitsPerPixel:128];
-
-        bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace:
-            static_cast<cocoa::Factory*>(sebitmap->factory)->info.gmpiColorSpace];
-        [bitmap2 retain];
+        bytesPerRow = (int32_t)(w * 4 * sizeof(float));
+        pixelContext_ = CGBitmapContextCreate(NULL, w, h, 32, bytesPerRow,
+            static_cast<cocoa::Factory*>(sebitmap->factory)->info.cgColorSpace,
+            kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
     }
     else if (wantHalfFloat)
     {
-        // 64bppPRGBAHalf: 4 × 16-bit channels stored in a 16-bps NSBitmapImageRep.
-        // NSBitmapImageRep treats the samples as 16-bit integers; callers read/write
-        // them as half-float (uint16_t) via gmpi::drawing::detail::floatToHalf /
-        // halfToFloat — this is the standard gmpi 64bppPRGBAHalf format.
-        auto initial_bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil
-            pixelsWide:s.width pixelsHigh:s.height
-            bitsPerSample:16 samplesPerPixel:4
-            hasAlpha:YES isPlanar:NO
-            colorSpaceName:NSDeviceRGBColorSpace
-            bitmapFormat:0
-            bytesPerRow:0 bitsPerPixel:64];
-
-        bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace:
-            static_cast<cocoa::Factory*>(sebitmap->factory)->info.gmpiColorSpace];
-        [bitmap2 retain];
-        bytesPerRow = (int32_t)[bitmap2 bytesPerRow]; // actual stride (may include padding)
+        // 64bppPRGBAHalf: use 16-bit per component bitmap context
+        bytesPerRow = (int32_t)(w * 4 * sizeof(uint16_t));
+        // CoreGraphics doesn't support 16-bit float directly for all operations,
+        // so create as 16-bit integer and let callers treat as half-float
+        CGColorSpaceRef cs = static_cast<cocoa::Factory*>(sebitmap->factory)->info.cgColorSpace;
+        pixelContext_ = CGBitmapContextCreate(NULL, w, h, 16, bytesPerRow, cs,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder16Host);
     }
     else
     {
-        bytesPerRow = s.width * samplesPerPixel;
-
-        constexpr int bitsPerSample = 8;
-        const int bitsPerPixel = bitsPerSample * samplesPerPixel;
-
-        auto initial_bitmap = [[NSBitmapImageRep alloc]initWithBitmapDataPlanes:nil
-                                                                    pixelsWide : s.width
-                                                                    pixelsHigh : s.height
-                                                                 bitsPerSample : bitsPerSample
-                                                               samplesPerPixel : samplesPerPixel
-                                                                      hasAlpha : hasAlpha
-                                                                      isPlanar : NO
-                                                                colorSpaceName : colorSpace
-                                                                  bitmapFormat : 0
-                                                                   bytesPerRow : bytesPerRow
-                                                                  bitsPerPixel : bitsPerPixel];
-        if(isMask)
-            bitmap2 = initial_bitmap;
-       else
-            bitmap2 = [initial_bitmap bitmapImageRepByRetaggingWithColorSpace : NSColorSpace.sRGBColorSpace];
-
-        [bitmap2 retain] ;
+        // 8-bit sRGB
+        bytesPerRow = w * 4;
+        CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        pixelContext_ = CGBitmapContextCreate(NULL, w, h, 8, bytesPerRow, srgb,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGColorSpaceRelease(srgb);
     }
 
-    // Copy the image to the new imageRep (effectively converts it to correct pixel format/brightness etc)
-    if (0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Read))
+    // Copy the image to the pixel buffer (read)
+    if (pixelContext_ && 0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Read))
     {
-        NSGraphicsContext* context;
-        context = [NSGraphicsContext graphicsContextWithBitmapImageRep : bitmap2];
-        [NSGraphicsContext saveGraphicsState] ;
-        [NSGraphicsContext setCurrentContext : context] ;
-
-        [*inBitmap_ drawAtPoint : NSZeroPoint fromRect : NSZeroRect operation : NSCompositingOperationCopy fraction : 1.0] ;
-
-        [NSGraphicsContext restoreGraphicsState] ;
+        if (*inImage_)
+        {
+            CGContextDrawImage(pixelContext_, CGRectMake(0, 0, w, h), *inImage_);
+        }
     }
 }
 
@@ -2974,15 +2403,9 @@ inline BitmapPixels::~BitmapPixels()
 
 	if (!isMask && 0 != (flags & (int) gmpi::drawing::BitmapLockFlags::Write))
 	{
-        // For 64bppPRGBAHalf bitmaps, scan for "overbright" pixels — pixels where
-        // premultiplied RGB > alpha (which is impossible in normal Porter-Duff but
-        // valid for additive / HDR rendering with alpha=0).  Split these into a
-        // separate 32bpp-float additive NSBitmapImageRep drawn later with
-        // NSCompositingOperationPlusLighter, while the main bitmap retains only the
-        // normal (alpha-premultiplied) pixels.
         if (wantHalfFloat)
         {
-            // IEEE 754 half-float → float.
+            // Scan for "overbright" pixels
             auto h2f = [](uint16_t h) -> float {
                 const uint32_t sign = (h >> 15) & 0x1u;
                 const uint32_t exp  = (h >> 10) & 0x1fu;
@@ -3003,18 +2426,17 @@ inline BitmapPixels::~BitmapPixels()
                 float f; std::memcpy(&f, &bits, 4); return f;
             };
 
-            const NSInteger w = [bitmap2 pixelsWide];
-            const NSInteger h = [bitmap2 pixelsHigh];
-            const NSInteger srcBpr = [bitmap2 bytesPerRow];
+            const size_t w = seBitmap->pixelWidth_;
+            const size_t h = seBitmap->pixelHeight_;
+            const size_t srcBpr = CGBitmapContextGetBytesPerRow(pixelContext_);
 
             bool hasOverbright = false;
-            for (NSInteger row = 0; row < h && !hasOverbright; ++row)
+            uint8_t* pixelData = (uint8_t*)CGBitmapContextGetData(pixelContext_);
+            for (size_t row = 0; row < h && !hasOverbright; ++row)
             {
-                const uint16_t* p = reinterpret_cast<const uint16_t*>(
-                    reinterpret_cast<const uint8_t*>([bitmap2 bitmapData]) + row * srcBpr);
-                for (NSInteger col = 0; col < w; ++col, p += 4)
+                const uint16_t* p = reinterpret_cast<const uint16_t*>(pixelData + row * srcBpr);
+                for (size_t col = 0; col < w; ++col, p += 4)
                 {
-                    // Skip fully transparent or fully opaque pixels.
                     if (p[3] == 0 && (p[0] | p[1] | p[2]) != 0) { hasOverbright = true; break; }
                     if (p[3] != 0 && (p[0] > p[3] || p[1] > p[3] || p[2] > p[3])) { hasOverbright = true; break; }
                 }
@@ -3022,65 +2444,41 @@ inline BitmapPixels::~BitmapPixels()
 
             if (hasOverbright)
             {
-                // Build a 32-bit float additive NSBitmapImageRep (alpha=1 everywhere)
-                // containing the overbright RGB values, and zero out those pixels in the
-                // main bitmap so the normal Porter-Duff draw has no effect on them.
-                NSBitmapImageRep* addRep = [[NSBitmapImageRep alloc]
-                    initWithBitmapDataPlanes:nil
-                    pixelsWide:w pixelsHigh:h
-                    bitsPerSample:32 samplesPerPixel:4
-                    hasAlpha:YES isPlanar:NO
-                    colorSpaceName:NSDeviceRGBColorSpace
-                    bitmapFormat:NSBitmapFormatFloatingPointSamples
-                    bytesPerRow:0 bitsPerPixel:128];
+                // Build a 32-bit float additive bitmap
+                CGContextRef addCtx = CGBitmapContextCreate(NULL, w, h, 32, 0,
+                    static_cast<cocoa::Factory*>(seBitmap->factory)->info.cgColorSpace,
+                    kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
 
-                const NSInteger dstBpr = [addRep bytesPerRow];
-                for (NSInteger row = 0; row < h; ++row)
+                const size_t dstBpr = CGBitmapContextGetBytesPerRow(addCtx);
+                uint8_t* dstData = (uint8_t*)CGBitmapContextGetData(addCtx);
+
+                for (size_t row = 0; row < h; ++row)
                 {
-                    uint16_t* src = reinterpret_cast<uint16_t*>(
-                        reinterpret_cast<uint8_t*>([bitmap2 bitmapData]) + row * srcBpr);
-                    float* dst = reinterpret_cast<float*>(
-                        reinterpret_cast<uint8_t*>([addRep bitmapData]) + row * dstBpr);
+                    uint16_t* src = reinterpret_cast<uint16_t*>(pixelData + row * srcBpr);
+                    float* dst = reinterpret_cast<float*>(dstData + row * dstBpr);
 
-                    for (NSInteger col = 0; col < w; ++col, src += 4, dst += 4)
+                    for (size_t col = 0; col < w; ++col, src += 4, dst += 4)
                     {
-                        // Copy RGB to additive bitmap (full opacity), zero out main bitmap.
                         dst[0] = h2f(src[0]);
                         dst[1] = h2f(src[1]);
                         dst[2] = h2f(src[2]);
-                        dst[3] = 1.0f;          // fully opaque for PlusLighter
-                        src[0] = src[1] = src[2] = 0; // remove from main (keep alpha)
+                        dst[3] = 1.0f;
+                        src[0] = src[1] = src[2] = 0;
                     }
                 }
 
-                seBitmap->additiveBitmap_ = [addRep bitmapImageRepByRetaggingWithColorSpace:
-                    static_cast<cocoa::Factory*>(seBitmap->factory)->info.gmpiColorSpace];
-                [seBitmap->additiveBitmap_ retain];
+                if (seBitmap->additiveBitmap_) CGImageRelease(seBitmap->additiveBitmap_);
+                seBitmap->additiveBitmap_ = CGBitmapContextCreateImage(addCtx);
+                CGContextRelease(addCtx);
             }
         }
 
-		// Write back modified pixels to the NSImage.
-		for (NSImageRep* rep in [[*inBitmap_ representations] copy])
-			[*inBitmap_ removeRepresentation:rep];
-
-        // Half-float data stored in a 16-bit integer NSBitmapImageRep is not
-        // renderable by macOS — it interprets the bit pattern as an integer
-        // (e.g. half 1.0 = 0x3C00 = 15360 → 15360/65535 ≈ 0.23).  Convert
-        // to a 32-bit float rep so NSImage can render correctly.
+        // Convert half-float to 32-bit float for rendering if needed
         if (wantHalfFloat)
         {
-            const NSInteger w = [bitmap2 pixelsWide];
-            const NSInteger hh = [bitmap2 pixelsHigh];
-            const NSInteger srcBpr = [bitmap2 bytesPerRow];
-
-            NSBitmapImageRep* floatRep = [[NSBitmapImageRep alloc]
-                initWithBitmapDataPlanes:nil
-                pixelsWide:w pixelsHigh:hh
-                bitsPerSample:32 samplesPerPixel:4
-                hasAlpha:YES isPlanar:NO
-                colorSpaceName:NSDeviceRGBColorSpace
-                bitmapFormat:NSBitmapFormatFloatingPointSamples
-                bytesPerRow:0 bitsPerPixel:128];
+            const size_t w = seBitmap->pixelWidth_;
+            const size_t h = seBitmap->pixelHeight_;
+            const size_t srcBpr = CGBitmapContextGetBytesPerRow(pixelContext_);
 
             auto halfToFloat = [](uint16_t h) -> float {
                 const uint32_t sign = (h >> 15) & 0x1u;
@@ -3102,30 +2500,39 @@ inline BitmapPixels::~BitmapPixels()
                 float f; std::memcpy(&f, &bits, 4); return f;
             };
 
-            const NSInteger dstBpr = [floatRep bytesPerRow];
-            for (NSInteger row = 0; row < hh; ++row)
+            CGContextRef floatCtx = CGBitmapContextCreate(NULL, w, h, 32, 0,
+                static_cast<cocoa::Factory*>(seBitmap->factory)->info.cgColorSpace,
+                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+
+            const size_t dstBpr = CGBitmapContextGetBytesPerRow(floatCtx);
+            uint8_t* srcData = (uint8_t*)CGBitmapContextGetData(pixelContext_);
+            uint8_t* dstData = (uint8_t*)CGBitmapContextGetData(floatCtx);
+
+            for (size_t row = 0; row < h; ++row)
             {
-                const uint16_t* src = reinterpret_cast<const uint16_t*>(
-                    reinterpret_cast<const uint8_t*>([bitmap2 bitmapData]) + row * srcBpr);
-                float* dst = reinterpret_cast<float*>(
-                    reinterpret_cast<uint8_t*>([floatRep bitmapData]) + row * dstBpr);
-                for (NSInteger col = 0; col < w * 4; ++col)
+                const uint16_t* src = reinterpret_cast<const uint16_t*>(srcData + row * srcBpr);
+                float* dst = reinterpret_cast<float*>(dstData + row * dstBpr);
+                for (size_t col = 0; col < w * 4; ++col)
                     dst[col] = halfToFloat(src[col]);
             }
 
-            NSBitmapImageRep* tagged = [floatRep bitmapImageRepByRetaggingWithColorSpace:
-                static_cast<cocoa::Factory*>(seBitmap->factory)->info.gmpiColorSpace];
-            [tagged retain];
-            [bitmap2 release];
-            bitmap2 = tagged;
+            // Replace the bitmap's CGImage
+            if (*inImage_) CGImageRelease(*inImage_);
+            *inImage_ = CGBitmapContextCreateImage(floatCtx);
+            CGContextRelease(floatCtx);
+        }
+        else
+        {
+            // Write back: create a CGImage from the pixel context
+            if (*inImage_) CGImageRelease(*inImage_);
+            *inImage_ = CGBitmapContextCreateImage(pixelContext_);
         }
 
-		[*inBitmap_ addRepresentation : bitmap2] ;
+        seBitmap->pixelWidth_ = (uint32_t)CGImageGetWidth(*inImage_);
+        seBitmap->pixelHeight_ = (uint32_t)CGImageGetHeight(*inImage_);
 	}
-	else
-	{
-		[bitmap2 release];
-	}
+
+    if (pixelContext_) CGContextRelease(pixelContext_);
 }
-} // namespace
-} // namespace
+} // namespace cocoa
+} // namespace gmpi

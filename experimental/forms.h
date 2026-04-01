@@ -44,6 +44,7 @@ protected:
 
 public:
 	gmpi_forms::Environment env;
+	inline static bool darkMode = true;
 
 	Form();
 	~Form()

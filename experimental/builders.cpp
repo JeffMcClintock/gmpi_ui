@@ -1,6 +1,7 @@
 #include "builders.h"
 #include "forms.h"
 #include "it_enum_list.h"
+#include "theme.h"
 
 using namespace gmpi::forms;
 
@@ -16,10 +17,11 @@ void ViewParent::doChildLayout()
 
 void TextLabelView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	gmpi::drawing::Rect textBoxArea = getBounds();
 
 	// default text style
-	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+	auto style = new primitive::TextBoxStyle(theme.labelText, gmpi::drawing::Colors::TransparentBlack);
 	style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 	style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 	canvas.add(style);
@@ -46,6 +48,7 @@ TextEditView::TextEditView(/*gmpi_forms::Environment* env,*/ std::string path)
 
 void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	// Add a text box.
 	gmpi::drawing::Rect textBoxArea = getBounds();
 	//	textBoxArea.bottom = textBoxArea.top + itemHeight;
@@ -54,8 +57,8 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 	// default text style
 	auto style = new primitive::TextBoxStyle(
-		gmpi::drawing::Colors::White					// text color
-		, gmpi::drawing::Colors::TransparentBlack		// background color
+		theme.controlText
+		, gmpi::drawing::Colors::TransparentBlack
 	);
 	style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 
@@ -65,7 +68,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		style2->fillColor = gmpi::drawing::colorFromHex(0x383838u);
+		style2->fillColor = theme.controlBackground;
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
@@ -121,9 +124,10 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 void Seperator::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	auto style2 = new primitive::ShapeStyle();
 	style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-	style2->fillColor = gmpi::drawing::colorFromHex(0x00444444u);
+	style2->fillColor = theme.separator;
 
 	canvas.add(style2);
 
@@ -137,14 +141,15 @@ void Seperator::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) 
 
 void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	gmpi::drawing::Rect comboBoxArea = getBounds();
 	comboBoxArea.left += editor_padding;
 	comboBoxArea.right -= editor_padding;
 
 	// default text style
 	auto style = new primitive::TextBoxStyle(
-		gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
-		, gmpi::drawing::Colors::TransparentBlack     // background color
+		theme.controlText
+		, gmpi::drawing::Colors::TransparentBlack
 	);
 	canvas.add(style);
 
@@ -152,7 +157,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		style2->fillColor = gmpi::drawing::colorFromHex(0x003E3E3Eu);
+		style2->fillColor = theme.controlBackground;
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
@@ -234,6 +239,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	// Add a text box.
 	const float itemHeight = 13;
 	gmpi::drawing::Rect textBoxArea = getBounds();
@@ -241,8 +247,8 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 
 	// default text style
 	auto style = new primitive::TextBoxStyle(
-		gmpi::drawing::Colors::White		// text color
-		, gmpi::drawing::Colors::TransparentBlack	// background color
+		theme.controlText
+		, gmpi::drawing::Colors::TransparentBlack
 	);
 	style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
 
@@ -252,7 +258,7 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
+		style2->fillColor = theme.controlBackground;
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
@@ -288,6 +294,7 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 
 void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	gmpi::drawing::Rect lableArea = getBounds();
 	lableArea.right -= getHeight(lableArea) + 3.f;
 	gmpi::drawing::Rect tickBoxArea = getBounds();
@@ -296,7 +303,7 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	// add label
 
 	// default label style
-	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+	auto style = new primitive::TextBoxStyle(theme.labelText, gmpi::drawing::Colors::TransparentBlack);
 	style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
 
 	canvas.add(style);
@@ -308,8 +315,8 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 	// Add the tickbox. (text)
 	auto style3 = new primitive::TextBoxStyle(
-		  gmpi::drawing::Colors::White				// text color
-		, gmpi::drawing::Colors::TransparentBlack	// background color
+		  theme.controlText
+		, gmpi::drawing::Colors::TransparentBlack
 	);
 	style3->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
 
@@ -319,7 +326,7 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
+		style2->fillColor = theme.controlBackground;
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
@@ -354,6 +361,7 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 }
 void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	// Add a text box.
 	const float itemHeight = 13;
 	gmpi::drawing::Rect textBoxArea = getBounds();
@@ -361,8 +369,8 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 
 	// default text style
 	auto style = new primitive::TextBoxStyle(
-		gmpi::drawing::colorFromHex(0xEEEEEEu) // text color
-		, gmpi::drawing::Colors::TransparentBlack     // background color
+		theme.controlText
+		, gmpi::drawing::Colors::TransparentBlack
 	);
 	style->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
 	canvas.add(style);
@@ -371,7 +379,7 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		style2->fillColor = gmpi::drawing::colorFromHex(0x006e6e6eu);
+		style2->fillColor = theme.controlBackground;
 		constexpr float radius = 4.f;
 
 		canvas.add(style2);
@@ -428,10 +436,11 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 
 void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
+	const auto& theme = currentTheme();
 	gmpi::drawing::Rect textBoxArea = getBounds();
 
 	// default text style
-	auto style = new primitive::TextBoxStyle(gmpi::drawing::colorFromHex(0xBFBDBFu), gmpi::drawing::Colors::TransparentBlack);
+	auto style = new primitive::TextBoxStyle(theme.labelText, gmpi::drawing::Colors::TransparentBlack);
 	style->bodyHeight = getHeight(textBoxArea) * 0.8f;
 	style->textAlignment = (int)gmpi::drawing::TextAlignment::Leading;
 	canvas.add(style);
@@ -510,19 +519,20 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 	// Scroll-bar
 	{
+		const auto& theme = currentTheme();
 		// drawing
 
 		// background
 		auto scrollBarBackgroundStyle = new primitive::ShapeStyle();
 		scrollBarBackgroundStyle->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		scrollBarBackgroundStyle->fillColor = gmpi::drawing::colorFromHex(0x505050);
+		scrollBarBackgroundStyle->fillColor = theme.scrollbarTrack;
 		canvas.add(new primitive::Rectangle(scrollBarBackgroundStyle, scrollBarBounds));
 		canvas.add(scrollBarBackgroundStyle);
 
 		//thumb
 		auto scrollBarStyle = new primitive::ShapeStyle();
 		scrollBarStyle->strokeColor = gmpi::drawing::Colors::TransparentBlack;
-		scrollBarStyle->fillColor = gmpi::drawing::colorFromHex(0xA0A0A0);
+		scrollBarStyle->fillColor = theme.scrollbarThumb;
 		auto r = scrollBarBounds;
 		r.left += 4;
 		r.right -= 4;

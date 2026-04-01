@@ -980,7 +980,7 @@ public:
 		return ret;
 	}
 
-    // Note: Not supported when Bitmap was created by IMpDeviceContext::CreateCompatibleRenderTarget()
+    // Note: Not supported when Bitmap was created by createCompatibleRenderTarget()
 	BitmapPixels lockPixels(BitmapLockFlags flags = BitmapLockFlags::Read)
 	{
         BitmapPixels ret;

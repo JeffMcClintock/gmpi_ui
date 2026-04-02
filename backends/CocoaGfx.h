@@ -1887,9 +1887,8 @@ public:
             ? kCGInterpolationNone : kCGInterpolationHigh);
 
 #if USE_BACKING_BUFFER
-        // Source rect in CGImage coordinates (bottom-up)
+        // CGImageCreateWithImageInRect uses top-left origin, matching our drawing coords
         CGRect sourceRect = cocoa::CGRectFromRect(*sourceRectangle);
-        sourceRect.origin.y = imageSize.height - (sourceRect.origin.y + sourceRect.size.height);
 
         CGContextSaveGState(cgContext_);
 

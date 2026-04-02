@@ -1038,10 +1038,9 @@ public:
         // Create stroke path and clip to it
         CGContextAddPath(ctx, cgPath);
         CGContextReplacePathWithStrokedPath(ctx);
+        // Get bounds of the stroked outline (not the original path) for correct tiling
+        CGRect bounds = CGContextGetPathBoundingBox(ctx);
         CGContextClip(ctx);
-
-        // Tile the pattern image
-        CGRect bounds = CGPathGetBoundingBox(cgPath);
         CGFloat tileW = CGImageGetWidth(patternImage_);
         CGFloat tileH = CGImageGetHeight(patternImage_);
 

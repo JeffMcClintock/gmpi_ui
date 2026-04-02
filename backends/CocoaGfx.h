@@ -2159,6 +2159,7 @@ class BitmapRenderTarget : public GraphicsContext
     int32_t creationFlags = (int32_t)drawing::BitmapRenderTargetFlags::SRGBPixels;
     CGFloat width_ = 0;
     CGFloat height_ = 0;
+    Bitmap* cachedBitmap_ = nullptr;
 
 public:
 	BitmapRenderTarget(const gmpi::drawing::Size* size, int32_t flags, cocoa::Factory* pfactory) :
@@ -2207,6 +2208,12 @@ public:
 
     gmpi::ReturnCode beginDraw() override
 	{
+        if (cachedBitmap_)
+        {
+            cachedBitmap_->release();
+            cachedBitmap_ = nullptr;
+        }
+
         cgContext_ = backingContext_;
 
 		// Flip coordinate system to match Direct2D (top-down).
@@ -2227,17 +2234,21 @@ public:
 
 	~BitmapRenderTarget()
 	{
+        if (cachedBitmap_) cachedBitmap_->release();
         if (backingContext_) CGContextRelease(backingContext_);
 	}
 
 	// MUST BE FIRST VIRTUAL FUNCTION!
 	virtual gmpi::ReturnCode getBitmap(gmpi::drawing::api::IBitmap** returnBitmap)
 	{
-        CGImageRef image = CGBitmapContextCreateImage(backingContext_);
-		gmpi::shared_ptr<gmpi::api::IUnknown> b;
-		b.attach(new Bitmap(factory, image, creationFlags));
-        CGImageRelease(image);
-		return b->queryInterface(&gmpi::drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
+        if (!cachedBitmap_)
+        {
+            CGImageRef image = CGBitmapContextCreateImage(backingContext_);
+            cachedBitmap_ = new Bitmap(factory, image, creationFlags);
+            cachedBitmap_->addRef(); // our reference
+            CGImageRelease(image);
+        }
+		return cachedBitmap_->queryInterface(&gmpi::drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
 	}
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

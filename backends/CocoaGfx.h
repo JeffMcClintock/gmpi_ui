@@ -30,6 +30,7 @@
 #include <ImageIO/ImageIO.h>
 #include "../Drawing.h"
 #include "../backends/Gfx_base.h"
+#include "MarkdownParser.h"
 #define USE_BACKING_BUFFER 1
 
 #if TARGET_OS_OSX
@@ -695,9 +696,7 @@ public:
 
     CFAttributedStringRef cachedAttrString_ = nullptr;
     std::string plainText_;
-
-    struct Run { uint32_t start; uint32_t length; bool bold; bool italic; };
-    std::vector<Run> runs_;
+    std::vector<gmpi::drawing::MarkdownRun> runs_;
 
     RichTextFormat(const TextFormat& baseFormat, const char* markdownText)
         : fontWeight(baseFormat.fontWeight)
@@ -760,44 +759,9 @@ public:
 
     void parseAndBuildAttributedString(const char* markdownText)
     {
-        // simple markdown parser
-        const std::string_view input(markdownText);
-        plainText_.clear();
-        runs_.clear();
-
-        size_t i = 0;
-        while (i < input.size())
-        {
-            if (input[i] == '*' || input[i] == '_')
-            {
-                const char marker = input[i];
-                size_t markerCount = 0;
-                size_t j = i;
-                while (j < input.size() && input[j] == marker) { ++markerCount; ++j; }
-
-                if (markerCount >= 1 && markerCount <= 3)
-                {
-                    const auto closing = input.find(std::string(markerCount, marker), j);
-                    if (closing != std::string_view::npos)
-                    {
-                        Run run;
-                        run.start = static_cast<uint32_t>(plainText_.size());
-                        run.length = static_cast<uint32_t>(closing - j);
-                        run.bold = markerCount >= 2;
-                        run.italic = (markerCount == 1 || markerCount == 3);
-
-                        plainText_.append(input.data() + j, closing - j);
-                        runs_.push_back(run);
-                        i = closing + markerCount;
-                        continue;
-                    }
-                }
-            }
-
-            plainText_.push_back(input[i]);
-            ++i;
-        }
-
+        const auto parsed = gmpi::drawing::parseMarkdown(markdownText);
+        plainText_ = std::move(parsed.plainText);
+        runs_ = std::move(parsed.runs);
         rebuildAttributedString();
     }
 
@@ -827,9 +791,9 @@ public:
         {
             // convert UTF-8 offsets to CFString (UTF-16) offsets
             CFStringRef prefix = CFStringCreateWithBytes(kCFAllocatorDefault,
-                (const UInt8*)plainText_.data(), run.start, kCFStringEncodingUTF8, false);
+                (const UInt8*)plainText_.data(), run.startPosition, kCFStringEncodingUTF8, false);
             CFStringRef runStr = CFStringCreateWithBytes(kCFAllocatorDefault,
-                (const UInt8*)plainText_.data() + run.start, run.length, kCFStringEncodingUTF8, false);
+                (const UInt8*)plainText_.data() + run.startPosition, run.length, kCFStringEncodingUTF8, false);
 
             if (prefix && runStr)
             {
@@ -837,15 +801,52 @@ public:
                 const CFIndex cfLen = CFStringGetLength(runStr);
                 const CFRange range = CFRangeMake(cfStart, cfLen);
 
+                // determine the font for this run
                 CTFontRef runFont = ctFont_;
-                if (run.bold && run.italic)
-                    runFont = ctBoldItalicFont_;
-                else if (run.bold)
-                    runFont = ctBoldFont_;
-                else if (run.italic)
-                    runFont = ctItalicFont_;
 
-                CFAttributedStringSetAttribute(mutAttrStr, range, kCTFontAttributeName, runFont);
+                if (run.monospace)
+                {
+                    // use Menlo for monospace runs
+                    CGFloat runSize = (run.fontSizeScale > 0.0f) ? fontSize * run.fontSizeScale : fontSize;
+                    runFont = CTFontCreateWithName(CFSTR("Menlo"), runSize, nullptr);
+                    CFAttributedStringSetAttribute(mutAttrStr, range, kCTFontAttributeName, runFont);
+                    CFRelease(runFont);
+                }
+                else if (run.fontSizeScale > 0.0f)
+                {
+                    // heading or scaled text — create a sized variant of the appropriate style
+                    CGFloat runSize = fontSize * run.fontSizeScale;
+                    CTFontRef baseForScale = ctFont_;
+                    if (run.bold && run.italic)
+                        baseForScale = ctBoldItalicFont_;
+                    else if (run.bold)
+                        baseForScale = ctBoldFont_;
+                    else if (run.italic)
+                        baseForScale = ctItalicFont_;
+
+                    runFont = CTFontCreateCopyWithAttributes(baseForScale, runSize, nullptr, nullptr);
+                    CFAttributedStringSetAttribute(mutAttrStr, range, kCTFontAttributeName, runFont);
+                    CFRelease(runFont);
+                }
+                else
+                {
+                    if (run.bold && run.italic)
+                        runFont = ctBoldItalicFont_;
+                    else if (run.bold)
+                        runFont = ctBoldFont_;
+                    else if (run.italic)
+                        runFont = ctItalicFont_;
+
+                    CFAttributedStringSetAttribute(mutAttrStr, range, kCTFontAttributeName, runFont);
+                }
+
+                if (run.strikethrough)
+                {
+                    int32_t style = kCTUnderlineStyleSingle;
+                    CFNumberRef strikethroughValue = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &style);
+                    CFAttributedStringSetAttribute(mutAttrStr, range, kCTStrikethroughStyleAttributeName, strikethroughValue);
+                    CFRelease(strikethroughValue);
+                }
             }
 
             if (prefix) CFRelease(prefix);

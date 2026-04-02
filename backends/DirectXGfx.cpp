@@ -391,93 +391,23 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 	return toReturnCode(hr);
 }
 
-MarkdownParseResult parseMarkdown(const char* markdownText)
-{
-	MarkdownParseResult result;
-	const std::string_view input(markdownText);
-
-	size_t i = 0;
-	while (i < input.size())
-	{
-		// check for emphasis markers (* or _)
-		if (input[i] == '*' || input[i] == '_')
-		{
-			const char marker = input[i];
-			// count consecutive markers
-			size_t markerCount = 0;
-			size_t j = i;
-			while (j < input.size() && input[j] == marker)
-			{
-				++markerCount;
-				++j;
-			}
-
-			if (markerCount >= 1 && markerCount <= 3)
-			{
-				// find matching closing markers
-				const auto closing = input.find(std::string(markerCount, marker), j);
-				if (closing != std::string_view::npos)
-				{
-					const bool bold = markerCount >= 2;
-					const bool italic = (markerCount == 1 || markerCount == 3);
-
-					MarkdownRun run;
-					run.startPosition = static_cast<uint32_t>(result.plainText.size());
-					run.length = static_cast<uint32_t>(closing - j);
-					run.bold = bold;
-					run.italic = italic;
-
-					result.plainText.append(input.data() + j, closing - j);
-					result.runs.push_back(run);
-
-					i = closing + markerCount;
-					continue;
-				}
-			}
-		}
-
-		// check for strikethrough ~~
-		if (i + 1 < input.size() && input[i] == '~' && input[i + 1] == '~')
-		{
-			const auto closing = input.find("~~", i + 2);
-			if (closing != std::string_view::npos)
-			{
-				MarkdownRun run;
-				run.startPosition = static_cast<uint32_t>(result.plainText.size());
-				run.length = static_cast<uint32_t>(closing - (i + 2));
-				run.bold = false;
-				run.italic = false;
-
-				result.plainText.append(input.data() + i + 2, closing - (i + 2));
-				result.runs.push_back(run);
-
-				i = closing + 2;
-				continue;
-			}
-		}
-
-		result.plainText.push_back(input[i]);
-		++i;
-	}
-
-	return result;
-}
-
 RichTextFormat::RichTextFormat(IDWriteFactory* pwriteFactory, IDWriteTextFormat* pbaseFormat, IDWriteTextLayout* ptextLayout)
 	: writeFactory(pwriteFactory)
 	, baseFormat(pbaseFormat)
 	, textLayout(ptextLayout)
 {
-	// calculate top adjustment same as TextFormat
-	const auto fontMetrics = getFontMetricsHelper(baseFormat);
-
-	DWRITE_TEXT_METRICS textMetrics;
+	// Use the first line's actual layout metrics so headings aren't clipped.
+	// baseline is the distance from line-top to the text baseline — this is the
+	// effective ascent for the first line regardless of which font it uses.
 	textLayout->SetMaxWidth(100000);
 	textLayout->SetMaxHeight(100000);
-	textLayout->GetMetrics(&textMetrics);
 
-	topAdjustment = textMetrics.height - (fontMetrics.ascent + fontMetrics.descent);
-	fontMetrics_ascent = fontMetrics.ascent;
+	DWRITE_LINE_METRICS firstLine{};
+	UINT32 lineCount = 0;
+	textLayout->GetLineMetrics(&firstLine, 1, &lineCount);
+
+	fontMetrics_ascent = firstLine.baseline;
+	topAdjustment = 0.0f; // DirectWrite already positions glyphs correctly within the line
 }
 
 gmpi::ReturnCode RichTextFormat::getTextExtentU(drawing::Size* returnSize)
@@ -517,7 +447,7 @@ gmpi::ReturnCode Factory_base::createRichTextFormat(
 	IDWriteTextFormat* dwFormat = baseTextFormat->native();
 
 	// parse markdown
-	const auto parsed = parseMarkdown(markdownText);
+	const auto parsed = drawing::parseMarkdown(markdownText);
 	const auto wideText = Utf8ToWstring(parsed.plainText);
 
 	// create the text layout
@@ -557,6 +487,18 @@ gmpi::ReturnCode Factory_base::createRichTextFormat(
 		if (run.italic)
 		{
 			dwLayout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+		}
+		if (run.strikethrough)
+		{
+			dwLayout->SetStrikethrough(TRUE, range);
+		}
+		if (run.monospace)
+		{
+			dwLayout->SetFontFamilyName(L"Consolas", range);
+		}
+		if (run.fontSizeScale > 0.0f)
+		{
+			dwLayout->SetFontSize(fontSize * run.fontSizeScale, range);
 		}
 	}
 

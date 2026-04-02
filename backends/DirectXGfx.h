@@ -27,6 +27,7 @@
 #include <Wincodec.h>
 #include <unordered_map>
 #include "../Drawing.h"
+#include "MarkdownParser.h"
 
 namespace gmpi
 {
@@ -296,22 +297,6 @@ public:
     GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextFormat);
     GMPI_REFCOUNT
 };
-
-struct MarkdownRun
-{
-    uint32_t startPosition;
-    uint32_t length;
-    bool bold;
-    bool italic;
-};
-
-struct MarkdownParseResult
-{
-    std::string plainText;
-    std::vector<MarkdownRun> runs;
-};
-
-MarkdownParseResult parseMarkdown(const char* markdownText);
 
 class RichTextFormat final : public drawing::api::IRichTextFormat
 {

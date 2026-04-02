@@ -56,7 +56,7 @@ struct cachedBlur
                 auto format = data.getPixelFormat();
                 const int totalPixels = (int)imageSize.height * stride / pixelSize;
 
-                const int pixelSizeTest = stride / imageSize.width; // 8 for half-float RGB, 4 for 8-bit sRGB, 1 for alpha mask
+                const int pixelSizeTest = data.getBytesPerPixel();
 
                 // modify pixels here
 #if 0
@@ -81,83 +81,95 @@ struct cachedBlur
                 {
                     auto destdata = buffer2.lockPixels(drawing::BitmapLockFlags::Write);
                     auto imageSize = buffer2.getSize();
-                    auto stride = destdata.getBytesPerRow();
-                    const int pixelSize = stride / imageSize.width;
-                    const int totalPixels = (int)imageSize.height * (int)imageSize.width;
-
-                    auto pixelsrc = data.getAddress();
+                    const auto destStride = destdata.getBytesPerRow();
+                    const int destPixelSize = destdata.getBytesPerPixel();
+                    const int w = static_cast<int>(imageSize.width);
+                    const int h = static_cast<int>(imageSize.height);
+                    const auto srcStride = data.getBytesPerRow();
 
                     float tintf[4] = { tint.r, tint.g, tint.b, tint.a };
 
                     constexpr float inv255 = 1.0f / 255.0f;
 
-                    if (pixelSize == 16)
+                    if (destPixelSize == 16)
                     {
                         // 128bpp float RGBA (macOS): write premultiplied linear directly.
-                        auto pixeldest = reinterpret_cast<float*>(destdata.getAddress());
-                        for (int i = 0; i < totalPixels; ++i)
+                        for (int y = 0; y < h; ++y)
                         {
-                            const auto alpha = *pixelsrc;
-                            if (alpha == 0)
+                            auto pixelsrc = data.getAddress() + y * srcStride;
+                            auto pixeldest = reinterpret_cast<float*>(destdata.getAddress() + y * destStride);
+                            for (int x = 0; x < w; ++x)
                             {
-                                pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0.0f;
+                                const auto alpha = *pixelsrc;
+                                if (alpha == 0)
+                                {
+                                    pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0.0f;
+                                }
+                                else
+                                {
+                                    const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
+                                    for (int j = 0; j < 3; ++j)
+                                        pixeldest[j] = tintf[j] * AlphaNorm;
+                                    pixeldest[3] = AlphaNorm;
+                                }
+                                pixelsrc++;
+                                pixeldest += 4;
                             }
-                            else
-                            {
-                                const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
-                                for (int j = 0; j < 3; ++j)
-                                    pixeldest[j] = tintf[j] * AlphaNorm;
-                                pixeldest[3] = AlphaNorm;
-                            }
-                            pixelsrc++;
-                            pixeldest += 4;
                         }
                     }
-                    else if (pixelSize == 8)
+                    else if (destPixelSize == 8)
                     {
                         // 64bppPRGBAHalf (Windows): premultiplied RGBA half-float.
-                        auto pixeldest = reinterpret_cast<uint16_t*>(destdata.getAddress());
-                        for (int i = 0; i < totalPixels; ++i)
+                        for (int y = 0; y < h; ++y)
                         {
-                            const auto alpha = *pixelsrc;
-                            if (alpha == 0)
+                            auto pixelsrc = data.getAddress() + y * srcStride;
+                            auto pixeldest = reinterpret_cast<uint16_t*>(destdata.getAddress() + y * destStride);
+                            for (int x = 0; x < w; ++x)
                             {
-                                pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
+                                const auto alpha = *pixelsrc;
+                                if (alpha == 0)
+                                {
+                                    pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
+                                }
+                                else
+                                {
+                                    const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
+                                    for (int j = 0; j < 3; ++j)
+                                        pixeldest[j] = drawing::detail::floatToHalf(tintf[j] * AlphaNorm);
+                                    pixeldest[3] = drawing::detail::floatToHalf(AlphaNorm);
+                                }
+                                pixelsrc++;
+                                pixeldest += 4;
                             }
-                            else
-                            {
-                                const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
-                                for (int j = 0; j < 3; ++j)
-                                    pixeldest[j] = drawing::detail::floatToHalf(tintf[j] * AlphaNorm);
-                                pixeldest[3] = drawing::detail::floatToHalf(AlphaNorm);
-                            }
-                            pixelsrc++;
-                            pixeldest += 4;
                         }
                     }
                     else
                     {
                         // 32bpp sRGB RGBA (fallback): premultiplied sRGB bytes.
-                        auto pixeldest = destdata.getAddress();
-                        for (int i = 0; i < totalPixels; ++i)
+                        for (int y = 0; y < h; ++y)
                         {
-                            const auto alpha = *pixelsrc;
-                            if (alpha == 0)
+                            auto pixelsrc = data.getAddress() + y * srcStride;
+                            auto pixeldest = destdata.getAddress() + y * destStride;
+                            for (int x = 0; x < w; ++x)
                             {
-                                pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
-                            }
-                            else
-                            {
-                                const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
-                                for (int j = 0; j < 3; ++j)
+                                const auto alpha = *pixelsrc;
+                                if (alpha == 0)
                                 {
-                                    auto cf = tintf[j] * AlphaNorm;
-                                    pixeldest[j] = drawing::linearPixelToSRGB(cf);
+                                    pixeldest[0] = pixeldest[1] = pixeldest[2] = pixeldest[3] = 0;
                                 }
-                                pixeldest[3] = static_cast<uint8_t>(255.0f * AlphaNorm + 0.5f);
+                                else
+                                {
+                                    const float AlphaNorm = std::clamp(alpha * inv255 * tintf[3], 0.0f, 1.0f);
+                                    for (int j = 0; j < 3; ++j)
+                                    {
+                                        auto cf = tintf[j] * AlphaNorm;
+                                        pixeldest[j] = drawing::linearPixelToSRGB(cf);
+                                    }
+                                    pixeldest[3] = static_cast<uint8_t>(255.0f * AlphaNorm + 0.5f);
+                                }
+                                pixelsrc++;
+                                pixeldest += 4;
                             }
-                            pixelsrc++;
-                            pixeldest += 4;
                         }
                     }
                 }

@@ -365,7 +365,7 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
     UINT bytesPerRow{};
     BYTE* ptr{};
     int flags{};
-    IBitmapPixels::PixelFormat pixelFormat = kBGRA; // default to non-SRGB Win7 (not tested)
+    int32_t pixelFormat = BGRA_sRGB_8i;
 
 public:
     BitmapPixels(ID2D1Bitmap* nativeBitmap, IWICBitmap* inBitmap, bool _alphaPremultiplied, int32_t pflags)
@@ -379,10 +379,17 @@ public:
             WICPixelFormatGUID formatGuid{};
             inBitmap->GetPixelFormat(&formatGuid);
 
-            // premultiplied BGRA (default)
             if (std::memcmp(&formatGuid, &GUID_WICPixelFormat32bppPBGRA, sizeof(formatGuid)) == 0)
             {
-                pixelFormat = kBGRA_SRGB;
+                pixelFormat = BGRA_sRGB_8i;
+            }
+            else if (std::memcmp(&formatGuid, &GUID_WICPixelFormat64bppPRGBAHalf, sizeof(formatGuid)) == 0)
+            {
+                pixelFormat = RGBA_16f;
+            }
+            else if (std::memcmp(&formatGuid, &GUID_WICPixelFormat8bppAlpha, sizeof(formatGuid)) == 0)
+            {
+                pixelFormat = Alpha_8i;
             }
         }
 
@@ -928,10 +935,9 @@ public:
     //    info.DX_support_sRGB = s;
     //}
             
-    ReturnCode getPlatformPixelFormat(drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
+    ReturnCode getPlatformPixelFormat(int32_t* returnPixelFormat) override
     {
-//        *returnPixelFormat = info.DX_support_sRGB ? drawing::api::IBitmapPixels::kBGRA_SRGB : drawing::api::IBitmapPixels::kBGRA;
-        *returnPixelFormat = drawing::api::IBitmapPixels::kBGRA_SRGB;
+        *returnPixelFormat = drawing::api::IBitmapPixels::BGRA_sRGB_8i;
         return ReturnCode::Ok;
     }
 
@@ -940,7 +946,7 @@ public:
         return info.d2dFactory;
     }
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
-    ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget) override;
+    ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags, drawing::api::ITextFormat** returnTextFormat) override;
     ReturnCode createImage(int32_t width, int32_t height, int32_t flags, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
@@ -1216,9 +1222,9 @@ public:
 
     bool SupportSRGB()
     {
-        drawing::api::IBitmapPixels::PixelFormat pixelFormat;
+        int32_t pixelFormat{};
         factory->getPlatformPixelFormat(&pixelFormat);
-        return pixelFormat == drawing::api::IBitmapPixels::kBGRA_SRGB;
+        return (pixelFormat & 0x800) != 0; // sRGB bit
     }
 
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IDeviceContext);
@@ -1254,7 +1260,7 @@ class BitmapRenderTarget final : public GraphicsContext_base // emulated by care
     ID2D1DeviceContext* originalContext{};
 
 public:
-    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory);
+    BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory, float dpi = 96.0f);
 
     // HACK, to be ABI compatible with IBitmapRenderTarget we need this virtual function,
     // and it needs to be in the vtable right after all virtual functions of GraphicsContext

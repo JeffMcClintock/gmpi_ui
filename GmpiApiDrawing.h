@@ -80,7 +80,9 @@ enum class TextAlignment : int32_t
 enum class ParagraphAlignment : int32_t
 {
     Near   = 0,
+    Top    = 0,
     Far    = 1,
+    Bottom = 1,
     Center = 2,
 };
 
@@ -435,14 +437,22 @@ struct DECLSPEC_NOVTABLE IResource : gmpi::api::IUnknown
 // INTERFACE 'IBitmapPixels'
 struct DECLSPEC_NOVTABLE IBitmapPixels : gmpi::api::IUnknown
 {
-	// older Windows uses a format of kRGBA, newer uses kBGRA_SRGB. macOS uses kBGRA (sRGB curves)
-	enum PixelFormat {
-		kARGB,
-		kRGBA,
-		kABGR,
-		kBGRA,
-		kBGRA_SRGB
+	// Bit-encoded pixel format:
+	//   [7:0]  bytes per pixel
+	//   [8]    1 = integer, 0 = float
+	//   [10:9] channel layout: 0=BGRA, 1=RGBA, 2=ARGB, 3=ABGR
+	//   [11]   1 = sRGB transfer function, 0 = linear
+	enum PixelFormat : int32_t {
+		// Linear float
+		RGBA_16f      = 8 | (1 << 9),                            // Windows 64bpp half-float
+		// Linear integer
+		RGBA_16i      = 8 | (1 << 8) | (1 << 9),                 // macOS 64bpp uint16
+		Alpha_8i      = 1 | (1 << 8),                             // 8bpp alpha mask
+		// sRGB integer
+		BGRA_sRGB_8i  = 4 | (1 << 8) | (1 << 11),                // Windows 32bpp sRGB
+		RGBA_sRGB_8i  = 4 | (1 << 8) | (1 << 9) | (1 << 11),     // macOS 32bpp sRGB
 	};
+
     virtual gmpi::ReturnCode getAddress(uint8_t** returnAddress) = 0;
     virtual gmpi::ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) = 0;
     virtual gmpi::ReturnCode getPixelFormat(int32_t* returnPixelFormat) = 0;
@@ -654,8 +664,8 @@ struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
     virtual gmpi::ReturnCode loadImageU(const char* uri, IBitmap** returnBitmap) = 0;
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
-    virtual gmpi::ReturnCode getPlatformPixelFormat(IBitmapPixels::PixelFormat* returnPixelFormat) = 0;
-	virtual gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // ref: BitmapRenderTargetFlags
+    virtual gmpi::ReturnCode getPlatformPixelFormat(int32_t* returnPixelFormat) = 0;
+	virtual gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) = 0; // ref: BitmapRenderTargetFlags
 
     // {D47DEB59-BBA2-4B52-AF12-7983330A8C8A}
     inline static const gmpi::api::Guid guid =

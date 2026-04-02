@@ -282,7 +282,7 @@ gmpi::ReturnCode Factory_base::createPathGeometry(gmpi::drawing::api::IPathGeome
 	return toReturnCode(hr);
 }
 
-ReturnCode Factory_base::createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget)
+ReturnCode Factory_base::createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi)
 {
 	*returnBitmapRenderTarget = {};
 
@@ -290,7 +290,7 @@ ReturnCode Factory_base::createCpuRenderTarget(drawing::SizeU size, int32_t flag
 	flags |= (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-	b2.attach(new BitmapRenderTarget(nullptr, &size2, flags, this));
+	b2.attach(new BitmapRenderTarget(nullptr, &size2, flags, this, dpi));
 	return b2->queryInterface(&drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(returnBitmapRenderTarget));
 }
 
@@ -922,6 +922,7 @@ void createBitmapRenderTarget(
 	, gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
 	, gmpi::directx::ComPtr<ID3D11Device>& returnD3dDevice
 	, gmpi::directx::ComPtr<ID3D11Texture2D>& returnRenderTex
+	, float dpi = 96.0f
 )
 {
 	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
@@ -985,6 +986,8 @@ void createBitmapRenderTarget(
 			if (FAILED(d2dFactory->CreateDxgiSurfaceRenderTarget(surface.get(), &rtProps, renderTarget.put()))) return;
 
 			returnContext = renderTarget.as<ID2D1DeviceContext>();
+			if (returnContext.get())
+				returnContext->SetDpi(dpi, dpi);
 		}
 		else
 		{
@@ -1002,6 +1005,8 @@ void createBitmapRenderTarget(
 			);
 
 			returnContext = wikBitmapRenderTarget.as<ID2D1DeviceContext>();
+			if (returnContext.get())
+				returnContext->SetDpi(dpi, dpi);
 		}
 	}
 	else
@@ -1016,7 +1021,7 @@ void createBitmapRenderTarget(
 	}
 }
 
-BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory) :
+BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::Size* desiredSize, int32_t flags, drawing::api::IFactory* pfactory, float dpi) :
 	GraphicsContext_base(pfactory)
 	, originalContext(g ? g->native() : nullptr)
 {
@@ -1033,6 +1038,7 @@ BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::S
 		, context_
 		, d3dDevice_
 		, renderTex_
+		, dpi
 	);
 
 	clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });

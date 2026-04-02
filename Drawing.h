@@ -879,8 +879,14 @@ protected:
 		uint8_t* temp{};
 		native->getAddress(&temp);
 		data = reinterpret_cast<uint32_t*>(temp);
-		pixelPerRow = getBytesPerRow() / sizeof(uint32_t);
+		pixelPerRow = getBytesPerRow() / getBytesPerPixel();
 	}
+
+	// Convenience helpers — derived from the bit-encoded pixel format.
+	static constexpr int32_t bytesPerPixelFromFormat(int32_t f) { return f & 0xFF; }
+	static constexpr bool    isIntegerFromFormat(int32_t f)      { return (f & 0x100) != 0; }
+	static constexpr int32_t channelLayoutFromFormat(int32_t f)  { return (f >> 9) & 0x3; }
+	static constexpr bool    isSRGBFromFormat(int32_t f)          { return (f & 0x800) != 0; }
 
 public:
 	operator bool() const
@@ -903,6 +909,22 @@ public:
 		int32_t ret{};
 		native->getPixelFormat(&ret);
 		return ret;
+	}
+	int32_t getBytesPerPixel()
+	{
+		return bytesPerPixelFromFormat(getPixelFormat());
+	}
+	bool isInteger()
+	{
+		return isIntegerFromFormat(getPixelFormat());
+	}
+	int32_t channelLayout()
+	{
+		return channelLayoutFromFormat(getPixelFormat());
+	}
+	bool isSRGB()
+	{
+		return isSRGBFromFormat(getPixelFormat());
 	}
  	SizeU getSize() const
 	{
@@ -1465,7 +1487,7 @@ public:
 		return temp;
 	}
 
-	BitmapRenderTarget createCpuRenderTarget(SizeU size, int32_t flags);
+	BitmapRenderTarget createCpuRenderTarget(SizeU size, int32_t flags, float dpi = 96.0f);
 };
 
 class Graphics
@@ -1871,11 +1893,11 @@ inline BitmapRenderTarget Graphics::createCompatibleRenderTarget(Size desiredSiz
 }
 
 // see also: BitmapRenderTargetFlags
-inline BitmapRenderTarget Factory::createCpuRenderTarget(SizeU size, int32_t flags)
+inline BitmapRenderTarget Factory::createCpuRenderTarget(SizeU size, int32_t flags, float dpi)
 {
 	BitmapRenderTarget temp;
 	auto native_ptr = (gmpi::drawing::api::IBitmapRenderTarget**) AccessPtr::put(temp); // hack to allow BitmapRenderTarget to be substituted for a Graphics
-	native->createCpuRenderTarget(size, flags, native_ptr);
+	native->createCpuRenderTarget(size, flags, native_ptr, dpi);
 	return temp;
 }
 

@@ -70,7 +70,7 @@ static void ginSingleChannel(uint8_t* buffer, unsigned int w, unsigned int h, un
     {
         sum = sum_in = sum_out = 0;
 
-        src_ptr = getLinePointer(y, buffer, w); // data.getLinePointer(int(y));
+        src_ptr = getLinePointer(y, buffer, lineStride);
 
         for (i = 0; i <= radius; ++i)
         {
@@ -96,8 +96,8 @@ static void ginSingleChannel(uint8_t* buffer, unsigned int w, unsigned int h, un
         if (xp > wm)
             xp = wm;
 
-        src_ptr = getPixelPointer(xp, y, buffer, w); // data.getLinePointer(int(y)) + (unsigned int)data.pixelStride * xp;
-        dst_ptr = getLinePointer(y, buffer, w); // data.getLinePointer(int(y));
+        src_ptr = getPixelPointer(xp, y, buffer, lineStride);
+        dst_ptr = getLinePointer(y, buffer, lineStride);
 
         for (x = 0; x < w; ++x)
         {
@@ -141,7 +141,7 @@ static void ginSingleChannel(uint8_t* buffer, unsigned int w, unsigned int h, un
     {
         sum = sum_in = sum_out = 0;
 
-        src_ptr = getPixelPointer(x, 0, buffer, w); // data.getLinePointer(0) + (unsigned int)data.pixelStride * x;
+        src_ptr = getPixelPointer(x, 0, buffer, lineStride);
 
         for (i = 0; i <= radius; ++i)
         {
@@ -167,8 +167,8 @@ static void ginSingleChannel(uint8_t* buffer, unsigned int w, unsigned int h, un
         if (yp > hm)
             yp = hm;
 
-        src_ptr = getPixelPointer(x, yp, buffer, w); // data.getLinePointer(int(yp)) + (unsigned int)data.pixelStride * x;
-        dst_ptr = getPixelPointer(x, 0, buffer, w); // data.getLinePointer(0) + (unsigned int)data.pixelStride * x;
+        src_ptr = getPixelPointer(x, yp, buffer, lineStride);
+        dst_ptr = getPixelPointer(x, 0, buffer, lineStride);
 
         for (y = 0; y < h; ++y)
         {

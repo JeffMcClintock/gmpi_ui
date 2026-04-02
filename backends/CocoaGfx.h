@@ -687,7 +687,11 @@ public:
 
     gmpi::ReturnCode getPixelFormat(int32_t* returnPixelFormat) override
     {
-        *returnPixelFormat = kRGBA;
+        const int32_t bpp = static_cast<int32_t>(CGBitmapContextGetBitsPerPixel(pixelContext_) / 8);
+        if (bpp == 4)
+            *returnPixelFormat = RGBA_sRGB_8i;
+        else
+            *returnPixelFormat = RGBA_16i;
         return gmpi::ReturnCode::Ok;
     }
 
@@ -942,13 +946,13 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    gmpi::ReturnCode getPlatformPixelFormat(gmpi::drawing::api::IBitmapPixels::PixelFormat* returnPixelFormat) override
+    gmpi::ReturnCode getPlatformPixelFormat(int32_t* returnPixelFormat) override
     {
-        *returnPixelFormat = gmpi::drawing::api::IBitmapPixels::kBGRA;
+        *returnPixelFormat = gmpi::drawing::api::IBitmapPixels::RGBA_sRGB_8i;
         return gmpi::ReturnCode::Ok;
     }
 
-    gmpi::ReturnCode createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget) override;
+    gmpi::ReturnCode createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) override;
 
     GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE;
@@ -2299,7 +2303,7 @@ inline gmpi::ReturnCode Factory::createImage(int32_t width, int32_t height, int3
 	return bm->queryInterface(&gmpi::drawing::api::IBitmap::guid, (void**)returnDiBitmap);
 }
 
-inline gmpi::ReturnCode Factory::createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget)
+inline gmpi::ReturnCode Factory::createCpuRenderTarget(gmpi::drawing::SizeU size, int32_t flags, gmpi::drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi)
 {
     gmpi::shared_ptr<gmpi::api::IUnknown> b2;
     gmpi::drawing::Size sizeF{ static_cast<float>(size.width), static_cast<float>(size.height) };

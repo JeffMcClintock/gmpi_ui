@@ -75,7 +75,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 				uint8_t* sourcePixels = pixelsSource.getAddress();
 				uint8_t* destPixels = pixelsDest.getAddress();
 
-				if (pixelsDest.getPixelFormat() == gmpi::drawing::api::IBitmapPixels::kBGRA_SRGB) // Win10 SRGB support?
+				if (pixelsDest.isSRGB())
 				{
 //					constexpr float gamma = 2.2f;
 					constexpr float inv255 = 1.0f / 255.0f;

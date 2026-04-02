@@ -662,6 +662,223 @@ public:
     GMPI_REFCOUNT;
 };
 
+class RichTextFormat final : public gmpi::drawing::api::IRichTextFormat
+{
+public:
+    std::string fontFamilyName;
+    gmpi::drawing::FontWeight fontWeight;
+    gmpi::drawing::FontStyle fontStyle;
+    gmpi::drawing::FontStretch fontStretch;
+    gmpi::drawing::TextAlignment textAlignment;
+    gmpi::drawing::ParagraphAlignment paragraphAlignment;
+    gmpi::drawing::WordWrapping wordWrapping = gmpi::drawing::WordWrapping::Wrap;
+    float fontSize;
+
+    float topAdjustment = {};
+    float ascent = {};
+    float baselineCorrection = {};
+
+    float lineSpacing_ = -1.f;
+    float customBaseline_ = 0.f;
+    float winNaturalLineHeight_ = -1.f;
+    float winNaturalTopAdjustment_ = 0.f;
+
+    CTFontRef ctFont_ = nullptr;
+    CTFontRef ctBoldFont_ = nullptr;
+    CTFontRef ctItalicFont_ = nullptr;
+    CTFontRef ctBoldItalicFont_ = nullptr;
+    CTParagraphStyleRef ctParagraphStyle_ = nullptr;
+    CTTextAlignment ctAlignment_ = kCTTextAlignmentLeft;
+
+    CGFloat ctLineHeightMin_ = 0;
+    CGFloat ctLineHeightMax_ = 0;
+
+    CFAttributedStringRef cachedAttrString_ = nullptr;
+    std::string plainText_;
+
+    struct Run { uint32_t start; uint32_t length; bool bold; bool italic; };
+    std::vector<Run> runs_;
+
+    RichTextFormat(const TextFormat& baseFormat, const char* markdownText)
+        : fontWeight(baseFormat.fontWeight)
+        , fontStyle(baseFormat.fontStyle)
+        , fontStretch(baseFormat.fontStretch)
+        , fontSize(baseFormat.fontSize)
+        , topAdjustment(baseFormat.topAdjustment)
+        , ascent(baseFormat.ascent)
+        , baselineCorrection(baseFormat.baselineCorrection)
+        , winNaturalLineHeight_(baseFormat.winNaturalLineHeight_)
+        , winNaturalTopAdjustment_(baseFormat.winNaturalTopAdjustment_)
+        , ctAlignment_(baseFormat.ctAlignment_)
+        , ctLineHeightMin_(baseFormat.ctLineHeightMin_)
+        , ctLineHeightMax_(baseFormat.ctLineHeightMax_)
+    {
+        fontFamilyName = baseFormat.fontFamilyName;
+        textAlignment = baseFormat.textAlignment;
+        paragraphAlignment = baseFormat.paragraphAlignment;
+        wordWrapping = baseFormat.wordWrapping;
+        lineSpacing_ = baseFormat.lineSpacing_;
+        customBaseline_ = baseFormat.customBaseline_;
+
+        // retain the base font
+        ctFont_ = baseFormat.ctFont_;
+        if (ctFont_) CFRetain(ctFont_);
+
+        // create bold, italic, and bold-italic variants
+        if (ctFont_)
+        {
+            ctBoldFont_ = CTFontCreateCopyWithSymbolicTraits(ctFont_, 0.0, nullptr, kCTFontBoldTrait, kCTFontBoldTrait);
+            if (!ctBoldFont_) ctBoldFont_ = (CTFontRef)CFRetain(ctFont_);
+
+            ctItalicFont_ = CTFontCreateCopyWithSymbolicTraits(ctFont_, 0.0, nullptr, kCTFontItalicTrait, kCTFontItalicTrait);
+            if (!ctItalicFont_) ctItalicFont_ = (CTFontRef)CFRetain(ctFont_);
+
+            ctBoldItalicFont_ = CTFontCreateCopyWithSymbolicTraits(ctFont_, 0.0, nullptr, kCTFontBoldTrait | kCTFontItalicTrait, kCTFontBoldTrait | kCTFontItalicTrait);
+            if (!ctBoldItalicFont_) ctBoldItalicFont_ = (CTFontRef)CFRetain(ctFont_);
+        }
+
+        // retain/copy paragraph style
+        if (baseFormat.ctParagraphStyle_)
+        {
+            ctParagraphStyle_ = baseFormat.ctParagraphStyle_;
+            CFRetain(ctParagraphStyle_);
+        }
+
+        // parse markdown and build attributed string
+        parseAndBuildAttributedString(markdownText);
+    }
+
+    ~RichTextFormat()
+    {
+        if (cachedAttrString_) CFRelease(cachedAttrString_);
+        if (ctParagraphStyle_) CFRelease(ctParagraphStyle_);
+        if (ctFont_) CFRelease(ctFont_);
+        if (ctBoldFont_) CFRelease(ctBoldFont_);
+        if (ctItalicFont_) CFRelease(ctItalicFont_);
+        if (ctBoldItalicFont_) CFRelease(ctBoldItalicFont_);
+    }
+
+    void parseAndBuildAttributedString(const char* markdownText)
+    {
+        // simple markdown parser
+        const std::string_view input(markdownText);
+        plainText_.clear();
+        runs_.clear();
+
+        size_t i = 0;
+        while (i < input.size())
+        {
+            if (input[i] == '*' || input[i] == '_')
+            {
+                const char marker = input[i];
+                size_t markerCount = 0;
+                size_t j = i;
+                while (j < input.size() && input[j] == marker) { ++markerCount; ++j; }
+
+                if (markerCount >= 1 && markerCount <= 3)
+                {
+                    const auto closing = input.find(std::string(markerCount, marker), j);
+                    if (closing != std::string_view::npos)
+                    {
+                        Run run;
+                        run.start = static_cast<uint32_t>(plainText_.size());
+                        run.length = static_cast<uint32_t>(closing - j);
+                        run.bold = markerCount >= 2;
+                        run.italic = (markerCount == 1 || markerCount == 3);
+
+                        plainText_.append(input.data() + j, closing - j);
+                        runs_.push_back(run);
+                        i = closing + markerCount;
+                        continue;
+                    }
+                }
+            }
+
+            plainText_.push_back(input[i]);
+            ++i;
+        }
+
+        rebuildAttributedString();
+    }
+
+    void rebuildAttributedString()
+    {
+        if (cachedAttrString_)
+        {
+            CFRelease(cachedAttrString_);
+            cachedAttrString_ = nullptr;
+        }
+
+        CFStringRef cfStr = CFStringCreateWithBytes(kCFAllocatorDefault,
+            (const UInt8*)plainText_.data(), plainText_.size(), kCFStringEncodingUTF8, false);
+        if (!cfStr) return;
+
+        CFMutableAttributedStringRef mutAttrStr = CFAttributedStringCreateMutable(kCFAllocatorDefault, 0);
+        CFAttributedStringReplaceString(mutAttrStr, CFRangeMake(0, 0), cfStr);
+
+        // apply base font and paragraph style to entire string
+        const CFIndex totalLen = CFAttributedStringGetLength(mutAttrStr);
+        CFAttributedStringSetAttribute(mutAttrStr, CFRangeMake(0, totalLen), kCTFontAttributeName, ctFont_);
+        if (ctParagraphStyle_)
+            CFAttributedStringSetAttribute(mutAttrStr, CFRangeMake(0, totalLen), kCTParagraphStyleAttributeName, ctParagraphStyle_);
+
+        // apply formatting runs
+        for (const auto& run : runs_)
+        {
+            // convert UTF-8 offsets to CFString (UTF-16) offsets
+            CFStringRef prefix = CFStringCreateWithBytes(kCFAllocatorDefault,
+                (const UInt8*)plainText_.data(), run.start, kCFStringEncodingUTF8, false);
+            CFStringRef runStr = CFStringCreateWithBytes(kCFAllocatorDefault,
+                (const UInt8*)plainText_.data() + run.start, run.length, kCFStringEncodingUTF8, false);
+
+            if (prefix && runStr)
+            {
+                const CFIndex cfStart = CFStringGetLength(prefix);
+                const CFIndex cfLen = CFStringGetLength(runStr);
+                const CFRange range = CFRangeMake(cfStart, cfLen);
+
+                CTFontRef runFont = ctFont_;
+                if (run.bold && run.italic)
+                    runFont = ctBoldItalicFont_;
+                else if (run.bold)
+                    runFont = ctBoldFont_;
+                else if (run.italic)
+                    runFont = ctItalicFont_;
+
+                CFAttributedStringSetAttribute(mutAttrStr, range, kCTFontAttributeName, runFont);
+            }
+
+            if (prefix) CFRelease(prefix);
+            if (runStr) CFRelease(runStr);
+        }
+
+        cachedAttrString_ = mutAttrStr; // CFMutableAttributedStringRef is a subtype
+        CFRelease(cfStr);
+    }
+
+    gmpi::ReturnCode getTextExtentU(gmpi::drawing::Size* returnSize) override
+    {
+        if (!cachedAttrString_)
+        {
+            *returnSize = {};
+            return gmpi::ReturnCode::Fail;
+        }
+
+        CTLineRef line = CTLineCreateWithAttributedString(cachedAttrString_);
+        CGFloat ascent_ct, descent_ct, leading_ct;
+        double width = CTLineGetTypographicBounds(line, &ascent_ct, &descent_ct, &leading_ct);
+
+        returnSize->width = static_cast<float>(width);
+        returnSize->height = static_cast<float>(ascent_ct + descent_ct + leading_ct);
+
+        CFRelease(line);
+        return gmpi::ReturnCode::Ok;
+    }
+
+    GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IRichTextFormat);
+    GMPI_REFCOUNT;
+};
+
 class BitmapPixels final : public gmpi::drawing::api::IBitmapPixels
 {
     int bytesPerRow;
@@ -890,6 +1107,8 @@ public:
     gmpi::ReturnCode createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry) override;
 
     gmpi::ReturnCode createTextFormat(const char* fontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, gmpi::drawing::api::ITextFormat** textFormat) override;
+
+    gmpi::ReturnCode createRichTextFormat(const char* markdownText, float fontSize, const char* fontFamilyName, int32_t fontFlags, gmpi::drawing::TextAlignment textAlignment, gmpi::drawing::ParagraphAlignment paragraphAlignment, gmpi::drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, gmpi::drawing::api::IRichTextFormat** richTextFormat) override;
 
     gmpi::ReturnCode createImage(int32_t width, int32_t height, int32_t flags, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
 
@@ -1860,6 +2079,67 @@ public:
         return gmpi::ReturnCode::Ok;
 	}
 
+	gmpi::ReturnCode drawRichTextU(gmpi::drawing::api::IRichTextFormat* richTextFormat, const gmpi::drawing::Rect* layoutRect, gmpi::drawing::api::IBrush* brush, int32_t options) override
+	{
+		auto* rtf = static_cast<RichTextFormat*>(richTextFormat);
+
+		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
+		if (!cocoabrush)
+			return gmpi::ReturnCode::Fail;
+
+		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
+
+		if (!rtf->cachedAttrString_)
+			return gmpi::ReturnCode::Fail;
+
+		// apply foreground color to the attributed string for solid color brush
+		auto scb = dynamic_cast<const SolidColorBrush*>(brush);
+
+		CFMutableAttributedStringRef drawStr = CFAttributedStringCreateMutableCopy(kCFAllocatorDefault, 0, rtf->cachedAttrString_);
+		if (scb)
+		{
+			const CFIndex totalLen = CFAttributedStringGetLength(drawStr);
+			CFAttributedStringSetAttribute(drawStr, CFRangeMake(0, totalLen), kCTForegroundColorAttributeName, scb->nativeColor());
+		}
+
+		// adjust bounds for top adjustment
+		bounds.origin.y -= rtf->topAdjustment;
+		bounds.size.height += rtf->topAdjustment;
+
+		// baseline snapping to match Windows
+		{
+			const float scale = 0.5f;
+			const float offset = -0.25f;
+			const float winBaseline = static_cast<float>(layoutRect->top) + rtf->ascent;
+			const float winBaselineSnapped = floorf((offset + winBaseline) / scale) * scale;
+			const float baseline = static_cast<float>(layoutRect->top) + rtf->ascent;
+			float macBaselineCorrection = winBaselineSnapped - baseline + rtf->baselineCorrection;
+			bounds.origin.y += macBaselineCorrection;
+		}
+
+		CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(drawStr);
+		CGMutablePathRef textPath = CGPathCreateMutable();
+		CGPathAddRect(textPath, nullptr, bounds);
+		CTFrameRef frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), textPath, nullptr);
+
+		CGContextSaveGState(cgContext_);
+		CGContextTranslateCTM(cgContext_, 0, bounds.origin.y + bounds.size.height);
+		CGContextScaleCTM(cgContext_, 1.0, -1.0);
+		CGContextTranslateCTM(cgContext_, 0, -bounds.origin.y);
+		CGContextSetShouldSmoothFonts(cgContext_, false);
+
+		CTFrameDraw(frame, cgContext_);
+
+		CGContextRestoreGState(cgContext_);
+
+		CFRelease(frame);
+		CGPathRelease(textPath);
+		CFRelease(framesetter);
+		CFRelease(drawStr);
+
+		return gmpi::ReturnCode::Ok;
+	}
+
 	gmpi::ReturnCode drawBitmap(gmpi::drawing::api::IBitmap* mpBitmap, const gmpi::drawing::Rect* destinationRectangle, float opacity, gmpi::drawing::BitmapInterpolationMode interpolationMode, const gmpi::drawing::Rect* sourceRectangle) override
 	{
 		auto bm = ((Bitmap*)mpBitmap);
@@ -2270,6 +2550,24 @@ inline gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, gm
 	b2.attach(new TextFormat(fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
 
 	return b2->queryInterface(&gmpi::drawing::api::ITextFormat::guid, reinterpret_cast<void**>(textFormat));
+}
+
+inline gmpi::ReturnCode Factory::createRichTextFormat(const char* markdownText, float fontSize, const char* fontFamilyName, int32_t fontFlags, gmpi::drawing::TextAlignment textAlignment, gmpi::drawing::ParagraphAlignment paragraphAlignment, gmpi::drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, gmpi::drawing::api::IRichTextFormat** richTextFormat)
+{
+	// create a base TextFormat with regular weight/style (markdown controls bold/italic)
+	TextFormat baseFormat(fontFamilyName, gmpi::drawing::FontWeight::Regular, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal, fontSize);
+
+	// apply layout settings to the base before constructing RichTextFormat
+	baseFormat.setTextAlignment(textAlignment);
+	baseFormat.setParagraphAlignment(paragraphAlignment);
+	baseFormat.setWordWrapping(wordWrapping);
+	if (lineSpacing >= 0.f)
+		baseFormat.setLineSpacing(lineSpacing, baseline);
+
+	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
+	b2.attach(new RichTextFormat(baseFormat, markdownText));
+
+	return b2->queryInterface(&gmpi::drawing::api::IRichTextFormat::guid, reinterpret_cast<void**>(richTextFormat));
 }
 
 inline gmpi::ReturnCode Factory::createPathGeometry(gmpi::drawing::api::IPathGeometry** pathGeometry)

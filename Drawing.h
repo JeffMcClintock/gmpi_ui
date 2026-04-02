@@ -862,6 +862,26 @@ public:
 	}
 };
 
+class RichTextFormat
+{
+	friend class AccessPtr;
+
+	gmpi::shared_ptr<api::IRichTextFormat> native;
+
+public:
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
+	Size getTextExtentU()
+	{
+		Size s;
+		native->getTextExtentU(&s);
+		return s;
+	}
+};
+
 class BitmapPixels
 {
 	friend class Bitmap;
@@ -1442,6 +1462,61 @@ public:
 		return returnTextFormat;
 	}
 
+	RichTextFormat createRichTextFormat(
+		std::string_view markdownText,
+		float bodyHeight = 12.0f,
+		std::span<const std::string_view> fontFamilies = {},
+		FontFlags flags              = FontFlags::BodyHeight,
+		TextAlignment textAlignment  = TextAlignment::Leading,
+		ParagraphAlignment paragraphAlignment = ParagraphAlignment::Near,
+		WordWrapping wordWrapping    = WordWrapping::Wrap,
+		float lineSpacing            = -1.0f,
+		float baseline               = 0.0f
+	)
+	{
+		assert(bodyHeight > 0.0f);
+
+		constexpr std::string_view fallBackFontFamilyName = "Arial";
+
+		RichTextFormat returnFormat;
+		for (const auto fontFamilyName : fontFamilies)
+		{
+			native->createRichTextFormat(
+				markdownText.data(),
+				bodyHeight,
+				fontFamilyName.data(),
+				static_cast<int32_t>(flags),
+				textAlignment,
+				paragraphAlignment,
+				wordWrapping,
+				lineSpacing,
+				baseline,
+				AccessPtr::put(returnFormat)
+			);
+
+			if (AccessPtr::get(returnFormat))
+			{
+				return returnFormat;
+			}
+		}
+
+		native->createRichTextFormat(
+			markdownText.data(),
+			bodyHeight,
+			fallBackFontFamilyName.data(),
+			static_cast<int32_t>(flags),
+			textAlignment,
+			paragraphAlignment,
+			wordWrapping,
+			lineSpacing,
+			baseline,
+			AccessPtr::put(returnFormat)
+		);
+
+		assert(AccessPtr::get(returnFormat));
+		return returnFormat;
+	}
+
 	Bitmap createImage(int32_t width = 32, int32_t height = 32, int32_t flags = 0)
 	{
 		Bitmap temp;
@@ -1781,6 +1856,11 @@ public:
 	void drawTextU(std::string_view utf8String, TextFormat_readonly textFormat, Rect layoutRect, const IHasBrush& brush, int32_t options = DrawTextOptions::None)
 	{
 		native->drawTextU(utf8String.data(), static_cast<uint32_t>(utf8String.size()), AccessPtr::get(textFormat), &layoutRect, brush.getBrush(), options/*, measuringMode*/);
+	}
+
+	void drawRichTextU(RichTextFormat richTextFormat, Rect layoutRect, const IHasBrush& brush, int32_t options = DrawTextOptions::None)
+	{
+		native->drawRichTextU(AccessPtr::get(richTextFormat), &layoutRect, brush.getBrush(), options);
 	}
 
 	void setTransform(const Matrix3x2& transform)

@@ -391,6 +391,226 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 	return toReturnCode(hr);
 }
 
+MarkdownParseResult parseMarkdown(const char* markdownText)
+{
+	MarkdownParseResult result;
+	const std::string_view input(markdownText);
+
+	size_t i = 0;
+	while (i < input.size())
+	{
+		// check for emphasis markers (* or _)
+		if (input[i] == '*' || input[i] == '_')
+		{
+			const char marker = input[i];
+			// count consecutive markers
+			size_t markerCount = 0;
+			size_t j = i;
+			while (j < input.size() && input[j] == marker)
+			{
+				++markerCount;
+				++j;
+			}
+
+			if (markerCount >= 1 && markerCount <= 3)
+			{
+				// find matching closing markers
+				const auto closing = input.find(std::string(markerCount, marker), j);
+				if (closing != std::string_view::npos)
+				{
+					const bool bold = markerCount >= 2;
+					const bool italic = (markerCount == 1 || markerCount == 3);
+
+					MarkdownRun run;
+					run.startPosition = static_cast<uint32_t>(result.plainText.size());
+					run.length = static_cast<uint32_t>(closing - j);
+					run.bold = bold;
+					run.italic = italic;
+
+					result.plainText.append(input.data() + j, closing - j);
+					result.runs.push_back(run);
+
+					i = closing + markerCount;
+					continue;
+				}
+			}
+		}
+
+		// check for strikethrough ~~
+		if (i + 1 < input.size() && input[i] == '~' && input[i + 1] == '~')
+		{
+			const auto closing = input.find("~~", i + 2);
+			if (closing != std::string_view::npos)
+			{
+				MarkdownRun run;
+				run.startPosition = static_cast<uint32_t>(result.plainText.size());
+				run.length = static_cast<uint32_t>(closing - (i + 2));
+				run.bold = false;
+				run.italic = false;
+
+				result.plainText.append(input.data() + i + 2, closing - (i + 2));
+				result.runs.push_back(run);
+
+				i = closing + 2;
+				continue;
+			}
+		}
+
+		result.plainText.push_back(input[i]);
+		++i;
+	}
+
+	return result;
+}
+
+RichTextFormat::RichTextFormat(IDWriteFactory* pwriteFactory, IDWriteTextFormat* pbaseFormat, IDWriteTextLayout* ptextLayout)
+	: writeFactory(pwriteFactory)
+	, baseFormat(pbaseFormat)
+	, textLayout(ptextLayout)
+{
+	// calculate top adjustment same as TextFormat
+	const auto fontMetrics = getFontMetricsHelper(baseFormat);
+
+	DWRITE_TEXT_METRICS textMetrics;
+	textLayout->SetMaxWidth(100000);
+	textLayout->SetMaxHeight(100000);
+	textLayout->GetMetrics(&textMetrics);
+
+	topAdjustment = textMetrics.height - (fontMetrics.ascent + fontMetrics.descent);
+	fontMetrics_ascent = fontMetrics.ascent;
+}
+
+gmpi::ReturnCode RichTextFormat::getTextExtentU(drawing::Size* returnSize)
+{
+	DWRITE_TEXT_METRICS textMetrics;
+	textLayout->SetMaxWidth(100000);
+	textLayout->SetMaxHeight(100000);
+	textLayout->GetMetrics(&textMetrics);
+
+	returnSize->width = textMetrics.widthIncludingTrailingWhitespace;
+	returnSize->height = textMetrics.height - topAdjustment;
+	return ReturnCode::Ok;
+}
+
+gmpi::ReturnCode Factory_base::createRichTextFormat(
+	const char* markdownText
+	, float fontSize
+	, const char* fontFamilyName
+	, int32_t fontFlags
+	, drawing::TextAlignment textAlignment
+	, drawing::ParagraphAlignment paragraphAlignment
+	, drawing::WordWrapping wordWrapping
+	, float lineSpacing
+	, float baseline
+	, drawing::api::IRichTextFormat** richTextFormat
+)
+{
+	*richTextFormat = {};
+
+	// create a base text format with regular weight/style (markdown controls bold/italic)
+	drawing::api::ITextFormat* baseTextFormatApi{};
+	auto hr2 = createTextFormat(fontFamilyName, drawing::FontWeight::Regular, drawing::FontStyle::Normal, drawing::FontStretch::Normal, fontSize, fontFlags, &baseTextFormatApi);
+	if (hr2 != gmpi::ReturnCode::Ok || !baseTextFormatApi)
+		return gmpi::ReturnCode::Fail;
+
+	auto* baseTextFormat = static_cast<TextFormat*>(baseTextFormatApi);
+	IDWriteTextFormat* dwFormat = baseTextFormat->native();
+
+	// parse markdown
+	const auto parsed = parseMarkdown(markdownText);
+	const auto wideText = Utf8ToWstring(parsed.plainText);
+
+	// create the text layout
+	IDWriteTextLayout* dwLayout{};
+	auto hr = info.writeFactory->CreateTextLayout(
+		wideText.data(),
+		static_cast<UINT32>(wideText.size()),
+		dwFormat,
+		100000,
+		100000,
+		&dwLayout
+	);
+
+	if (FAILED(hr))
+	{
+		baseTextFormatApi->release();
+		return gmpi::ReturnCode::Fail;
+	}
+
+	// apply markdown formatting runs
+	// we need to map UTF-8 positions to UTF-16 positions for DirectWrite
+	const auto& plainUtf8 = parsed.plainText;
+	for (const auto& run : parsed.runs)
+	{
+		// convert UTF-8 offsets to UTF-16 offsets
+		const auto wideStart = Utf8ToWstring(std::string_view(plainUtf8.data(), run.startPosition));
+		const auto wideRunText = Utf8ToWstring(std::string_view(plainUtf8.data() + run.startPosition, run.length));
+
+		DWRITE_TEXT_RANGE range;
+		range.startPosition = static_cast<UINT32>(wideStart.size());
+		range.length = static_cast<UINT32>(wideRunText.size());
+
+		if (run.bold)
+		{
+			dwLayout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
+		}
+		if (run.italic)
+		{
+			dwLayout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+		}
+	}
+
+	// apply layout settings
+	dwLayout->SetTextAlignment((DWRITE_TEXT_ALIGNMENT)textAlignment);
+	dwLayout->SetParagraphAlignment((DWRITE_PARAGRAPH_ALIGNMENT)paragraphAlignment);
+	dwLayout->SetWordWrapping((DWRITE_WORD_WRAPPING)wordWrapping);
+
+	if (lineSpacing >= 0.0f)
+	{
+		dwLayout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, lineSpacing, baseline);
+	}
+
+	gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
+	wrapper.attach(new RichTextFormat(info.writeFactory, dwFormat, dwLayout));
+	baseTextFormatApi->release();
+
+	wrapper->queryInterface(&drawing::api::IRichTextFormat::guid, reinterpret_cast<void**>(richTextFormat));
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode GraphicsContext_base::drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options)
+{
+	auto* rtf = static_cast<RichTextFormat*>(richTextFormat);
+	auto b = static_cast<BrushCommon*>(brush)->native();
+	auto layout = rtf->getTextLayout();
+
+	// set layout box size
+	layout->SetMaxWidth(layoutRect->right - layoutRect->left);
+	layout->SetMaxHeight(layoutRect->bottom - layoutRect->top);
+
+	// adjust for top padding same as drawTextU
+	auto adjusted = *layoutRect;
+	adjusted.top -= rtf->getTopAdjustment();
+
+	const float scale = 0.5f;
+	const float offset = -0.25f;
+	const auto winBaseline = layoutRect->top + rtf->getAscent();
+	const auto winBaselineSnapped = floorf((offset + winBaseline) / scale) * scale;
+	const auto adjust = winBaselineSnapped - winBaseline + scale;
+
+	adjusted.top += adjust;
+	adjusted.bottom += adjust;
+
+	context_->DrawTextLayout(
+		D2D1::Point2F(adjusted.left, adjusted.top),
+		layout,
+		b,
+		(D2D1_DRAW_TEXT_OPTIONS)options | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
+	);
+
+	return gmpi::ReturnCode::Ok;
+}
+
 // 2nd pass - GDI->DirectWrite conversion. "Arial Black" -> "Arial"
 std::wstring fontMatchHelper(
 	  IDWriteFactory* writeFactory

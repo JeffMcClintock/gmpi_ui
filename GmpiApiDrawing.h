@@ -424,6 +424,18 @@ struct DECLSPEC_NOVTABLE ITextFormat : gmpi::api::IUnknown
     { 0xED903255, 0x3FE0, 0x4CE4, { 0x8C, 0xD1, 0x97, 0xD7, 0x2D, 0x51, 0xB7, 0xCB} };
 };
 
+// INTERFACE 'IRichTextFormat'
+// Immutable formatted text layout created from a markdown string.
+// All formatting is determined at creation time.
+struct DECLSPEC_NOVTABLE IRichTextFormat : gmpi::api::IUnknown
+{
+    virtual gmpi::ReturnCode getTextExtentU(Size* returnSize) = 0;
+
+    // {A3B8F4C1-7E2D-4A5F-9C6E-1D8B3F5A2E47}
+    inline static const gmpi::api::Guid guid =
+    { 0xA3B8F4C1, 0x7E2D, 0x4A5F, { 0x9C, 0x6E, 0x1D, 0x8B, 0x3F, 0x5A, 0x2E, 0x47} };
+};
+
 // INTERFACE 'IResource'
 struct DECLSPEC_NOVTABLE IResource : gmpi::api::IUnknown
 {
@@ -630,6 +642,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     virtual gmpi::ReturnCode fillGeometry(IPathGeometry* pathGeometry, IBrush* brush, IBrush* opacityBrush) = 0;
     virtual gmpi::ReturnCode drawBitmap(IBitmap* bitmap, const Rect* destinationRectangle, float opacity, BitmapInterpolationMode interpolationMode, const Rect* sourceRectangle) = 0;
     virtual gmpi::ReturnCode drawTextU(const char* string, uint32_t stringLength, ITextFormat* textFormat, const Rect* layoutRect, IBrush* defaultForegroundBrush, int32_t options) = 0;
+    virtual gmpi::ReturnCode drawRichTextU(IRichTextFormat* richTextFormat, const Rect* layoutRect, IBrush* defaultForegroundBrush, int32_t options) = 0;
     virtual gmpi::ReturnCode setTransform(const Matrix3x2* transform) = 0;
     virtual gmpi::ReturnCode getTransform(Matrix3x2* returnTransform) = 0;
     virtual gmpi::ReturnCode pushAxisAlignedClip(const Rect* clipRect) = 0;
@@ -666,6 +679,7 @@ struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
     virtual gmpi::ReturnCode createStrokeStyle(const StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, IStrokeStyle** returnStrokeStyle) = 0;
     virtual gmpi::ReturnCode getFontFamilyName(int32_t fontIndex, gmpi::api::IString* returnName) = 0;
     virtual gmpi::ReturnCode getPlatformPixelFormat(int32_t* returnPixelFormat) = 0;
+    virtual gmpi::ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName, int32_t fontFlags, TextAlignment textAlignment, ParagraphAlignment paragraphAlignment, WordWrapping wordWrapping, float lineSpacing, float baseline, IRichTextFormat** returnRichTextFormat) = 0;
 	virtual gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) = 0; // ref: BitmapRenderTargetFlags
 
     // {D47DEB59-BBA2-4B52-AF12-7983330A8C8A}

@@ -297,6 +297,44 @@ public:
     GMPI_REFCOUNT
 };
 
+struct MarkdownRun
+{
+    uint32_t startPosition;
+    uint32_t length;
+    bool bold;
+    bool italic;
+};
+
+struct MarkdownParseResult
+{
+    std::string plainText;
+    std::vector<MarkdownRun> runs;
+};
+
+MarkdownParseResult parseMarkdown(const char* markdownText);
+
+class RichTextFormat final : public drawing::api::IRichTextFormat
+{
+    float topAdjustment = {};
+    float fontMetrics_ascent = {};
+    IDWriteFactory* writeFactory{};
+    gmpi::directx::ComPtr<IDWriteTextLayout> textLayout;
+    gmpi::directx::ComPtr<IDWriteTextFormat> baseFormat;
+    std::wstring wideText;
+
+public:
+    RichTextFormat(IDWriteFactory* pwriteFactory, IDWriteTextFormat* pbaseFormat, IDWriteTextLayout* ptextLayout);
+
+    ReturnCode getTextExtentU(drawing::Size* returnSize) override;
+
+    float getTopAdjustment() const { return topAdjustment; }
+    float getAscent() const { return fontMetrics_ascent; }
+    IDWriteTextLayout* getTextLayout() { return textLayout.get(); }
+
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::IRichTextFormat);
+    GMPI_REFCOUNT
+};
+
 inline uint8_t fast8bitScale(uint8_t a, uint8_t b)
 {
     const int t = (int)a * (int)b;
@@ -948,6 +986,7 @@ public:
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override;
     ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags, drawing::api::ITextFormat** returnTextFormat) override;
+    ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName, int32_t fontFlags, drawing::TextAlignment textAlignment, drawing::ParagraphAlignment paragraphAlignment, drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, drawing::api::IRichTextFormat** returnRichTextFormat) override;
     ReturnCode createImage(int32_t width, int32_t height, int32_t flags, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override
@@ -1123,6 +1162,7 @@ public:
     }
 
     ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
+    ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
 
     ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
     {

@@ -690,6 +690,8 @@ public:
         const int32_t bpp = static_cast<int32_t>(CGBitmapContextGetBitsPerPixel(pixelContext_) / 8);
         if (bpp == 4)
             *returnPixelFormat = RGBA_sRGB_8i;
+        else if (bpp == 16)
+            *returnPixelFormat = RGBA_32f;
         else
             *returnPixelFormat = RGBA_16i;
         return gmpi::ReturnCode::Ok;
@@ -1701,33 +1703,18 @@ public:
 				bounds.origin.y += textformat->customBaseline_ - textformat->ascent;
 			}
 
-#if 1
-			const float scale = 0.5f;
-
-			const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
-				? textformat->customBaseline_
-				: textformat->ascent;
-
-			float winBaseline{};
+			const bool noSnap = (options & static_cast<int32_t>(gmpi::drawing::DrawTextOptions::NoSnap)) != 0;
+			if (!noSnap)
 			{
-				const float offset = -0.25f;;
-				winBaseline = effectiveLayoutTop + effectiveAscent;
-				winBaseline = floorf((offset + winBaseline) / scale) * scale;
-			}
-            const float baseline = effectiveLayoutTop + effectiveAscent;
-            float macBaselineCorrection{};
-            if (logicProFix)
-            {
-                const float naturalSpacingFix = (textformat->lineSpacing_ >= 0.f) ? 0.f : 1.f;
-                macBaselineCorrection = winBaseline - baseline - textformat->baselineCorrection + naturalSpacingFix;
-            }
-            else
-            {
-                macBaselineCorrection = winBaseline - baseline + textformat->baselineCorrection;
-            }
+				const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
+					? textformat->customBaseline_
+					: textformat->ascent;
+				const float naturalBaseline = effectiveLayoutTop + effectiveAscent;
 
-			bounds.origin.y += macBaselineCorrection;
-#endif
+				// Match the Windows half-DIP baseline snap (see DirectXGfx.cpp).
+				const float snapped = floorf((naturalBaseline - 0.25f) / 0.5f) * 0.5f;
+				bounds.origin.y += (snapped - naturalBaseline + 0.5f);
+			}
 		}
 
         // Build CoreText attributed string for drawing

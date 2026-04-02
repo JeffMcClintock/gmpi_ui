@@ -444,7 +444,8 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : gmpi::api::IUnknown
 	//   [11]   1 = sRGB transfer function, 0 = linear
 	enum PixelFormat : int32_t {
 		// Linear float
-		RGBA_16f      = 8 | (1 << 9),                            // Windows 64bpp half-float
+		RGBA_32f      = 16 | (1 << 9),                            // macOS 128bpp float
+		RGBA_16f      = 8 | (1 << 9),                             // Windows 64bpp half-float
 		// Linear integer
 		RGBA_16i      = 8 | (1 << 8) | (1 << 9),                 // macOS 64bpp uint16
 		Alpha_8i      = 1 | (1 << 8),                             // 8bpp alpha mask

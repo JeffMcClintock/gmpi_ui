@@ -966,7 +966,7 @@ public:
 
     virtual ~CocoaBrushBase() {}
 
-    virtual void fillPath(class GraphicsContext* context, CGPathRef cgPath) const = 0;
+    virtual void fillPath(class GraphicsContext* context, CGPathRef cgPath, bool useEOFill = false) const = 0;
 
     virtual void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const
     {
@@ -1058,7 +1058,7 @@ public:
         CGContextRestoreGState(ctx);
     }
 
-    void fillPath(GraphicsContext* context, CGPathRef cgPath) const override;
+    void fillPath(GraphicsContext* context, CGPathRef cgPath, bool useEOFill = false) const override;
 
     gmpi::ReturnCode getFactory(gmpi::drawing::api::IFactory** factory) override
     {
@@ -1093,7 +1093,7 @@ public:
         return nativec_;
     }
 
-    void fillPath(GraphicsContext* context, CGPathRef cgPath) const override;
+    void fillPath(GraphicsContext* context, CGPathRef cgPath, bool useEOFill = false) const override;
 
     void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
@@ -1175,11 +1175,14 @@ public:
         if (cgGradient_) CGGradientRelease(cgGradient_);
     }
 
-    void fillPath(CGContextRef ctx, CGPathRef cgPath) const
+    void fillPath(CGContextRef ctx, CGPathRef cgPath, bool useEOFill = false) const
     {
         CGContextSaveGState(ctx);
         CGContextAddPath(ctx, cgPath);
-        CGContextClip(ctx);
+        if (useEOFill)
+            CGContextEOClip(ctx);
+        else
+            CGContextClip(ctx);
         drawGradient(ctx);
         CGContextRestoreGState(ctx);
     }
@@ -1237,7 +1240,7 @@ public:
             kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
     }
 
-    void fillPath(GraphicsContext*, CGPathRef cgPath) const override;
+    void fillPath(GraphicsContext*, CGPathRef cgPath, bool useEOFill = false) const override;
 
     void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
@@ -1304,7 +1307,7 @@ public:
         gradientProperties.radiusY = radiusY;
     }
 
-    void fillPath(GraphicsContext*, CGPathRef cgPath) const override;
+    void fillPath(GraphicsContext*, CGPathRef cgPath, bool useEOFill = false) const override;
 
     void strokePath(CGContextRef ctx, CGPathRef cgPath, float strokeWidth, const gmpi::drawing::api::IStrokeStyle* strokeStyle = nullptr) const override
     {
@@ -1331,15 +1334,16 @@ public:
 class GeometrySink final : public se::generic_graphics::GeometrySink
 {
 	CGMutablePathRef geometry_;
+	gmpi::drawing::FillMode* fillModePtr_;
 
 public:
-	GeometrySink(CGMutablePathRef geometry) : geometry_(geometry)
+	GeometrySink(CGMutablePathRef geometry, gmpi::drawing::FillMode* fillModePtr)
+		: geometry_(geometry), fillModePtr_(fillModePtr)
 	{}
 
 	void setFillMode(gmpi::drawing::FillMode fillMode) override
 	{
-		// Fill mode is applied at fill time via CGContext, not stored on the path.
-        // We store it in the PathGeometry instead.
+		*fillModePtr_ = fillMode;
 	}
 
 	void beginFigure(gmpi::drawing::Point startPoint, gmpi::drawing::FigureBegin figureBegin) override
@@ -1414,7 +1418,7 @@ public:
 		geometry_ = CGPathCreateMutable();
 
 		gmpi::shared_ptr<gmpi::api::IUnknown> b2;
-		auto sink = new GeometrySink(geometry_);
+		auto sink = new GeometrySink(geometry_, &fillMode_);
 		b2.attach(sink);
 
 		return b2->queryInterface(&gmpi::drawing::api::IGeometrySink::guid, reinterpret_cast<void**>(returnGeometrySink));
@@ -1596,7 +1600,9 @@ public:
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)
 		{
-			cocoabrush->fillPath(this, ((PathGeometry*)pathGeometry)->native());
+			auto* pg = static_cast<PathGeometry*>(pathGeometry);
+			const bool useEOFill = (pg->getFillMode() == gmpi::drawing::FillMode::Alternate);
+			cocoabrush->fillPath(this, pg->native(), useEOFill);
 		}
 		return gmpi::ReturnCode::Ok;
 	}
@@ -2122,24 +2128,27 @@ public:
 
 // Implementations that need GraphicsContext to be fully defined
 
-inline void SolidColorBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+inline void SolidColorBrush::fillPath(GraphicsContext* context, CGPathRef cgPath, bool useEOFill) const
 {
     CGContextRef ctx = context->getCGContext();
     CGContextSaveGState(ctx);
     CGContextSetFillColorWithColor(ctx, nativec_);
     CGContextAddPath(ctx, cgPath);
-    CGContextFillPath(ctx);
+    if (useEOFill)
+        CGContextEOFillPath(ctx);
+    else
+        CGContextFillPath(ctx);
     CGContextRestoreGState(ctx);
 }
 
-inline void LinearGradientBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+inline void LinearGradientBrush::fillPath(GraphicsContext* context, CGPathRef cgPath, bool useEOFill) const
 {
-    Gradient::fillPath(context->getCGContext(), cgPath);
+    Gradient::fillPath(context->getCGContext(), cgPath, useEOFill);
 }
 
-inline void RadialGradientBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+inline void RadialGradientBrush::fillPath(GraphicsContext* context, CGPathRef cgPath, bool useEOFill) const
 {
-    Gradient::fillPath(context->getCGContext(), cgPath);
+    Gradient::fillPath(context->getCGContext(), cgPath, useEOFill);
 }
 
 // macOS-internal creationFlags extension (not part of the public BitmapRenderTargetFlags API).
@@ -2306,13 +2315,16 @@ inline gmpi::ReturnCode Factory::loadImageU(const char* utf8Uri, gmpi::drawing::
 	return gmpi::ReturnCode::Fail;
 }
 
-inline void BitmapBrush::fillPath(GraphicsContext* context, CGPathRef cgPath) const
+inline void BitmapBrush::fillPath(GraphicsContext* context, CGPathRef cgPath, bool useEOFill) const
 {
     CGContextRef cgCtx = context->getCGContext();
     CGContextSaveGState(cgCtx);
 
     CGContextAddPath(cgCtx, cgPath);
-    CGContextClip(cgCtx);
+    if (useEOFill)
+        CGContextEOClip(cgCtx);
+    else
+        CGContextClip(cgCtx);
 
     gmpi::drawing::Matrix3x2 moduleTransform;
     context->getTransform(&moduleTransform);

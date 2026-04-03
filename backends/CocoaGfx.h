@@ -844,7 +844,7 @@ public:
                 {
                     int32_t style = kCTUnderlineStyleSingle;
                     CFNumberRef strikethroughValue = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &style);
-                    CFAttributedStringSetAttribute(mutAttrStr, range, kCTStrikethroughStyleAttributeName, strikethroughValue);
+                    CFAttributedStringSetAttribute(mutAttrStr, range, (__bridge CFStringRef)NSStrikethroughStyleAttributeName, strikethroughValue);
                     CFRelease(strikethroughValue);
                 }
             }

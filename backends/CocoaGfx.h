@@ -621,13 +621,20 @@ public:
         double width = CTLineGetTypographicBounds(line, &ascent_ct, &descent_ct, &leading_ct);
 
         returnSize->width = static_cast<float>(width);
-        returnSize->height = static_cast<float>(ascent_ct + descent_ct + leading_ct);
+
+        // Count explicit newlines to get actual line count
+        int numLines = 1;
+        for (int i = 0; i < stringLength; i++) {
+            if (utf8String[i] == '\n') ++numLines;
+        }
 
         if (lineSpacing_ < 0.f)
         {
-            const float cocoaLineH = static_cast<float>(ascent_ct + descent_ct + leading_ct);
-            const float numLines   = std::round(returnSize->height / cocoaLineH);
-            returnSize->height = numLines * winNaturalLineHeight_;
+            returnSize->height = static_cast<float>(numLines) * winNaturalLineHeight_;
+        }
+        else
+        {
+            returnSize->height = static_cast<float>(numLines) * lineSpacing_;
         }
 
         CFRelease(line);

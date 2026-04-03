@@ -1058,7 +1058,7 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 		D2D1_PIXEL_FORMAT desiredFormat
 		{
 			bestFormat
-			,D2D1_ALPHA_MODE_UNKNOWN
+			,D2D1_ALPHA_MODE_IGNORE // Claude advice for dark screen bug. D2D1_ALPHA_MODE_UNKNOWN
 		};
 
 		d2dDeviceContext->CreateCompatibleRenderTarget(

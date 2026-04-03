@@ -3,3 +3,4 @@ Builds/
 JuceLibraryCode/
 .DS_Store
 *.json
+/.claude

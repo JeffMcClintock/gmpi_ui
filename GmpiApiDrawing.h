@@ -134,6 +134,7 @@ namespace DrawTextOptions
         None = 0,
         NoSnap = 1,
         Clip = 2,
+        noMacSmooth = 4, // don't 'smooth' (dilate) text on macOD
     };
 };
 
@@ -148,7 +149,7 @@ enum class CapStyle : int32_t
     Flat     = 0,
     Square   = 1,
     Round    = 2,
-//    Triangle = 3,
+//  Triangle = 3,
 };
 
 enum class DashStyle : int32_t

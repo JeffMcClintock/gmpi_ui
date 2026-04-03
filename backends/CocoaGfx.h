@@ -1980,8 +1980,9 @@ public:
             CGContextScaleCTM(cgContext_, 1.0, -1.0);
             CGContextTranslateCTM(cgContext_, 0, -bounds.origin.y);
 
-            // Disable font smoothing to match Windows Direct2D text weight.
-            CGContextSetShouldSmoothFonts(cgContext_, false);
+            // Disable font smoothing to match Windows Direct2D text weight (unless noMacSmooth is set).
+            if (!(options & gmpi::drawing::DrawTextOptions::noMacSmooth))
+                CGContextSetShouldSmoothFonts(cgContext_, false);
 
             CTFrameDraw(frame, cgContext_);
 
@@ -2032,7 +2033,8 @@ public:
                     CGContextScaleCTM(maskCtx, s, s);
                 }
 
-                CGContextSetShouldSmoothFonts(maskCtx, false);
+                if (!(options & gmpi::drawing::DrawTextOptions::noMacSmooth))
+                    CGContextSetShouldSmoothFonts(maskCtx, false);
 
                 // CoreText draws bottom-up; set up coords for the mask
                 CGContextTranslateCTM(maskCtx, 0, bounds.size.height);
@@ -2134,7 +2136,8 @@ public:
 		CGContextTranslateCTM(cgContext_, 0, bounds.origin.y + bounds.size.height);
 		CGContextScaleCTM(cgContext_, 1.0, -1.0);
 		CGContextTranslateCTM(cgContext_, 0, -bounds.origin.y);
-		CGContextSetShouldSmoothFonts(cgContext_, false);
+		if (!(options & gmpi::drawing::DrawTextOptions::noMacSmooth))
+			CGContextSetShouldSmoothFonts(cgContext_, false);
 
 		CTFrameDraw(frame, cgContext_);
 

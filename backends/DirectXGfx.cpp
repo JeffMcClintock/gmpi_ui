@@ -1084,9 +1084,15 @@ void createBitmapRenderTarget(
 	, gmpi::directx::ComPtr<ID2D1DeviceContext>& returnContext
 	, gmpi::directx::ComPtr<ID3D11Device>& returnD3dDevice
 	, gmpi::directx::ComPtr<ID3D11Texture2D>& returnRenderTex
-	, float dpi = 96.0f
 )
 {
+  float dpiX = 96.0f;
+	float dpiY = 96.0f;
+	if (outerDeviceContext)
+	{
+		outerDeviceContext->GetDpi(&dpiX, &dpiY);
+	}
+
 	const bool oneChannelMask = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::Mask;
 	const bool lockAblePixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::CpuReadable;
 	const bool srgbPixels = flags & (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels;
@@ -1149,7 +1155,7 @@ void createBitmapRenderTarget(
 
 			returnContext = renderTarget.as<ID2D1DeviceContext>();
 			if (returnContext.get())
-				returnContext->SetDpi(dpi, dpi);
+                returnContext->SetDpi(dpiX, dpiY);
 		}
 		else
 		{
@@ -1168,7 +1174,7 @@ void createBitmapRenderTarget(
 
 			returnContext = wikBitmapRenderTarget.as<ID2D1DeviceContext>();
 			if (returnContext.get())
-				returnContext->SetDpi(dpi, dpi);
+                returnContext->SetDpi(dpiX, dpiY);
 		}
 	}
 	else
@@ -1199,9 +1205,11 @@ BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::S
 		, wicBitmap
 		, context_
 		, d3dDevice_
-		, renderTex_
-		, dpi
+        , renderTex_
 	);
+
+	if (context_)
+		context_->SetDpi(dpi, dpi);
 
 	clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
 }

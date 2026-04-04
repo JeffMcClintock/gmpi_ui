@@ -233,6 +233,24 @@ public:
 	{ 0x909c13fa, 0x6059, 0x4a9b, { 0xa6, 0x2e, 0x3, 0x40, 0x75, 0x34, 0xda, 0x5 } };
 };
 
+// Button configurations common to Windows MessageBox and macOS NSAlert
+enum class StockDialogType : int32_t
+{
+	Ok = 0,
+	OkCancel = 1,
+	YesNo = 2,
+	YesNoCancel = 3,
+};
+
+// Result indicating which button was pressed
+enum class StockDialogButton : int32_t
+{
+	Ok = 0,
+	Cancel = 1,
+	Yes = 2,
+	No = 3,
+};
+
 struct DECLSPEC_NOVTABLE IStockDialog : gmpi::api::IUnknown
 {
 	virtual ReturnCode setTitle(const char* text) = 0;
@@ -242,6 +260,16 @@ struct DECLSPEC_NOVTABLE IStockDialog : gmpi::api::IUnknown
 	// {A4F2DFEC-97B6-44CB-BE2F-44F0A7F90BC3}
 	inline static const gmpi::api::Guid guid =
 	{ 0xa4f2dfec, 0x97b6, 0x44cb, { 0xbe, 0x2f, 0x44, 0xf0, 0xa7, 0xf9, 0xb, 0xc3 } };
+};
+
+struct DECLSPEC_NOVTABLE IStockDialogCallback : gmpi::api::IUnknown
+{
+public:
+	virtual void onComplete(StockDialogButton button) = 0;
+
+	// {3F8E7B2A-C5D1-4E09-A3B6-8D2F1C4E5A70}
+	inline static const gmpi::api::Guid guid =
+	{ 0x3f8e7b2a, 0xc5d1, 0x4e09, { 0xa3, 0xb6, 0x8d, 0x2f, 0x1c, 0x4e, 0x5a, 0x70 } };
 };
 
 struct DECLSPEC_NOVTABLE ITextEdit : gmpi::api::IUnknown
@@ -349,6 +377,22 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IFileDialogCallback);
+	GMPI_REFCOUNT;
+};
+
+class StockDialogCallback : public gmpi::api::IStockDialogCallback
+{
+	std::function<void(gmpi::api::StockDialogButton)> callback;
+
+public:
+	StockDialogCallback(std::function<void(gmpi::api::StockDialogButton)> cb) : callback(cb) {}
+
+	void onComplete(gmpi::api::StockDialogButton button) override
+	{
+		callback(button);
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IStockDialogCallback);
 	GMPI_REFCOUNT;
 };
 

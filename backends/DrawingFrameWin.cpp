@@ -1259,10 +1259,6 @@ gmpi::ReturnCode DxDrawingFrameBase::releaseCapture()
 //}
 
 // IDialogHost
-gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
-{
-	return gmpi::ReturnCode::NoSupport;
-}
 gmpi::ReturnCode DxDrawingFrameBase::createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit)
 {
 	return gmpi::ReturnCode::NoSupport;
@@ -1464,6 +1460,86 @@ LRESULT PlatformKeyListener::WindowProc(HWND hwnd, UINT message, WPARAM wParam, 
 	return DefWindowProc(hwnd, message, wParam, lParam);
 }
 } // namespace win32
+
+class GMPI_WIN_StockDialog : public gmpi::api::IStockDialog
+{
+	HWND parentWnd;
+	gmpi::api::StockDialogType dialogType;
+	std::wstring title;
+	std::wstring text;
+
+public:
+	GMPI_WIN_StockDialog(HWND pParentWnd, gmpi::api::StockDialogType type) :
+		parentWnd(pParentWnd)
+		, dialogType(type)
+	{}
+
+	gmpi::ReturnCode setTitle(const char* ptext) override
+	{
+		title = privateStuff::Utf8ToWstring(ptext);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode setText(const char* ptext) override
+	{
+		text = privateStuff::Utf8ToWstring(ptext);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
+	{
+		gmpi::shared_ptr<gmpi::api::IStockDialogCallback> dialogCallback;
+		dialogCallback = callback;
+		if (!dialogCallback)
+			return gmpi::ReturnCode::Fail;
+
+		UINT mbType = MB_ICONINFORMATION;
+		switch (dialogType)
+		{
+		case gmpi::api::StockDialogType::Ok:
+			mbType = MB_OK | MB_ICONINFORMATION;
+			break;
+		case gmpi::api::StockDialogType::OkCancel:
+			mbType = MB_OKCANCEL | MB_ICONQUESTION;
+			break;
+		case gmpi::api::StockDialogType::YesNo:
+			mbType = MB_YESNO | MB_ICONQUESTION;
+			break;
+		case gmpi::api::StockDialogType::YesNoCancel:
+			mbType = MB_YESNOCANCEL | MB_ICONQUESTION;
+			break;
+		}
+
+		const int result = MessageBoxW(parentWnd, text.c_str(), title.c_str(), mbType);
+
+		gmpi::api::StockDialogButton button{};
+		switch (result)
+		{
+		case IDOK:     button = gmpi::api::StockDialogButton::Ok;     break;
+		case IDCANCEL: button = gmpi::api::StockDialogButton::Cancel; break;
+		case IDYES:    button = gmpi::api::StockDialogButton::Yes;    break;
+		case IDNO:     button = gmpi::api::StockDialogButton::No;     break;
+		default:       button = gmpi::api::StockDialogButton::Cancel; break;
+		}
+
+		dialogCallback->onComplete(button);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+		GMPI_QUERYINTERFACE(gmpi::api::IStockDialog);
+		return gmpi::ReturnCode::NoSupport;
+	}
+	GMPI_REFCOUNT
+};
+
+gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
+{
+	*returnDialog = new GMPI_WIN_StockDialog(getWindowHandle(), static_cast<gmpi::api::StockDialogType>(dialogType));
+	return gmpi::ReturnCode::Ok;
+}
 
 class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
 {

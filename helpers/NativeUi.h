@@ -138,6 +138,7 @@ enum class FileDialogType : int32_t
 {
 	Open = 0,
 	Save = 1,
+	Folder = 2,
 };
 
 struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown

@@ -4,6 +4,7 @@
 #include <d3d11_1.h>
 #include <wrl.h> // Comptr
 #include <commctrl.h>
+#include <shobjidl.h>
 #include "./DrawingFrameWin.h"
 
 using namespace std;
@@ -1637,9 +1638,191 @@ gmpi::ReturnCode DxDrawingFrameBase::createKeyListener(const gmpi::drawing::Rect
 	return gmpi::ReturnCode::Ok;
 }
 
+class GMPI_WIN_FileDialog : public gmpi::api::IFileDialog
+{
+	HWND parentWnd;
+	gmpi::api::FileDialogType dialogType;
+	std::vector<std::pair<std::wstring, std::wstring>> extensions; // extension, description
+	std::wstring initialFilename;
+	std::wstring initialDirectory;
+
+public:
+	GMPI_WIN_FileDialog(HWND pParentWnd, gmpi::api::FileDialogType type) :
+		parentWnd(pParentWnd)
+		, dialogType(type)
+	{}
+
+	gmpi::ReturnCode addExtension(const char* extension, const char* description) override
+	{
+		const auto wExt = privateStuff::Utf8ToWstring(extension);
+		const auto wDesc = privateStuff::Utf8ToWstring(description);
+		extensions.push_back({ wExt, wDesc });
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode setInitialFilename(const char* text) override
+	{
+		initialFilename = privateStuff::Utf8ToWstring(text);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode setInitialDirectory(const char* text) override
+	{
+		initialDirectory = privateStuff::Utf8ToWstring(text);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
+	{
+		gmpi::shared_ptr<gmpi::api::IFileDialogCallback> fileCallback;
+		fileCallback = callback;
+		if (!fileCallback)
+			return gmpi::ReturnCode::Fail;
+
+		if (dialogType == gmpi::api::FileDialogType::Folder)
+		{
+			return showFolderDialog(fileCallback.get());
+		}
+
+		const bool isSave = (dialogType == gmpi::api::FileDialogType::Save);
+		Microsoft::WRL::ComPtr<::IFileDialog> dialog;
+		HRESULT hr;
+		if (isSave)
+			hr = CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog));
+		else
+			hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog));
+
+		if (FAILED(hr))
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Fail, "");
+			return gmpi::ReturnCode::Ok;
+		}
+
+		// Set file type filters
+		if (!extensions.empty())
+		{
+			std::vector<COMDLG_FILTERSPEC> filters;
+			std::vector<std::wstring> specs; // keep wstrings alive
+			for (const auto& [ext, desc] : extensions)
+			{
+				std::wstring spec = L"*." + ext;
+				if (ext == L"*")
+					spec = L"*.*";
+				specs.push_back(spec);
+				const auto& descStr = desc.empty() ? ext : desc;
+				filters.push_back({ descStr.c_str(), specs.back().c_str() });
+			}
+			dialog->SetFileTypes(static_cast<UINT>(filters.size()), filters.data());
+		}
+
+		if (!initialFilename.empty())
+			dialog->SetFileName(initialFilename.c_str());
+
+		if (!initialDirectory.empty())
+		{
+			Microsoft::WRL::ComPtr<::IShellItem> folder;
+			if (SUCCEEDED(SHCreateItemFromParsingName(initialDirectory.c_str(), nullptr, IID_PPV_ARGS(&folder))))
+				dialog->SetFolder(folder.Get());
+		}
+
+		hr = dialog->Show(parentWnd);
+		if (FAILED(hr))
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Cancel, "");
+			return gmpi::ReturnCode::Ok;
+		}
+
+		Microsoft::WRL::ComPtr<::IShellItem> result;
+		hr = dialog->GetResult(&result);
+		if (FAILED(hr))
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Fail, "");
+			return gmpi::ReturnCode::Ok;
+		}
+
+		PWSTR filePath = nullptr;
+		hr = result->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
+		if (SUCCEEDED(hr) && filePath)
+		{
+			auto utf8Path = privateStuff::WStringToUtf8(filePath);
+			CoTaskMemFree(filePath);
+			fileCallback->onComplete(gmpi::ReturnCode::Ok, utf8Path.c_str());
+		}
+		else
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Fail, "");
+		}
+
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+		GMPI_QUERYINTERFACE(gmpi::api::IFileDialog);
+		return gmpi::ReturnCode::NoSupport;
+	}
+	GMPI_REFCOUNT
+
+private:
+	gmpi::ReturnCode showFolderDialog(gmpi::api::IFileDialogCallback* fileCallback)
+	{
+		Microsoft::WRL::ComPtr<::IFileOpenDialog> dialog;
+		HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog));
+		if (FAILED(hr))
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Fail, "");
+			return gmpi::ReturnCode::Ok;
+		}
+
+		DWORD options = 0;
+		dialog->GetOptions(&options);
+		dialog->SetOptions(options | FOS_PICKFOLDERS);
+
+		if (!initialDirectory.empty())
+		{
+			Microsoft::WRL::ComPtr<::IShellItem> folder;
+			if (SUCCEEDED(SHCreateItemFromParsingName(initialDirectory.c_str(), nullptr, IID_PPV_ARGS(&folder))))
+				dialog->SetFolder(folder.Get());
+		}
+
+		hr = dialog->Show(parentWnd);
+		if (FAILED(hr))
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Cancel, "");
+			return gmpi::ReturnCode::Ok;
+		}
+
+		Microsoft::WRL::ComPtr<::IShellItem> result;
+		hr = dialog->GetResult(&result);
+		if (FAILED(hr))
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Fail, "");
+			return gmpi::ReturnCode::Ok;
+		}
+
+		PWSTR folderPath = nullptr;
+		hr = result->GetDisplayName(SIGDN_FILESYSPATH, &folderPath);
+		if (SUCCEEDED(hr) && folderPath)
+		{
+			auto utf8Path = privateStuff::WStringToUtf8(folderPath);
+			CoTaskMemFree(folderPath);
+			fileCallback->onComplete(gmpi::ReturnCode::Ok, utf8Path.c_str());
+		}
+		else
+		{
+			fileCallback->onComplete(gmpi::ReturnCode::Fail, "");
+		}
+
+		return gmpi::ReturnCode::Ok;
+	}
+
+};
+
 gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
 {
-	return gmpi::ReturnCode::NoSupport;
+	*returnDialog = new GMPI_WIN_FileDialog(getWindowHandle(), static_cast<gmpi::api::FileDialogType>(dialogType));
+	return gmpi::ReturnCode::Ok;
 }
 } //namespace
 } //namespace

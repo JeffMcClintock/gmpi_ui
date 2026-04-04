@@ -239,6 +239,178 @@ public:
     GMPI_REFCOUNT;
 };
 
+// GMPI_MAC_FileDialog
+
+class GMPI_MAC_FileDialog : public gmpi::api::IFileDialog
+{
+    NSView* view;
+    gmpi::api::FileDialogType dialogType;
+    std::vector<std::pair<std::string, std::string>> extensions; // extension, description
+    std::string initialFilename;
+    std::string initialDirectory;
+
+public:
+    GMPI_MAC_FileDialog(NSView* pview, gmpi::api::FileDialogType type) :
+        view(pview)
+        , dialogType(type)
+    {}
+
+    gmpi::ReturnCode addExtension(const char* extension, const char* description) override
+    {
+        extensions.push_back({ extension ? extension : "", description ? description : "" });
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode setInitialFilename(const char* text) override
+    {
+        initialFilename = text ? text : "";
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode setInitialDirectory(const char* text) override
+    {
+        initialDirectory = text ? text : "";
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
+    {
+        gmpi::shared_ptr<gmpi::api::IFileDialogCallback> fileCallback;
+        fileCallback = callback;
+        if (!fileCallback)
+            return gmpi::ReturnCode::Fail;
+
+        if (dialogType == gmpi::api::FileDialogType::Folder)
+        {
+            return showFolderDialog(fileCallback.get());
+        }
+
+        const bool isSave = (dialogType == gmpi::api::FileDialogType::Save);
+
+        if (isSave)
+        {
+            NSSavePanel* panel = [NSSavePanel savePanel];
+
+            if (!initialDirectory.empty())
+            {
+                NSString* dir = [NSString stringWithUTF8String:initialDirectory.c_str()];
+                [panel setDirectoryURL:[NSURL fileURLWithPath:dir]];
+            }
+
+            if (!initialFilename.empty())
+            {
+                NSString* filename = [NSString stringWithUTF8String:initialFilename.c_str()];
+                [panel setNameFieldStringValue:filename];
+            }
+
+            if (!extensions.empty())
+            {
+                NSMutableArray* types = [NSMutableArray array];
+                for (const auto& [ext, desc] : extensions)
+                {
+                    if (ext != "*")
+                        [types addObject:[NSString stringWithUTF8String:ext.c_str()]];
+                }
+                if ([types count] > 0)
+                    [panel setAllowedFileTypes:types];
+            }
+
+            // prevent the callback getting destroyed until after the completion handler runs
+            auto prevent_release = fileCallback;
+            [panel beginSheetModalForWindow:[view window] completionHandler:^(NSModalResponse result) {
+                if (result == NSModalResponseOK)
+                {
+                    const char* path = [[panel URL] fileSystemRepresentation];
+                    prevent_release->onComplete(gmpi::ReturnCode::Ok, path);
+                }
+                else
+                {
+                    prevent_release->onComplete(gmpi::ReturnCode::Cancel, "");
+                }
+            }];
+        }
+        else
+        {
+            NSOpenPanel* panel = [NSOpenPanel openPanel];
+            [panel setCanChooseFiles:YES];
+            [panel setCanChooseDirectories:NO];
+            [panel setAllowsMultipleSelection:NO];
+
+            if (!initialDirectory.empty())
+            {
+                NSString* dir = [NSString stringWithUTF8String:initialDirectory.c_str()];
+                [panel setDirectoryURL:[NSURL fileURLWithPath:dir]];
+            }
+
+            if (!extensions.empty())
+            {
+                NSMutableArray* types = [NSMutableArray array];
+                for (const auto& [ext, desc] : extensions)
+                {
+                    if (ext != "*")
+                        [types addObject:[NSString stringWithUTF8String:ext.c_str()]];
+                }
+                if ([types count] > 0)
+                    [panel setAllowedFileTypes:types];
+            }
+
+            auto prevent_release = fileCallback;
+            [panel beginSheetModalForWindow:[view window] completionHandler:^(NSModalResponse result) {
+                if (result == NSModalResponseOK)
+                {
+                    const char* path = [[[panel URLs] firstObject] fileSystemRepresentation];
+                    prevent_release->onComplete(gmpi::ReturnCode::Ok, path);
+                }
+                else
+                {
+                    prevent_release->onComplete(gmpi::ReturnCode::Cancel, "");
+                }
+            }];
+        }
+
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IFileDialog);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+private:
+    gmpi::ReturnCode showFolderDialog(gmpi::api::IFileDialogCallback* fileCallback)
+    {
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        [panel setCanChooseFiles:NO];
+        [panel setCanChooseDirectories:YES];
+        [panel setAllowsMultipleSelection:NO];
+
+        if (!initialDirectory.empty())
+        {
+            NSString* dir = [NSString stringWithUTF8String:initialDirectory.c_str()];
+            [panel setDirectoryURL:[NSURL fileURLWithPath:dir]];
+        }
+
+        // prevent the callback getting destroyed until after the completion handler runs
+        gmpi::shared_ptr<gmpi::api::IFileDialogCallback> prevent_release(fileCallback);
+        [panel beginSheetModalForWindow:[view window] completionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK)
+            {
+                const char* path = [[[panel URLs] firstObject] fileSystemRepresentation];
+                prevent_release->onComplete(gmpi::ReturnCode::Ok, path);
+            }
+            else
+            {
+                prevent_release->onComplete(gmpi::ReturnCode::Cancel, "");
+            }
+        }];
+
+        return gmpi::ReturnCode::Ok;
+    }
+};
+
 // GMPI_MAC_KeyListener
 
 @interface KeyListenerView_03 : NSView
@@ -645,7 +817,8 @@ public:
     }
     gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override
     {
-        return gmpi::ReturnCode::NoSupport;
+        *returnMenu = new GMPI_MAC_FileDialog(view, static_cast<gmpi::api::FileDialogType>(dialogType));
+        return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override
     {

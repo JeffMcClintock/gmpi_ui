@@ -134,7 +134,7 @@ namespace DrawTextOptions
         None = 0,
         NoSnap = 1,
         Clip = 2,
-        noMacSmooth = 4, // don't 'smooth' (dilate) text on macOD
+        noMacSmooth = 4, // disable macOS native font smoothing (by default Mac uses its native smoothing)
     };
 };
 

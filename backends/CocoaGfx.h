@@ -608,36 +608,39 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize) override
+    gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, float maxWidth, gmpi::drawing::Size* returnSize) override
     {
         CFStringRef str = CFStringCreateWithBytes(kCFAllocatorDefault,
             (const UInt8*)utf8String, stringLength, kCFStringEncodingUTF8, false);
 
         CFDictionaryRef attributes = createAttributes();
         CFAttributedStringRef attrStr = CFAttributedStringCreate(kCFAllocatorDefault, str, attributes);
-        CTLineRef line = CTLineCreateWithAttributedString(attrStr);
 
-        CGFloat ascent_ct, descent_ct, leading_ct;
-        double width = CTLineGetTypographicBounds(line, &ascent_ct, &descent_ct, &leading_ct);
+        // Use CTFramesetter to measure text with width constraint (handles wrapping).
+        CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(attrStr);
+        CFRange fitRange;
+        CGSize constraint = CGSizeMake(static_cast<CGFloat>(maxWidth), CGFLOAT_MAX);
+        CGSize suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRangeMake(0, 0), NULL, constraint, &fitRange);
 
-        returnSize->width = static_cast<float>(width);
+        returnSize->width = static_cast<float>(suggestedSize.width);
+        returnSize->height = static_cast<float>(suggestedSize.height);
 
-        // Count explicit newlines to get actual line count
-        int numLines = 1;
-        for (int i = 0; i < stringLength; i++) {
-            if (utf8String[i] == '\n') ++numLines;
-        }
-
-        if (lineSpacing_ < 0.f)
+        if (lineSpacing_ < 0.f && winNaturalLineHeight_ > 0.f)
         {
-            returnSize->height = static_cast<float>(numLines) * winNaturalLineHeight_;
+            // Estimate number of lines from the Cocoa-measured height.
+            CTLineRef singleLine = CTLineCreateWithAttributedString(attrStr);
+            CGFloat ascent_ct, descent_ct, leading_ct;
+            CTLineGetTypographicBounds(singleLine, &ascent_ct, &descent_ct, &leading_ct);
+            const float cocoaLineH = static_cast<float>(ascent_ct + descent_ct + leading_ct);
+            if (cocoaLineH > 0.f)
+            {
+                const float numLines = std::round(returnSize->height / cocoaLineH);
+                returnSize->height = numLines * winNaturalLineHeight_;
         }
-        else
-        {
-            returnSize->height = static_cast<float>(numLines) * lineSpacing_;
+            CFRelease(singleLine);
         }
 
-        CFRelease(line);
+        CFRelease(framesetter);
         CFRelease(attrStr);
         CFRelease(attributes);
         CFRelease(str);
@@ -1863,7 +1866,7 @@ public:
 		if (textformat->paragraphAlignment != gmpi::drawing::ParagraphAlignment::Near
 			|| options != (int32_t) gmpi::drawing::DrawTextOptions::Clip)
 		{
-			const_cast<gmpi::drawing::api::ITextFormat*>(textFormat)->getTextExtentU(string, (int32_t)strlen(string), &textSize);
+			const_cast<gmpi::drawing::api::ITextFormat*>(textFormat)->getTextExtentU(string, (int32_t)strlen(string), static_cast<float>(bounds.size.width), &textSize);
 		}
 
 		if (textformat->paragraphAlignment != gmpi::drawing::ParagraphAlignment::Near)

@@ -146,7 +146,7 @@ gmpi::ReturnCode TextFormat::getFontMetrics(gmpi::drawing::FontMetrics* returnFo
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping)
+gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping, float maxWidth = 100000.f)
 {
 	const auto widestring = Utf8ToWstring(s);
 
@@ -156,7 +156,7 @@ gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTex
 		widestring.data(),      // The string to be laid out and formatted.
 		(UINT32)widestring.size(),  // The length of the string.
 		textFormat,     // The text format to apply to the string (contains font information, etc).
-		100000,         // The width of the layout box.
+		maxWidth,       // The width of the layout box.
 		100000,         // The height of the layout box.
 		textLayout.put()   // The IDWriteTextLayout interface pointer.
 	);
@@ -171,9 +171,9 @@ gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTex
 	};
 }
 
-gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, gmpi::drawing::Size* returnSize)
+gmpi::ReturnCode TextFormat::getTextExtentU(const char* utf8String, int32_t stringLength, float maxWidth, gmpi::drawing::Size* returnSize)
 {
-	*returnSize = getTextExtentHelper(writeFactory, native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, false);
+	*returnSize = getTextExtentHelper(writeFactory, native(), { utf8String, static_cast<size_t>(stringLength) }, topAdjustment, false, maxWidth);
 	return gmpi::ReturnCode::Ok;
 }
 

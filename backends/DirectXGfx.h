@@ -239,7 +239,7 @@ class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWrite
         getFontMetrics(&fontMetrics);
 
         drawing::Size boundingBoxSize;
-        getTextExtentU("A", 1, &boundingBoxSize);
+        getTextExtentU("A", 1, 100000.f, &boundingBoxSize);
 
         topAdjustment = boundingBoxSize.height - (fontMetrics.ascent + fontMetrics.descent);
         fontMetrics_ascent = fontMetrics.ascent;
@@ -271,8 +271,7 @@ public:
         return r == S_OK ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
-    // TODO!!!: Probably needs to accept constraint rect like DirectWrite. !!!
-    ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, drawing::Size* returnSize) override;
+    ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, float maxWidth, drawing::Size* returnSize) override;
 
     ReturnCode getFontMetrics(drawing::FontMetrics* returnFontMetrics) override;
 

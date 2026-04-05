@@ -809,10 +809,10 @@ public:
 		return native != nullptr;
 	}
 
-	Size getTextExtentU(std::string_view utf8String)
+	Size getTextExtentU(std::string_view utf8String, float maxWidth = 100000.f)
 	{
 		Size s;
-		native->getTextExtentU(utf8String.data(), static_cast<int32_t>(utf8String.size()), &s);
+		native->getTextExtentU(utf8String.data(), static_cast<int32_t>(utf8String.size()), maxWidth, &s);
 		return s;
 	}
 

@@ -345,7 +345,7 @@ typedef struct GMPI_ITextFormatMethods
     int32_t (*setTextAlignment)(GMPI_ITextFormat*, int32_t textAlignment);
     int32_t (*setParagraphAlignment)(GMPI_ITextFormat*, int32_t paragraphAlignment);
     int32_t (*setWordWrapping)(GMPI_ITextFormat*, int32_t wordWrapping);
-    int32_t (*getTextExtentU)(GMPI_ITextFormat*, const char* utf8String, int32_t stringLength, GMPI_Size** returnSize);
+    int32_t (*getTextExtentU)(GMPI_ITextFormat*, const char* utf8String, int32_t stringLength, float maxWidth, GMPI_Size** returnSize);
     int32_t (*get)(GMPI_ITextFormat*);
     int32_t (*setLineSpacing)(GMPI_ITextFormat*, float lineSpacing, float baseline);
 } GMPI_ITextFormatMethods;

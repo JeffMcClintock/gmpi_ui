@@ -414,7 +414,7 @@ struct DECLSPEC_NOVTABLE ITextFormat : gmpi::api::IUnknown
     virtual gmpi::ReturnCode setTextAlignment(TextAlignment textAlignment) = 0;
     virtual gmpi::ReturnCode setParagraphAlignment(ParagraphAlignment paragraphAlignment) = 0;
     virtual gmpi::ReturnCode setWordWrapping(WordWrapping wordWrapping) = 0;
-    virtual gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, Size* returnSize) = 0;
+    virtual gmpi::ReturnCode getTextExtentU(const char* utf8String, int32_t stringLength, float maxWidth, Size* returnSize) = 0;
     virtual gmpi::ReturnCode getFontMetrics(FontMetrics* returnFontMetrics) = 0;
 
 	// For the default method use lineSpacing=-1 (spacing depends solely on the content). For uniform spacing, the specified line height overrides the content.

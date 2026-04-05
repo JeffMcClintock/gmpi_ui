@@ -1488,8 +1488,9 @@ public:
 
 	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
 	{
-		gmpi::shared_ptr<gmpi::api::IStockDialogCallback> dialogCallback;
-		dialogCallback = callback;
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		unknown = callback;
+		auto dialogCallback = unknown.as<gmpi::api::IStockDialogCallback>();
 		if (!dialogCallback)
 			return gmpi::ReturnCode::Fail;
 
@@ -1750,8 +1751,9 @@ public:
 
 	gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
 	{
-		gmpi::shared_ptr<gmpi::api::IFileDialogCallback> fileCallback;
-		fileCallback = callback;
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		unknown = callback;
+		auto fileCallback = unknown.as<gmpi::api::IFileDialogCallback>();
 		if (!fileCallback)
 			return gmpi::ReturnCode::Fail;
 

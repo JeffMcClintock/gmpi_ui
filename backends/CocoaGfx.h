@@ -2189,28 +2189,20 @@ public:
         CGInterpolationQuality prevInterp = CGContextGetInterpolationQuality(cgContext_);
         CGContextSetInterpolationQuality(cgContext_,
             (interpolationMode == gmpi::drawing::BitmapInterpolationMode::NearestNeighbor)
-            ? kCGInterpolationNone : kCGInterpolationHigh);
+            ? kCGInterpolationNone : kCGInterpolationLow);
 
 #if USE_BACKING_BUFFER
-        // CGImageCreateWithImageInRect uses top-left origin, matching our drawing coords
         CGRect sourceRect = cocoa::CGRectFromRect(*sourceRectangle);
 
         CGContextSaveGState(cgContext_);
 
-        // Flip for drawing the image (CGImage is bottom-up, our context is top-down)
+        // Double-flip cancels the beginDraw flip, so CGContextDrawImage draws with
+        // correct visual orientation (CG's bottom-up convention matches the backing buffer).
         CGContextTranslateCTM(cgContext_, 0, destRect.origin.y * 2 + destRect.size.height);
         CGContextScaleCTM(cgContext_, 1, -1);
-#else
-        CGRect sourceRect = cocoa::CGRectFromRect(*sourceRectangle);
-        sourceRect.origin.y = imageSize.height - sourceRectangle->bottom;
-
-        CGContextSaveGState(cgContext_);
-#endif
 
         if (bitmap)
         {
-            // If source rect covers the whole image, draw directly.
-            // Otherwise, create a sub-image.
             if (sourceRect.origin.x == 0 && sourceRect.origin.y == 0 &&
                 sourceRect.size.width == imageSize.width && sourceRect.size.height == imageSize.height)
             {
@@ -2242,6 +2234,48 @@ public:
         }
 
         CGContextRestoreGState(cgContext_);
+#else
+        CGRect sourceRect = cocoa::CGRectFromRect(*sourceRectangle);
+        sourceRect.origin.y = imageSize.height - sourceRectangle->bottom;
+
+        CGContextSaveGState(cgContext_);
+        CGContextTranslateCTM(cgContext_, 0, destRect.origin.y * 2 + destRect.size.height);
+        CGContextScaleCTM(cgContext_, 1, -1);
+
+        if (bitmap)
+        {
+            if (sourceRect.origin.x == 0 && sourceRect.origin.y == 0 &&
+                sourceRect.size.width == imageSize.width && sourceRect.size.height == imageSize.height)
+            {
+                CGContextSetAlpha(cgContext_, opacity);
+                CGContextDrawImage(cgContext_, destRect, bitmap);
+            }
+            else
+            {
+                CGImageRef subImage = CGImageCreateWithImageInRect(bitmap, sourceRect);
+                if (subImage)
+                {
+                    CGContextSetAlpha(cgContext_, opacity);
+                    CGContextDrawImage(cgContext_, destRect, subImage);
+                    CGImageRelease(subImage);
+                }
+            }
+        }
+
+        if (bm->additiveBitmap_)
+        {
+            CGContextSetBlendMode(cgContext_, kCGBlendModePlusLighter);
+            CGImageRef subImage = CGImageCreateWithImageInRect(bm->additiveBitmap_, sourceRect);
+            if (subImage) {
+                CGContextSetAlpha(cgContext_, opacity);
+                CGContextDrawImage(cgContext_, destRect, subImage);
+                CGImageRelease(subImage);
+            }
+            CGContextSetBlendMode(cgContext_, kCGBlendModeNormal);
+        }
+
+        CGContextRestoreGState(cgContext_);
+#endif
 
         CGContextSetInterpolationQuality(cgContext_, prevInterp);
 

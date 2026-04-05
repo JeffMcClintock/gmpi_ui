@@ -146,7 +146,7 @@ gmpi::ReturnCode TextFormat::getFontMetrics(gmpi::drawing::FontMetrics* returnFo
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping, float maxWidth = 100000.f)
+gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping, float maxWidth)
 {
 	const auto widestring = Utf8ToWstring(s);
 

@@ -2102,6 +2102,27 @@ public:
 
 		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
 
+		// Apply paragraph alignment (vertical centering / bottom alignment)
+		if (rtf->paragraphAlignment != gmpi::drawing::ParagraphAlignment::Near)
+		{
+			gmpi::drawing::Size textSize{};
+			rtf->getTextExtentU(&textSize);
+
+			switch (rtf->paragraphAlignment)
+			{
+			case gmpi::drawing::ParagraphAlignment::Far:
+				bounds.origin.y += bounds.size.height - textSize.height;
+				bounds.size.height = textSize.height;
+				break;
+			case gmpi::drawing::ParagraphAlignment::Center:
+				bounds.origin.y += (bounds.size.height - textSize.height) / 2;
+				bounds.size.height = textSize.height;
+				break;
+			default:
+				break;
+			}
+		}
+
 		if (!rtf->cachedAttrString_)
 			return gmpi::ReturnCode::Fail;
 

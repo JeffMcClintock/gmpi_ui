@@ -223,7 +223,7 @@ public:
 };
 
 gmpi::drawing::FontMetrics getFontMetricsHelper(IDWriteTextFormat* textFormat);
-gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping);
+gmpi::drawing::Size getTextExtentHelper(IDWriteFactory* writeFactory, IDWriteTextFormat* textFormat, std::string_view s, float topAdjustment, bool useLegacyBaseLineSnapping, float maxWidth = 100000.f);
 
 class TextFormat final : public GmpiDXWrapper<drawing::api::ITextFormat, IDWriteTextFormat>
 {

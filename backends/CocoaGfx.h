@@ -625,19 +625,45 @@ public:
         returnSize->width = static_cast<float>(suggestedSize.width);
         returnSize->height = static_cast<float>(suggestedSize.height);
 
-        if (lineSpacing_ < 0.f && winNaturalLineHeight_ > 0.f)
+        if (lineSpacing_ >= 0.f)
         {
-            // Estimate number of lines from the Cocoa-measured height.
-            CTLineRef singleLine = CTLineCreateWithAttributedString(attrStr);
-            CGFloat ascent_ct, descent_ct, leading_ct;
-            CTLineGetTypographicBounds(singleLine, &ascent_ct, &descent_ct, &leading_ct);
-            const float cocoaLineH = static_cast<float>(ascent_ct + descent_ct + leading_ct);
-            if (cocoaLineH > 0.f)
-            {
-                const float numLines = std::round(returnSize->height / cocoaLineH);
-                returnSize->height = numLines * winNaturalLineHeight_;
+            // Custom line spacing: D2D returns numLines * lineSpacing.
+            // CT may report a different height, so compute from line count.
+            CGMutablePathRef path = CGPathCreateMutable();
+            CGPathAddRect(path, nullptr, CGRectMake(0, 0, maxWidth, 1e7));
+            CTFrameRef frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), path, nullptr);
+            CFArrayRef lines = CTFrameGetLines(frame);
+            const CFIndex numLines = CFArrayGetCount(lines);
+            // Use the larger of Windows-equivalent and CT-native height so paragraph
+            // alignment works correctly (CT needs its native height to fit all lines).
+            returnSize->height = std::max(numLines * lineSpacing_, returnSize->height);
+            CFRelease(frame);
+            CGPathRelease(path);
         }
-            CFRelease(singleLine);
+        else if (winNaturalLineHeight_ > 0.f)
+        {
+            // Natural spacing: measure with winNaturalLineHeight_ applied
+            // (matching what drawTextU does at render time).
+            CGFloat savedMin = ctLineHeightMin_;
+            CGFloat savedMax = ctLineHeightMax_;
+            const_cast<TextFormat*>(this)->ctLineHeightMin_ = winNaturalLineHeight_;
+            const_cast<TextFormat*>(this)->ctLineHeightMax_ = winNaturalLineHeight_;
+            const_cast<TextFormat*>(this)->rebuildParagraphStyle();
+
+            CFDictionaryRef winAttrs = createAttributes();
+            CFAttributedStringRef winAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, str, winAttrs);
+            CTFramesetterRef winFs = CTFramesetterCreateWithAttributedString(winAttrStr);
+            CFRange winFitRange;
+            CGSize winSize = CTFramesetterSuggestFrameSizeWithConstraints(winFs, CFRangeMake(0, 0), NULL, constraint, &winFitRange);
+            returnSize->height = static_cast<float>(winSize.height);
+
+            CFRelease(winFs);
+            CFRelease(winAttrStr);
+            CFRelease(winAttrs);
+
+            const_cast<TextFormat*>(this)->ctLineHeightMin_ = savedMin;
+            const_cast<TextFormat*>(this)->ctLineHeightMax_ = savedMax;
+            const_cast<TextFormat*>(this)->rebuildParagraphStyle();
         }
 
         CFRelease(framesetter);
@@ -1919,9 +1945,10 @@ public:
 			}
 		}
 
-		{
-			const float effectiveLayoutTop = static_cast<float>(bounds.origin.y);
+		const float effectiveLayoutTop = static_cast<float>(bounds.origin.y);
+		const bool noSnap = (options & static_cast<int32_t>(gmpi::drawing::DrawTextOptions::NoSnap)) != 0;
 
+		{
 			const float effectiveTopAdj = (textformat->lineSpacing_ < 0.f)
 				? textformat->winNaturalTopAdjustment_
 				: textformat->topAdjustment;
@@ -1933,7 +1960,6 @@ public:
 				bounds.origin.y += textformat->customBaseline_ - textformat->ascent;
 			}
 
-			const bool noSnap = (options & static_cast<int32_t>(gmpi::drawing::DrawTextOptions::NoSnap)) != 0;
 			if (!noSnap)
 			{
 				const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
@@ -1945,6 +1971,52 @@ public:
 				const float snapped = floorf((naturalBaseline - 0.25f) / 0.5f) * 0.5f;
 				bounds.origin.y += (snapped - naturalBaseline + 0.5f);
 			}
+		}
+
+		// For custom line spacing, CT may place the first-line baseline differently
+		// from D2D's UNIFORM mode (layoutRect.top + customBaseline_). Measure CT's
+		// actual placement and correct for the discrepancy.
+		if (textformat->lineSpacing_ >= 0.f)
+		{
+			CFStringRef probeStr = CFStringCreateWithBytes(kCFAllocatorDefault,
+				(const UInt8*)"A", 1, kCFStringEncodingUTF8, false);
+			CFDictionaryRef probeAttrs = textformat->createAttributes();
+			CFAttributedStringRef probeAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, probeStr, probeAttrs);
+			CTFramesetterRef probeFs = CTFramesetterCreateWithAttributedString(probeAttrStr);
+			CGMutablePathRef probePath = CGPathCreateMutable();
+			CGPathAddRect(probePath, nullptr, bounds);
+			CTFrameRef probeFrame = CTFramesetterCreateFrame(probeFs, CFRangeMake(0, 0), probePath, nullptr);
+
+			CGPoint lineOrigin = {};
+			CTFrameGetLineOrigins(probeFrame, CFRangeMake(0, 1), &lineOrigin);
+
+			// CTFrameGetLineOrigins returns y relative to the path rect's origin.
+			// The text-flip maps: user_y = bounds.origin.y + bounds.size.height - lineOrigin.y
+			const double actual_user_y = bounds.origin.y + bounds.size.height - lineOrigin.y;
+
+			// Desired first-line baseline = layoutTop + customBaseline_, optionally snapped.
+			const float naturalBaseline = effectiveLayoutTop + textformat->customBaseline_;
+			double desired_user_y;
+			if (noSnap)
+			{
+				desired_user_y = naturalBaseline;
+			}
+			else
+			{
+				const float snapped = floorf((naturalBaseline - 0.25f) / 0.5f) * 0.5f;
+				desired_user_y = snapped + 0.5;
+			}
+
+			// lineOrigin.y is relative to the path rect, so shifting bounds.origin.y
+			// by delta shifts actual_user_y by delta (1:1 correction).
+			bounds.origin.y -= (actual_user_y - desired_user_y);
+
+			CFRelease(probeFrame);
+			CGPathRelease(probePath);
+			CFRelease(probeFs);
+			CFRelease(probeAttrStr);
+			CFRelease(probeAttrs);
+			CFRelease(probeStr);
 		}
 
         // Build CoreText attributed string for drawing

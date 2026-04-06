@@ -1442,10 +1442,8 @@ public:
 				AccessPtr::put(returnTextFormat)
 			);
 
-			if (AccessPtr::get(returnTextFormat))
-			{
+			if (returnTextFormat)
 				return returnTextFormat;
-			}
 		}
 
 		native->createTextFormat(

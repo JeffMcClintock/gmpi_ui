@@ -50,9 +50,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 	factory->loadImageU(uri, AccessPtr::put(image));
 
 	if (!AccessPtr::get(image))
-	{
 		return image;
-	}
 
 	// Does image have a separate 'mask' image. Happens only in SE editor. VSTs use only png.
 	const auto urilen = strlen(uri);

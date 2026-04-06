@@ -531,31 +531,11 @@ public:
             if (hheaData) CFRelease(hheaData);
 
             // Compute topAdjustment for the Windows natural line height.
-            {
-                // Temporarily apply line height to measure
-                CGFloat savedMin = ctLineHeightMin_;
-                CGFloat savedMax = ctLineHeightMax_;
-                ctLineHeightMin_ = winNaturalLineHeight_;
-                ctLineHeightMax_ = winNaturalLineHeight_;
-                rebuildParagraphStyle();
-
-                CFDictionaryRef winAttrs = createAttributes();
-                CFAttributedStringRef winAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, CFSTR("A"), winAttrs);
-                CTLineRef winLine = CTLineCreateWithAttributedString(winAttrStr);
-                CGFloat wa, wd, wl;
-                CTLineGetTypographicBounds(winLine, &wa, &wd, &wl);
-                CGFloat winBoxHeight = wa + wd + wl;
-                CFRelease(winLine);
-                CFRelease(winAttrStr);
-                CFRelease(winAttrs);
-
-                ctLineHeightMin_ = savedMin;
-                ctLineHeightMax_ = savedMax;
-                rebuildParagraphStyle();
-
-                winNaturalTopAdjustment_ = static_cast<float>(winBoxHeight)
-                                           - (fontMetrics.ascent + fontMetrics.descent);
-            }
+            // On Windows, topAdjustment = DWriteLineHeight - bodyHeight = lineGap.
+            // Compute directly from metrics rather than measuring with CT, which
+            // ceil-rounds the constrained line height and inflates the adjustment.
+            winNaturalTopAdjustment_ = winNaturalLineHeight_
+                                       - (fontMetrics.ascent + fontMetrics.descent);
         }
     }
 
@@ -642,8 +622,9 @@ public:
         }
         else if (winNaturalLineHeight_ > 0.f)
         {
-            // Natural spacing: measure with winNaturalLineHeight_ applied
-            // (matching what drawTextU does at render time).
+            // Natural spacing: match D2D's getTextExtentU which returns
+            // textMetrics.height - topAdjustment.  For n lines this equals
+            // bodyHeight + (n-1) * lineHeight, where bodyHeight = ascent + descent.
             CGFloat savedMin = ctLineHeightMin_;
             CGFloat savedMax = ctLineHeightMax_;
             const_cast<TextFormat*>(this)->ctLineHeightMin_ = winNaturalLineHeight_;
@@ -653,10 +634,19 @@ public:
             CFDictionaryRef winAttrs = createAttributes();
             CFAttributedStringRef winAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, str, winAttrs);
             CTFramesetterRef winFs = CTFramesetterCreateWithAttributedString(winAttrStr);
-            CFRange winFitRange;
-            CGSize winSize = CTFramesetterSuggestFrameSizeWithConstraints(winFs, CFRangeMake(0, 0), NULL, constraint, &winFitRange);
-            returnSize->height = static_cast<float>(winSize.height);
+            CGMutablePathRef path = CGPathCreateMutable();
+            CGPathAddRect(path, nullptr, CGRectMake(0, 0, maxWidth, 1e7));
+            CTFrameRef frame = CTFramesetterCreateFrame(winFs, CFRangeMake(0, 0), path, nullptr);
+            CFArrayRef lines = CTFrameGetLines(frame);
+            const CFIndex numLines = CFArrayGetCount(lines);
 
+            gmpi::drawing::FontMetrics fm{};
+            getFontMetrics(&fm);
+            const float bodyHeight = fm.ascent + fm.descent;
+            returnSize->height = bodyHeight + (numLines - 1) * winNaturalLineHeight_;
+
+            CFRelease(frame);
+            CGPathRelease(path);
             CFRelease(winFs);
             CFRelease(winAttrStr);
             CFRelease(winAttrs);
@@ -1973,10 +1963,19 @@ public:
 			}
 		}
 
-		// For custom line spacing, CT may place the first-line baseline differently
-		// from D2D's UNIFORM mode (layoutRect.top + customBaseline_). Measure CT's
-		// actual placement and correct for the discrepancy.
-		if (textformat->lineSpacing_ >= 0.f)
+        // For natural spacing, temporarily apply the Windows-equivalent line height.
+        // Must be done before the baseline probe so CT uses the correct constraints.
+        CGFloat savedMin = textformat->ctLineHeightMin_;
+        CGFloat savedMax = textformat->ctLineHeightMax_;
+        if (textformat->lineSpacing_ < 0.f)
+        {
+            const_cast<TextFormat*>(textformat)->ctLineHeightMin_ = textformat->winNaturalLineHeight_;
+            const_cast<TextFormat*>(textformat)->ctLineHeightMax_ = textformat->winNaturalLineHeight_;
+            const_cast<TextFormat*>(textformat)->rebuildParagraphStyle();
+        }
+
+		// CT may place the first-line baseline differently from D2D.
+		// Measure CT's actual placement and correct for the discrepancy.
 		{
 			CFStringRef probeStr = CFStringCreateWithBytes(kCFAllocatorDefault,
 				(const UInt8*)"A", 1, kCFStringEncodingUTF8, false);
@@ -1994,8 +1993,11 @@ public:
 			// The text-flip maps: user_y = bounds.origin.y + bounds.size.height - lineOrigin.y
 			const double actual_user_y = bounds.origin.y + bounds.size.height - lineOrigin.y;
 
-			// Desired first-line baseline = layoutTop + customBaseline_, optionally snapped.
-			const float naturalBaseline = effectiveLayoutTop + textformat->customBaseline_;
+			// Desired first-line baseline position.
+			const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
+				? textformat->customBaseline_
+				: textformat->winNaturalBaseline_;
+			const float naturalBaseline = effectiveLayoutTop + effectiveAscent;
 			double desired_user_y;
 			if (noSnap)
 			{
@@ -2023,16 +2025,6 @@ public:
         auto scb = dynamic_cast<const SolidColorBrush*>(brush);
         auto lgb = dynamic_cast<const Gradient*>(brush);
         auto bmb = dynamic_cast<const BitmapBrush*>(brush);
-
-        // For natural spacing, temporarily apply the Windows-equivalent line height
-        CGFloat savedMin = textformat->ctLineHeightMin_;
-        CGFloat savedMax = textformat->ctLineHeightMax_;
-        if (textformat->lineSpacing_ < 0.f)
-        {
-            const_cast<TextFormat*>(textformat)->ctLineHeightMin_ = textformat->winNaturalLineHeight_;
-            const_cast<TextFormat*>(textformat)->ctLineHeightMax_ = textformat->winNaturalLineHeight_;
-            const_cast<TextFormat*>(textformat)->rebuildParagraphStyle();
-        }
 
         if (scb)
         {

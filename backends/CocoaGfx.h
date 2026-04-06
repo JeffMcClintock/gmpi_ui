@@ -199,7 +199,7 @@ inline void applyCGDashStyle(CGContextRef ctx, const gmpi::drawing::api::IStroke
             break;
     };
 
-    CGContextSetLineDash(ctx, style.dashOffset, dashes.data(), dashes.size());
+    CGContextSetLineDash(ctx, style.dashOffset * strokeWidth, dashes.data(), dashes.size());
 }
 
 // CGLineCap/CGLineJoin from stroke style

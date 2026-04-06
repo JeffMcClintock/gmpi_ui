@@ -1007,7 +1007,7 @@ public:
         // Create an empty bitmap via CGBitmapContext
         CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         CGContextRef ctx = CGBitmapContextCreate(NULL, width, height, 8, 0, colorSpace,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(colorSpace);
 
         if (ctx)
@@ -1258,7 +1258,7 @@ class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush, public CocoaB
 
         CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(srgb);
 
         CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), src);
@@ -2595,7 +2595,7 @@ public:
         {
             CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
             backingContext_ = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
-                kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
             CGColorSpaceRelease(srgb);
         }
         else
@@ -2603,7 +2603,7 @@ public:
             // 32-bit float linear sRGB for gamma-correct compositing
             backingContext_ = CGBitmapContextCreate(NULL, w, h, 32, 0,
                 pfactory->info.cgColorSpace,
-                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
             creationFlags |= kMacFloatRT;
         }
 
@@ -2815,7 +2815,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, in
         bytesPerRow = (int32_t)(w * 4 * sizeof(float));
         pixelContext_ = CGBitmapContextCreate(NULL, w, h, 32, bytesPerRow,
             static_cast<cocoa::Factory*>(sebitmap->factory)->info.cgColorSpace,
-            kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
     }
     else if (wantHalfFloat)
     {
@@ -2825,7 +2825,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, in
         // so create as 16-bit integer and let callers treat as half-float
         CGColorSpaceRef cs = static_cast<cocoa::Factory*>(sebitmap->factory)->info.cgColorSpace;
         pixelContext_ = CGBitmapContextCreate(NULL, w, h, 16, bytesPerRow, cs,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder16Host);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder16Host);
     }
     else
     {
@@ -2833,7 +2833,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, in
         bytesPerRow = w * 4;
         CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         pixelContext_ = CGBitmapContextCreate(NULL, w, h, 8, bytesPerRow, srgb,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(srgb);
     }
 
@@ -2900,7 +2900,7 @@ inline BitmapPixels::~BitmapPixels()
                 // Build a 32-bit float additive bitmap
                 CGContextRef addCtx = CGBitmapContextCreate(NULL, w, h, 32, 0,
                     static_cast<cocoa::Factory*>(seBitmap->factory)->info.cgColorSpace,
-                    kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                    (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
 
                 const size_t dstBpr = CGBitmapContextGetBytesPerRow(addCtx);
                 uint8_t* dstData = (uint8_t*)CGBitmapContextGetData(addCtx);
@@ -2955,7 +2955,7 @@ inline BitmapPixels::~BitmapPixels()
 
             CGContextRef floatCtx = CGBitmapContextCreate(NULL, w, h, 32, 0,
                 static_cast<cocoa::Factory*>(seBitmap->factory)->info.cgColorSpace,
-                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
 
             const size_t dstBpr = CGBitmapContextGetBytesPerRow(floatCtx);
             uint8_t* srcData = (uint8_t*)CGBitmapContextGetData(pixelContext_);

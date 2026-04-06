@@ -6,7 +6,7 @@
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
-#include "helpers/IController.h"
+#import "helpers/IController.h"
 #include <array>
 #include <string_view>
 
@@ -1042,7 +1042,7 @@ public:
         backBuffer = CGBitmapContextCreate(NULL,
             (size_t)physicalsize.width, (size_t)physicalsize.height,
             16, 0, colorSpace,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder16Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder16Big);
 
         if (!backBuffer)
         {
@@ -1050,7 +1050,7 @@ public:
             backBuffer = CGBitmapContextCreate(NULL,
                 (size_t)physicalsize.width, (size_t)physicalsize.height,
                 32, 0, colorSpace,
-                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
         }
 
         backBufferHeight = physicalsize.height;

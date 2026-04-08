@@ -282,6 +282,10 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost
 	// to help re-create device when lost.
 	void ReleaseDevice()
 	{
+		if(swapChain)
+		{
+			_RPT0(0, "ReleaseDevice: releasing swap chain\n");
+		}
 		if(hdrWhiteScaleEffect)
 		{
 			hdrWhiteScaleEffect->SetInput(0, nullptr);

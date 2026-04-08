@@ -199,7 +199,7 @@ inline void applyCGDashStyle(CGContextRef ctx, const gmpi::drawing::api::IStroke
             break;
     };
 
-    CGContextSetLineDash(ctx, style.dashOffset, dashes.data(), dashes.size());
+    CGContextSetLineDash(ctx, style.dashOffset * strokeWidth, dashes.data(), dashes.size());
 }
 
 // CGLineCap/CGLineJoin from stroke style
@@ -531,31 +531,11 @@ public:
             if (hheaData) CFRelease(hheaData);
 
             // Compute topAdjustment for the Windows natural line height.
-            {
-                // Temporarily apply line height to measure
-                CGFloat savedMin = ctLineHeightMin_;
-                CGFloat savedMax = ctLineHeightMax_;
-                ctLineHeightMin_ = winNaturalLineHeight_;
-                ctLineHeightMax_ = winNaturalLineHeight_;
-                rebuildParagraphStyle();
-
-                CFDictionaryRef winAttrs = createAttributes();
-                CFAttributedStringRef winAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, CFSTR("A"), winAttrs);
-                CTLineRef winLine = CTLineCreateWithAttributedString(winAttrStr);
-                CGFloat wa, wd, wl;
-                CTLineGetTypographicBounds(winLine, &wa, &wd, &wl);
-                CGFloat winBoxHeight = wa + wd + wl;
-                CFRelease(winLine);
-                CFRelease(winAttrStr);
-                CFRelease(winAttrs);
-
-                ctLineHeightMin_ = savedMin;
-                ctLineHeightMax_ = savedMax;
-                rebuildParagraphStyle();
-
-                winNaturalTopAdjustment_ = static_cast<float>(winBoxHeight)
-                                           - (fontMetrics.ascent + fontMetrics.descent);
-            }
+            // On Windows, topAdjustment = DWriteLineHeight - bodyHeight = lineGap.
+            // Compute directly from metrics rather than measuring with CT, which
+            // ceil-rounds the constrained line height and inflates the adjustment.
+            winNaturalTopAdjustment_ = winNaturalLineHeight_
+                                       - (fontMetrics.ascent + fontMetrics.descent);
         }
     }
 
@@ -642,8 +622,9 @@ public:
         }
         else if (winNaturalLineHeight_ > 0.f)
         {
-            // Natural spacing: measure with winNaturalLineHeight_ applied
-            // (matching what drawTextU does at render time).
+            // Natural spacing: match D2D's getTextExtentU which returns
+            // textMetrics.height - topAdjustment.  For n lines this equals
+            // bodyHeight + (n-1) * lineHeight, where bodyHeight = ascent + descent.
             CGFloat savedMin = ctLineHeightMin_;
             CGFloat savedMax = ctLineHeightMax_;
             const_cast<TextFormat*>(this)->ctLineHeightMin_ = winNaturalLineHeight_;
@@ -653,10 +634,19 @@ public:
             CFDictionaryRef winAttrs = createAttributes();
             CFAttributedStringRef winAttrStr = CFAttributedStringCreate(kCFAllocatorDefault, str, winAttrs);
             CTFramesetterRef winFs = CTFramesetterCreateWithAttributedString(winAttrStr);
-            CFRange winFitRange;
-            CGSize winSize = CTFramesetterSuggestFrameSizeWithConstraints(winFs, CFRangeMake(0, 0), NULL, constraint, &winFitRange);
-            returnSize->height = static_cast<float>(winSize.height);
+            CGMutablePathRef path = CGPathCreateMutable();
+            CGPathAddRect(path, nullptr, CGRectMake(0, 0, maxWidth, 1e7));
+            CTFrameRef frame = CTFramesetterCreateFrame(winFs, CFRangeMake(0, 0), path, nullptr);
+            CFArrayRef lines = CTFrameGetLines(frame);
+            const CFIndex numLines = CFArrayGetCount(lines);
 
+            gmpi::drawing::FontMetrics fm{};
+            getFontMetrics(&fm);
+            const float bodyHeight = fm.ascent + fm.descent;
+            returnSize->height = bodyHeight + (numLines - 1) * winNaturalLineHeight_;
+
+            CFRelease(frame);
+            CGPathRelease(path);
             CFRelease(winFs);
             CFRelease(winAttrStr);
             CFRelease(winAttrs);
@@ -1007,7 +997,7 @@ public:
         // Create an empty bitmap via CGBitmapContext
         CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         CGContextRef ctx = CGBitmapContextCreate(NULL, width, height, 8, 0, colorSpace,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(colorSpace);
 
         if (ctx)
@@ -1258,7 +1248,7 @@ class BitmapBrush final : public gmpi::drawing::api::IBitmapBrush, public CocoaB
 
         CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(srgb);
 
         CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), src);
@@ -1973,10 +1963,19 @@ public:
 			}
 		}
 
-		// For custom line spacing, CT may place the first-line baseline differently
-		// from D2D's UNIFORM mode (layoutRect.top + customBaseline_). Measure CT's
-		// actual placement and correct for the discrepancy.
-		if (textformat->lineSpacing_ >= 0.f)
+        // For natural spacing, temporarily apply the Windows-equivalent line height.
+        // Must be done before the baseline probe so CT uses the correct constraints.
+        CGFloat savedMin = textformat->ctLineHeightMin_;
+        CGFloat savedMax = textformat->ctLineHeightMax_;
+        if (textformat->lineSpacing_ < 0.f)
+        {
+            const_cast<TextFormat*>(textformat)->ctLineHeightMin_ = textformat->winNaturalLineHeight_;
+            const_cast<TextFormat*>(textformat)->ctLineHeightMax_ = textformat->winNaturalLineHeight_;
+            const_cast<TextFormat*>(textformat)->rebuildParagraphStyle();
+        }
+
+		// CT may place the first-line baseline differently from D2D.
+		// Measure CT's actual placement and correct for the discrepancy.
 		{
 			CFStringRef probeStr = CFStringCreateWithBytes(kCFAllocatorDefault,
 				(const UInt8*)"A", 1, kCFStringEncodingUTF8, false);
@@ -1994,8 +1993,11 @@ public:
 			// The text-flip maps: user_y = bounds.origin.y + bounds.size.height - lineOrigin.y
 			const double actual_user_y = bounds.origin.y + bounds.size.height - lineOrigin.y;
 
-			// Desired first-line baseline = layoutTop + customBaseline_, optionally snapped.
-			const float naturalBaseline = effectiveLayoutTop + textformat->customBaseline_;
+			// Desired first-line baseline position.
+			const float effectiveAscent = (textformat->lineSpacing_ >= 0.f)
+				? textformat->customBaseline_
+				: textformat->winNaturalBaseline_;
+			const float naturalBaseline = effectiveLayoutTop + effectiveAscent;
 			double desired_user_y;
 			if (noSnap)
 			{
@@ -2023,16 +2025,6 @@ public:
         auto scb = dynamic_cast<const SolidColorBrush*>(brush);
         auto lgb = dynamic_cast<const Gradient*>(brush);
         auto bmb = dynamic_cast<const BitmapBrush*>(brush);
-
-        // For natural spacing, temporarily apply the Windows-equivalent line height
-        CGFloat savedMin = textformat->ctLineHeightMin_;
-        CGFloat savedMax = textformat->ctLineHeightMax_;
-        if (textformat->lineSpacing_ < 0.f)
-        {
-            const_cast<TextFormat*>(textformat)->ctLineHeightMin_ = textformat->winNaturalLineHeight_;
-            const_cast<TextFormat*>(textformat)->ctLineHeightMax_ = textformat->winNaturalLineHeight_;
-            const_cast<TextFormat*>(textformat)->rebuildParagraphStyle();
-        }
 
         if (scb)
         {
@@ -2595,7 +2587,7 @@ public:
         {
             CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
             backingContext_ = CGBitmapContextCreate(NULL, w, h, 8, 0, srgb,
-                kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
             CGColorSpaceRelease(srgb);
         }
         else
@@ -2603,7 +2595,7 @@ public:
             // 32-bit float linear sRGB for gamma-correct compositing
             backingContext_ = CGBitmapContextCreate(NULL, w, h, 32, 0,
                 pfactory->info.cgColorSpace,
-                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
             creationFlags |= kMacFloatRT;
         }
 
@@ -2815,7 +2807,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, in
         bytesPerRow = (int32_t)(w * 4 * sizeof(float));
         pixelContext_ = CGBitmapContextCreate(NULL, w, h, 32, bytesPerRow,
             static_cast<cocoa::Factory*>(sebitmap->factory)->info.cgColorSpace,
-            kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
     }
     else if (wantHalfFloat)
     {
@@ -2825,7 +2817,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, in
         // so create as 16-bit integer and let callers treat as half-float
         CGColorSpaceRef cs = static_cast<cocoa::Factory*>(sebitmap->factory)->info.cgColorSpace;
         pixelContext_ = CGBitmapContextCreate(NULL, w, h, 16, bytesPerRow, cs,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder16Host);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder16Host);
     }
     else
     {
@@ -2833,7 +2825,7 @@ inline BitmapPixels::BitmapPixels(Bitmap* sebitmap, bool _alphaPremultiplied, in
         bytesPerRow = w * 4;
         CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         pixelContext_ = CGBitmapContextCreate(NULL, w, h, 8, bytesPerRow, srgb,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(srgb);
     }
 
@@ -2900,7 +2892,7 @@ inline BitmapPixels::~BitmapPixels()
                 // Build a 32-bit float additive bitmap
                 CGContextRef addCtx = CGBitmapContextCreate(NULL, w, h, 32, 0,
                     static_cast<cocoa::Factory*>(seBitmap->factory)->info.cgColorSpace,
-                    kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                    (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
 
                 const size_t dstBpr = CGBitmapContextGetBytesPerRow(addCtx);
                 uint8_t* dstData = (uint8_t*)CGBitmapContextGetData(addCtx);
@@ -2955,7 +2947,7 @@ inline BitmapPixels::~BitmapPixels()
 
             CGContextRef floatCtx = CGBitmapContextCreate(NULL, w, h, 32, 0,
                 static_cast<cocoa::Factory*>(seBitmap->factory)->info.cgColorSpace,
-                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
 
             const size_t dstBpr = CGBitmapContextGetBytesPerRow(floatCtx);
             uint8_t* srcData = (uint8_t*)CGBitmapContextGetData(pixelContext_);

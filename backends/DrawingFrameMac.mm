@@ -6,7 +6,7 @@
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
-#include "helpers/IController.h"
+#import "helpers/IController.h"
 #include <array>
 #include <string_view>
 
@@ -275,8 +275,9 @@ public:
 
     gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
     {
-        gmpi::shared_ptr<gmpi::api::IFileDialogCallback> fileCallback;
-        fileCallback = callback;
+        gmpi::shared_ptr<gmpi::api::IUnknown> unknown(callback);
+
+        auto fileCallback = unknown.as<gmpi::api::IFileDialogCallback>();
         if (!fileCallback)
             return gmpi::ReturnCode::Fail;
 
@@ -440,8 +441,10 @@ public:
 
     gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
     {
-        gmpi::shared_ptr<gmpi::api::IStockDialogCallback> dialogCallback;
-        dialogCallback = callback;
+        gmpi::shared_ptr<gmpi::api::IUnknown> unknown(callback);
+
+        auto dialogCallback = unknown.as<gmpi::api::IStockDialogCallback>();
+
         if (!dialogCallback)
             return gmpi::ReturnCode::Fail;
 
@@ -1039,7 +1042,7 @@ public:
         backBuffer = CGBitmapContextCreate(NULL,
             (size_t)physicalsize.width, (size_t)physicalsize.height,
             16, 0, colorSpace,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder16Big);
+            (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapByteOrder16Big);
 
         if (!backBuffer)
         {
@@ -1047,7 +1050,7 @@ public:
             backBuffer = CGBitmapContextCreate(NULL,
                 (size_t)physicalsize.width, (size_t)physicalsize.height,
                 32, 0, colorSpace,
-                kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Host);
+                (CGBitmapInfo)kCGImageAlphaPremultipliedLast | (CGBitmapInfo)kCGBitmapFloatComponents | (CGBitmapInfo)kCGBitmapByteOrder32Host);
         }
 
         backBufferHeight = physicalsize.height;

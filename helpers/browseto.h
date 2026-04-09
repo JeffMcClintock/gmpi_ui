@@ -15,6 +15,7 @@
 #endif
 #include <windows.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #elif defined(__APPLE__)
 // forward declaration of the Objective-C++ implementation in browseto.mm
 void browse_to_impl(const char* utf8_path);

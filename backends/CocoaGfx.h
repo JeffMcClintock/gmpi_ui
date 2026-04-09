@@ -2348,9 +2348,15 @@ public:
 
 	gmpi::ReturnCode setTransform(const gmpi::drawing::Matrix3x2* transform) override
 	{
-		// Remove the current transform by applying the inverse
-        CGAffineTransform inverse = CGAffineTransformInvert(cgCurrentTransform_);
-        CGContextConcatCTM(cgContext_, inverse);
+		// Remove the current transform by applying the inverse.
+		// Some transforms are not reversible (e.g. scaling to a point), in which case
+		// CGAffineTransformInvert silently returns NaN — guard against that.
+        const CGFloat det = cgCurrentTransform_.a * cgCurrentTransform_.d - cgCurrentTransform_.b * cgCurrentTransform_.c;
+        if (std::isnormal(det))  // guards against zero, NaN, and Inf
+        {
+            CGAffineTransform inverse = CGAffineTransformInvert(cgCurrentTransform_);
+            CGContextConcatCTM(cgContext_, inverse);
+        }
 
         cgCurrentTransform_ = CGAffineTransformMake(
             transform->_11, transform->_12,

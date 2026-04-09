@@ -7,7 +7,9 @@
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameMac.h"
 #import "helpers/IController.h"
+#include <algorithm>
 #include <array>
+#include <string>
 #include <string_view>
 
 struct EventHelperClient
@@ -158,7 +160,9 @@ public:
         }
         else
         {
-            NSString* nsstr = [NSString stringWithCString : text encoding : NSUTF8StringEncoding];
+            std::string stripped(text);
+            stripped.erase(std::remove(stripped.begin(), stripped.end(), '&'), stripped.end());
+            NSString* nsstr = [NSString stringWithCString : stripped.c_str() encoding : NSUTF8StringEncoding];
 
             const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
             const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;

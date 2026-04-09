@@ -2422,15 +2422,20 @@ public:
 
 	gmpi::ReturnCode drawRoundedRectangle(const gmpi::drawing::RoundedRect* roundedRect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
-		CGRect r = cocoa::CGRectFromRect(roundedRect->rect);
-		CGMutablePathRef path = CGPathCreateMutable();
-		CGPathAddRoundedRect(path, nullptr, r, roundedRect->radiusX, roundedRect->radiusY);
+        auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
+        if (!cocoabrush)
+            return gmpi::ReturnCode::Fail;
+        
+		const CGRect r = cocoa::CGRectFromRect(roundedRect->rect);
 
-		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
-		if (cocoabrush)
-		{
-			cocoabrush->strokePath(cgContext_, path, strokeWidth, strokeStyle);
-		}
+        const auto safeRadiusX = std::clamp((CGFloat) roundedRect->radiusX, 0.0, r.size.width);
+        const auto safeRadiusY = std::clamp((CGFloat) roundedRect->radiusY, 0.0, r.size.height);
+        
+        CGMutablePathRef path = CGPathCreateMutable();
+		CGPathAddRoundedRect(path, nullptr, r, safeRadiusX, safeRadiusY);
+
+		cocoabrush->strokePath(cgContext_, path, strokeWidth, strokeStyle);
+
 		CGPathRelease(path);
 		return gmpi::ReturnCode::Ok;
 	}

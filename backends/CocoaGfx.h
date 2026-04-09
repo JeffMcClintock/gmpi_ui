@@ -2428,8 +2428,8 @@ public:
         
 		const CGRect r = cocoa::CGRectFromRect(roundedRect->rect);
 
-        const auto safeRadiusX = std::clamp((CGFloat) roundedRect->radiusX, 0.0, r.size.width);
-        const auto safeRadiusY = std::clamp((CGFloat) roundedRect->radiusY, 0.0, r.size.height);
+        const auto safeRadiusX = std::clamp((CGFloat) roundedRect->radiusX, 0.0, r.size.width  * 0.5);
+        const auto safeRadiusY = std::clamp((CGFloat) roundedRect->radiusY, 0.0, r.size.height * 0.5);
         
         CGMutablePathRef path = CGPathCreateMutable();
 		CGPathAddRoundedRect(path, nullptr, r, safeRadiusX, safeRadiusY);
@@ -2443,8 +2443,10 @@ public:
 	gmpi::ReturnCode fillRoundedRectangle(const gmpi::drawing::RoundedRect* roundedRect, gmpi::drawing::api::IBrush* brush) override
 	{
 		CGRect r = cocoa::CGRectFromRect(roundedRect->rect);
+        const auto safeRadiusX = std::clamp((CGFloat) roundedRect->radiusX, 0.0, r.size.width  * 0.5);
+        const auto safeRadiusY = std::clamp((CGFloat) roundedRect->radiusY, 0.0, r.size.height * 0.5);
 		CGMutablePathRef rectPath = CGPathCreateMutable();
-		CGPathAddRoundedRect(rectPath, nullptr, r, roundedRect->radiusX, roundedRect->radiusY);
+		CGPathAddRoundedRect(rectPath, nullptr, r, safeRadiusX, safeRadiusY);
 
 		auto cocoabrush = dynamic_cast<const CocoaBrushBase*>(brush);
 		if (cocoabrush)

@@ -68,6 +68,18 @@ struct EventHelperClient
         [self.target performSelector:@selector(cancelEditing:) withObject:self];
 }
 
+// Intercept editing keys (Delete, arrows, etc.) so the menu key-equivalent
+// system doesn't claim them (e.g. Edit > Delete deleting document objects).
+- (BOOL)performKeyEquivalent:(NSEvent*)event
+{
+    if (self.currentEditor)
+    {
+        [self.currentEditor interpretKeyEvents:@[event]];
+        return YES;
+    }
+    return [super performKeyEquivalent:event];
+}
+
 @end
 
 namespace gmpi
@@ -1552,12 +1564,17 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     }
 }
 
+- (BOOL)hasActiveFieldEditor
+{
+    NSResponder* fr = [[self window] firstResponder];
+    return [fr isKindOfClass:[NSTextView class]] && [(NSTextView*)fr isFieldEditor];
+}
+
 - (void)mouseEntered:(NSEvent *)theEvent {
     [[self window] setAcceptsMouseMovedEvents:YES];
 
-    // Don't steal first responder from a text field being edited as a subview
-    NSResponder* fr = [[self window] firstResponder];
-    if (![fr isKindOfClass:[NSView class]] || ![(NSView*)fr isDescendantOf:self] || fr == self)
+    // Don't steal first responder from an active text-edit field editor
+    if (![self hasActiveFieldEditor])
         [[self window] makeFirstResponder:self];
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <algorithm>
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 #include "BitmapMask.h"
 #include "GinBlur.h"
 

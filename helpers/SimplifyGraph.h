@@ -31,7 +31,7 @@
 */
 
 #include <vector>
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 
 inline void SimplifyGraph(const std::vector<gmpi::drawing::Point>& in, std::vector<gmpi::drawing::Point>& out)
 {

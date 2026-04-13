@@ -1,5 +1,5 @@
 #pragma once
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 #include "BitmapMask.h"  // for detail::halfToFloat
 
 #include <algorithm>

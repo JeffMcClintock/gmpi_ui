@@ -273,51 +273,6 @@ TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
 	result.push_back(std::move(editor));
 }
 
-Grid::Grid(
-	  gmpi::ui::builder::ViewParent::Initializer init
-	, gmpi::drawing::Rect pbounds
-)
-{
-	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
-
-	auto portal = std::make_unique<builder::Grid>(init, pbounds);
-
-	gmpi::ui::builder::ThreadLocalCurrentBuilder = portal.get();
-
-	saveParent->push_back(std::move(portal));
-}
-
-Grid::Grid(
-	gmpi::ui::builder::ViewParent::Initializer init
-)
-{
-	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
-
-	auto portal = std::make_unique<builder::Grid>(init, gmpi::drawing::Rect{});
-
-	gmpi::ui::builder::ThreadLocalCurrentBuilder = portal.get();
-
-	saveParent->push_back(std::move(portal));
-}
-
-
-
-//Grid::Grid()
-//{
-//    saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
-//    gmpi::ui::builder::ThreadLocalCurrentBuilder = &childViews;
-//}
-
-Grid::~Grid()
-{
-	gmpi::ui::builder::ThreadLocalCurrentBuilder = saveParent;
-//	if (!saveParent)
-//		return;
-
-//	doLayout();
-
-	//	childViews.clear();
-}
 
 #if 0
 void Grid::doLayout()

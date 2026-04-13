@@ -243,6 +243,27 @@ struct Seperator : public View
 	}
 };
 
+struct RectangleView : public View
+{
+	gmpi::drawing::Rect bounds;
+	gmpi::drawing::Color fillColor = gmpi::drawing::Colors::Black;
+	gmpi::drawing::Color strokeColor = gmpi::drawing::Colors::White;
+
+	RectangleView(gmpi::drawing::Rect pbounds, gmpi::drawing::Color pfill, gmpi::drawing::Color pstroke)
+		: bounds(pbounds), fillColor(pfill), strokeColor(pstroke)
+	{
+	}
+
+	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+	gmpi::drawing::Rect getBounds() const override
+	{
+		return bounds;
+	}
+	void setBounds(gmpi::drawing::Rect newBounds) override
+	{
+		bounds = newBounds;
+	}
+};
 
 struct TextLabelView : public View
 {

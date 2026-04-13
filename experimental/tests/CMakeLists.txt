@@ -16,6 +16,8 @@ add_executable(ui_tests
 
   ../forms.h
   ../forms.cpp
+  ../ui_facades.h
+  ../ui_facades.cpp
   ../grid.h
   ../grid.cpp
   ../builders.h

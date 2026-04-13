@@ -9,8 +9,7 @@
 #include "Core/GmpiApiEditor.h"
 #include "./primatives.h"
 #include "helpers/Timer.h"
-#include "builders.h"
-#include "grid.h"
+#include "ui_facades.h"
 
 #define editor_padding 4.f;
 
@@ -204,16 +203,6 @@ struct TextEdit
 	gmpi_forms::StateRef<std::string> name;
 
 	TextEdit(gmpi_forms::State<std::string>& pname);
-};
-
-class Grid
-{
-	gmpi::ui::builder::ViewParent* saveParent = {};
-
-public:
-	Grid(gmpi::ui::builder::ViewParent::Initializer init);
-	Grid(gmpi::ui::builder::ViewParent::Initializer init, gmpi::drawing::Rect pbounds);
-	~Grid();
 };
 
 } // namespace gmpi::ui

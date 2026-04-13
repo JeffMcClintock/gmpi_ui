@@ -122,6 +122,17 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	}
 }
 
+void RectangleView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
+{
+	auto style2 = new primitive::ShapeStyle();
+	style2->fillColor = fillColor;
+	style2->strokeColor = strokeColor;
+
+	canvas.add(style2);
+
+	canvas.add(new primitive::Rectangle(style2, getBounds()));
+}
+
 void Seperator::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	const auto& theme = currentTheme();

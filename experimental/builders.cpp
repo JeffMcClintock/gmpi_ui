@@ -401,7 +401,7 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 
 	// Draw the text on the button
 	canvas.add(
-		new primitive::TextBox(style, textBoxArea, "...")
+		new primitive::TextBox(style, getBounds(), "\xE2\x80\xA6") // unicode ellipsis '…'
 	);
 
 	// Clicking over the textLabel brings up a native combo box

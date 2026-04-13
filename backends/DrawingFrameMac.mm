@@ -15,6 +15,7 @@
 struct EventHelperClient
 {
     virtual void CallbackFromCocoa(NSObject* sender) = 0;
+    virtual void CancelFromCocoa() {}
 };
 
 @interface GMPI_EVENT_HELPER_CLASSNAME_03 : NSObject {
@@ -23,6 +24,8 @@ struct EventHelperClient
 - (void)initWithClient:(EventHelperClient*)client;
 - (void)menuItemSelected: (id) sender;
 - (void)endEditing: (id) sender;
+- (void)cancelEditing: (id) sender;
+- (void)textDidChange:(NSNotification*)notification;
 @end
 
 @implementation GMPI_EVENT_HELPER_CLASSNAME_03
@@ -39,10 +42,32 @@ struct EventHelperClient
 {
     client->CallbackFromCocoa(sender);
 }
+- (void)cancelEditing: (id) sender
+{
+    client->CancelFromCocoa();
+}
+- (void)textDidChange:(NSNotification*)notification
+{
+    client->CallbackFromCocoa(nil); // nil sender signals a live change, not completion
+}
 - (void)onMenuAction: (id) sender
 {
    client->CallbackFromCocoa(sender);
 }
+@end
+
+// NSTextField subclass that forwards Escape to the event helper.
+@interface GMPI_EscapableTextField : NSTextField
+@end
+
+@implementation GMPI_EscapableTextField
+
+- (void)cancelOperation:(id)sender
+{
+    if (self.target && [self.target respondsToSelector:@selector(cancelEditing:)])
+        [self.target performSelector:@selector(cancelEditing:) withObject:self];
+}
+
 @end
 
 namespace gmpi
@@ -84,6 +109,171 @@ inline NSRect gmpiRectToViewRect(NSRect viewbounds, gmpi::drawing::Rect const* r
         return NSMakeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
     #endif
 }
+
+// ─── GMPI_MAC_TextEdit ─────────────────────────────────────────────────────
+// Implements gmpi::api::ITextEdit by wrapping an NSTextField.
+
+class GMPI_MAC_TextEdit : public gmpi::api::ITextEdit, public EventHelperClient
+{
+    NSView* parentView;
+    NSTextField* textField = nil;
+    GMPI_EVENT_HELPER_CLASSNAME_03* eventHelper = nil;
+    gmpi::drawing::Rect editRect;
+    std::string text;
+    float textHeight = 12.0f;
+    int32_t alignment = 0;
+    bool multiline = false;
+    gmpi::shared_ptr<gmpi::api::ITextEditCallback> callback;
+
+public:
+    GMPI_MAC_TextEdit(NSView* pview, gmpi::drawing::Rect rect)
+        : parentView(pview)
+        , editRect(rect)
+    {
+        eventHelper = [GMPI_EVENT_HELPER_CLASSNAME_03 alloc];
+        [eventHelper initWithClient:this];
+    }
+
+    ~GMPI_MAC_TextEdit()
+    {
+        if (textField)
+        {
+            [textField removeFromSuperview];
+            textField = nil;
+        }
+    }
+
+    gmpi::ReturnCode setText(const char* ptext) override
+    {
+        text = ptext;
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode setAlignment(int32_t palignment) override
+    {
+        alignment = palignment & 0x03;
+        multiline = (palignment >> 16) == 1;
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode setTextSize(float height) override
+    {
+        textHeight = height;
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* pcallback) override
+    {
+        pcallback->queryInterface(&gmpi::api::ITextEditCallback::guid, callback.put_void());
+        return showNativeTextField();
+    }
+
+private:
+    gmpi::ReturnCode showNativeTextField()
+    {
+        if (textField)
+        {
+            [textField removeFromSuperview];
+            textField = nil;
+        }
+
+        textField = [[GMPI_EscapableTextField alloc] initWithFrame:gmpiRectToViewRect(parentView.bounds, &editRect)];
+        [textField setFont:[NSFont systemFontOfSize:textHeight]];
+
+        NSString* nsstr = [NSString stringWithCString:text.c_str() encoding:NSUTF8StringEncoding];
+        [textField setStringValue:nsstr];
+
+        textField.bezeled = false;
+        textField.drawsBackground = true;
+        [textField setBackgroundColor:[NSColor textBackgroundColor]];
+        textField.usesSingleLineMode = !multiline;
+
+        switch (alignment)
+        {
+        case 1: // center
+            textField.alignment = NSTextAlignmentCenter;
+            break;
+        case 2: // trailing
+            textField.alignment = NSTextAlignmentRight;
+            break;
+        default: // leading
+            break;
+        }
+
+        [textField setTarget:eventHelper];
+        [textField setAction:@selector(endEditing:)];
+
+        [[NSNotificationCenter defaultCenter]
+            addObserver:eventHelper
+               selector:@selector(textDidChange:)
+                   name:NSControlTextDidChangeNotification
+                 object:textField];
+
+        [[NSNotificationCenter defaultCenter]
+            addObserver:eventHelper
+               selector:@selector(endEditing:)
+                   name:NSControlTextDidEndEditingNotification
+                 object:textField];
+
+        [parentView addSubview:textField];
+        [[parentView window] makeFirstResponder:textField];
+
+        return gmpi::ReturnCode::Ok;
+    }
+
+public:
+    void CallbackFromCocoa(NSObject* sender) override
+    {
+        if (!textField)
+            return;
+
+        text = [[textField stringValue] UTF8String];
+
+        if (!sender)
+        {
+            if (callback)
+                callback->onChanged(text.c_str());
+            return;
+        }
+
+        dismissTextField(gmpi::ReturnCode::Ok);
+    }
+
+    void CancelFromCocoa() override
+    {
+        if (!textField)
+            return;
+
+        dismissTextField(gmpi::ReturnCode::Cancel);
+    }
+
+private:
+    void dismissTextField(gmpi::ReturnCode result)
+    {
+        [[NSNotificationCenter defaultCenter] removeObserver:eventHelper
+                                                        name:NSControlTextDidChangeNotification
+                                                      object:textField];
+        [[NSNotificationCenter defaultCenter] removeObserver:eventHelper
+                                                        name:NSControlTextDidEndEditingNotification
+                                                      object:textField];
+        [textField removeFromSuperview];
+        textField = nil;
+
+        if (callback)
+            callback->onComplete(result);
+    }
+
+public:
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::ITextEdit);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+};
+
+// ─── GMPI_MAC_PopupMenu ──────────────────────────────────────────────────
 
 class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClient
 {
@@ -909,7 +1099,10 @@ public:
     // IDialogHost
     gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override
     {
-        return gmpi::ReturnCode::NoSupport;
+        auto textEdit = new GMPI_MAC_TextEdit(view, *r);
+        textEdit->addRef();
+        *returnTextEdit = textEdit;
+        return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu) override
     {

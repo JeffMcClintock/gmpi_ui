@@ -413,13 +413,9 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 
 		clickDetector->onPointerDown_callback = [this, clickDetector, env](const primitive::PointerEvent*)
 			{
-				// get dialog host
-				//gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
-				//clickDetector->form->guiHost()->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
-
 				// creat file-browser
 				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-				env->dialogHost->createFileDialog((int32_t)gmpi::api::FileDialogType::Save, unknown.put());
+				env->dialogHost->createFileDialog((int32_t)gmpi::api::FileDialogType::Open, unknown.put());
 				fileDialog = unknown.as<gmpi::api::IFileDialog>();
 
 				if (!fileDialog)

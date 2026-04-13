@@ -7,9 +7,44 @@ void Grid::doLayout()
 {
 	const auto childCount = static_cast<float>(childViews.size());
 	const bool autoFlowRows = spec.auto_flow == eAutoFlow::rows;
-	const bool size_to_children = autoFlowRows ? spec.auto_rows > 0.0f : spec.auto_columns > 0.0f;
 
-	const auto itemExtent =
+	// Resolve explicit track sizes (column_widths for columns, column_heights for rows).
+	// Positive values = fixed px, negative values = fractional units (-1 = 1fr, -2 = 2fr).
+	const auto& trackSizes = autoFlowRows ? spec.column_heights : spec.column_widths;
+	const bool hasExplicitTracks = !trackSizes.empty();
+
+	std::vector<float> resolvedSizes;
+
+	if (hasExplicitTracks)
+	{
+		const float totalExtent = autoFlowRows ? getHeight(bounds) : getWidth(bounds);
+		const float totalGaps = spec.gap * (std::max(0.f, childCount - 1));
+
+		// Sum fixed sizes and total fr units
+		float fixedTotal = 0.0f;
+		float frTotal = 0.0f;
+		for (size_t i = 0; i < childViews.size(); ++i)
+		{
+			const float trackSize = i < trackSizes.size() ? trackSizes[i] : -1.0f; // default 1fr
+			if (trackSize >= 0.0f)
+				fixedTotal += trackSize;
+			else
+				frTotal += -trackSize;
+		}
+
+		const float frSpace = std::max(0.0f, totalExtent - fixedTotal - totalGaps);
+		const float perFr = frTotal > 0.0f ? frSpace / frTotal : 0.0f;
+
+		for (size_t i = 0; i < childViews.size(); ++i)
+		{
+			const float trackSize = i < trackSizes.size() ? trackSizes[i] : -1.0f;
+			resolvedSizes.push_back(trackSize >= 0.0f ? trackSize : (-trackSize * perFr));
+		}
+	}
+
+	const bool size_to_children = !hasExplicitTracks && (autoFlowRows ? spec.auto_rows > 0.0f : spec.auto_columns > 0.0f);
+
+	const auto uniformExtent = hasExplicitTracks ? 0.0f :
 		autoFlowRows ?
 		(
 			spec.auto_rows > 0.0f ? spec.auto_rows :
@@ -22,8 +57,10 @@ void Grid::doLayout()
 
 	auto childRect = bounds;
 
-	for (auto& child : childViews)
+	for (size_t i = 0; i < childViews.size(); ++i)
 	{
+		const float itemExtent = hasExplicitTracks ? resolvedSizes[i] : uniformExtent;
+
 		if (autoFlowRows)
 		{
 			if (spec.auto_columns > 0.0f)
@@ -39,8 +76,8 @@ void Grid::doLayout()
 			childRect.right = childRect.left + itemExtent;
 		}
 
-		child->setBounds(childRect);
-		child->doLayout();
+		childViews[i]->setBounds(childRect);
+		childViews[i]->doLayout();
 
 		if (autoFlowRows)
 			childRect.top = childRect.bottom + spec.gap;

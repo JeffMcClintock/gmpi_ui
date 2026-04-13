@@ -456,6 +456,10 @@ struct PopupMenuView : public View
 	}
 };
 
+// CSS-like fractional unit for grid column/row sizing.
+// Use in column_widths: { 20.f, fr(1), fr(2) } means "20px, 1fr, 2fr"
+constexpr float fr(float n = 1.0f) { return -n; }
+
 struct ViewParent
 {
 	//enum class eLayoutMode
@@ -476,7 +480,7 @@ struct ViewParent
 		float auto_rows = 0.0f;
 		float auto_columns = 0.0f;
 		eAutoFlow auto_flow = eAutoFlow::rows;
-		std::vector<float> column_widths;
+		std::vector<float> column_widths;	// positive = fixed px, negative = fractional (-1 = 1fr)
 		std::vector<float> column_heights;
 	};
 

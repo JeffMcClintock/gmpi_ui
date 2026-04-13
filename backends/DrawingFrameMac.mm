@@ -1554,7 +1554,11 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 - (void)mouseEntered:(NSEvent *)theEvent {
     [[self window] setAcceptsMouseMovedEvents:YES];
-    [[self window] makeFirstResponder:self];
+
+    // Don't steal first responder from a text field being edited as a subview
+    NSResponder* fr = [[self window] firstResponder];
+    if (![fr isKindOfClass:[NSView class]] || ![(NSView*)fr isDescendantOf:self] || fr == self)
+        [[self window] makeFirstResponder:self];
 }
 
 - (void)mouseMoved:(NSEvent *)theEvent {

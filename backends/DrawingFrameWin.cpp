@@ -1469,22 +1469,12 @@ class GMPI_WIN_StockDialog : public gmpi::api::IStockDialog
 	std::wstring text;
 
 public:
-	GMPI_WIN_StockDialog(HWND pParentWnd, gmpi::api::StockDialogType type) :
+	GMPI_WIN_StockDialog(HWND pParentWnd, gmpi::api::StockDialogType type, const char* ptitle, const char* ptext) :
 		parentWnd(pParentWnd)
 		, dialogType(type)
+		, title(privateStuff::Utf8ToWstring(ptitle))
+		, text(privateStuff::Utf8ToWstring(ptext))
 	{}
-
-	gmpi::ReturnCode setTitle(const char* ptext) override
-	{
-		title = privateStuff::Utf8ToWstring(ptext);
-		return gmpi::ReturnCode::Ok;
-	}
-
-	gmpi::ReturnCode setText(const char* ptext) override
-	{
-		text = privateStuff::Utf8ToWstring(ptext);
-		return gmpi::ReturnCode::Ok;
-	}
 
 	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
 	{
@@ -1536,9 +1526,9 @@ public:
 	GMPI_REFCOUNT
 };
 
-gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
+gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog)
 {
-	*returnDialog = new GMPI_WIN_StockDialog(getWindowHandle(), static_cast<gmpi::api::StockDialogType>(dialogType));
+	*returnDialog = new GMPI_WIN_StockDialog(getWindowHandle(), static_cast<gmpi::api::StockDialogType>(dialogType), title, text);
 	return gmpi::ReturnCode::Ok;
 }
 

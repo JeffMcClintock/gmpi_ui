@@ -151,7 +151,7 @@ struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 	virtual ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) = 0;
 	// dialogType: 0 = open, 1 = save
 	virtual ReturnCode createFileDialog (int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
-	virtual ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
+	virtual ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog) = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
 	inline static const gmpi::api::Guid guid =
@@ -253,8 +253,6 @@ enum class StockDialogButton : int32_t
 
 struct DECLSPEC_NOVTABLE IStockDialog : gmpi::api::IUnknown
 {
-	virtual ReturnCode setTitle(const char* text) = 0;
-	virtual ReturnCode setText(const char* text) = 0;
 	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
 
 	// {A4F2DFEC-97B6-44CB-BE2F-44F0A7F90BC3}

@@ -5,7 +5,7 @@
 #include "Core/Common.h"
 #include "Core/GmpiApiEditor.h"
 #include "RefCountMacros.h"
-#include "../Drawing.h" // .. to force use of gmpi-ui not SE SDK
+#include "GmpiUiDrawing.h"
 #include "helpers/NativeUi.h"
 
 namespace gmpi

@@ -628,22 +628,12 @@ class GMPI_MAC_StockDialog : public gmpi::api::IStockDialog
     std::string text;
 
 public:
-    GMPI_MAC_StockDialog(NSView* pview, gmpi::api::StockDialogType type) :
+    GMPI_MAC_StockDialog(NSView* pview, gmpi::api::StockDialogType type, const char* ptitle, const char* ptext) :
         view(pview)
         , dialogType(type)
+        , title(ptitle ? ptitle : "")
+        , text(ptext ? ptext : "")
     {}
-
-    gmpi::ReturnCode setTitle(const char* ptext) override
-    {
-        title = ptext ? ptext : "";
-        return gmpi::ReturnCode::Ok;
-    }
-
-    gmpi::ReturnCode setText(const char* ptext) override
-    {
-        text = ptext ? ptext : "";
-        return gmpi::ReturnCode::Ok;
-    }
 
     gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
     {
@@ -1133,9 +1123,9 @@ public:
         *returnMenu = new GMPI_MAC_FileDialog(view, static_cast<gmpi::api::FileDialogType>(dialogType));
         return gmpi::ReturnCode::Ok;
     }
-    gmpi::ReturnCode createStockDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override
+    gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog) override
     {
-        *returnDialog = new GMPI_MAC_StockDialog(view, static_cast<gmpi::api::StockDialogType>(dialogType));
+        *returnDialog = new GMPI_MAC_StockDialog(view, static_cast<gmpi::api::StockDialogType>(dialogType), title, text);
         return gmpi::ReturnCode::Ok;
     }
 

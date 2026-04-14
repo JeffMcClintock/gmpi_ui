@@ -1,6 +1,6 @@
 #pragma once
 #include <span>
-#include "./tinyXml2/tinyxml2.h"
+#include "tinyXml2/tinyxml2.h"
 #include "GmpiUiDrawing.h"
 
 namespace SvgParser

@@ -255,7 +255,7 @@ struct DECLSPEC_NOVTABLE IStockDialog : gmpi::api::IUnknown
 {
 	virtual ReturnCode setTitle(const char* text) = 0;
 	virtual ReturnCode setText(const char* text) = 0;
-	virtual ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) = 0;
+	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
 
 	// {A4F2DFEC-97B6-44CB-BE2F-44F0A7F90BC3}
 	inline static const gmpi::api::Guid guid =

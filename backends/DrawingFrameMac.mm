@@ -645,7 +645,7 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    gmpi::ReturnCode showAsync(const gmpi::drawing::Rect* rect, gmpi::api::IUnknown* callback) override
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
     {
         gmpi::shared_ptr<gmpi::api::IUnknown> unknown(callback);
 

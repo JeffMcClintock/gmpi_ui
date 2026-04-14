@@ -56,6 +56,7 @@ class PluginEditorBase : public gmpi::api::IEditor
 {
 public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
+	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
 	std::vector<PinBase*> pins;
 	inline static thread_local PluginEditorBase* constructingInstance{};
 
@@ -85,6 +86,7 @@ public:
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
 		unknown = phost;
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
+		dialogHost = unknown.as<gmpi::api::IDialogHost>();
 
 		for (auto& pin : pins)
 			pin->host = editorHost.get();
@@ -131,7 +133,6 @@ protected:
 
 public:
 	gmpi::shared_ptr<gmpi::api::IInputHost> inputHost;
-	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
 	gmpi::shared_ptr<gmpi::api::IDrawingHost> drawingHost;
 
 	virtual ~PluginEditor(){}
@@ -149,7 +150,6 @@ public:
 
 		inputHost = unknown.as<gmpi::api::IInputHost>();
 		drawingHost = unknown.as<gmpi::api::IDrawingHost>();
-		dialogHost = unknown.as<gmpi::api::IDialogHost>();
 
 		return ReturnCode::Ok;
 	}

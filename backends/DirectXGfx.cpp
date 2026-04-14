@@ -306,6 +306,20 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 {
 	*textFormat = {};
 
+	// Resolve "system-ui" to the OS default UI font (e.g. "Segoe UI Variable" on Win 11, "Segoe UI" on Win 10)
+	std::string resolvedName;
+	if (_stricmp(fontFamilyName, "system-ui") == 0)
+	{
+		NONCLIENTMETRICSW ncm{};
+		ncm.cbSize = sizeof(ncm);
+		if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
+			resolvedName = WStringToUtf8(ncm.lfMessageFont.lfFaceName);
+		else
+			resolvedName = "Segoe UI";
+
+		fontFamilyName = resolvedName.c_str();
+	}
+
 	std::string lowercaseNameU(fontFamilyName);
 	std::transform(lowercaseNameU.begin(), lowercaseNameU.end(), lowercaseNameU.begin(), [](char c) { return static_cast<char>(std::tolower(c)); });
 

@@ -340,74 +340,82 @@ public:
         textAlignment = gmpi::drawing::TextAlignment::Leading;
         paragraphAlignment = gmpi::drawing::ParagraphAlignment::Near;
 
-        // Create CTFont using CoreText
-        CFStringRef cfFamilyName = CFStringCreateWithCString(kCFAllocatorDefault, fontFamilyName.c_str(), kCFStringEncodingUTF8);
-
-        // Build font traits dictionary
-        CTFontSymbolicTraits symbolicTraits = 0;
-        if (pfontWeight >= gmpi::drawing::FontWeight::DemiBold)
-            symbolicTraits |= kCTFontBoldTrait;
-        if (pfontStyle == gmpi::drawing::FontStyle::Italic || pfontStyle == gmpi::drawing::FontStyle::Oblique)
-            symbolicTraits |= kCTFontItalicTrait;
-
-        // Map GMPI font weight to CoreText weight
-        static const CGFloat weightConversion[] = {
-            -0.8,  // FontWeight_THIN = 100
-            -0.6,  // FontWeight_ULTRA_LIGHT = 200
-            -0.4,  // FontWeight_LIGHT = 300
-             0.0,  // FontWeight_NORMAL = 400
-             0.23, // FontWeight_MEDIUM = 500
-             0.3,  // FontWeight_SEMI_BOLD = 600
-             0.4,  // FontWeight_BOLD = 700
-             0.56, // FontWeight_BLACK = 900
-             0.62  // FontWeight_ULTRA_BLACK = 950
-        };
-
-        const int arrMax = (int)std::size(weightConversion) - 1;
-        const int roundNearest = 50;
-        const int nativeFontWeightIndex
-            = std::max(0, std::min(arrMax, -1 + ((int) pfontWeight + roundNearest) / 100));
-        const CGFloat ctWeight = weightConversion[nativeFontWeightIndex];
-
-        // Create font descriptor with traits
-        CFMutableDictionaryRef traits = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
-            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-
-        CFNumberRef weightNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberCGFloatType, &ctWeight);
-        CFDictionarySetValue(traits, kCTFontWeightTrait, weightNum);
-        CFRelease(weightNum);
-
-        if (symbolicTraits != 0) {
-            CFNumberRef symTraitsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &symbolicTraits);
-            CFDictionarySetValue(traits, kCTFontSymbolicTrait, symTraitsNum);
-            CFRelease(symTraitsNum);
-        }
-
-        CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
-            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-        CFDictionarySetValue(attrs, kCTFontFamilyNameAttribute, cfFamilyName);
-        CFDictionarySetValue(attrs, kCTFontTraitsAttribute, traits);
-        CFRelease(traits);
-
-        CTFontDescriptorRef descriptor = CTFontDescriptorCreateWithAttributes(attrs);
-        CFRelease(attrs);
-
-        try
+        if (fontFamilyName == "system-ui")
         {
-            ctFont_ = CTFontCreateWithFontDescriptor(descriptor, fontSize, nullptr);
-        }
-        catch (...)
-        {
-        }
-        CFRelease(descriptor);
-
-        // fallback to system font if necessary
-        if (!ctFont_)
-        {
+            // Use the OS system UI font directly (SF Pro on macOS)
             ctFont_ = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize, nullptr);
         }
+        else
+        {
+            // Create CTFont using CoreText
+            CFStringRef cfFamilyName = CFStringCreateWithCString(kCFAllocatorDefault, fontFamilyName.c_str(), kCFStringEncodingUTF8);
 
-        CFRelease(cfFamilyName);
+            // Build font traits dictionary
+            CTFontSymbolicTraits symbolicTraits = 0;
+            if (pfontWeight >= gmpi::drawing::FontWeight::DemiBold)
+                symbolicTraits |= kCTFontBoldTrait;
+            if (pfontStyle == gmpi::drawing::FontStyle::Italic || pfontStyle == gmpi::drawing::FontStyle::Oblique)
+                symbolicTraits |= kCTFontItalicTrait;
+
+            // Map GMPI font weight to CoreText weight
+            static const CGFloat weightConversion[] = {
+                -0.8,  // FontWeight_THIN = 100
+                -0.6,  // FontWeight_ULTRA_LIGHT = 200
+                -0.4,  // FontWeight_LIGHT = 300
+                 0.0,  // FontWeight_NORMAL = 400
+                 0.23, // FontWeight_MEDIUM = 500
+                 0.3,  // FontWeight_SEMI_BOLD = 600
+                 0.4,  // FontWeight_BOLD = 700
+                 0.56, // FontWeight_BLACK = 900
+                 0.62  // FontWeight_ULTRA_BLACK = 950
+            };
+
+            const int arrMax = (int)std::size(weightConversion) - 1;
+            const int roundNearest = 50;
+            const int nativeFontWeightIndex
+                = std::max(0, std::min(arrMax, -1 + ((int) pfontWeight + roundNearest) / 100));
+            const CGFloat ctWeight = weightConversion[nativeFontWeightIndex];
+
+            // Create font descriptor with traits
+            CFMutableDictionaryRef traits = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+            CFNumberRef weightNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberCGFloatType, &ctWeight);
+            CFDictionarySetValue(traits, kCTFontWeightTrait, weightNum);
+            CFRelease(weightNum);
+
+            if (symbolicTraits != 0) {
+                CFNumberRef symTraitsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &symbolicTraits);
+                CFDictionarySetValue(traits, kCTFontSymbolicTrait, symTraitsNum);
+                CFRelease(symTraitsNum);
+            }
+
+            CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+            CFDictionarySetValue(attrs, kCTFontFamilyNameAttribute, cfFamilyName);
+            CFDictionarySetValue(attrs, kCTFontTraitsAttribute, traits);
+            CFRelease(traits);
+
+            CTFontDescriptorRef descriptor = CTFontDescriptorCreateWithAttributes(attrs);
+            CFRelease(attrs);
+
+            try
+            {
+                ctFont_ = CTFontCreateWithFontDescriptor(descriptor, fontSize, nullptr);
+            }
+            catch (...)
+            {
+            }
+            CFRelease(descriptor);
+
+            // fallback to system font if necessary
+            if (!ctFont_)
+            {
+                ctFont_ = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize, nullptr);
+            }
+
+            CFRelease(cfFamilyName);
+        }
 
         rebuildParagraphStyle();
         CalculateTopAdjustment();

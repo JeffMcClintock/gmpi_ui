@@ -1,6 +1,7 @@
 #pragma once
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
 #include "GmpiUiDrawing.h"
 #include "helpers/NativeUi.h"
@@ -417,6 +418,7 @@ struct TextBoxStyle : public Child
 	gmpi::drawing::Color foregroundColor;
 	gmpi::drawing::Color backgroundColor;
 
+	std::string fontFamily = "system-ui"; // OS system UI font by default
 	float bodyHeight = 12; // i.e. text size
 	float fixedLineSpacing = 0.0f; // 0.0f = auto.
 	int textAlignment = (int) gmpi::drawing::TextAlignment::Leading; //left

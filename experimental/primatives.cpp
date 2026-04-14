@@ -1,3 +1,4 @@
+#include <array>
 #include "primatives.h"
 #include "utils.h"
 #include "forms.h"
@@ -72,7 +73,8 @@ void TextBoxStyle::Draw(gmpi::drawing::Graphics& g, const TextBox& t) const
 	{
 		backGround = g.createSolidColorBrush(backgroundColor);
 		foreGround = g.createSolidColorBrush(foregroundColor);
-		textFormat = g.getFactory().createTextFormat(bodyHeight);
+		const std::array<std::string_view, 1> families{ fontFamily };
+		textFormat = g.getFactory().createTextFormat(bodyHeight, families);
 		textFormat.setWordWrapping(WordWrapping::NoWrap);
 		textFormat.setTextAlignment(static_cast<TextAlignment>(textAlignment));
 

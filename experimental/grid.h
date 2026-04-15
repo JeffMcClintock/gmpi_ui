@@ -14,6 +14,7 @@ struct Grid : public View, public ViewParent
 		, gmpi::drawing::Rect pbounds = {}
 	) : ViewParent(init), bounds(pbounds)
 	{
+		asView = this;
 	}
 
 	void doLayout() override;

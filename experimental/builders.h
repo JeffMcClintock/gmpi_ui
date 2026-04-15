@@ -99,9 +99,12 @@ public:
 };
 #endif
 
+struct ViewParent; // forward decl for parent back-pointer
+
 struct View : public gmpi_forms::IObserver
 {
 	mutable bool dirty = true;
+	ViewParent* parent = {}; // set by ViewParent::push_back; used to bubble dirtiness up the tree
 	mutable PointerSpan<gmpi::forms::primitive::Visual> visuals;
 	mutable PointerSpan<gmpi::forms::primitive::Interactor> mouseTargets;
 
@@ -462,12 +465,6 @@ constexpr float fr(float n = 1.0f) { return -n; }
 
 struct ViewParent
 {
-	//enum class eLayoutMode
-	//{
-	//	absolute,
-	//	grid
-	//};
-
 	enum class eAutoFlow
 	{
 		rows,
@@ -488,6 +485,15 @@ struct ViewParent
 	gmpi::drawing::Rect bounds{};
 	Initializer spec;
 
+	// "at least one descendant is dirty" — set by bubbling up from View::setDirty().
+	// Starts true so the first render pass runs.
+	mutable bool childDirty = true;
+
+	// Non-null when this ViewParent is also a View (e.g. ScrollPortal, Grid). Null for Form.
+	// Lets the setDirty() bubble walk up through dual-inheritance nodes without RTTI,
+	// and terminate naturally at the root (Form).
+	View* asView = {};
+
 	ViewParent(Initializer init) : spec(init)
 	{
 	}
@@ -497,6 +503,7 @@ struct ViewParent
 
 	void push_back(std::unique_ptr<gmpi::ui::builder::View> view)
 	{
+		view->parent = this;
 		childViews.push_back(std::move(view));
 	}
 
@@ -531,6 +538,7 @@ struct ScrollPortal : public View, public ViewParent
 
 	ScrollPortal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
 	{
+		asView = this;
 	}
 
 	ScrollInfo calcScrollBar() const;

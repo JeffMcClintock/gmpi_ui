@@ -607,6 +607,10 @@ bool ScrollPortal::RenderIfDirty(
 	primitive::IMouseParent& mouseParent
 ) const
 {
+	// Fast out: nothing below us needs attention.
+	if (!dirty && !childDirty)
+		return false;
+
 	// render myself
 	const auto iwasdirty = dirty;
 
@@ -631,6 +635,9 @@ bool ScrollPortal::RenderIfDirty(
 			mouseportal->restoreMouseState(mouseState);
 	}
 
+	childDirty = false;
+
+//every timer???
 	scroll_state.onChanged(); // update scroll position/size.
 
 	return iwasdirty;
@@ -644,8 +651,14 @@ void ScrollPortal::doLayout()
 void View::setDirty()
 {
 	dirty = true;
-	// TODO!!! add to dirty list of top level, causing re-render on next frame.
 
+	// Bubble "something below me is dirty" up to the root (Form).
+	// Stop once we hit an ancestor that's already marked — no point continuing.
+	for (ViewParent* p = parent; p && !p->childDirty; )
+	{
+		p->childDirty = true;
+		p = p->asView ? p->asView->parent : nullptr;
+	}
 }
 void View::clear2()
 {
@@ -664,7 +677,7 @@ void View::OnModelWillChange()
 
 bool View::RenderIfDirty(
 	gmpi_forms::Environment* env,
-	primitive::IVisualParent& parent,
+	primitive::IVisualParent& parent_visual,
 	primitive::IMouseParent& mouseParent
 ) const
 {
@@ -674,14 +687,14 @@ bool View::RenderIfDirty(
 	dirty = false;
 
 	// insert at current position in display-list if available, else at the end.
-	auto prevVisual = visuals.first ? visuals.first->peerPrev : parent.getDisplayList().lastVisual.peerPrev;
+	auto prevVisual = visuals.first ? visuals.first->peerPrev : parent_visual.getDisplayList().lastVisual.peerPrev;
 	auto prevMouseTarget = mouseTargets.first ? mouseTargets.first->peerPrev : mouseParent.getMouseTargetList().lastMouseTarget.peerPrev;
 
 	// invalidate old visuals
 	for(auto& c : children.visuals)
 	{
-		c->parent = &parent;
-		parent.Invalidate(c->ClipRect());
+		c->parent = &parent_visual;
+		parent_visual.Invalidate(c->ClipRect());
 	}
 
 	// remove old render and mouse-targets from linked-lists
@@ -699,8 +712,8 @@ bool View::RenderIfDirty(
 	// invalidate new visuals
 	for (auto& c : children.visuals)
 	{
-		c->parent = &parent;
-		parent.Invalidate(c->ClipRect());
+		c->parent = &parent_visual;
+		parent_visual.Invalidate(c->ClipRect());
 	}
 
 	for (auto& c : children.mouseTargets)

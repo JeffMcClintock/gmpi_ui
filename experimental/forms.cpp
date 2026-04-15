@@ -67,10 +67,15 @@ void Form::DoUpdates()
 
 	// why dialog host part of env, perhaps move it.
 
+	// Fast out: nothing in the tree is dirty — skip the whole traversal.
+	if (!childDirty)
+		return;
+
 	bool childWasDirty = false;
 	for (auto& view : childViews)
 		childWasDirty |= view->RenderIfDirty(&env, *this, *this);
 
+	childDirty = false;
 	restoreMouseState(mouseOverObject);
 }
 

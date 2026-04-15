@@ -102,6 +102,10 @@ bool Grid::RenderIfDirty(
 	gmpi::forms::primitive::IMouseParent& mouseParent
 ) const
 {
+	// Fast out: nothing below us needs attention.
+	if (!dirty && !childDirty)
+		return false;
+
 	const auto iwasdirty = dirty;
 
 	if (dirty)
@@ -121,6 +125,7 @@ bool Grid::RenderIfDirty(
 			mouseportal->restoreMouseState(mouseState);
 	}
 
+	childDirty = false;
 	return iwasdirty;
 }
 

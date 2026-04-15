@@ -317,13 +317,15 @@ gmpi::drawing::Rect Portal::getContentRect() const
 
 void Portal::setScroll(float dx, float dy)
 {
+	Invalidate(bounds); // invalidate old bounds.
+
 	const auto newTransform = makeTranslation({ bounds.left + dx, bounds.top + dy });
 	if(transform == newTransform) // prevent constant repaints.
 		return;
 
 	transform = newTransform;
 	reverseTransform = makeTranslation({ -bounds.left - dx, -bounds.top - dy });
-	Invalidate(bounds);
+	Invalidate(bounds); // invalidate new bounds
 }
 
 void Portal::Draw(gmpi::drawing::Graphics& g) const

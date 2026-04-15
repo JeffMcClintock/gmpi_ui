@@ -111,6 +111,11 @@ bool Grid::RenderIfDirty(
 	if (dirty)
 	{
 		View::RenderIfDirty(env, parent_visual, mouseParent);
+
+		// Grid itself has no visuals; render children into the parent visual on the same pass,
+		// otherwise the next frame's childDirty fast-out would skip them.
+		for (auto& view : childViews)
+			view->RenderIfDirty(env, parent_visual, mouseParent);
 	}
 	else
 	{

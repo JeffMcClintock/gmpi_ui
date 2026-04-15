@@ -504,11 +504,16 @@ struct ViewParent
 	void push_back(std::unique_ptr<gmpi::ui::builder::View> view)
 	{
 		view->parent = this;
+		// New child starts dirty=true — bubble that up so ancestors don't skip us via childDirty fast-out.
+		view->setDirty();
 		childViews.push_back(std::move(view));
 	}
 
 	void clear()
 	{
+		// Removing children is itself a change — force a re-render pass so the caller
+		// doesn't have to remember to mark the tree dirty manually.
+		childDirty = true;
 		childViews.clear();
 	}
 

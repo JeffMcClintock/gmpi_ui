@@ -613,11 +613,18 @@ bool ScrollPortal::RenderIfDirty(
 
 	// render myself
 	const auto iwasdirty = dirty;
+	bool contentChanged = dirty; // a full self-rebuild always replaces the portal, so content is "new"
 
 	if (dirty)
 	{
-		// recreate all children.
+		// Rebuild self — this creates a fresh, empty Portal/MousePortal.
 		View::RenderIfDirty(env, parent_visual, mouseParent);
+
+		// The new portal is empty; we must render children into it now,
+		// otherwise the next frame's fast-out will skip them and they'll never appear.
+		// (Children keep their own dirty flag, so this just forces their first render into the new portal.)
+		for (auto& view : childViews)
+			view->RenderIfDirty(env, *portal, *mouseportal);
 	}
 	else
 	{
@@ -633,12 +640,20 @@ bool ScrollPortal::RenderIfDirty(
 
 		if (childWasDirty && mouseportal)
 			mouseportal->restoreMouseState(mouseState);
+
+		if (childWasDirty)
+		{
+			// Children swapped their visuals in/out of the portal, so its cached
+			// contentBounds is stale — drop it so getContentRect() recomputes.
+			portal->contentBounds = {};
+			contentChanged = true;
+		}
 	}
 
 	childDirty = false;
 
-//every timer???
-	scroll_state.onChanged(); // update scroll position/size.
+	if (contentChanged)
+		scroll_state.onChanged(); // content size may have changed — refresh thumb length/position
 
 	return iwasdirty;
 }

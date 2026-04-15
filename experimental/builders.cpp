@@ -677,6 +677,13 @@ bool View::RenderIfDirty(
 	auto prevVisual = visuals.first ? visuals.first->peerPrev : parent.getDisplayList().lastVisual.peerPrev;
 	auto prevMouseTarget = mouseTargets.first ? mouseTargets.first->peerPrev : mouseParent.getMouseTargetList().lastMouseTarget.peerPrev;
 
+	// invalidate old visuals
+	for(auto& c : children.visuals)
+	{
+		c->parent = &parent;
+		parent.Invalidate(c->ClipRect());
+	}
+
 	// remove old render and mouse-targets from linked-lists
 	visuals.unlink();
 	mouseTargets.unlink();
@@ -689,6 +696,7 @@ bool View::RenderIfDirty(
 	visuals.replace(prevVisual, children.visuals);
 	mouseTargets.replace(prevMouseTarget, children.mouseTargets);
 
+	// invalidate new visuals
 	for (auto& c : children.visuals)
 	{
 		c->parent = &parent;

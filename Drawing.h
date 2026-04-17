@@ -438,11 +438,18 @@ inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 	Point center = Point()
 )
 {
-	Matrix3x2 skew;
+	const auto tanX = tanf(angleX);
+	const auto tanY = tanf(angleY);
 
-	assert(false); // TODO
-	//			MP1MakeSkewMatrix(angleX, angleY, center, &skew);
-	return skew;
+	return
+	{
+		1.0f,
+		tanY,
+		tanX,
+		1.0f,
+		-center.y * tanX,
+		-center.x * tanY
+	};
 }
 
 [[nodiscard]] inline Rect offsetRect(Rect r, Size offset)

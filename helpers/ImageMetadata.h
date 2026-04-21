@@ -92,8 +92,6 @@ struct FontMetadata
 	int size_;					// Classic font-size. Produces varying results on different platforms.
 	float bodyHeight_ = -1.0f;	// NEW: Produces text of consistant size (ascent+descent) on all platforms. -1 = ignore. Not supported on legacy SE pre May-2020.
 	bool bodyHeightDigitsOnly_ = false;
-	int pixelWidth_;			// original measurement in SynthEdit.
-	int pixelHeight_;
 	uint32_t color_;
 	uint32_t backgroundColor_;
 	int32_t vst3_vertical_offset_;
@@ -106,9 +104,7 @@ struct FontMetadata
 		category_(category)
 		, flags_(0)
 		, size_(12)
-		, pixelWidth_(8)
-		, pixelHeight_(12)
-		, color_(0xffffffff) // white is default for specified fonts (that exist in global.txt). Black is default for styles not found in global.txt 
+		, color_(0xffffffff) // white is default for specified fonts (that exist in global.txt). Black is default for styles not found in global.txt
 		, backgroundColor_(0) // transparent.
 		, vst3_vertical_offset_(0)
 	{
@@ -121,16 +117,12 @@ struct FontMetadata
 		uint32_t color,
 		uint32_t backgroundColor,
 		int flags,
-		int pixelWidth, // original measurement in SynthEdit.
-		int pixelHeight, // original measurement in SynthEdit.
 		uint32_t vst3_vertical_offset,
 		bool pverticalSnapBackwardCompatibilityMode
 	) :
 		category_(category)
 		, flags_(flags)
 		, size_(size)
-		, pixelWidth_(pixelWidth)
-		, pixelHeight_(pixelHeight)
 		, color_(color)
 		, backgroundColor_(backgroundColor)
 		, vst3_vertical_offset_(vst3_vertical_offset)
@@ -230,19 +222,17 @@ struct FontMetadata
 		// terminal. does not work as a font. (not recognised)
 		// "Courier New" - uneven. Some sizes go up some go down. Leave alone.
 
-		int verticalAdjustmentHack; // (std::min)(4, textdata->pixelHeight_ / 10); //  GDI has whitespace at top. Direct2d Fits hard against top.
-		//if (textdata->pixelHeight_ > 14) // ok for "MS Sans Serif", too little for others.
-		//	verticalAdjustmentHack = 2;
+		int verticalAdjustmentHack; //  GDI has whitespace at top. Direct2d Fits hard against top.
 
 		if (faceFamilies_[0] == "Arial")
 		{
-			verticalAdjustmentHack = -pixelHeight_ / 20;
+			verticalAdjustmentHack = -size_ / 20;
 		}
 		else
 		{
 			if (faceFamilies_[0] == "MS Sans Serif")
 			{
-				verticalAdjustmentHack = -pixelHeight_ / 7;
+				verticalAdjustmentHack = -size_ / 7;
 			}
 			else
 			{

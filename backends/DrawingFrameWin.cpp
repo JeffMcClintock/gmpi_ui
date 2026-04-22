@@ -1682,7 +1682,6 @@ public:
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = {};
-
 		GMPI_QUERYINTERFACE(gmpi::api::IPopupMenu);
 		GMPI_QUERYINTERFACE(gmpi::api::IContextItemSink);
 		return gmpi::ReturnCode::NoSupport;

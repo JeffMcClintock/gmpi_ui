@@ -251,10 +251,14 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	const auto& theme = currentTheme();
-	// Add a text box.
-	const float itemHeight = 13;
+	// Mac CoreText can fail to render when the text box is too small.
+	// Use a slightly larger rect than the visible background; symmetric
+	// horizontal padding keeps the centred glyph over the tickbox, and
+	// extending only the bottom preserves its top-aligned vertical position.
 	gmpi::drawing::Rect textBoxArea = getBounds();
-	textBoxArea.bottom = textBoxArea.top + itemHeight;
+	textBoxArea.left   -= 6.f;
+	textBoxArea.right  += 6.f;
+	textBoxArea.bottom += 8.f;
 
 	// default text style
 	auto style = new primitive::TextBoxStyle(

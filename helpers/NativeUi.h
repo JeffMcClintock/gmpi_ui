@@ -78,6 +78,8 @@ enum GG_POINTER_FLAGS {
 	GG_POINTER_KEY_SHIFT = 0x00010000,	// Modifer key - <SHIFT>.
 	GG_POINTER_KEY_CONTROL = 0x00020000,	// Modifer key - <CTRL> or <Command>.
 	GG_POINTER_KEY_ALT = 0x00040000,	// Modifer key - <ALT> or <Option>.
+
+	GG_POINTER_FLAG_DOUBLE = 0x00004000,	// Double-click (set by OS hit-test, not timing).
 };
 
 struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown

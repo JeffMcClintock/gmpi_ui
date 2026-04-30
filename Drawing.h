@@ -8,10 +8,9 @@ CONTRIBUTORS:
 Jeff McClintock
 Lee Louque
 Sasha Radojevic
-
-   TODO
-   * Consider supporting text underline (would require support for DrawGlyphRun)
 */
+
+// NOTE: Drawing.h can clash with legacy API's Drawing.h if so substitute GmpiApiDrawing.h
 
 /*
 #include "Drawing.h"

@@ -1240,8 +1240,8 @@ public:
 
     ReturnCode endDraw() override
     {
-        native()->EndDraw();
-        return ReturnCode::Ok;
+        const HRESULT hr = native()->EndDraw();
+        return SUCCEEDED(hr) ? ReturnCode::Ok : ReturnCode::Fail;
     }
 
     bool SupportSRGB()

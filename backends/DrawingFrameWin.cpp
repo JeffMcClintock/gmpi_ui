@@ -661,7 +661,10 @@ void DxDrawingFrameBase::renderFrame(ID2D1DeviceContext* deviceContext, std::spa
 		}
 	}
 
-	graphics.endDraw();
+	if (graphics.endDraw() != gmpi::ReturnCode::Ok)
+	{
+		ReleaseDevice();
+	}
 }
 
 void DxDrawingFrameBase::OnPaint()

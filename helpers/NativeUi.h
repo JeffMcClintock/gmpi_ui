@@ -108,7 +108,6 @@ struct DECLSPEC_NOVTABLE IDrawingHost : gmpi::api::IUnknown
 {
 	virtual ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) = 0;
 
-	// TODO: sort out method name case.
 	// Get host's current skin's font information.
 	virtual void invalidateRect(const gmpi::drawing::Rect* invalidRect) = 0;
 	virtual void invalidateMeasure() = 0;
@@ -126,10 +125,6 @@ struct DECLSPEC_NOVTABLE IInputHost : gmpi::api::IUnknown
 	virtual ReturnCode getCapture(bool& returnValue) = 0;
 	virtual ReturnCode releaseCapture() = 0;
 
-	// keyboard, are these duplicating 'createKeyListener'?
-	//virtual ReturnCode getFocus() = 0;
-	//virtual ReturnCode releaseFocus() = 0;
-	
 	// {B5109952-2608-48B3-9685-788D36EBA7AF}
 	inline static const gmpi::api::Guid guid =
 	{ 0xb5109952, 0x2608, 0x48b3, { 0x96, 0x85, 0x78, 0x8d, 0x36, 0xeb, 0xa7, 0xaf } };
@@ -199,18 +194,6 @@ public:
 	{ 0xe88e02c8, 0x61b1, 0x415b, { 0x93, 0x79, 0x11, 0xab, 0x73, 0x68, 0xb9, 0x3 } };
 };
 
-#if 0 // not required atm. SynthEdit SDK3 support
-struct DECLSPEC_NOVTABLE ILegacyCompletionCallback : gmpi::api::IUnknown
-{
-public:
-	virtual void OnComplete(ReturnCode result) = 0;
-
-	// {709582BA-AF65-43E6-A24C-AB05F8D6980B}
-	inline static const gmpi::api::Guid guid =
-	{ 0x709582ba, 0xaf65, 0x43e6,{ 0xa2, 0x4c, 0xab, 0x5, 0xf8, 0xd6, 0x98, 0xb } };
-};
-#endif
-
 struct DECLSPEC_NOVTABLE IFileDialog : gmpi::api::IUnknown
 {
 	// save or open?
@@ -274,7 +257,6 @@ public:
 struct DECLSPEC_NOVTABLE ITextEdit : gmpi::api::IUnknown
 {
 	virtual ReturnCode setText(const char* text) = 0;
-//	virtual ReturnCode getText(IMpUnknown* returnString) = 0;
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
 	virtual ReturnCode setTextSize(float height) = 0;
 	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
@@ -297,7 +279,7 @@ public:
 
 struct DECLSPEC_NOVTABLE IKeyListener : gmpi::api::IUnknown
 {
-	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
+	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
 
 	// {10A5572C-A5AA-4AE3-A763-D78291F49C58}
 	inline static const gmpi::api::Guid guid =

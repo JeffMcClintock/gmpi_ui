@@ -284,10 +284,6 @@ public:
 	{
 		return ReturnCode::Unhandled;
 	}
-	gmpi::ReturnCode onContextMenu(int32_t idx) override
-	{
-		return ReturnCode::Unhandled;
-	}
 
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{

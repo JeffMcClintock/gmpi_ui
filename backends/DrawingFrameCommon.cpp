@@ -21,13 +21,6 @@ void DrawingFrameCommon::doContextMenu(gmpi::drawing::Point point, int32_t flags
 		r = inputClient->populateContextMenu(point, contextMenu.get());
 
 		// show menu
-		contextMenu->showAsync(
-			new gmpi::sdk::PopupMenuCallback(
-				[this](int32_t selectedId)
-				{
-					inputClient->onContextMenu(selectedId);
-				}
-			)
-		);
+		contextMenu->showAsync();
 	}
 }

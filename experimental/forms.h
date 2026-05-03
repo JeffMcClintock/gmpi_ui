@@ -116,7 +116,6 @@ public:
 
 	// right-click menu
 	gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point, gmpi::api::IUnknown* contextMenuItemsSink) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode onContextMenu(int32_t idx) override { return gmpi::ReturnCode::NoSupport; }
 
 	// keyboard events.
 	gmpi::ReturnCode onKeyPress(wchar_t c) override;

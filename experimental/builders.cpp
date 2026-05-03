@@ -228,22 +228,23 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 				// TODO: !!! set font (at least height).
 				combo->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
 
+				// Single per-item callback shared across all items: only the chosen item's callback fires.
+				gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+				callback.attach(new gmpi::sdk::PopupMenuCallback(
+					[this](int32_t selectedIndex)
+					{
+						enum_value.set(enum_list_lookup_index(enum_list.get(), selectedIndex).id);
+					}
+				));
+
 				// populate combo
 				constexpr int32_t flags{};
 				for (auto& [index, id, text] : it_enum_list2(enum_list.get()))
 				{
-					combo->addItem(text.c_str(), index, flags, nullptr);
+					combo->addItem(text.c_str(), index, flags, callback.get());
 				}
 
-				combo->showAsync(
-					new gmpi::sdk::PopupMenuCallback
-					(
-						[this](int32_t selectedIndex)
-						{
-							enum_value.set(enum_list_lookup_index(enum_list.get(), selectedIndex).id);
-						}
-					)
-				);
+				combo->showAsync();
 			};
 	}
 }
@@ -480,23 +481,25 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 
 			popupMenu->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
 
+			// Single per-item callback shared across all items: only the chosen item's callback fires.
+			gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+			callback.attach(new gmpi::sdk::PopupMenuCallback(
+				[this](int32_t selectedId)
+				{
+					if (onItemSelected && selectedId > 0)
+					{
+						onItemSelected(selectedId);
+					}
+				}
+			));
+
 			constexpr int32_t flags{};
 			for (auto& [index, id, text] : it_enum_list2(menuItems.get()))
 			{
-				popupMenu->addItem(text.c_str(), id, flags, nullptr);
+				popupMenu->addItem(text.c_str(), id, flags, callback.get());
 			}
 
-			popupMenu->showAsync(
-				new gmpi::sdk::PopupMenuCallback(
-					[this](int32_t selectedId)
-					{
-						if (onItemSelected && selectedId > 0)
-						{
-							onItemSelected(selectedId);
-						}
-					}
-				)
-			);
+			popupMenu->showAsync();
 		};
 }
 

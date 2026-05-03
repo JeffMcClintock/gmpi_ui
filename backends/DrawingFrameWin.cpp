@@ -76,14 +76,7 @@ void DxDrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t flags
 		r = inputClient->populateContextMenu(point, contextMenu.get());
 
 		// show menu
-		contextMenu->showAsync(
-			new gmpi::sdk::PopupMenuCallback(
-				[this](int32_t selectedId)
-				{
-					inputClient->onContextMenu(selectedId);
-				}
-			)
-		);
+		contextMenu->showAsync();
 	}
 }
 
@@ -1619,7 +1612,7 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* returnCallback) override
+	gmpi::ReturnCode showAsync() override
 	{
 		POINT nativePoint{(LONG)editrect_s.left, (LONG)editrect_s.top };
 		ClientToScreen(parentWnd, &nativePoint);
@@ -1637,13 +1630,7 @@ public:
 			selectedId = 0; // N/A
 		}
 
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-		unknown = returnCallback; // asign assuming ownership is already managed from caller.
-
-		if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
-			callback->onComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
-
-        if (index >= 0 && index < static_cast<int32_t>(callbacks.size()) && callbacks[index].callback)
+		if (index >= 0 && index < static_cast<int32_t>(callbacks.size()) && callbacks[index].callback)
 		{
 			gmpi::shared_ptr<gmpi::api::IPopupMenuCallback> itemcallback;
 			callbacks[index].callback->queryInterface(&gmpi::api::IPopupMenuCallback::guid, itemcallback.put_void());
@@ -1653,12 +1640,6 @@ public:
 			}
 		}
 
-#if 0 // not required
-		else if (auto callback = unknown.as<gmpi::api::ILegacyCompletionCallback>(); callback)
-		{
-			callback->OnComplete(index >= 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel);
-		}
-#endif
 		return gmpi::ReturnCode::Ok;
 	}
 

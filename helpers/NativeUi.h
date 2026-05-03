@@ -95,7 +95,6 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 
 	// right-click menu
 	virtual ReturnCode populateContextMenu(gmpi::drawing::Point point, gmpi::api::IUnknown* contextMenuItemsSink) = 0;
-	virtual ReturnCode onContextMenu(int32_t idx) = 0;
 
 	// keyboard events.
 	virtual ReturnCode onKeyPress(wchar_t c) = 0;
@@ -183,7 +182,7 @@ struct DECLSPEC_NOVTABLE IContextItemSink : gmpi::api::IUnknown
 struct DECLSPEC_NOVTABLE IPopupMenu : IContextItemSink
 {
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
-	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
+	virtual ReturnCode showAsync() = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
 	inline static const gmpi::api::Guid guid =

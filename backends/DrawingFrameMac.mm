@@ -299,7 +299,6 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClien
     NSView* view;
     std::vector<MenuCallback> callbacks;
     GMPI_EVENT_HELPER_CLASSNAME_03* eventhelper{};
-    gmpi::api::IUnknown* returnCallback{};
     NSPopUpButton* button;
     
     std::vector<NSMenu*> menuStack;
@@ -337,13 +336,6 @@ public:
         }
 
         [button removeFromSuperview];
-
-        gmpi::shared_ptr<gmpi::api::IUnknown> unknown(returnCallback);
-
-        if(auto callback = unknown.as<gmpi::api::IPopupMenuCallback>(); callback)
-        {
-         callback->onComplete(validIndex ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel, selectedId);
-        }
 
         if (validIndex && callbacks[index].callback)
         {
@@ -410,10 +402,8 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* preturnCallback) override
+    gmpi::ReturnCode showAsync() override
     {
-        returnCallback = preturnCallback;
-        
         [[button cell] setAltersStateOfSelectedItem:NO];
         [[button cell] attachPopUpWithFrame:NSMakeRect(0,0,1,1) inView:view];
         [[button cell] performClickWithFrame:gmpiRectToViewRect(view.bounds, &rect) inView:view];

@@ -119,7 +119,8 @@ public:
 		init(nextId, pin);
 	}
 
-	// Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
+	// One setHost override per plugin satisfies IEditor, IDrawingClient and IInputClient
+	// simultaneously (all three declare identical-signature pure virtuals).
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
@@ -190,17 +191,14 @@ public:
 
 	virtual ~PluginEditor(){}
 
-	// IEditor
-	// called right after constructor
-    // Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
+	// Single setHost serves IEditor, IDrawingClient and IInputClient; called right after
+	// constructor (and again with nullptr at shutdown to release host references).
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
 		PluginEditorBase::setHost(phost);
 
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
 
-		// TODO:: None of these are provided by SynthEdit as a host
-//		phost->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
 		inputHost = unknown.as<gmpi::api::IInputHost>();
 		drawingHost = unknown.as<gmpi::api::IDrawingHost>();
 		dialogHost = unknown.as<gmpi::api::IDialogHost>();
@@ -220,24 +218,8 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	// IDrawingClient
-	ReturnCode open(gmpi::api::IUnknown* host) override
-	{
-		// TOO LAte, measure and arrange need the drawing factory to size text correctly
-  //      gmpi::shared_ptr<gmpi::api::IUnknown> unknown(host);
-
-  //      host->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
-  //      inputHost = unknown.as<gmpi::api::IInputHost>();
-  //      editorHost = unknown.as<gmpi::api::IEditorHost>();
-  //      
-		//for (auto& p : pins)
-		//{
-		//	p.second->host = editorHost.get();
-		//}
-
-		return ReturnCode::Ok;
-	}
-
+	// IDrawingClient (setHost above already covers the connection-establishment role
+	// that the legacy IDrawingClient::open(host) used to play).
 	ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override
 	{
 		return ReturnCode::Ok;

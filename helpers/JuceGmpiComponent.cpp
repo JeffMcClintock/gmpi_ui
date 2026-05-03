@@ -20,8 +20,13 @@ class JuceComponentProxy : public gmpi::api::IDrawingClient, public gmpi::api::I
 public:
 	JuceComponentProxy(class GmpiComponent* pcomponent) : component(pcomponent) {}
 
-	gmpi::ReturnCode open(gmpi::api::IUnknown* host) override
+	gmpi::ReturnCode setHost(gmpi::api::IUnknown* host) override
 	{
+		if (!host)
+		{
+			drawinghost = {};
+			return gmpi::ReturnCode::Ok;
+		}
 		return host->queryInterface(&gmpi::api::IDrawingHost::guid, (void**)&drawinghost);
 	}
 

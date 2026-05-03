@@ -99,8 +99,7 @@ public:
 		return {};
 	}
 
-	// IDrawingClient
-	gmpi::ReturnCode open(gmpi::api::IUnknown* phost) override;
+	// IDrawingClient (setHost is declared under IEditor below; one override serves all three client interfaces)
 	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override { return gmpi::ReturnCode::NoSupport; }
 	gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override { return gmpi::ReturnCode::NoSupport; };
 	gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override; // { return gmpi::ReturnCode::NoSupport; }

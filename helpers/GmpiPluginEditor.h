@@ -80,7 +80,8 @@ public:
 		init(static_cast<int32_t>(pins.size()), pin); // Automatic indexing.
 	}
 
-	// Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
+	// One setHost override per plugin satisfies IEditor, IDrawingClient and IInputClient
+	// simultaneously (all three declare identical-signature pure virtuals).
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
@@ -137,10 +138,8 @@ public:
 
 	virtual ~PluginEditor(){}
 
-	// IEditor
-	// called right after constructor
-    // Confused with OPEN. TODO RESOLVE Duplication without messing up gmpi drawing
-	// !!! just have both interfaces have an identical setHost() method. Both will map nicely here.
+	// Single setHost serves IEditor, IDrawingClient and IInputClient; called right after
+	// constructor (and again with nullptr at shutdown to release host references).
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
 		PluginEditorBase::setHost(phost);
@@ -174,12 +173,8 @@ public:
 		return ReturnCode::Ok;
 	}
 
-	// IDrawingClient
-	ReturnCode open(gmpi::api::IUnknown* host) override
-	{
-		return ReturnCode::Ok;
-	}
-
+	// IDrawingClient (setHost above already covers the connection-establishment role
+	// that the legacy IDrawingClient::open(host) used to play).
 	ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override
 	{
 		return ReturnCode::Ok;

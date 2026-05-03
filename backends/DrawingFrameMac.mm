@@ -807,16 +807,16 @@ public:
             pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
             pluginParameters_GMPI->initialize();
         }
-        
+
         if(drawingClient)
-            drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
+            drawingClient->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
     }
-    
+
     void open() // called from viewDidMoveToWindow <= createNativeView()
     {
         if(drawingClient)
         {
-            drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
+            drawingClient->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
             
             const auto r = [view bounds];
 

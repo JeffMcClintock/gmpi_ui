@@ -33,9 +33,11 @@ struct DECLSPEC_NOVTABLE IGraphicsRedrawClient : gmpi::api::IUnknown
 // TODO: all rects be passed as pointers (for speed and consistency w D2D and C ABI compatibility). !!!
 struct IDrawingClient : gmpi::api::IUnknown
 {
-	// TODO !!! just have all client interfaces (drawing, input etc) have an identical setHost() method. They can all map nicely to the same concrete method in the plugin.
-
-	virtual ReturnCode open(gmpi::api::IUnknown* host) = 0;
+	// Establish (or sever, when host is null) the connection to the host.
+	// Same signature as IEditor::setHost and IInputClient::setHost — a class implementing
+	// multiple of these interfaces overrides setHost once and the C++ MI rules collapse it
+	// to satisfy every base.
+	virtual ReturnCode setHost(gmpi::api::IUnknown* host) = 0;
 
 	// First pass of layout update. Return minimum size required for given available size
 	virtual ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) = 0;
@@ -84,6 +86,11 @@ enum GG_POINTER_FLAGS {
 
 struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 {
+	// Establish (or sever, when host is null) the connection to the host.
+	// Identical signature to IDrawingClient::setHost — for the common case of an input
+	// client that also implements IDrawingClient, a single setHost override satisfies both.
+	virtual ReturnCode setHost(gmpi::api::IUnknown* host) = 0;
+
 	// Mouse events.
 	virtual ReturnCode setHover(bool isMouseOverMe) = 0;
 	virtual ReturnCode hitTest(gmpi::drawing::Point point, int32_t flags) = 0;

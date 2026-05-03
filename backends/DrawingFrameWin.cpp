@@ -581,7 +581,7 @@ void DxDrawingFrameBase::attachClient(gmpi::api::IUnknown* gfx)
 
 	if (drawingClient)
 	{
-		drawingClient->open(static_cast<gmpi::api::IDrawingHost*>(this));
+		drawingClient->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
 	}
 }
 

@@ -159,20 +159,13 @@ gmpi::ReturnCode Form::setHost(IUnknown* phost)
 	{
 		host = {};
 		inputhost = {};
+		env.dialogHost = {};
 		return gmpi::ReturnCode::Ok;
 	}
 
 	phost->queryInterface(&gmpi::api::IDrawingHost::guid, reinterpret_cast<void**>(&host));
 	phost->queryInterface(&gmpi::api::IInputHost::guid, reinterpret_cast<void**>(&inputhost));
-	return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode Form::open(gmpi::api::IUnknown* phost)
-{
-	phost->queryInterface(&gmpi::api::IDrawingHost::guid, reinterpret_cast<void**>(&host));
-	phost->queryInterface(&gmpi::api::IInputHost::guid, reinterpret_cast<void**>(&inputhost));
-	host->queryInterface(&gmpi::api::IDialogHost::guid, env.dialogHost.put_void());
-
+	phost->queryInterface(&gmpi::api::IDialogHost::guid, env.dialogHost.put_void());
 	return gmpi::ReturnCode::Ok;
 }
 

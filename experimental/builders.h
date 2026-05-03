@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include <type_traits>
 #include "./primatives.h"
 
@@ -120,6 +121,13 @@ struct View : public gmpi_forms::IObserver
 	virtual void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const {}
 	virtual gmpi::drawing::Rect getBounds() const { return {}; }
 	virtual void setBounds(gmpi::drawing::Rect) {}
+
+	// Reported intrinsic size for auto-sized layout slots. Default reads the current bounds,
+	// which is appropriate for leaf views whose constructor encodes the desired dimensions.
+	// Containers (e.g. Grid) override to compute from their children/spec.
+	virtual float getDesiredWidth() const { return getWidth(getBounds()); }
+	virtual float getDesiredHeight() const { return getHeight(getBounds()); }
+
 	virtual bool RenderIfDirty(
 		gmpi_forms::Environment* env,
 		gmpi::forms::primitive::IVisualParent& parent,
@@ -463,6 +471,11 @@ struct PopupMenuView : public View
 // Use in column_widths: { 20.f, fr(1), fr(2) } means "20px, 1fr, 2fr"
 constexpr float fr(float n = 1.0f) { return -n; }
 
+// Sentinel for column_widths/column_heights / Initializer::default_track_size meaning
+// "ask the child for its desired dimension via View::getDesiredWidth/Height()".
+// Detected at runtime via std::isinf.
+constexpr float auto_size() { return std::numeric_limits<float>::infinity(); }
+
 struct ViewParent
 {
 	enum class eAutoFlow
@@ -477,8 +490,11 @@ struct ViewParent
 		float auto_rows = 0.0f;
 		float auto_columns = 0.0f;
 		eAutoFlow auto_flow = eAutoFlow::rows;
-		std::vector<float> column_widths;	// positive = fixed px, negative = fractional (-1 = 1fr)
+		std::vector<float> column_widths;	// positive = fixed px, negative = fractional (-1 = 1fr), auto_size() = ask child
 		std::vector<float> column_heights;
+		// fallback for tracks beyond column_widths/column_heights size. Default -1 = 1fr (matches
+		// pre-existing behavior). Set to auto_size() to make every unspecified track ask its child.
+		float default_track_size = -1.0f;
 	};
 
 	std::vector< std::unique_ptr<gmpi::ui::builder::View> > childViews;

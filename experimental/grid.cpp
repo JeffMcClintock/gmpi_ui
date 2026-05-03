@@ -1,3 +1,4 @@
+#include <cmath>
 #include "grid.h"
 
 namespace gmpi::ui::builder
@@ -9,9 +10,22 @@ void Grid::doLayout()
 	const bool autoFlowRows = spec.auto_flow == eAutoFlow::rows;
 
 	// Resolve explicit track sizes (column_widths for columns, column_heights for rows).
-	// Positive values = fixed px, negative values = fractional units (-1 = 1fr, -2 = 2fr).
+	// Per-track values: positive = fixed px, negative = fractional units (-1 = 1fr, -2 = 2fr),
+	// auto_size() (= +inf) = ask the child via getDesiredWidth/Height().
 	const auto& trackSizes = autoFlowRows ? spec.column_heights : spec.column_widths;
-	const bool hasExplicitTracks = !trackSizes.empty();
+	const bool hasExplicitTracks = !trackSizes.empty() || spec.default_track_size != -1.0f;
+
+	auto rawTrackSize = [&](size_t i) -> float {
+		return i < trackSizes.size() ? trackSizes[i] : spec.default_track_size;
+	};
+	auto resolveTrackSize = [&](size_t i) -> float {
+		float ts = rawTrackSize(i);
+		if (std::isinf(ts))
+		{
+			ts = autoFlowRows ? childViews[i]->getDesiredHeight() : childViews[i]->getDesiredWidth();
+		}
+		return ts;
+	};
 
 	std::vector<float> resolvedSizes;
 
@@ -20,12 +34,12 @@ void Grid::doLayout()
 		const float totalExtent = autoFlowRows ? getHeight(bounds) : getWidth(bounds);
 		const float totalGaps = spec.gap * (std::max(0.f, childCount - 1));
 
-		// Sum fixed sizes and total fr units
+		// Sum fixed sizes (incl. resolved auto-content) and total fr units
 		float fixedTotal = 0.0f;
 		float frTotal = 0.0f;
 		for (size_t i = 0; i < childViews.size(); ++i)
 		{
-			const float trackSize = i < trackSizes.size() ? trackSizes[i] : -1.0f; // default 1fr
+			const float trackSize = resolveTrackSize(i);
 			if (trackSize >= 0.0f)
 				fixedTotal += trackSize;
 			else
@@ -37,7 +51,7 @@ void Grid::doLayout()
 
 		for (size_t i = 0; i < childViews.size(); ++i)
 		{
-			const float trackSize = i < trackSizes.size() ? trackSizes[i] : -1.0f;
+			const float trackSize = resolveTrackSize(i);
 			resolvedSizes.push_back(trackSize >= 0.0f ? trackSize : (-trackSize * perFr));
 		}
 	}
@@ -132,6 +146,77 @@ bool Grid::RenderIfDirty(
 
 	childDirty = false;
 	return iwasdirty;
+}
+
+// Helper: desired extent along the flow (main) axis.
+// Sums explicit/auto-content track sizes plus gaps; fr tracks contribute 0 (they only stretch
+// inside a known container). Falls back to auto_rows/auto_columns or constructor bounds.
+static float computeMainAxisDesired(
+	const ViewParent::Initializer& spec,
+	const std::vector<std::unique_ptr<View>>& childViews,
+	const gmpi::drawing::Rect& bounds
+)
+{
+	const bool autoFlowRows = spec.auto_flow == ViewParent::eAutoFlow::rows;
+	const auto count = childViews.size();
+	if (count == 0)
+		return 0.0f;
+
+	const float gapTotal = (count > 1) ? (count - 1) * spec.gap : 0.0f;
+
+	const auto& trackSizes = autoFlowRows ? spec.column_heights : spec.column_widths;
+	const bool hasExplicitTracks = !trackSizes.empty() || spec.default_track_size != -1.0f;
+
+	if (hasExplicitTracks)
+	{
+		float total = 0.0f;
+		for (size_t i = 0; i < count; ++i)
+		{
+			float ts = i < trackSizes.size() ? trackSizes[i] : spec.default_track_size;
+			if (std::isinf(ts))
+				ts = autoFlowRows ? childViews[i]->getDesiredHeight() : childViews[i]->getDesiredWidth();
+			else if (ts < 0.0f)
+				ts = 0.0f; // fr tracks contribute 0 to natural extent
+			total += ts;
+		}
+		return total + gapTotal;
+	}
+
+	const float autoExt = autoFlowRows ? spec.auto_rows : spec.auto_columns;
+	if (autoExt > 0.0f)
+		return count * autoExt + gapTotal;
+
+	return autoFlowRows ? getHeight(bounds) : getWidth(bounds);
+}
+
+float Grid::getDesiredWidth() const
+{
+	if (spec.auto_flow == eAutoFlow::columns)
+		return computeMainAxisDesired(spec, childViews, bounds);
+
+	// row-flow: width is the cross axis
+	if (spec.auto_columns > 0.0f)
+		return spec.auto_columns;
+
+	float maxW = 0.0f;
+	for (auto& c : childViews)
+		maxW = std::max(maxW, c->getDesiredWidth());
+	return std::max(maxW, getWidth(bounds));
+}
+
+float Grid::getDesiredHeight() const
+{
+	if (spec.auto_flow == eAutoFlow::rows)
+		return computeMainAxisDesired(spec, childViews, bounds);
+
+	// column-flow: height is the cross axis
+	if (spec.auto_rows > 0.0f)
+		return spec.auto_rows;
+
+	float maxH = 0.0f;
+	for (auto& c : childViews)
+		maxH = std::max(maxH, c->getDesiredHeight());
+	return std::max(maxH, getHeight(bounds));
 }
 
 } // namespace gmpi::ui::builder

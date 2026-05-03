@@ -34,6 +34,9 @@ struct Grid : public View, public ViewParent
 		bounds = newBounds;
 		boundsSetByParent = true;
 	}
+
+	float getDesiredWidth() const override;
+	float getDesiredHeight() const override;
 };
 
 } // namespace gmpi::ui::builder

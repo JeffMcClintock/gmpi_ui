@@ -323,27 +323,30 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 	std::string lowercaseNameU(fontFamilyName);
 	std::transform(lowercaseNameU.begin(), lowercaseNameU.end(), lowercaseNameU.begin(), [](char c) { return static_cast<char>(std::tolower(c)); });
 
-	// find the font, or return nothing.
-	std::wstring fontFamilyNameW;
-
+	// find the font, or fallback.
 	auto it = info.availableFonts.find(lowercaseNameU);
-	if (it == info.availableFonts.end())
+	if(it == info.availableFonts.end())
 	{
 		// font name not found but maybe it's a GDI font?
-		fontFamilyNameW = fontMatchHelper(
-			  info.writeFactory
+		const auto fontFamilyNameW = fontMatchHelper(
+			info.writeFactory
 			, info.GdiFontConversions
 			, fontFamilyName
 			, fontWeight
 		);
 
-		if(fontFamilyNameW.empty())
-			return gmpi::ReturnCode::Fail;
+		lowercaseNameU = WStringToUtf8(fontFamilyNameW);
+		std::transform(lowercaseNameU.begin(), lowercaseNameU.end(), lowercaseNameU.begin(), [](char c) { return static_cast<char>(std::tolower(c)); });
+
+		it = info.availableFonts.find(lowercaseNameU);
 	}
-	else
+
+	if(it == info.availableFonts.end())
 	{
-		fontFamilyNameW = it->second.systemFontName;
+		it = info.availableFonts.find("arial"); // must be lowercase here.
 	}
+
+	assert(it != info.availableFonts.end());
 
 	auto& fontScalingInfo = it->second;
 
@@ -355,7 +358,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 		gmpi::directx::ComPtr<IDWriteTextFormat> referenceTextFormat;
 
 		[[maybe_unused]] auto hr = info.writeFactory->CreateTextFormat(
-			fontFamilyNameW.c_str(),
+			fontScalingInfo.systemFontName.c_str(),
 			NULL,
 			(DWRITE_FONT_WEIGHT)fontWeight,
 			(DWRITE_FONT_STYLE)fontStyle,
@@ -384,7 +387,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 	IDWriteTextFormat* dwTextFormat{};
 
 	auto hr = info.writeFactory->CreateTextFormat(
-		fontFamilyNameW.c_str(),
+		fontScalingInfo.systemFontName.c_str(),
 		NULL,
 		(DWRITE_FONT_WEIGHT)fontWeight,
 		(DWRITE_FONT_STYLE)fontStyle,

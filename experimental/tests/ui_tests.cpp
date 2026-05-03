@@ -228,5 +228,178 @@ TEST_F(TestUI, NestedGrids)
 	EXPECT_FLOAT_EQ(b1.right + innerGap, b2.left);
 }
 
+// View::getDesired{Width,Height}() default reads bounds — leaf views can encode
+// their intrinsic size in the constructor's bounds rect.
+TEST_F(TestUI, ViewDesiredSizeDefaultsToBoundsDimensions)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	gmpi::ui::Label label("test", { 0.f, 5.f, 50.f, 23.f });
+
+	EXPECT_FLOAT_EQ(50.0f, label.view->getDesiredWidth());
+	EXPECT_FLOAT_EQ(18.0f, label.view->getDesiredHeight());
+}
+
+// auto_size() entries in column_heights resolve to each child's getDesiredHeight().
+TEST_F(TestUI, GridColumnHeightsAutoSizeReadsChildBounds)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	{
+		gmpi::ui::builder::Grid::Initializer spec;
+		spec.gap = 5.0f;
+		spec.column_heights = {
+			gmpi::ui::builder::auto_size(),
+			gmpi::ui::builder::auto_size(),
+		};
+
+		gmpi::drawing::Rect bounds{ 0.0f, 0.0f, 100.0f, 999.0f };
+
+		gmpi::ui::Grid grid(spec, bounds);
+			gmpi::ui::Label first("First",   { 0.f, 0.f, 0.f, 20.f });
+			gmpi::ui::Label second("Second", { 0.f, 0.f, 0.f, 30.f });
+	}
+
+	builder.doChildLayout();
+
+	auto gridView = dynamic_cast<gmpi::ui::builder::Grid*>(builder.childViews[0].get());
+	auto& views = gridView->childViews;
+
+	const auto b0 = views[0]->getBounds();
+	const auto b1 = views[1]->getBounds();
+
+	// first row sized to first child's desired height (20)
+	EXPECT_FLOAT_EQ(0.0f, b0.top);
+	EXPECT_FLOAT_EQ(20.0f, b0.bottom);
+
+	// gap 5, then second row sized to second child's desired height (30)
+	EXPECT_FLOAT_EQ(25.0f, b1.top);
+	EXPECT_FLOAT_EQ(55.0f, b1.bottom);
+}
+
+// default_track_size = auto_size() makes every unspecified track ask its child.
+// Lets a Grid host an arbitrary number of content-sized rows without enumerating
+// column_heights upfront.
+TEST_F(TestUI, GridDefaultTrackSizeAutoSize)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	{
+		gmpi::ui::builder::Grid::Initializer spec;
+		spec.gap = 5.0f;
+		spec.default_track_size = gmpi::ui::builder::auto_size();
+
+		gmpi::drawing::Rect bounds{ 0.0f, 0.0f, 100.0f, 999.0f };
+
+		gmpi::ui::Grid grid(spec, bounds);
+			gmpi::ui::Label one("One",     { 0.f, 0.f, 0.f, 10.f });
+			gmpi::ui::Label two("Two",     { 0.f, 0.f, 0.f, 15.f });
+			gmpi::ui::Label three("Three", { 0.f, 0.f, 0.f, 20.f });
+	}
+
+	builder.doChildLayout();
+
+	auto gridView = dynamic_cast<gmpi::ui::builder::Grid*>(builder.childViews[0].get());
+	auto& views = gridView->childViews;
+
+	EXPECT_FLOAT_EQ(0.0f,  views[0]->getBounds().top);
+	EXPECT_FLOAT_EQ(10.0f, views[0]->getBounds().bottom);
+
+	EXPECT_FLOAT_EQ(15.0f, views[1]->getBounds().top);
+	EXPECT_FLOAT_EQ(30.0f, views[1]->getBounds().bottom);
+
+	EXPECT_FLOAT_EQ(35.0f, views[2]->getBounds().top);
+	EXPECT_FLOAT_EQ(55.0f, views[2]->getBounds().bottom);
+}
+
+// When auto_size() points at a nested column-flow Grid, the outer reads
+// the inner's getDesiredHeight() — which for column-flow returns the
+// configured auto_rows (cross-axis) regardless of bounds height.
+TEST_F(TestUI, GridAutoSizeReadsInnerColumnFlowGrid)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	{
+		gmpi::ui::builder::Grid::Initializer outerSpec;
+		outerSpec.gap = 3.0f;
+		outerSpec.default_track_size = gmpi::ui::builder::auto_size();
+
+		gmpi::drawing::Rect outerBounds{ 0.0f, 0.0f, 200.0f, 999.0f };
+		gmpi::ui::Grid outer(outerSpec, outerBounds);
+
+		auto makeRow = []() {
+			gmpi::ui::builder::Grid::Initializer rowSpec;
+			rowSpec.gap = 2.0f;
+			rowSpec.auto_rows = 25.0f;
+			rowSpec.auto_flow = gmpi::ui::builder::ViewParent::eAutoFlow::columns;
+			rowSpec.column_widths = { gmpi::ui::builder::fr(1.0f), gmpi::ui::builder::fr(1.0f) };
+			return rowSpec;
+		};
+
+		{
+			gmpi::ui::Grid row1(makeRow());
+				gmpi::ui::Label l1("a");
+				gmpi::ui::Label l2("b");
+		}
+		{
+			gmpi::ui::Grid row2(makeRow());
+				gmpi::ui::Label l3("c");
+				gmpi::ui::Label l4("d");
+		}
+	}
+
+	builder.doChildLayout();
+
+	auto outerView = dynamic_cast<gmpi::ui::builder::Grid*>(builder.childViews[0].get());
+	auto& outerKids = outerView->childViews;
+
+	// each inner (column-flow) Grid reports auto_rows (25) as its desired height
+	EXPECT_FLOAT_EQ(0.0f,  outerKids[0]->getBounds().top);
+	EXPECT_FLOAT_EQ(25.0f, outerKids[0]->getBounds().bottom);
+
+	// gap of 3 between rows
+	EXPECT_FLOAT_EQ(28.0f, outerKids[1]->getBounds().top);
+	EXPECT_FLOAT_EQ(53.0f, outerKids[1]->getBounds().bottom);
+}
+
+// When auto_size() points at a nested row-flow Grid (e.g. a "toggle group" of
+// N items), the outer reads inner's main-axis extent: count*auto_rows + gaps.
+TEST_F(TestUI, GridAutoSizeReadsInnerRowFlowGrid)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	{
+		gmpi::ui::builder::Grid::Initializer outerSpec;
+		outerSpec.gap = 3.0f;
+		outerSpec.default_track_size = gmpi::ui::builder::auto_size();
+
+		gmpi::drawing::Rect outerBounds{ 0.0f, 0.0f, 200.0f, 999.0f };
+		gmpi::ui::Grid outer(outerSpec, outerBounds);
+
+		// vertical Grid: 3 children × 16 each, gap 2 → 48 + 4 = 52 total
+		gmpi::ui::builder::Grid::Initializer innerSpec;
+		innerSpec.gap = 2.0f;
+		innerSpec.auto_rows = 16.0f;
+
+		gmpi::ui::Grid toggleGroup(innerSpec);
+			gmpi::ui::Label a("a");
+			gmpi::ui::Label b("b");
+			gmpi::ui::Label c("c");
+	}
+
+	builder.doChildLayout();
+
+	auto outerView = dynamic_cast<gmpi::ui::builder::Grid*>(builder.childViews[0].get());
+	auto& outerKids = outerView->childViews;
+
+	EXPECT_FLOAT_EQ(0.0f,  outerKids[0]->getBounds().top);
+	EXPECT_FLOAT_EQ(52.0f, outerKids[0]->getBounds().bottom);
+}
+
 } // namespace UnitTestSynthEdit
 

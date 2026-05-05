@@ -491,14 +491,16 @@ inline void beginMouseTracking(HWND hwnd, bool& isTrackingMouse)
 
 inline int32_t makePointerFlags(UINT message)
 {
-	int32_t flags = gmpi::api::GG_POINTER_FLAG_INCONTACT | gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
+	int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact)
+	              | static_cast<int32_t>(gmpi::api::PointerFlags::Primary)
+	              | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
 
 	switch(message)
 	{
 	case WM_MBUTTONDOWN:
 	case WM_LBUTTONDOWN:
 	case WM_RBUTTONDOWN:
-		flags |= gmpi::api::GG_POINTER_FLAG_NEW;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
 		break;
 	}
 
@@ -506,29 +508,29 @@ inline int32_t makePointerFlags(UINT message)
 	{
 	case WM_LBUTTONUP:
 	case WM_LBUTTONDOWN:
-		flags |= gmpi::api::GG_POINTER_FLAG_FIRSTBUTTON;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
 		break;
 	case WM_RBUTTONDOWN:
 	case WM_RBUTTONUP:
-		flags |= gmpi::api::GG_POINTER_FLAG_SECONDBUTTON;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
 		break;
 	case WM_MBUTTONDOWN:
 	case WM_MBUTTONUP:
-		flags |= gmpi::api::GG_POINTER_FLAG_THIRDBUTTON;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ThirdButton);
 		break;
 	}
 
 	if(GetKeyState(VK_SHIFT) < 0)
 	{
-		flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
 	}
 	if(GetKeyState(VK_CONTROL) < 0)
 	{
-		flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
 	}
 	if(GetKeyState(VK_MENU) < 0)
 	{
-		flags |= gmpi::api::GG_POINTER_KEY_ALT;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
 	}
 
 	return flags;
@@ -536,19 +538,20 @@ inline int32_t makePointerFlags(UINT message)
 
 inline int32_t makeWheelFlags(UINT message, WPARAM wParam)
 {
-	int32_t flags = gmpi::api::GG_POINTER_FLAG_PRIMARY | gmpi::api::GG_POINTER_FLAG_CONFIDENCE;
+	int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::Primary)
+	              | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
 
 	if(WM_MOUSEHWHEEL == message)
-		flags |= gmpi::api::GG_POINTER_SCROLL_HORIZ;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ScrollHoriz);
 
 	const auto fwKeys = GET_KEYSTATE_WPARAM(wParam);
 	if(MK_SHIFT & fwKeys)
 	{
-		flags |= gmpi::api::GG_POINTER_KEY_SHIFT;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
 	}
 	if(MK_CONTROL & fwKeys)
 	{
-		flags |= gmpi::api::GG_POINTER_KEY_CONTROL;
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
 	}
 
 	return flags;

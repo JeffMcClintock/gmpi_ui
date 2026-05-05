@@ -82,31 +82,6 @@ struct EventHelperClient
 
 @end
 
-namespace gmpi
-{
-namespace interaction
-{
-    // TODO niceify, centralize
-    enum GG_POINTER_FLAGS {
-        GG_POINTER_FLAG_NONE = 0,
-        GG_POINTER_FLAG_NEW = 0x01,                    // Indicates the arrival of a new pointer.
-        GG_POINTER_FLAG_INCONTACT = 0x04,
-        GG_POINTER_FLAG_FIRSTBUTTON = 0x10,
-        GG_POINTER_FLAG_SECONDBUTTON = 0x20,
-        GG_POINTER_FLAG_THIRDBUTTON = 0x40,
-        GG_POINTER_FLAG_FOURTHBUTTON = 0x80,
-        GG_POINTER_FLAG_CONFIDENCE = 0x00000400,    // Confidence is a suggestion from the source device about whether the pointer represents an intended or accidental interaction.
-        GG_POINTER_FLAG_PRIMARY = 0x00002000,    // First pointer to contact surface. Mouse is usually Primary.
-
-        GG_POINTER_SCROLL_HORIZ = 0x00008000,    // Mouse Wheel is scrolling horizontal.
-
-        GG_POINTER_KEY_SHIFT = 0x00010000,    // Modifer key - <SHIFT>.
-        GG_POINTER_KEY_CONTROL = 0x00020000,    // Modifer key - <CTRL> or <Command>.
-        GG_POINTER_KEY_ALT = 0x00040000,    // Modifer key - <ALT> or <Option>.
-    };
-}
-}
-
 inline NSRect gmpiRectToViewRect(NSRect viewbounds, gmpi::drawing::Rect const* rect)
 {
     #if USE_BACKING_BUFFER
@@ -1434,17 +1409,17 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     // <Shift> key?
     if(([theEvent modifierFlags ] & (NSEventModifierFlagShift | NSEventModifierFlagCapsLock)) != 0)
     {
-        flags |= gmpi::interaction::GG_POINTER_KEY_SHIFT;
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
     }
     
     if(([theEvent modifierFlags ] & NSEventModifierFlagControl) != 0)
     {
-        flags |= gmpi::interaction::GG_POINTER_KEY_CONTROL;
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
     }
     
     if(([theEvent modifierFlags ] & NSEventModifierFlagOption) != 0) // <Option> key.
     {
-        flags |= gmpi::interaction::GG_POINTER_KEY_ALT;
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
     }
 }
 
@@ -1454,9 +1429,9 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     
     [[self window] makeFirstResponder:self]; // take focus off any text-edit. Works but does not dimiss it.
  
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     const auto p = mouseToGmpi(self, theEvent);
@@ -1471,9 +1446,9 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 {
     drawingFrame.removeTextEdit();
 
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     const auto p = mouseToGmpi(self, theEvent);
@@ -1491,9 +1466,9 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 - (void)rightMouseUp:(NSEvent *)theEvent
 {
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_NEW;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_SECONDBUTTON;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     
@@ -1502,8 +1477,8 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 }
 
 - (void)mouseUp:(NSEvent *)theEvent {
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     
@@ -1513,8 +1488,8 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 
 - (void)mouseDragged:(NSEvent *)theEvent {
 
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     
@@ -1527,7 +1502,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     auto deltaX = theEvent.deltaX;
     auto deltaY = theEvent.deltaY;
  
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
     gmpi_ApplyKeyModifiers(flags, theEvent);
 
     constexpr float wheelConversion = 120.0f; // on windows the wheel scrolls 120 per knotch
@@ -1537,7 +1512,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     }
     if(deltaX)
     {
-        flags |= gmpi::interaction::GG_POINTER_SCROLL_HORIZ;
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ScrollHoriz);
         // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaX, mousePos);
         //if(drawingFrame.inputClient)
         //    drawingFrame.inputClient->onMouseWheel(mouseToGmpi(self, theEvent), flags);
@@ -1562,8 +1537,8 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
    
     [self ToolTipOnMouseActivity];
     
-    int32_t flags = gmpi::interaction::GG_POINTER_FLAG_INCONTACT | gmpi::interaction::GG_POINTER_FLAG_PRIMARY | gmpi::interaction::GG_POINTER_FLAG_CONFIDENCE;
-    flags |= gmpi::interaction::GG_POINTER_FLAG_FIRSTBUTTON;
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
     gmpi_ApplyKeyModifiers(flags, theEvent);
     

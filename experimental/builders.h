@@ -300,6 +300,7 @@ struct TextEditView : public View
 	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<std::string> text;
 	bool rightAlign = false;
+	bool multiLine = false;
 
 	mutable gmpi::shared_ptr<gmpi::api::ITextEdit> textEdit;
 

@@ -261,10 +261,16 @@ public:
 	{ 0x3f8e7b2a, 0xc5d1, 0x4e09, { 0xa3, 0xb6, 0x8d, 0x2f, 0x1c, 0x4e, 0x5a, 0x70 } };
 };
 
+enum class TextMultilineFlag : int32_t
+{
+	SingleLine = 0,
+	MultiLine = 1 << 16,
+};
+
 struct DECLSPEC_NOVTABLE ITextEdit : gmpi::api::IUnknown
 {
 	virtual ReturnCode setText(const char* text) = 0;
-	virtual ReturnCode setAlignment(int32_t alignment) = 0;
+	virtual ReturnCode setAlignment(int32_t alignment) = 0; // ref: gmpi::drawing::TextAlignment and TextMultilineFlag
 	virtual ReturnCode setTextSize(float height) = 0;
 	virtual ReturnCode showAsync(/*const gmpi::drawing::Rect* rect,*/ gmpi::api::IUnknown* callback) = 0;
 

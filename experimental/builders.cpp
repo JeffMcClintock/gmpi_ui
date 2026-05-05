@@ -60,7 +60,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		theme.controlText
 		, gmpi::drawing::Colors::TransparentBlack
 	);
-	style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
+	style->textAlignment = (multiLine ? (int)gmpi::api::TextMultilineFlag::MultiLine : 0) | (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 
 	canvas.add(style);
 
@@ -93,9 +93,14 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 		clickDetector->onPointerDown_callback = [this, env, tbox](const primitive::PointerEvent*)
 			{
+				const int32_t flags =
+					  (multiLine ? (int32_t) gmpi::api::TextMultilineFlag::MultiLine : 0)
+					| (rightAlign ? (int32_t)gmpi::drawing::TextAlignment::Trailing : (int32_t)gmpi::drawing::TextAlignment::Leading);
+
 				// account for scrolling
 				auto mtx = tbox->getTransform();
-				const auto absoluteBounds = transformRect(mtx, gmpi::drawing::Rect{ 0.0f, 0.0f, getWidth(bounds), getHeight(bounds) });
+				const auto height = getHeight(getBounds()) * (multiLine ? 2.0f : 1.0f);
+				const auto absoluteBounds = transformRect(mtx, gmpi::drawing::Rect{ 0.0f, 0.0f, getWidth(bounds), height });
 
 				// creat text-editor
 				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
@@ -106,7 +111,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 					return;
 
 				// TODO: !!! set font (at least height).
-				textEdit->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
+				textEdit->setAlignment(flags);
 				textEdit->setText(tbox->text.c_str());
 
 				textEdit->showAsync(

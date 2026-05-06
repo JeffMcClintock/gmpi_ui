@@ -13,6 +13,7 @@
 #include "MacFileDialog.h"
 #define GMPI_MAC_KEYLISTENER_IMPLEMENTATION
 #include "MacKeyListener.h"
+#include "MacEventHelpers.h"
 #import "helpers/IController.h"
 #include <algorithm>
 #include <array>
@@ -508,18 +509,6 @@ public:
     GMPI_REFCOUNT_NO_DELETE;
 };
 
-gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
-{
-    NSPoint localPoint = [view convertPoint: [theEvent locationInWindow] fromView: nil];
-    
-#if USE_BACKING_BUFFER
-    localPoint.y = view.bounds.origin.y + view.bounds.size.height - localPoint.y;
-#endif
-    
-    gmpi::drawing::Point p{(float)localPoint.x, (float)localPoint.y};
-    return p;
-}
-
 // Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
 #define GMPI_KEY_LISTENER_CLASS GMPI_KEY_LISTENER_VERSION_03
 
@@ -678,27 +667,6 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 
-//-------------------------------------------------------------------------------------------------------------
-#if 1
-void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
-{
-    // <Shift> key?
-    if(([theEvent modifierFlags ] & (NSEventModifierFlagShift | NSEventModifierFlagCapsLock)) != 0)
-    {
-        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
-    }
-    
-    if(([theEvent modifierFlags ] & NSEventModifierFlagControl) != 0)
-    {
-        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
-    }
-    
-    if(([theEvent modifierFlags ] & NSEventModifierFlagOption) != 0) // <Option> key.
-    {
-        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
-    }
-}
-
 - (void)mouseDown:(NSEvent *)theEvent
 {
     drawingFrame.removeTextEdit();
@@ -709,7 +677,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
     const auto p = mouseToGmpi(self, theEvent);
 
     if(drawingFrame.inputClient)
@@ -726,7 +694,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
     
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
     const auto p = mouseToGmpi(self, theEvent);
 
     gmpi::ReturnCode r = gmpi::ReturnCode::Unhandled;
@@ -746,7 +714,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
     
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
@@ -756,7 +724,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
@@ -767,7 +735,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
@@ -779,7 +747,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     auto deltaY = theEvent.deltaY;
  
     int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
 
     constexpr float wheelConversion = 120.0f; // on windows the wheel scrolls 120 per knotch
     if(deltaY)
@@ -816,7 +784,7 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
     int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
     
-    gmpi_ApplyKeyModifiers(flags, theEvent);
+    applyKeyModifiers(flags, theEvent);
     
     if(drawingFrame.inputClient)
         drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
@@ -853,7 +821,6 @@ void gmpi_ApplyKeyModifiers(int32_t& flags, NSEvent* theEvent)
         toolTipTimer = 2;
     }
 }
-#endif
 
 @end
 

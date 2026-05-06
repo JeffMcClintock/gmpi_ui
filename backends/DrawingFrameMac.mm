@@ -5,13 +5,15 @@
 #include "GmpiApiEditor.h"
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
-#include "DrawingFrameMac.h"
+// IMPLEMENTATION macros must be defined before the first include of each
+// single-header backend, including transitive includes via DrawingFrameMac.h.
 #define GMPI_MAC_TEXTEDIT_IMPLEMENTATION
+#define GMPI_MAC_KEYLISTENER_IMPLEMENTATION
+#include "DrawingFrameMac.h"
 #include "MacTextEdit.h"
 #include "MacPopupMenu.h"
 #include "MacStockDialog.h"
 #include "MacFileDialog.h"
-#define GMPI_MAC_KEYLISTENER_IMPLEMENTATION
 #include "MacKeyListener.h"
 #include "MacEventHelpers.h"
 #import "helpers/IController.h"

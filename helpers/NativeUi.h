@@ -88,7 +88,7 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	// client that also implements IDrawingClient, a single setHost override satisfies both.
 	virtual ReturnCode setHost(gmpi::api::IUnknown* host) = 0;
 
-	// Mouse events.
+	// Mouse events. ref PointerFlags for details of the flags parameter.
 	virtual ReturnCode setHover(bool isMouseOverMe) = 0;
 	virtual ReturnCode hitTest(gmpi::drawing::Point point, int32_t flags) = 0;
 

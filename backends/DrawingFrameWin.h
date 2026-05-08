@@ -406,11 +406,17 @@ class DxDrawingFrameBase :
 {
 	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
-protected:
+public:
+	// Public so external code (e.g. SEVSTGUIEditorWin.cpp's swapchain-recreate
+	// callback) can ask "is a client attached?" without going through a
+	// helper. Matches the public visibility SynthEditLib's old graphics_gmpi /
+	// editor_gmpi had before the Phase 4b collapse.
 	gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
 	gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
-	gmpi::api::IUnknown* parameterHost{};
 	gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
+
+protected:
+	gmpi::api::IUnknown* parameterHost{};
 
 	// Paint() uses Direct-2d which blocks on vsync. Therefore all invalid rects
 	// should be applied in one "hit", else windows message queue chokes calling

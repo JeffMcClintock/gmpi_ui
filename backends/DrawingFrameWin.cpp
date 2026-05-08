@@ -5,6 +5,7 @@
 #include <wrl.h> // Comptr
 #include <commctrl.h>
 #include <shobjidl.h>
+#include "Core/GmpiApiEditor.h" // for gmpi::api::IEditor in attachClient
 #include "./DrawingFrameWin.h"
 
 using namespace std;
@@ -566,6 +567,20 @@ void DxDrawingFrameBase::attachClient(gmpi::api::IUnknown* gfx)
 
 	// legacy
 	gfx->queryInterface(&gmpi::api::IGraphicsRedrawClient::guid, frameUpdateClient.put_void());
+
+	// Editor lifecycle: if the client implements gmpi::api::IEditor (via
+	// PluginEditorBase / forms.h::Form etc.), bind it as the host and run
+	// initialize() before the first paint. setHost on IEditor / IDrawingClient /
+	// IInputClient collapses to one override on the most-derived client class,
+	// so calling through any one of them is enough — but IEditor::initialize
+	// has no equivalent on the others, hence this extra QI.
+	gmpi::shared_ptr<gmpi::api::IEditor> ieditor;
+	gfx->queryInterface(&gmpi::api::IEditor::guid, ieditor.put_void());
+	if (ieditor)
+	{
+		ieditor->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+		ieditor->initialize();
+	}
 
 	if (drawingClient)
 	{

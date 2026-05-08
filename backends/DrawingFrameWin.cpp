@@ -59,27 +59,29 @@ HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWN
 	return windowHandle;
 }
 
-// Right-click context-menu fallback. Caller (WindowProc) has already dispatched
+// Right-click context-menu fallback. Caller has typically already dispatched
 // onPointerDown and only invokes this when the client returned Unhandled — so
 // don't re-fire onPointerDown here. Caches the menu in `contextMenu` to keep
-// it alive across the caller's release.
-void DxDrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t /*flags*/)
+// it alive across the caller's release. Returns the client's populateContextMenu
+// result (or Unhandled / NoSupport if we can't proceed) so callers can chain it.
+gmpi::ReturnCode DxDrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t /*flags*/)
 {
 	if (!inputClient)
-		return;
+		return gmpi::ReturnCode::Unhandled;
 
 	gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
 	if (createPopupMenu(&rect, unknown.put()) != gmpi::ReturnCode::Ok)
-		return;
+		return gmpi::ReturnCode::NoSupport;
 
 	contextMenu = unknown.as<gmpi::api::IPopupMenu>();
 	if (!contextMenu)
-		return;
+		return gmpi::ReturnCode::NoSupport;
 
-	inputClient->populateContextMenu(point, contextMenu.get());
+	const auto rc = inputClient->populateContextMenu(point, contextMenu.get());
 	contextMenu->showAsync();
+	return rc;
 }
 
 void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)

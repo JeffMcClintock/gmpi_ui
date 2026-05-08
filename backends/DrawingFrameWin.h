@@ -465,7 +465,10 @@ public:
 	// dangling. Called by attachClient (to swap clients) and detachAndRecreate.
 	void detachClient();
 	void detachAndRecreate();
-	void doContextMenu(gmpi::drawing::Point point, int32_t flags);
+	// Right-click context-menu helper. Returns Unhandled if no input client,
+	// NoSupport if the popup menu can't be created, or whatever the client's
+	// populateContextMenu returned. Caller decides what to do with the result.
+	gmpi::ReturnCode doContextMenu(gmpi::drawing::Point point, int32_t flags);
 
 	// Dirty-rect queue helpers. Concrete subclasses (HWND or SwapChainPanel)
 	// drain backBufferDirtyRects in their tick logic and forward the rects to
@@ -489,6 +492,14 @@ public:
 	// Thin wrapper around tempSharedD2DBase::PaintFrame — kept for symmetry with
 	// SE's call sites; new code should call PaintFrame directly.
 	void Paint(std::span<gmpi::drawing::RectL> dirty) { PaintFrame(dirty); }
+	// Drain-and-paint helper used by non-WM_PAINT-driven hosts (e.g. HostedView's
+	// SwapChainPanel timer): if there are queued dirty rects, paint them and clear.
+	void PaintQueuedDirtyRects()
+	{
+		if (!hasDirtyRects()) return;
+		Paint(getDirtyRects());
+		clearDirtyRects();
+	}
 
 	// IDrawingHost
 	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;

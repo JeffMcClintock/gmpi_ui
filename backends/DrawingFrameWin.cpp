@@ -556,6 +556,11 @@ bool DxDrawingFrameBase::onTimer()
 
 void DxDrawingFrameBase::attachClient(gmpi::api::IUnknown* gfx)
 {
+	// Detach any previous client first so its setHost(...) pointer back to us
+	// is cleared. Without this a stale ViewBase::drawingHost can outlive the
+	// frame's binding and crash on the next invalidation.
+	detachClient();
+
 	gfx->queryInterface(&gmpi::api::IDrawingClient::guid, drawingClient.put_void());
 	gfx->queryInterface(&gmpi::api::IInputClient::guid, inputClient.put_void());
 
@@ -568,15 +573,27 @@ void DxDrawingFrameBase::attachClient(gmpi::api::IUnknown* gfx)
 	}
 }
 
+void DxDrawingFrameBase::detachClient()
+{
+	// Notify the client that the host (drawing surface) is going away. setHost
+	// is shared across IDrawingClient/IInputClient via multiple-inheritance
+	// collapse, so calling through whichever pointer we have reaches the same
+	// override. After this the smart pointers are reset.
+	if (drawingClient)
+		drawingClient->setHost(nullptr);
+	else if (inputClient)
+		inputClient->setHost(nullptr);
+
+	frameUpdateClient = {};
+	inputClient = {};
+	drawingClient = {};
+}
+
 void DxDrawingFrameBase::detachAndRecreate()
 {
 	assert(!reentrant); // do this async please.
 
-	// detachClient();
-	frameUpdateClient = {};
-	inputClient = {};
-	drawingClient = {};
-
+	detachClient();
 	CreateSwapPanel(DrawingFactory.getD2dFactory());
 }
 
@@ -650,6 +667,26 @@ void DxDrawingFrameBase::OnPaint()
 
 	auto dirtyRects = updateRegion_native.getUpdateRects();
 	PaintFrame({ dirtyRects.data(), dirtyRects.size() });
+}
+
+bool tempSharedD2DBase::preparePaint(std::span<gmpi::drawing::RectL> /*dirtyRects*/)
+{
+	// IDXGIFactory2::IsCurrent returns false once the GPU adapter set has changed
+	// (e.g. laptop dock/undock, eGPU connect/disconnect, driver upgrade). When that
+	// happens the cached factory is stale and any further D3D calls on its devices
+	// will eventually fail; recreate the swap chain off the latest factory and
+	// skip this frame.
+	if (swapChain)
+	{
+		gmpi::directx::ComPtr<::IDXGIFactory2> dxgiFactory;
+		swapChain->GetParent(__uuidof(dxgiFactory), dxgiFactory.put_void());
+		if (dxgiFactory && !dxgiFactory->IsCurrent())
+		{
+			recreateSwapChainAndClientAsync();
+			return false;
+		}
+	}
+	return true;
 }
 
 void tempSharedD2DBase::PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects)

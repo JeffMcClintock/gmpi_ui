@@ -311,10 +311,11 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	void PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects);
 	virtual ID2D1Factory1* getD2dFactory() = 0;
 	virtual bool canPaint(std::span<gmpi::drawing::RectL> dirtyRects) = 0;
-	virtual bool preparePaint(std::span<gmpi::drawing::RectL> dirtyRects)
-	{
-		return true;
-	}
+	// Default impl checks DXGI factory currency — if the GPU adapter changed
+	// (e.g. laptop docking, switch to external GPU) the cached factory becomes
+	// non-current and we must recreate the swap chain before painting. Returning
+	// false here gates PaintFrame and triggers an async recreation.
+	virtual bool preparePaint(std::span<gmpi::drawing::RectL> dirtyRects);
 	virtual bool recreateDeviceOnPaint() const
 	{
 		return false;
@@ -439,6 +440,11 @@ public:
 	}
 
 	void attachClient(gmpi::api::IUnknown* gfx);
+	// Detach the current client cleanly: notifies via setHost(nullptr) before
+	// dropping the smart pointers, so any client cache of the host (e.g. a view's
+	// `host` member used to flush invalidations) is cleared rather than left
+	// dangling. Called by attachClient (to swap clients) and detachAndRecreate.
+	void detachClient();
 	void detachAndRecreate();
 	void doContextMenu(gmpi::drawing::Point point, int32_t flags);
 

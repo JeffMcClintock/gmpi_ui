@@ -41,6 +41,22 @@ namespace win32
 		const gmpi::drawing::Rect* rect,
 		float dpiScale,
 		gmpi::api::IUnknown** returnTextEdit);
+
+	// Shared Win32 IFileDialog factory. `dialogType` is gmpi::api::FileDialogType.
+	// Returns an addRef'd IFileDialog via returnDialog; caller owns the ref.
+	gmpi::ReturnCode createPlatformFileDialog(
+		HWND parentWnd,
+		int32_t dialogType,
+		gmpi::api::IUnknown** returnDialog);
+
+	// Shared Win32 IStockDialog factory (MessageBoxW-backed). `dialogType` is
+	// gmpi::api::StockDialogType. Title/text are UTF-8.
+	gmpi::ReturnCode createPlatformStockDialog(
+		HWND parentWnd,
+		int32_t dialogType,
+		const char* title,
+		const char* text,
+		gmpi::api::IUnknown** returnDialog);
 } // namespace win32
 
 class UpdateRegionWinGdi

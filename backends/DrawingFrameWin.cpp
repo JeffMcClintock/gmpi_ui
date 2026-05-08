@@ -1526,8 +1526,9 @@ public:
 
 gmpi::ReturnCode DxDrawingFrameBase::createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog)
 {
-	*returnDialog = new GMPI_WIN_StockDialog(getWindowHandle(), static_cast<gmpi::api::StockDialogType>(dialogType), title, text);
-	return gmpi::ReturnCode::Ok;
+	// Delegate to the shared factory so SynthEditLib's DrawingFrameBase2 hits the
+	// same code path.
+	return gmpi::hosting::win32::createPlatformStockDialog(getWindowHandle(), dialogType, title, text, returnDialog);
 }
 
 class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
@@ -2171,9 +2172,51 @@ private:
 
 gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog)
 {
-	*returnDialog = new GMPI_WIN_FileDialog(getWindowHandle(), static_cast<gmpi::api::FileDialogType>(dialogType));
+	// Delegate to the shared factory so SynthEditLib's DrawingFrameBase2 hits the
+	// same code path.
+	return gmpi::hosting::win32::createPlatformFileDialog(getWindowHandle(), dialogType, returnDialog);
+}
+
+// ---------------------------------------------------------------------
+// Shared Win32 dialog factories. Counterparts to createPlatformTextEdit
+// — both DxDrawingFrameBase (gmpi_ui) and DrawingFrameBase2 (SynthEditLib)
+// route here so the GMPI_WIN_FileDialog / GMPI_WIN_StockDialog classes
+// remain the single source of truth and stay file-scope private.
+// ---------------------------------------------------------------------
+namespace win32 {
+
+gmpi::ReturnCode createPlatformFileDialog(
+	HWND parentWnd,
+	int32_t dialogType,
+	gmpi::api::IUnknown** returnDialog)
+{
+	if (!returnDialog)
+		return gmpi::ReturnCode::Fail;
+
+	// GMPI_REFCOUNT initializes refCount2_ = 1, so the freshly-`new`'d object
+	// already holds the single refcount we hand to the caller.
+	*returnDialog = new GMPI_WIN_FileDialog(parentWnd, static_cast<gmpi::api::FileDialogType>(dialogType));
 	return gmpi::ReturnCode::Ok;
 }
+
+gmpi::ReturnCode createPlatformStockDialog(
+	HWND parentWnd,
+	int32_t dialogType,
+	const char* title,
+	const char* text,
+	gmpi::api::IUnknown** returnDialog)
+{
+	if (!returnDialog)
+		return gmpi::ReturnCode::Fail;
+
+	*returnDialog = new GMPI_WIN_StockDialog(parentWnd,
+		static_cast<gmpi::api::StockDialogType>(dialogType),
+		title ? title : "",
+		text ? text : "");
+	return gmpi::ReturnCode::Ok;
+}
+
+} // namespace win32
 } //namespace
 } //namespace
 

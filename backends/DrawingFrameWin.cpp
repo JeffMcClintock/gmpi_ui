@@ -1257,7 +1257,9 @@ gmpi::ReturnCode DxDrawingFrameBase::releaseCapture()
 // IDialogHost
 gmpi::ReturnCode DxDrawingFrameBase::createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit)
 {
-	return gmpi::ReturnCode::NoSupport;
+	// Delegate to the shared factory so SynthEditLib's DrawingFrameBase2 hits the
+	// same code path. See win32::createPlatformTextEdit (DrawingFrameWin.h).
+	return gmpi::hosting::win32::createPlatformTextEdit(getWindowHandle(), r, DipsToWindow._22, returnTextEdit);
 }
 
 namespace privateStuff
@@ -1681,6 +1683,303 @@ gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(const gmpi::drawing::Rect* 
 	*returnMenu = contextMenu.get();
 	return gmpi::ReturnCode::Ok;
 }
+
+// =====================================================================
+// Win32 modal-dialog ITextEdit implementation. Adapted from the legacy
+// GmpiGuiHosting::PGCC_PlatformTextEntry but exposing the new
+// gmpi::api::ITextEdit interface. Single source of truth — both
+// DxDrawingFrameBase and SynthEditLib's DrawingFrameBase2 instantiate
+// this via gmpi::hosting::win32::createPlatformTextEdit.
+//
+// The control is a one-line/multi-line EDIT inside an in-memory
+// DLGTEMPLATE. The dialog proc captures the final text before EndDialog
+// and reports it via ITextEditCallback::onChanged followed by onComplete.
+// =====================================================================
+namespace
+{
+	// Per-dialog state. We can't use the dialog's user data (DialogBoxIndirect
+	// doesn't accept a param), so we stash a pointer in TLS for the lifetime of
+	// showAsync. A modal dialog blocks reentry on the same thread, so a single
+	// thread_local pointer is sufficient.
+	struct GMPI_WIN_TextEditState
+	{
+		std::string text;
+		bool multiline = false;
+		int dialogX = 0;
+		int dialogY = 0;
+		int dialogW = 0;
+		int dialogH = 0;
+		HFONT dialogFont = nullptr;
+	};
+	thread_local GMPI_WIN_TextEditState* currentTextEditState = nullptr;
+
+	constexpr int GMPI_TE_EDIT_ID = 100;
+
+	BOOL CALLBACK gmpiTextEditDlgProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		HWND child = ::GetWindow(hwndDlg, GW_CHILD);
+
+		switch (message)
+		{
+		case WM_NCACTIVATE: // <return>, click away
+		case WM_NEXTDLGCTL: // <tab> key
+			if (wParam == FALSE) // user clicked away
+			{
+				PostMessage(hwndDlg, WM_COMMAND, (WPARAM)IDOK, (LPARAM)0);
+				return TRUE; // suppress default beep
+			}
+			break;
+
+		case WM_ACTIVATE:
+			if (LOWORD(wParam) == WA_INACTIVE)
+			{
+				PostMessage(hwndDlg, WM_COMMAND, (WPARAM)IDOK, (LPARAM)0);
+				return TRUE;
+			}
+			else if (currentTextEditState)
+			{
+				SendMessage(child, WM_SETFONT, (WPARAM)currentTextEditState->dialogFont, MAKELPARAM(TRUE, 0));
+				::SetWindowPos(hwndDlg, 0,
+					currentTextEditState->dialogX, currentTextEditState->dialogY,
+					currentTextEditState->dialogW, currentTextEditState->dialogH, SWP_NOZORDER);
+				::SetWindowPos(child, 0, 0, 0,
+					currentTextEditState->dialogW, currentTextEditState->dialogH, SWP_NOZORDER);
+
+				const auto ws = privateStuff::Utf8ToWstring(currentTextEditState->text);
+				::SetWindowText(child, ws.c_str());
+				::SetFocus(child);
+				SendMessage(child, EM_SETSEL, (WPARAM)0, (LPARAM)-1); // select-all
+			}
+			break;
+
+		case WM_COMMAND:
+			switch (LOWORD(wParam))
+			{
+			case IDOK:
+			{
+				if (currentTextEditState)
+				{
+					std::wstring buf;
+					const size_t len = 1 + GetWindowTextLength(child);
+					buf.resize(len);
+					GetDlgItemText(hwndDlg, GMPI_TE_EDIT_ID, (LPWSTR)buf.data(), static_cast<int32_t>(len));
+					if (!buf.empty() && buf.back() == 0)
+						buf.pop_back();
+					currentTextEditState->text = privateStuff::WStringToUtf8(buf);
+				}
+				EndDialog(hwndDlg, IDOK);
+				return TRUE;
+			}
+			case IDCANCEL:
+				EndDialog(hwndDlg, IDCANCEL);
+				return TRUE;
+			}
+			break;
+		}
+		return FALSE;
+	}
+
+	// Aligns a memory pointer to a DWORD boundary — required when building a
+	// DLGTEMPLATE in-memory because DLGITEMTEMPLATEs must be DWORD-aligned.
+	inline LPWORD lpwAlign(LPWORD lpIn)
+	{
+		auto ptr = ((uintptr_t)lpIn + 3) & ~(uintptr_t)0x03;
+		return (LPWORD)ptr;
+	}
+
+	class GMPI_WIN_TextEdit : public gmpi::api::ITextEdit
+	{
+		HWND parentWnd{};
+		float dpiScale = 1.0f;
+		float textHeight = 12.0f;
+		int32_t alignment = 0;
+		bool multiline = false;
+		gmpi::drawing::Rect editRect{};
+		std::string text;
+		gmpi::shared_ptr<gmpi::api::ITextEditCallback> callback;
+
+	public:
+		GMPI_WIN_TextEdit(HWND pParentWnd, const gmpi::drawing::Rect* rect, float dpi)
+			: parentWnd(pParentWnd)
+			, dpiScale(dpi)
+			, editRect(*rect)
+		{
+		}
+
+		gmpi::ReturnCode setText(const char* ptext) override
+		{
+			text = ptext ? ptext : "";
+			return gmpi::ReturnCode::Ok;
+		}
+
+		gmpi::ReturnCode setAlignment(int32_t palignment) override
+		{
+			alignment = palignment & 0x03;
+			multiline = (palignment & static_cast<int32_t>(gmpi::api::TextMultilineFlag::MultiLine)) != 0;
+			return gmpi::ReturnCode::Ok;
+		}
+
+		gmpi::ReturnCode setTextSize(float height) override
+		{
+			textHeight = height;
+			return gmpi::ReturnCode::Ok;
+		}
+
+		gmpi::ReturnCode showAsync(gmpi::api::IUnknown* pcallback) override
+		{
+			// Self-extend lifetime across the modal dialog and the callback chain.
+			// oldCb->OnComplete (invoked through the bridge inside our callback->
+			// onComplete) typically releases the LegacyTextEditAdapter that owns
+			// us (e.g. EditWidget::OnTextEnteredComplete sets nativeEdit=nullptr).
+			// Without this addRef we get deleted while still on the call stack
+			// inside this very showAsync — and `callback = {}` then crashes.
+			// SelfReleaseGuard balances on every return path, including early ones.
+			struct SelfReleaseGuard { GMPI_WIN_TextEdit* self; ~SelfReleaseGuard() { self->release(); } };
+			addRef();
+			SelfReleaseGuard guard{ this };
+
+			if (pcallback)
+				pcallback->queryInterface(&gmpi::api::ITextEditCallback::guid, callback.put_void());
+
+			// Convert DIP rect to native pixels for placement.
+			const auto nativeLeft   = editRect.left   * dpiScale;
+			const auto nativeTop    = editRect.top    * dpiScale;
+			const auto nativeRight  = editRect.right  * dpiScale;
+			const auto nativeBottom = editRect.bottom * dpiScale;
+
+			POINT clientOffset{ 0, 0 };
+			ClientToScreen(parentWnd, &clientOffset);
+
+			GMPI_WIN_TextEditState state;
+			state.text = text;
+			state.multiline = multiline;
+			state.dialogX = clientOffset.x + static_cast<int32_t>(0.5f + nativeLeft);
+			state.dialogY = clientOffset.y + static_cast<int32_t>(0.5f + nativeTop);
+			state.dialogW = static_cast<int32_t>(0.5f + (nativeRight - nativeLeft));
+			state.dialogH = static_cast<int32_t>(0.5f + (nativeBottom - nativeTop));
+			const int gdiFontSize = -static_cast<int32_t>(0.5f + dpiScale * textHeight); // negative = pixel height
+			state.dialogFont = CreateFont(gdiFontSize, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE,
+				0, 0, 0, 0, 0, NULL);
+
+			currentTextEditState = &state;
+
+			// Build an in-memory DLGTEMPLATE containing a single EDIT control. Using
+			// DialogBoxIndirect rather than a resource ID keeps gmpi_ui free of any
+			// .rc dependency.
+			HGLOBAL hgbl = GlobalAlloc(GMEM_ZEROINIT, 1024);
+			if (!hgbl)
+			{
+				DeleteObject(state.dialogFont);
+				currentTextEditState = nullptr;
+				return gmpi::ReturnCode::Fail;
+			}
+
+			LPDLGTEMPLATE lpdt = (LPDLGTEMPLATE)GlobalLock(hgbl);
+			lpdt->style = DS_FIXEDSYS | WS_POPUP;
+			lpdt->cdit  = 1;
+			lpdt->x = 10; lpdt->y = 10;
+			lpdt->cx = 100; lpdt->cy = 100;
+
+			LPWORD lpw = (LPWORD)(lpdt + 1);
+			*lpw++ = 0; // no menu
+			*lpw++ = 0; // default class
+			*lpw++ = 0; // empty title (single null wchar)
+
+			lpw = lpwAlign(lpw); // DLGITEMTEMPLATE must be DWORD-aligned
+			LPDLGITEMTEMPLATE lpdit = (LPDLGITEMTEMPLATE)lpw;
+			lpdit->x  = 10; lpdit->y  = 10;
+			lpdit->cx = 40; lpdit->cy = 20;
+			lpdit->id = GMPI_TE_EDIT_ID;
+			lpdit->dwExtendedStyle = WS_EX_CLIENTEDGE;
+			lpdit->style = WS_CHILD | WS_VISIBLE;
+
+			if (multiline)
+				lpdit->style |= (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN);
+			else
+				lpdit->style |= ES_AUTOHSCROLL;
+
+			// Map gmpi::drawing::TextAlignment (Leading/Center/Trailing) to ES_*.
+			switch (alignment)
+			{
+			case static_cast<int32_t>(gmpi::drawing::TextAlignment::Trailing):
+				lpdit->style |= ES_RIGHT;
+				break;
+			case static_cast<int32_t>(gmpi::drawing::TextAlignment::Center):
+				lpdit->style |= ES_CENTER;
+				break;
+			case static_cast<int32_t>(gmpi::drawing::TextAlignment::Leading):
+			default:
+				lpdit->style |= ES_LEFT;
+				break;
+			}
+
+			lpw = (LPWORD)(lpdit + 1);
+			*lpw++ = 0xFFFF;   // pre-defined class signature
+			*lpw++ = 0x0081;   // EDIT class
+			*lpw++ = 0;        // no creation data
+
+			GlobalUnlock(hgbl);
+
+			HMODULE hmodule = nullptr;
+			GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				(LPCWSTR)&gmpiTextEditDlgProc, &hmodule);
+
+			const auto dr = DialogBoxIndirect((HINSTANCE)hmodule,
+				(LPDLGTEMPLATE)hgbl,
+				parentWnd,
+				(DLGPROC)gmpiTextEditDlgProc);
+
+			GlobalFree(hgbl);
+			DeleteObject(state.dialogFont);
+
+			text = state.text;
+			currentTextEditState = nullptr;
+
+			if (callback)
+			{
+				// Push final text before completion. The dialog proc accumulates the
+				// text into state.text on IDOK; for cancel we leave the original.
+				if (dr == IDOK)
+					callback->onChanged(text.c_str());
+
+				callback->onComplete(dr == IDOK ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Cancel);
+				callback = {};
+			}
+
+			return gmpi::ReturnCode::Ok;
+		}
+
+		gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+		{
+			*returnInterface = {};
+			GMPI_QUERYINTERFACE(gmpi::api::ITextEdit);
+			return gmpi::ReturnCode::NoSupport;
+		}
+		GMPI_REFCOUNT
+	};
+} // anonymous namespace
+
+// We are already inside `namespace gmpi { namespace hosting {` (opened at the
+// top of this TU), so just open the inner win32 namespace here.
+namespace win32 {
+
+gmpi::ReturnCode createPlatformTextEdit(
+	HWND parentWnd,
+	const gmpi::drawing::Rect* rect,
+	float dpiScale,
+	gmpi::api::IUnknown** returnTextEdit)
+{
+	if (!rect || !returnTextEdit)
+		return gmpi::ReturnCode::Fail;
+
+	// GMPI_REFCOUNT initializes refCount2_ = 1, so the freshly-`new`'d object
+	// already holds the single refcount we hand to the caller. No extra addRef.
+	auto* edit = new GMPI_WIN_TextEdit(parentWnd, rect, dpiScale);
+	*returnTextEdit = static_cast<gmpi::api::ITextEdit*>(edit);
+	return gmpi::ReturnCode::Ok;
+}
+
+} // namespace win32
 
 gmpi::ReturnCode DxDrawingFrameBase::createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener)
 {

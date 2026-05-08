@@ -29,6 +29,20 @@ namespace hosting
 std::wstring RegisterWindowsClass(HINSTANCE dllHandle, WNDPROC windowProc);
 HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWND parentWnd, RECT r, LONG_PTR userData);
 
+namespace win32
+{
+	// Single shared Win32 implementation of gmpi::api::ITextEdit. Used by both the
+	// gmpi_ui DxDrawingFrameBase and SynthEditLib's DrawingFrameBase2 so the modal
+	// edit-box logic lives in exactly one place. Returns an addRef'd ITextEdit via
+	// returnTextEdit; the caller takes ownership. `rect` is in DIPs; the factory
+	// applies dpiScale internally.
+	gmpi::ReturnCode createPlatformTextEdit(
+		HWND parentWnd,
+		const gmpi::drawing::Rect* rect,
+		float dpiScale,
+		gmpi::api::IUnknown** returnTextEdit);
+} // namespace win32
+
 class UpdateRegionWinGdi
 {
 	HRGN hRegion = 0;

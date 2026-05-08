@@ -382,25 +382,8 @@ float DxDrawingFrameBase::getRasterizationScale()
 	return GetDpiForWindow(getWindowHandle()) / 96.f;
 }
 
-void DxDrawingFrameBase::initTooltip()
-{
-  tooltip.init(getDllHandle(), getWindowHandle());
-}
-
-void DxDrawingFrameBase::TooltipOnMouseActivity()
-{
-    tooltip.onMouseActivity(getWindowHandle());
-}
-
-void DxDrawingFrameBase::ShowToolTip()
-{
-    tooltip.show(getWindowHandle());
-}
-
-void DxDrawingFrameBase::HideToolTip()
-{
-   tooltip.hide(getWindowHandle());
-}
+// Tooltip forwarders (initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip)
+// are now inline on tempSharedD2DBase.
 
 LRESULT DxDrawingFrameBase::WindowProc(
 	HWND hwnd, 

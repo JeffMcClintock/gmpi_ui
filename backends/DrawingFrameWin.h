@@ -363,6 +363,15 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 		::ReleaseCapture();
 		return gmpi::ReturnCode::Ok;
 	}
+
+	// Native Win32 tooltip — same forwarder shape in every Win32 frame, hoisted
+	// here so the four 1-line indirections aren't duplicated. HostedView (WinUI3)
+	// doesn't use this and pays only the small ToolTipManager footprint.
+	ToolTipManager tooltip;
+	void initTooltip()           { tooltip.init(getDllHandle(), getWindowHandle()); }
+	void TooltipOnMouseActivity(){ tooltip.onMouseActivity(getWindowHandle()); }
+	void ShowToolTip()           { tooltip.show(getWindowHandle()); }
+	void HideToolTip()           { tooltip.hide(getWindowHandle()); }
 };
 
 // Base class for JuceDrawingFrameBase, DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
@@ -386,7 +395,8 @@ protected:
 
 	// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
 	DirtyRectQueue backBufferDirtyRects;
-	ToolTipManager tooltip;
+	// `tooltip` member + initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip
+	// now live on tempSharedD2DBase.
 	bool isTrackingMouse = false;
 	gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 
@@ -471,10 +481,7 @@ public:
 
 	GMPI_REFCOUNT_NO_DELETE;
 
-	void initTooltip();
-	void TooltipOnMouseActivity();
-	void ShowToolTip();
-	void HideToolTip();
+	// initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip now live on tempSharedD2DBase.
 	void sizeClientDips(float width, float height) override;
 	bool onTimer() override;
 	virtual void autoScrollStart() {}

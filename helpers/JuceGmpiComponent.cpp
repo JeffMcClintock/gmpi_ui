@@ -70,7 +70,7 @@ public:
 
 #ifdef _WIN32
 
-class JuceDrawingFrameBase : public gmpi::hosting::DxDrawingFrameBase
+class JuceDrawingFrameBase : public gmpi::hosting::DxDrawingFrameHwnd
 {
 	juce::HWNDComponent& juceComponent;
 	int pollHdrChangesCount = 100;
@@ -96,7 +96,7 @@ LRESULT CALLBACK DrawingFrameWindowProc(
 	WPARAM wParam,
 	LPARAM lParam)
 {
-	auto drawingFrame = (gmpi::hosting::DxDrawingFrameBase*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+	auto drawingFrame = (gmpi::hosting::DxDrawingFrameHwnd*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 	if (drawingFrame)
 	{
 		return drawingFrame->WindowProc(hwnd, message, wParam, lParam);
@@ -111,7 +111,7 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 	RECT r{ 0, 0, width ,height };
 
 	const auto windowClass = gmpi::hosting::RegisterWindowsClass(getDllHandle(), DrawingFrameWindowProc);
-	const auto lwindowHandle = gmpi::hosting::CreateHostingWindow(getDllHandle(), windowClass, (HWND)pparentWnd, r, (LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameBase*>(this));
+	const auto lwindowHandle = gmpi::hosting::CreateHostingWindow(getDllHandle(), windowClass, (HWND)pparentWnd, r, (LONG_PTR)static_cast<gmpi::hosting::DxDrawingFrameHwnd*>(this));
 
 	if (!lwindowHandle)
 		return;

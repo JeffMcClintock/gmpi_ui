@@ -386,8 +386,8 @@ float DxDrawingFrameBase::getRasterizationScale()
 // Tooltip forwarders (initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip)
 // are now inline on tempSharedD2DBase.
 
-LRESULT DxDrawingFrameBase::WindowProc(
-	HWND hwnd, 
+LRESULT DxDrawingFrameHwnd::WindowProc(
+	HWND hwnd,
 	UINT message,
 	WPARAM wParam,
 	LPARAM lParam)
@@ -530,7 +530,7 @@ void DxDrawingFrameBase::sizeClientDips(float width, float height)
 }
 
 // Ideally this is called at 60Hz so we can draw as fast as practical, but without blocking to wait for Vsync all the time (makes host unresponsive).
-bool DxDrawingFrameBase::onTimer()
+bool DxDrawingFrameHwnd::onTimer()
 {
 	auto hwnd = getWindowHandle();
 	if (hwnd == nullptr
@@ -623,9 +623,14 @@ bool DxDrawingFrameBase::canPaint(std::span<gmpi::drawing::RectL> dirtyRects)
 
 void DxDrawingFrameBase::renderFrame(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects)
 {
-	// The context type is the only thing that varies between gmpi_ui hosts and
-	// SynthEditLib's DrawingFrameBase2 (which constructs UniversalGraphicsContext
-	// to dispatch SDK3 IIDs). The dirty-rect loop is shared via paintLoop.
+	// Dispatch to the customisation point — derived classes (notably SE's
+	// DrawingFrameBase2) override renderInDeviceContext to swap in a different
+	// IDeviceContext concrete type. The renderFrame body itself is invariant.
+	renderInDeviceContext(deviceContext, dirtyRects);
+}
+
+void DxDrawingFrameBase::renderInDeviceContext(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects)
+{
 	gmpi::directx::GraphicsContext context(deviceContext, &DrawingFactory);
 	Graphics graphics(&context);
 
@@ -635,13 +640,9 @@ void DxDrawingFrameBase::renderFrame(ID2D1DeviceContext* deviceContext, std::spa
 	{
 		ReleaseDevice();
 	}
-
-	// (The previous on-canvas FPS counter was a compile-time-disabled debug
-	// helper. Removed in favour of the shared paintLoop; resurrect via git
-	// history if needed.)
 }
 
-void DxDrawingFrameBase::OnPaint()
+void DxDrawingFrameHwnd::OnPaint()
 {
 	updateRegion_native.copyDirtyRects(getWindowHandle(), swapChainSize);
 	ValidateRect(getWindowHandle(), NULL);
@@ -1119,7 +1120,7 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 	invalidateRect(nullptr); // force redraw with new white level.
 }
 
-HRESULT DxDrawingFrameBase::createNativeSwapChain
+HRESULT DxDrawingFrameHwnd::createNativeSwapChain
 (
 	IDXGIFactory2* factory,
 	ID3D11Device* d3dDevice,
@@ -1254,14 +1255,21 @@ void DxDrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 {
 	if (invalidRect)
 	{
-       backBufferDirtyRects.add(invalidRect, DipsToWindow);
+		backBufferDirtyRects.add(invalidRect, DipsToWindow);
 	}
 	else
 	{
-        drawing::RectL r;
-		GetClientRect(getWindowHandle(), reinterpret_cast<RECT*>( &r ));
-       backBufferDirtyRects.add(r);
+		// Full-surface invalidation — defer to the leaf for the actual extent
+		// (HWND uses GetClientRect, SwapChainPanel uses the panel size).
+		backBufferDirtyRects.add(getFullDirtyRect());
 	}
+}
+
+gmpi::drawing::RectL DxDrawingFrameHwnd::getFullDirtyRect()
+{
+	RECT clientRect{};
+	GetClientRect(getWindowHandle(), &clientRect);
+	return { clientRect.left, clientRect.top, clientRect.right, clientRect.bottom };
 }
 
 // IInputHost (setCapture/getCapture/releaseCapture) is now inline on tempSharedD2DBase.

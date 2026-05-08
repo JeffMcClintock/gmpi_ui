@@ -302,6 +302,10 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 		DXGI_SWAP_CHAIN_DESC1* desc,
 		IDXGISwapChain1** returnSwapChain
 	) = 0;
+	// "Invalidate everything" extent — the surface bounds of the frame in pixel
+	// coordinates. HWND hosts use GetClientRect; SwapChainPanel hosts use the
+	// panel size. Used by invalidateRect(nullptr) and similar full-redraw paths.
+	virtual gmpi::drawing::RectL getFullDirtyRect() = 0;
 
 	void recreateSwapChainAndClientAsync();
 	void setWhiteLevel(float newWhiteLevel);
@@ -386,61 +390,55 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	void HideToolTip()           { tooltip.hide(getWindowHandle()); }
 };
 
-// Base class for JuceDrawingFrameBase, DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
+// Editor-host base. Adds client management (drawingClient/inputClient/IEditor
+// lifecycle), the render pipeline, and IDialogHost on top of tempSharedD2DBase's
+// swapchain machinery.
 //
-// IInputHost is now inherited via tempSharedD2DBase (single path, avoids the
-// IUnknown-via-IInputHost diamond that would otherwise appear).
+// NO HWND coupling lives here. HostedView (WinUI3 SwapChainPanel host) inherits
+// this layer directly, as does SynthEditLib's DrawingFrameBase2. HWND-specific
+// stuff (WindowProc, GDI dirty region, mouse tracking, timer-driven invalidation)
+// lives on DxDrawingFrameHwnd below.
+//
+// IInputHost is inherited via tempSharedD2DBase (single path).
 class DxDrawingFrameBase :
 	public tempSharedD2DBase,
-	public gmpi::api::IDialogHost,
-	public gmpi::TimerClient
+	public gmpi::api::IDialogHost
 {
-	UpdateRegionWinGdi updateRegion_native;
 	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
 protected:
-   gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
+	gmpi::shared_ptr<gmpi::api::IDrawingClient> drawingClient;
 	gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
 	gmpi::api::IUnknown* parameterHost{};
 	gmpi::shared_ptr<gmpi::api::IGraphicsRedrawClient> frameUpdateClient;
 
-	// Paint() uses Direct-2d which block on vsync. Therefore all invalid rects should be applied in one "hit", else windows message queue chokes calling WM_PAINT repeately and blocking on every rect.
+	// Paint() uses Direct-2d which blocks on vsync. Therefore all invalid rects
+	// should be applied in one "hit", else windows message queue chokes calling
+	// WM_PAINT repeatedly and blocking on every rect.
 	DirtyRectQueue backBufferDirtyRects;
-	// `tooltip` member + initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip
-	// now live on tempSharedD2DBase.
-	bool isTrackingMouse = false;
-	gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 
 public:
 	gmpi::directx::Factory DrawingFactory;
 
 	virtual ~DxDrawingFrameBase()
 	{
-		stopTimer();
-
 		ReleaseDevice();
 	}
 
-	// provids a default message handler. Note that some clients provide their own. e.g. MyFrameWndDirectX
-	LRESULT WindowProc(
-		HWND hwnd,
-		UINT message,
-		WPARAM wParam,
-		LPARAM lParam);
-
-	HRESULT createNativeSwapChain
-	(
-		IDXGIFactory2* factory,
-		ID3D11Device* d3dDevice,
-		DXGI_SWAP_CHAIN_DESC1* desc,
-		IDXGISwapChain1** returnSwapChain
-	) override;
 	ID2D1Factory1* getD2dFactory() override
 	{
 		return DrawingFactory.getD2dFactory();
 	}
 	bool canPaint(std::span<gmpi::drawing::RectL> dirtyRects) override;
 	void renderFrame(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects) override;
+
+	// Render-context customisation point. Default constructs a
+	// gmpi::directx::GraphicsContext, runs beginDraw/paintLoop/endDraw, and
+	// calls ReleaseDevice on endDraw failure. SE's DrawingFrameBase2 overrides
+	// this to construct UniversalGraphicsContext (which dispatches both GMPI
+	// and SDK3 IIDs in queryInterface). The renderFrame body itself doesn't
+	// vary — only the IDeviceContext type.
+	virtual void renderInDeviceContext(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects);
 
 	void OnSwapChainCreated() override;
 
@@ -458,9 +456,7 @@ public:
 	void detachAndRecreate();
 	void doContextMenu(gmpi::drawing::Point point, int32_t flags);
 
-	void OnPaint();
-
-	// IMpGraphicsHost
+	// IDrawingHost
 	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;
 	float getRasterizationScale() override; // DPI scaling
 	gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
@@ -497,15 +493,59 @@ public:
 
 	GMPI_REFCOUNT_NO_DELETE;
 
-	// initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip now live on tempSharedD2DBase.
 	void sizeClientDips(float width, float height) override;
-	bool onTimer() override;
 	virtual void autoScrollStart() {}
 	virtual void autoScrollStop() {}
 };
 
+// HWND-coupled editor frame. Adds Win32 message dispatch (WindowProc), GDI
+// dirty-region accounting (UpdateRegionWinGdi), mouse tracking via
+// TrackMouseEvent, and a TimerClient that drains backBufferDirtyRects via
+// InvalidateRect. Most VST3-style hosts inherit this layer; HostedView (WinUI3)
+// stays at DxDrawingFrameBase.
+class DxDrawingFrameHwnd :
+	public DxDrawingFrameBase,
+	public gmpi::TimerClient
+{
+protected:
+	UpdateRegionWinGdi updateRegion_native;
+	bool isTrackingMouse = false;
+	gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
+
+public:
+	virtual ~DxDrawingFrameHwnd()
+	{
+		stopTimer();
+	}
+
+	// Default message handler. Note that some clients provide their own
+	// (e.g. MyFrameWndDirectX wraps it).
+	LRESULT WindowProc(
+		HWND hwnd,
+		UINT message,
+		WPARAM wParam,
+		LPARAM lParam);
+
+	// Swapchain creation for native HWND owners — uses CreateSwapChainForHwnd.
+	// HostedView (and any future SwapChainPanel host) overrides this with
+	// CreateSwapChainForComposition.
+	HRESULT createNativeSwapChain
+	(
+		IDXGIFactory2* factory,
+		ID3D11Device* d3dDevice,
+		DXGI_SWAP_CHAIN_DESC1* desc,
+		IDXGISwapChain1** returnSwapChain
+	) override;
+
+	void OnPaint();
+	bool onTimer() override;
+
+	// tempSharedD2DBase pure virtual — full surface bounds via GetClientRect.
+	gmpi::drawing::RectL getFullDirtyRect() override;
+};
+
 // This is used in GMPI VST3. Native HWND window frame.
-class DrawingFrame : public DxDrawingFrameBase
+class DrawingFrame : public DxDrawingFrameHwnd
 {
 protected:
 	HWND windowHandle = {};

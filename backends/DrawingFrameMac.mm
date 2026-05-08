@@ -28,19 +28,10 @@ class DrawingFrameCocoa :
     public gmpi::api::IDrawingHost,
     public gmpi::api::IInputHost,
     public gmpi::api::IDialogHost
-
-//#ifdef GMPI_HOST_POINTER_SUPPORT
-//    public gmpi_gui::IMpGraphicsHost,
-//    public GmpiGuiHosting::PlatformTextEntryObserver,
-//#endif
 {
 public:
     int32_t mouseCaptured = 0;
 
-#ifdef GMPI_HOST_POINTER_SUPPORT
-    gmpi::shared_ptr<gmpi_gui_api::IMpGraphics3> client;
-    GmpiGuiHosting::PlatformTextEntry* currentTextEdit = nullptr;
-#endif
     gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
 
     gmpi::cocoa::Factory drawingFactory;
@@ -380,28 +371,10 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-    virtual gmpi::ReturnCode  createPlatformMenu(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformMenu** returnMenu) override
-    {
-        *returnMenu = new GmpiGuiHosting::PlatformMenu(view, rect);
-        return gmpi::ReturnCode::Ok;
-    }
-    virtual gmpi::ReturnCode  createPlatformTextEdit(gmpi::drawing::Rect* rect, gmpi_gui::IMpPlatformText** returnTextEdit) override
-    {
-        currentTextEdit = new GmpiGuiHosting::PlatformTextEntry(this, view, rect);
-        *returnTextEdit = currentTextEdit;
-        return gmpi::ReturnCode::Ok;
-    }
-    virtual gmpi::ReturnCode  createFileDialog(int32_t dialogType, gmpi_gui::IMpFileDialog** returnFileDialog) override
-    {
-        *returnFileDialog = new GmpiGuiHosting::PlatformFileDialog(dialogType, view);
-        return gmpi::ReturnCode::Ok;
-    }
-    virtual gmpi::ReturnCode  createOkCancelDialog(int32_t dialogType, gmpi_gui::IMpOkCancelDialog** returnDialog) override
-    {
-        *returnDialog = new GmpiGuiHosting::PlatformOkCancelDialog(dialogType, view);
-        return gmpi::ReturnCode::Ok;
-    }
-#endif
+    // Legacy SDK3 dialog overrides (gmpi_gui::IMpPlatform*) used to live here under
+    // #ifdef GMPI_HOST_POINTER_SUPPORT — never defined anywhere in the gmpi_ui
+    // build. Dead code referencing SDK3 types removed; modern dialog hosts live
+    // on DrawingFrameCommon / Mac*Dialog single-headers.
     
     // IUnknown methods
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -415,63 +388,14 @@ public:
             return parameterHost->queryInterface(iid, returnInterface);
 
         return gmpi::ReturnCode::NoSupport;
-#if 0
-        if (*iid == IDrawingHost::guid)
-        {
-            *returnInterface = reinterpret_cast<void*>(static_cast<IDrawingHost*>(this));
-            addRef();
-            return gmpi::ReturnCode::Ok;
-        }
-        if (*iid == IInputHost::guid)
-        {
-            // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-            *returnInterface = reinterpret_cast<void*>(static_cast<IInputHost*>(this));
-            addRef();
-            return gmpi::ReturnCode::Ok;
-        }
-        if (*iid == gmpi::api::IUnknown::guid)
-        {
-            *returnInterface = this;
-            addRef();
-            return gmpi::ReturnCode::Ok;
-        }
-#endif
-#if 0
-        if (iid == gmpi::MP_IID_UI_HOST2)
-        {
-            // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-            *returnInterface = reinterpret_cast<void*>(static_cast<IMpUserInterfaceHost2*>(this));
-            addRef();
-            return gmpi::ReturnCode::Ok;
-        }
-
-        if (iid == gmpi_gui::SE_IID_GRAPHICS_HOST || iid == gmpi_gui::SE_IID_GRAPHICS_HOST_BASE || iid == gmpi::MP_IID_UNKNOWN)
-        {
-            // important to cast to correct vtable (ug_plugin3 has 2 vtables) before reinterpret cast
-            *returnInterface = reinterpret_cast<void*>(static_cast<IMpGraphicsHost*>(this));
-            addRef();
-            return gmpi::ReturnCode::Ok;
-        }
-#endif
-        return gmpi::ReturnCode::NoSupport;
     }
 
-    void removeTextEdit()
-    {
-#if 0 // TODO!!!
-        if(!currentTextEdit)
-            return;
-        
-        currentTextEdit->CallbackFromCocoa(nil);
-#endif
-    }
-    
-#if 0 // TODO!!!
-    void onTextEditRemoved() override
-    {
-        currentTextEdit = nullptr;
-    }
-#endif
+    // Stub kept for the click-to-dismiss call sites in mouseDown/rightMouseDown.
+    // The legacy GmpiGuiHosting::PlatformTextEntry path it used to drive was
+    // gated by GMPI_HOST_POINTER_SUPPORT (never defined) and has been removed.
+    // GMPI_MAC_TextEdit dismisses itself when the user clicks elsewhere via the
+    // NSTextField endEditing notification, so this stub is currently a no-op.
+    void removeTextEdit() {}
     
     void initBackingBitmap()
     {

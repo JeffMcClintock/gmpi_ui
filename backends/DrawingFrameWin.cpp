@@ -1648,21 +1648,21 @@ public:
 
 	gmpi::ReturnCode setAlignment(int32_t alignment) override
 	{
-#if 0 // TODO
+		// gmpi::drawing::TextAlignment values: Leading=0, Trailing=1, Center=2.
+		// Binary-compatible with the legacy MP1_TEXT_ALIGNMENT_* constants.
 		switch (alignment)
 		{
-		case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_LEADING:
+		case static_cast<int32_t>(gmpi::drawing::TextAlignment::Leading):
 			align = TPM_LEFTALIGN;
 			break;
-		case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_CENTER:
+		case static_cast<int32_t>(gmpi::drawing::TextAlignment::Center):
 			align = TPM_CENTERALIGN;
 			break;
-		case GmpiDrawing_API::MP1_TEXT_ALIGNMENT_TRAILING:
+		case static_cast<int32_t>(gmpi::drawing::TextAlignment::Trailing):
 		default:
 			align = TPM_RIGHTALIGN;
 			break;
 		}
-#endif
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -1678,9 +1678,18 @@ public:
 
 gmpi::ReturnCode DxDrawingFrameBase::createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu)
 {
-	contextMenu.attach(new GMPI_WIN_PopupMenu(getWindowHandle(), r, DipsToWindow._22));
-	contextMenu->addRef(); // add an extra refcount so i can own it after caller releases.
+	// Build via the shared factory, then stash in `contextMenu` so the right-click
+	// path (doContextMenu) can keep the menu alive across the caller's release.
+	gmpi::shared_ptr<gmpi::api::IUnknown> tmp;
+	if (gmpi::ReturnCode::Ok != gmpi::hosting::win32::createPlatformPopupMenu(
+			getWindowHandle(), r, DipsToWindow._22, tmp.put()))
+		return gmpi::ReturnCode::Fail;
 
+	contextMenu = tmp.as<gmpi::api::IPopupMenu>();
+	if (!contextMenu)
+		return gmpi::ReturnCode::Fail;
+
+	contextMenu->addRef(); // extra refcount so we keep ownership after the caller releases.
 	*returnMenu = contextMenu.get();
 	return gmpi::ReturnCode::Ok;
 }
@@ -2213,6 +2222,22 @@ gmpi::ReturnCode createPlatformStockDialog(
 		static_cast<gmpi::api::StockDialogType>(dialogType),
 		title ? title : "",
 		text ? text : "");
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode createPlatformPopupMenu(
+	HWND parentWnd,
+	const gmpi::drawing::Rect* rect,
+	float dpiScale,
+	gmpi::api::IUnknown** returnMenu)
+{
+	if (!rect || !returnMenu)
+		return gmpi::ReturnCode::Fail;
+
+	// GMPI_REFCOUNT initializes refCount2_ = 1, so the freshly-`new`'d object
+	// already holds the single refcount we hand to the caller.
+	auto* menu = new GMPI_WIN_PopupMenu(parentWnd, rect, dpiScale);
+	*returnMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
 	return gmpi::ReturnCode::Ok;
 }
 

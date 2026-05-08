@@ -42,6 +42,16 @@ namespace win32
 		float dpiScale,
 		gmpi::api::IUnknown** returnTextEdit);
 
+	// Shared Win32 IPopupMenu factory. `rect` is in DIPs (only the top-left corner
+	// is used — that's where TrackPopupMenu pops the menu from). DPI scaling for
+	// menu position is currently a no-op (DPI=1 path), preserved from the legacy
+	// behaviour of both pre-existing implementations.
+	gmpi::ReturnCode createPlatformPopupMenu(
+		HWND parentWnd,
+		const gmpi::drawing::Rect* rect,
+		float dpiScale,
+		gmpi::api::IUnknown** returnMenu);
+
 	// Shared Win32 IFileDialog factory. `dialogType` is gmpi::api::FileDialogType.
 	// Returns an addRef'd IFileDialog via returnDialog; caller owns the ref.
 	gmpi::ReturnCode createPlatformFileDialog(

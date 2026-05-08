@@ -309,6 +309,17 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	void CreateDeviceSwapChainBitmap();
 	void OnSize(UINT width, UINT height);
 	void PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects);
+
+	// Shared dirty-rect render loop. Caller is responsible for beginDraw/endDraw —
+	// this just transforms each pixel-space dirty rect into a snap-out DIP-space
+	// clip and dispatches the client's render() inside it. Null-client falls back
+	// to clearing the clip to opaque black (matches SE's defensive behaviour).
+	// Used by both gmpi_ui's DxDrawingFrameBase and SynthEditLib's DrawingFrameBase2 —
+	// they only differ in which IDeviceContext concrete type they construct.
+	void paintLoop(
+		gmpi::drawing::api::IDeviceContext* deviceContext,
+		std::span<gmpi::drawing::RectL> dirtyRects,
+		gmpi::api::IDrawingClient* client);
 	virtual ID2D1Factory1* getD2dFactory() = 0;
 	virtual bool canPaint(std::span<gmpi::drawing::RectL> dirtyRects) = 0;
 	// Default impl checks DXGI factory currency — if the GPU adapter changed
@@ -384,7 +395,6 @@ class DxDrawingFrameBase :
 	public gmpi::api::IDialogHost,
 	public gmpi::TimerClient
 {
-	std::chrono::time_point<std::chrono::steady_clock> frameCountTime;
 	UpdateRegionWinGdi updateRegion_native;
 	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 

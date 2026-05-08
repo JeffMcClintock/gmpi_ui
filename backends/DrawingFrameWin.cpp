@@ -623,56 +623,22 @@ bool DxDrawingFrameBase::canPaint(std::span<gmpi::drawing::RectL> dirtyRects)
 
 void DxDrawingFrameBase::renderFrame(ID2D1DeviceContext* deviceContext, std::span<gmpi::drawing::RectL> dirtyRects)
 {
-	gmpi::directx::GraphicsContext context1(deviceContext, &DrawingFactory);
-	Graphics graphics(&context1);
+	// The context type is the only thing that varies between gmpi_ui hosts and
+	// SynthEditLib's DrawingFrameBase2 (which constructs UniversalGraphicsContext
+	// to dispatch SDK3 IIDs). The dirty-rect loop is shared via paintLoop.
+	gmpi::directx::GraphicsContext context(deviceContext, &DrawingFactory);
+	Graphics graphics(&context);
 
 	graphics.beginDraw();
-
-	for (auto& r : dirtyRects)
-	{
-		auto r2 = transformRect(WindowToDips, drawing::Rect{ static_cast<float>(r.left), static_cast<float>(r.top), static_cast<float>(r.right), static_cast<float>(r.bottom) });
-
-		drawing::Rect temp;
-		temp.left = floorf(r2.left);
-		temp.top = floorf(r2.top);
-		temp.right = ceilf(r2.right);
-		temp.bottom = ceilf(r2.bottom);
-
-		graphics.pushAxisAlignedClip(temp);
-		drawingClient->render(&context1);
-		graphics.popAxisAlignedClip();
-	}
-
-	const bool displayFrameRate = false;
-	if (displayFrameRate)
-	{
-		static int frameCount = 0;
-		static char frameCountString[100] = "";
-		if (++frameCount == 60)
-		{
-			auto timenow = std::chrono::steady_clock::now();
-			auto elapsed = std::chrono::steady_clock::now() - frameCountTime;
-			auto elapsedSeconds = 0.001f * (float)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-
-			float frameRate = frameCount / elapsedSeconds;
-			sprintf_s(frameCountString, sizeof(frameCountString), "%3.1f FPS", frameRate);
-			frameCountTime = timenow;
-			frameCount = 0;
-
-			auto brush = graphics.createSolidColorBrush(Colors::Black);
-			auto fpsRect = drawing::Rect{ 0, 0, 50, 18 };
-			graphics.fillRectangle(fpsRect, brush);
-			brush.setColor(Colors::White);
-			graphics.drawTextU(frameCountString, graphics.getFactory().createTextFormat(12), fpsRect, brush);
-
-			backBufferDirtyRects.add({ 0, 0, 100, 36 });
-		}
-	}
-
+	paintLoop(&context, dirtyRects, drawingClient.get());
 	if (graphics.endDraw() != gmpi::ReturnCode::Ok)
 	{
 		ReleaseDevice();
 	}
+
+	// (The previous on-canvas FPS counter was a compile-time-disabled debug
+	// helper. Removed in favour of the shared paintLoop; resurrect via git
+	// history if needed.)
 }
 
 void DxDrawingFrameBase::OnPaint()
@@ -682,6 +648,44 @@ void DxDrawingFrameBase::OnPaint()
 
 	auto dirtyRects = updateRegion_native.getUpdateRects();
 	PaintFrame({ dirtyRects.data(), dirtyRects.size() });
+}
+
+void tempSharedD2DBase::paintLoop(
+	gmpi::drawing::api::IDeviceContext* deviceContext,
+	std::span<gmpi::drawing::RectL> dirtyRects,
+	gmpi::api::IDrawingClient* client)
+{
+	gmpi::drawing::Graphics graphics(deviceContext);
+
+	for (const auto& r : dirtyRects)
+	{
+		// Pixel rect → DIP rect with snap-out (floor on min, ceil on max). Without
+		// the snap, sub-pixel boundaries can leave a 1-pixel seam where the clip
+		// excludes the very pixels that needed updating.
+		const auto rDips = transformRect(WindowToDips,
+			gmpi::drawing::Rect{ static_cast<float>(r.left),  static_cast<float>(r.top),
+			                     static_cast<float>(r.right), static_cast<float>(r.bottom) });
+
+		const gmpi::drawing::Rect snapped{
+			floorf(rDips.left),
+			floorf(rDips.top),
+			ceilf(rDips.right),
+			ceilf(rDips.bottom)
+		};
+
+		graphics.pushAxisAlignedClip(snapped);
+		if (client)
+		{
+			client->render(deviceContext);
+		}
+		else
+		{
+			// No client attached — clear to opaque black so we don't show garbage
+			// from the swap chain back-buffer.
+			graphics.clear(gmpi::drawing::Color{ 0.f, 0.f, 0.f, 1.f });
+		}
+		graphics.popAxisAlignedClip();
+	}
 }
 
 bool tempSharedD2DBase::preparePaint(std::span<gmpi::drawing::RectL> /*dirtyRects*/)

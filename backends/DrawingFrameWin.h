@@ -249,7 +249,11 @@ inline float calcWhiteLevelForHwnd(HWND windowHandle)
 
 
 // Swapchain Manager: stuff we can share between DxDrawingFrameBase (GMPI-UI) and SynthEditlib DrawingFrameBase2 (SDK3)
-struct tempSharedD2DBase : public gmpi::api::IDrawingHost
+//
+// Also implements IInputHost — the three pointer-capture methods are byte-identical
+// HWND wrappers in every Win32 frame (HostedView in WinUI3 overrides them), so
+// hoisting them here removes the duplication on each parallel hierarchy.
+struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IInputHost
 {
 	enum { FallBack_8bit, Fallback_Software };
 
@@ -341,12 +345,32 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost
 
 	// IDrawingHost
 	void invalidateMeasure() override {}
+
+	// IInputHost — trivial HWND-pointer-capture wrappers; HostedView (WinUI3)
+	// overrides these for SwapChainPanel-native pointer capture.
+	gmpi::ReturnCode setCapture() override
+	{
+		::SetCapture(getWindowHandle());
+		return gmpi::ReturnCode::Ok;
+	}
+	gmpi::ReturnCode getCapture(bool& returnValue) override
+	{
+		returnValue = ::GetCapture() == getWindowHandle();
+		return gmpi::ReturnCode::Ok;
+	}
+	gmpi::ReturnCode releaseCapture() override
+	{
+		::ReleaseCapture();
+		return gmpi::ReturnCode::Ok;
+	}
 };
 
 // Base class for JuceDrawingFrameBase, DrawingFrame (VST3 Plugins) and MyFrameWndDirectX (SynthEdit 1.4+ Panel View).
+//
+// IInputHost is now inherited via tempSharedD2DBase (single path, avoids the
+// IUnknown-via-IInputHost diamond that would otherwise appear).
 class DxDrawingFrameBase :
 	public tempSharedD2DBase,
-	public gmpi::api::IInputHost,
 	public gmpi::api::IDialogHost,
 	public gmpi::TimerClient
 {
@@ -419,10 +443,7 @@ public:
 		return gmpi::ReturnCode::Ok;
 	}
 
-	// IInputHost
-	gmpi::ReturnCode setCapture() override;
-	gmpi::ReturnCode getCapture(bool& returnValue) override;
-	gmpi::ReturnCode releaseCapture() override;
+	// IInputHost — implemented inline on tempSharedD2DBase (HWND-pointer-capture wrappers).
 
 	// IDialogHost
 	gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override;

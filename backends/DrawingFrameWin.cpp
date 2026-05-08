@@ -1225,23 +1225,7 @@ void DxDrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 	}
 }
 
-gmpi::ReturnCode DxDrawingFrameBase::setCapture()
-{
-	::SetCapture(getWindowHandle());
-	return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode DxDrawingFrameBase::getCapture(bool& returnValue)
-{
-	returnValue = ::GetCapture() == getWindowHandle();
-	return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode DxDrawingFrameBase::releaseCapture()
-{
-	::ReleaseCapture();
-	return gmpi::ReturnCode::Ok;
-}
+// IInputHost (setCapture/getCapture/releaseCapture) is now inline on tempSharedD2DBase.
 
 //gmpi::ReturnCode DxDrawingFrameBase::getFocus()
 //{

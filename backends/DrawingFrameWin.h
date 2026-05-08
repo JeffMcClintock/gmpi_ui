@@ -407,6 +407,11 @@ class DxDrawingFrameBase :
 	gmpi::shared_ptr<gmpi::api::IPopupMenu> contextMenu;
 
 public:
+	// Plugin-only UI-scale multiplier (HC_PLUGIN_UI_SCALE). Default 1.0 means
+	// "use raw DPI". SynthEditLib plugin builds use this; standalone hosts
+	// leave it at 1.0.
+	float pluginUIScale = 1.0f;
+
 	// Public so external code (e.g. SEVSTGUIEditorWin.cpp's swapchain-recreate
 	// callback) can ask "is a client attached?" without going through a
 	// helper. Matches the public visibility SynthEditLib's old graphics_gmpi /
@@ -461,6 +466,29 @@ public:
 	void detachClient();
 	void detachAndRecreate();
 	void doContextMenu(gmpi::drawing::Point point, int32_t flags);
+
+	// Dirty-rect queue helpers. Concrete subclasses (HWND or SwapChainPanel)
+	// drain backBufferDirtyRects in their tick logic and forward the rects to
+	// PaintFrame. invalidateRect populates the queue from outside.
+	void queueDirtyRect(gmpi::drawing::RectL rect)        { backBufferDirtyRects.add(rect); }
+	void queueDirtyRect(const gmpi::drawing::Rect* dipR)  { backBufferDirtyRects.add(dipR, DipsToWindow); }
+	void replaceDirtyRects(gmpi::drawing::RectL rect)     { backBufferDirtyRects.replace(rect); }
+	void invalidateAll()                                  { replaceDirtyRects(getFullDirtyRect()); }
+	std::span<gmpi::drawing::RectL> getDirtyRects()       { return backBufferDirtyRects.get(); }
+	std::span<const gmpi::drawing::RectL> getDirtyRects() const { return backBufferDirtyRects.get(); }
+	bool hasDirtyRects() const                            { return !backBufferDirtyRects.empty(); }
+	void clearDirtyRects()                                { backBufferDirtyRects.clear(); }
+	// Notifies the frame-update client (if any), then reports whether there's
+	// anything queued for redraw. Used by HWND tick logic.
+	bool preGraphicsRedraw()
+	{
+		if (frameUpdateClient)
+			frameUpdateClient->preGraphicsRedraw();
+		return hasDirtyRects();
+	}
+	// Thin wrapper around tempSharedD2DBase::PaintFrame — kept for symmetry with
+	// SE's call sites; new code should call PaintFrame directly.
+	void Paint(std::span<gmpi::drawing::RectL> dirty) { PaintFrame(dirty); }
 
 	// IDrawingHost
 	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;
@@ -523,6 +551,7 @@ protected:
 	UpdateRegionWinGdi updateRegion_native;
 	bool isTrackingMouse = false;
 	gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
+	int pollHdrChangesCount = 100; // ticks until next HDR-white-level check (~1.5s at 15ms timer)
 
 public:
 	virtual ~DxDrawingFrameHwnd()

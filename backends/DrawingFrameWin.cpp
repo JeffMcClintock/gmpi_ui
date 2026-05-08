@@ -59,26 +59,27 @@ HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWN
 	return windowHandle;
 }
 
-void DxDrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t flags)
+// Right-click context-menu fallback. Caller (WindowProc) has already dispatched
+// onPointerDown and only invokes this when the client returned Unhandled — so
+// don't re-fire onPointerDown here. Caches the menu in `contextMenu` to keep
+// it alive across the caller's release.
+void DxDrawingFrameBase::doContextMenu(gmpi::drawing::Point point, int32_t /*flags*/)
 {
-	auto r = inputClient->onPointerDown(point, flags);
+	if (!inputClient)
+		return;
 
-	// Handle right-click on background. (right-click on objects is handled by object itself).
-	if (r == gmpi::ReturnCode::Unhandled && (flags & static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton)) != 0 && inputClient)
-	{
-		gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
+	gmpi::drawing::Rect rect{ point.x, point.y, point.x + 120, point.y + 20 };
 
-		// create menu popup
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-		createPopupMenu(&rect, unknown.put());
-		contextMenu = unknown.as<gmpi::api::IPopupMenu>();
+	gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+	if (createPopupMenu(&rect, unknown.put()) != gmpi::ReturnCode::Ok)
+		return;
 
-		// populate menu
-		r = inputClient->populateContextMenu(point, contextMenu.get());
+	contextMenu = unknown.as<gmpi::api::IPopupMenu>();
+	if (!contextMenu)
+		return;
 
-		// show menu
-		contextMenu->showAsync();
-	}
+	inputClient->populateContextMenu(point, contextMenu.get());
+	contextMenu->showAsync();
 }
 
 void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapChainSize)
@@ -380,7 +381,8 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 
 float DxDrawingFrameBase::getRasterizationScale()
 {
-	return GetDpiForWindow(getWindowHandle()) / 96.f;
+	// Multiply by pluginUIScale (default 1.0 — see HC_PLUGIN_UI_SCALE).
+	return (GetDpiForWindow(getWindowHandle()) / 96.f) * pluginUIScale;
 }
 
 // Tooltip forwarders (initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip)
@@ -392,9 +394,10 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 	WPARAM wParam,
 	LPARAM lParam)
 {
-	if(
-		!drawingClient
-		)
+	// Skip the whole dispatch if the frame isn't fully attached — drawingClient
+	// is set last in attachClient (after sizeClientDips), so its presence is the
+	// best "ready for input" signal.
+	if (!drawingClient)
 		return DefWindowProc(hwnd, message, wParam, lParam);
 
 	switch (message)
@@ -407,51 +410,53 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONUP:
 		{
-          Point p = win32::pointFromLParam(lParam, WindowToDips);
+			const Point p = win32::pointFromLParam(lParam, WindowToDips);
 			if (win32::isDuplicateMouseMove(message, p, cubaseBugPreviousMouseMove))
-			{
 				return TRUE;
-			}
 
 			TooltipOnMouseActivity();
 
-          int32_t flags = win32::makePointerFlags(message);
+			const int32_t flags = win32::makePointerFlags(message);
 
-			gmpi::ReturnCode r;
+			// Per-case `if (inputClient)` guards — a client may implement
+			// IDrawingClient without IInputClient, in which case drawingClient
+			// is set but inputClient is null. Don't crash on it.
+			gmpi::ReturnCode r{ gmpi::ReturnCode::Unhandled };
 			switch (message)
 			{
 			case WM_MOUSEMOVE:
-				{
+				if (inputClient)
 					r = inputClient->onPointerMove(p, flags);
 
-					// get notified when mouse leaves window
-					if (!isTrackingMouse)
-					{
-                      win32::beginMouseTracking(hwnd, isTrackingMouse);
+				// get notified when mouse leaves window
+				if (!isTrackingMouse)
+				{
+					win32::beginMouseTracking(hwnd, isTrackingMouse);
+					if (inputClient)
 						inputClient->setHover(true);
-					}
 				}
 				break;
 
 			case WM_LBUTTONDOWN:
 			case WM_MBUTTONDOWN:
-				r = inputClient->onPointerDown(p, flags);
+				if (inputClient)
+					r = inputClient->onPointerDown(p, flags);
 				::SetFocus(hwnd);
 				break;
 
 			case WM_RBUTTONDOWN:
-				r = inputClient->onPointerDown(p, flags);
+				if (inputClient)
+					r = inputClient->onPointerDown(p, flags);
 				::SetFocus(hwnd);
 				if (r == gmpi::ReturnCode::Unhandled)
-				{
 					doContextMenu(p, flags);
-				}
 				break;
 
 			case WM_MBUTTONUP:
 			case WM_RBUTTONUP:
 			case WM_LBUTTONUP:
-				r = inputClient->onPointerUp(p, flags);
+				if (inputClient)
+					r = inputClient->onPointerUp(p, flags);
 				break;
 			}
 		}
@@ -459,25 +464,27 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 
 	case WM_MOUSELEAVE:
 		isTrackingMouse = false;
-//		inputClient->setHover(false);
+		if (inputClient)
+			inputClient->setHover(false);
 		break;
 
 	case WM_MOUSEWHEEL:
 	case WM_MOUSEHWHEEL:
 		{
-           Point p = win32::pointFromScreenLParam(getWindowHandle(), lParam, WindowToDips);
+			const Point p = win32::pointFromScreenLParam(getWindowHandle(), lParam, WindowToDips);
 
-            //The wheel rotation will be a multiple of WHEEL_DELTA, which is set at 120. This is the threshold for action to be taken, and one such action (for example, scrolling one increment) should occur for each delta.
+			//The wheel rotation will be a multiple of WHEEL_DELTA, which is set at 120. This is the threshold for action to be taken, and one such action (for example, scrolling one increment) should occur for each delta.
 			const auto zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
 
-         int32_t flags = win32::makeWheelFlags(message, wParam);
+			const int32_t flags = win32::makeWheelFlags(message, wParam);
 
-			/*auto r =*/ inputClient->onMouseWheel(p, flags, zDelta);
+			if (inputClient)
+				inputClient->onMouseWheel(p, flags, zDelta);
 		}
 		break;
 
 	case WM_CHAR:
-		if(inputClient)
+		if (inputClient)
 			inputClient->onKeyPress((wchar_t) wParam);
 		break;
 
@@ -533,21 +540,28 @@ void DxDrawingFrameBase::sizeClientDips(float width, float height)
 bool DxDrawingFrameHwnd::onTimer()
 {
 	auto hwnd = getWindowHandle();
-	if (hwnd == nullptr
-		)
+	if (hwnd == nullptr || !drawingClient)
 		return true;
 
-	if (frameUpdateClient)
+	// HDR-white-level poll. Recreates the swap chain when the user toggles HDR
+	// mode or moves the window between monitors with different SDR-white-level.
+	// Promoted from SynthEditLib in Phase 4c-5; gmpi_ui consumers gain the same
+	// adaptive behaviour. Cheap (~1.5s interval).
+	if (pollHdrChangesCount-- < 0)
 	{
-		frameUpdateClient->preGraphicsRedraw();
+		pollHdrChangesCount = 100; // ~1.5s at 15ms timer
+		if (windowWhiteLevel != calcWhiteLevel())
+			recreateSwapChainAndClientAsync();
 	}
+
+	if (frameUpdateClient)
+		frameUpdateClient->preGraphicsRedraw();
 
 	// Queue pending drawing updates to backbuffer.
 	const BOOL bErase = FALSE;
-
-  for (const auto& invalidRect : backBufferDirtyRects.get())
+	for (const auto& invalidRect : backBufferDirtyRects.get())
 	{
-      RECT rect{ invalidRect.left, invalidRect.top, invalidRect.right, invalidRect.bottom };
+		RECT rect{ invalidRect.left, invalidRect.top, invalidRect.right, invalidRect.bottom };
 		::InvalidateRect(hwnd, &rect, bErase);
 	}
 	backBufferDirtyRects.clear();
@@ -580,6 +594,18 @@ void DxDrawingFrameBase::attachClient(gmpi::api::IUnknown* gfx)
 	{
 		ieditor->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
 		ieditor->initialize();
+	}
+
+	// If a swap chain already exists (e.g. attachClient called after open()
+	// has set things up), size the new client to it now — otherwise the
+	// client has zero bounds until something else triggers a layout.
+	if (swapChain)
+	{
+		const auto scale = 1.0 / getRasterizationScale();
+		sizeClientDips(
+			static_cast<float>(swapChainSize.width)  * scale,
+			static_cast<float>(swapChainSize.height) * scale
+		);
 	}
 
 	if (drawingClient)
@@ -1254,15 +1280,9 @@ inline drawing::RectL RectToIntegerLarger(gmpi::drawing::Rect f)
 void DxDrawingFrameBase::invalidateRect(const drawing::Rect* invalidRect)
 {
 	if (invalidRect)
-	{
-		backBufferDirtyRects.add(invalidRect, DipsToWindow);
-	}
+		queueDirtyRect(invalidRect);
 	else
-	{
-		// Full-surface invalidation — defer to the leaf for the actual extent
-		// (HWND uses GetClientRect, SwapChainPanel uses the panel size).
-		backBufferDirtyRects.add(getFullDirtyRect());
-	}
+		invalidateAll(); // replace-semantics — caller asked for full repaint, drop pending finer rects
 }
 
 gmpi::drawing::RectL DxDrawingFrameHwnd::getFullDirtyRect()

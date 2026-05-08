@@ -503,8 +503,14 @@ public:
 // TrackMouseEvent, and a TimerClient that drains backBufferDirtyRects via
 // InvalidateRect. Most VST3-style hosts inherit this layer; HostedView (WinUI3)
 // stays at DxDrawingFrameBase.
+//
+// Virtual inheritance of DxDrawingFrameBase: SynthEditLib's DrawingFrameHwndBase
+// inherits BOTH DxDrawingFrameHwnd (for HWND machinery) AND DrawingFrameBase2
+// (which also virtually inherits DxDrawingFrameBase, for SDK3 dispatch). The
+// shared virtual base collapses the diamond into a single subobject. Cost is
+// one vbase pointer per instance — negligible.
 class DxDrawingFrameHwnd :
-	public DxDrawingFrameBase,
+	public virtual DxDrawingFrameBase,
 	public gmpi::TimerClient
 {
 protected:

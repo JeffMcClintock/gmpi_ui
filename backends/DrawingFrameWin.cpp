@@ -5,6 +5,7 @@
 #include <wrl.h> // Comptr
 #include <commctrl.h>
 #include <shobjidl.h>
+#include <cmath> // std::abs
 #include "Core/GmpiApiEditor.h" // for gmpi::api::IEditor in attachClient
 #include "./DrawingFrameWin.h"
 
@@ -418,7 +419,33 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 
 			TooltipOnMouseActivity();
 
-			const int32_t flags = win32::makePointerFlags(message);
+			int32_t flags = win32::makePointerFlags(message);
+
+			// Synthesise PointerFlags::Double for WM_LBUTTONDOWN — see
+			// header comment on lastLButtonDownTick. We don't rely on
+			// WM_LBUTTONDBLCLK because not every host wrapper registers
+			// CS_DBLCLKS on the window class.
+			if (message == WM_LBUTTONDOWN)
+			{
+				const ULONGLONG now = ::GetTickCount64();
+				const float dx = p.x - lastLButtonDownPos.x;
+				const float dy = p.y - lastLButtonDownPos.y;
+				const float threshX = static_cast<float>(::GetSystemMetrics(SM_CXDOUBLECLK)) / WindowToDips._11;
+				const float threshY = static_cast<float>(::GetSystemMetrics(SM_CYDOUBLECLK)) / WindowToDips._22;
+				const bool inTime  = lastLButtonDownTick != 0
+					&& (now - lastLButtonDownTick) <= ::GetDoubleClickTime();
+				const bool inPlace = std::abs(dx) <= threshX && std::abs(dy) <= threshY;
+				if (inTime && inPlace)
+				{
+					flags |= static_cast<int32_t>(gmpi::api::PointerFlags::Double);
+					lastLButtonDownTick = 0; // don't chain a third click
+				}
+				else
+				{
+					lastLButtonDownTick = now;
+				}
+				lastLButtonDownPos = p;
+			}
 
 			// Per-case `if (inputClient)` guards — a client may implement
 			// IDrawingClient without IInputClient, in which case drawingClient

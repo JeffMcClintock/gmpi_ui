@@ -596,13 +596,19 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 - (void)mouseDown:(NSEvent *)theEvent
 {
     drawingFrame.removeTextEdit();
-    
+
     [[self window] makeFirstResponder:self]; // take focus off any text-edit. Works but does not dimiss it.
- 
+
     int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
     flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
-    
+
+    // NSEvent already coalesces fast clicks into clickCount, applying the
+    // user's preferred timing/movement thresholds — clickCount == 2 means
+    // this is the second click of a double-click pair.
+    if (theEvent.clickCount == 2)
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::Double);
+
     applyKeyModifiers(flags, theEvent);
     const auto p = mouseToGmpi(self, theEvent);
 

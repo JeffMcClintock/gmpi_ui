@@ -564,6 +564,15 @@ protected:
 	gmpi::drawing::Point cubaseBugPreviousMouseMove = { -1,-1 };
 	int pollHdrChangesCount = 100; // ticks until next HDR-white-level check (~1.5s at 15ms timer)
 
+	// Double-click detection. Win32's WM_LBUTTONDBLCLK only arrives if the
+	// window class registers CS_DBLCLKS, which not every host wrapper does;
+	// detect via timing+movement against the user's GetDoubleClickTime() and
+	// GetSystemMetrics(SM_CXDOUBLECLK / SM_CYDOUBLECLK) instead. Set
+	// PointerFlags::Double on the second click of a fast pair so framework
+	// consumers (RectangleMouseTarget, ListView3, etc.) react.
+	ULONGLONG            lastLButtonDownTick = 0;
+	gmpi::drawing::Point lastLButtonDownPos  = { -1.f, -1.f };
+
 public:
 	virtual ~DxDrawingFrameHwnd()
 	{

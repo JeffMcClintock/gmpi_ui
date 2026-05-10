@@ -364,13 +364,6 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
-#if 0
-    virtual gmpi::ReturnCode  GetDrawingFactory(GmpiDrawing_API::IMpFactory ** returnFactory) override
-    {
-        *returnFactory = &drawingFactory;
-        return gmpi::ReturnCode::Ok;
-    }
-
     // Legacy SDK3 dialog overrides (gmpi_gui::IMpPlatform*) used to live here under
     // #ifdef GMPI_HOST_POINTER_SUPPORT — never defined anywhere in the gmpi_ui
     // build. Dead code referencing SDK3 types removed; modern dialog hosts live

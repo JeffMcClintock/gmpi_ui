@@ -16,7 +16,7 @@ struct EventHelperClient
     virtual void CancelFromCocoa() {}
 };
 
-@interface GMPI_EVENT_HELPER_CLASSNAME_03 : NSObject {
+@interface GMPI_EVENT_HELPER_CLASSNAME_03 : NSObject <NSTextFieldDelegate> {
     EventHelperClient* client;
 }
 - (void)initWithClient:(EventHelperClient*)client;
@@ -28,6 +28,10 @@ struct EventHelperClient
 
 // NSTextField subclass that forwards Escape to the event helper.
 @interface GMPI_EscapableTextField : NSTextField
+{
+    BOOL multilineMode;
+}
+@property (assign) BOOL multilineMode;
 @end
 
 inline NSRect gmpiRectToViewRect(NSRect viewbounds, gmpi::drawing::Rect const* rect)
@@ -131,6 +135,7 @@ private:
         textField.drawsBackground = true;
         [textField setBackgroundColor:[NSColor textBackgroundColor]];
         textField.usesSingleLineMode = !multiline;
+        ((GMPI_EscapableTextField*)textField).multilineMode = multiline;
 
         switch (alignment)
         {
@@ -146,6 +151,7 @@ private:
 
         [textField setTarget:eventHelper];
         [textField setAction:@selector(endEditing:)];
+        [textField setDelegate:eventHelper];
 
         [[NSNotificationCenter defaultCenter]
             addObserver:eventHelper
@@ -255,9 +261,24 @@ public:
 {
     client->CallbackFromCocoa(sender);
 }
+// NSTextFieldDelegate: intercept Return so multiline fields insert a newline
+// instead of firing the action (which would dismiss the editor).
+- (BOOL)control:(NSControl*)control textView:(NSTextView*)textView doCommandBySelector:(SEL)commandSelector
+{
+    if (commandSelector == @selector(insertNewline:)
+        && [control isKindOfClass:[GMPI_EscapableTextField class]]
+        && ((GMPI_EscapableTextField*)control).multilineMode)
+    {
+        [textView insertNewlineIgnoringFieldEditor:self];
+        return YES;
+    }
+    return NO;
+}
 @end
 
 @implementation GMPI_EscapableTextField
+
+@synthesize multilineMode;
 
 - (void)cancelOperation:(id)sender
 {

@@ -24,7 +24,7 @@ struct cachedBlur
         , std::function<void(drawing::Graphics&)> drawer
     )
     {
-        if (drawing::AccessPtr::get(buffer2))
+        if (buffer2)
         {
             g.drawBitmap(buffer2, drawing::Point{}, bounds);
             return;

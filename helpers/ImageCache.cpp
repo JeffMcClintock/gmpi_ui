@@ -49,7 +49,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 	gmpi::drawing::Bitmap image;
 	factory->loadImageU(uri, AccessPtr::put(image));
 
-	if (!AccessPtr::get(image))
+	if (!image)
 		return image;
 
 	// Does image have a separate 'mask' image. Happens only in SE editor. VSTs use only png.
@@ -62,7 +62,7 @@ gmpi::drawing::Bitmap ImageCache::GetImage(gmpi::drawing::api::IFactory* factory
 			gmpi::drawing::Bitmap maskImage;
 			factory->loadImageU(maskFilename.c_str(), AccessPtr::put(maskImage));
 
-			if (AccessPtr::get(maskImage))
+			if (maskImage)
 			{
 				auto pixelsSource = maskImage.lockPixels();
 				auto pixelsDest = image.lockPixels(gmpi::drawing::BitmapLockFlags::ReadWrite);

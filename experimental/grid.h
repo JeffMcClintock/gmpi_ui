@@ -6,7 +6,7 @@ namespace gmpi::ui::builder
 
 struct Grid : public View, public ViewParent
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	bool boundsSetByParent = false; // true when parent layout assigns item box
 
 	Grid(

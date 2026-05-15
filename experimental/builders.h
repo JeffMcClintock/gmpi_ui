@@ -237,7 +237,7 @@ struct StateBinding : public StateBindBass
 
 struct Seperator : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 
 	Seperator(gmpi::drawing::Rect pbounds) : bounds(pbounds)
 	{
@@ -256,7 +256,7 @@ struct Seperator : public View
 
 struct RectangleView : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	gmpi::drawing::Color fillColor = gmpi::drawing::Colors::Black;
 	gmpi::drawing::Color strokeColor = gmpi::drawing::Colors::White;
 
@@ -278,7 +278,7 @@ struct RectangleView : public View
 
 struct TextLabelView : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	bool rightAlign = false;
 	mutable gmpi_forms::StateRef<std::string> text2;
 
@@ -297,7 +297,7 @@ struct TextLabelView : public View
 
 struct TextEditView : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<std::string> text;
 	bool rightAlign = false;
 	bool multiLine = false;
@@ -319,7 +319,7 @@ struct TextEditView : public View
 
 struct ComboBoxView : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<std::string> enum_list;
 	mutable gmpi_forms::StateRef<int32_t> enum_value;
 
@@ -350,7 +350,7 @@ struct ComboBoxView : public View
 
 struct TickBox : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<bool> value;
 
 	TickBox()
@@ -386,7 +386,7 @@ struct TickBox : public View
 // labled tickbox
 struct ToggleSwitch : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<bool> value;
 	mutable gmpi_forms::StateRef<std::string> text;
 
@@ -423,7 +423,7 @@ struct ToggleSwitch : public View
 
 struct FileBrowseButtonView : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<std::string> value;
 	mutable gmpi::shared_ptr<gmpi::api::IFileDialog> fileDialog; // needs to be kept alive, so it can be called async.
 
@@ -443,7 +443,7 @@ struct FileBrowseButtonView : public View
 // A text label that shows a popup menu when clicked.
 struct PopupMenuView : public View
 {
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<std::string> text2;
 	mutable gmpi_forms::StateRef<std::string> menuItems; // comma-separated menu items, e.g. "Learn,Unlearn,Edit..."
 	std::function<void(int32_t)> onItemSelected;
@@ -556,7 +556,7 @@ struct ScrollPortal : public View, public ViewParent
 	mutable gmpi::forms::primitive::RectangleMouseTarget* scrollThumbMouseTarget = {};
 	mutable gmpi_forms::StateRef<float> scroll_state;
 
-	gmpi::drawing::Rect bounds{};
+	gmpi::drawing::Rect bounds;
 
 	ScrollPortal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
 	{

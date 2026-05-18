@@ -899,14 +899,19 @@ public:
             return gmpi::ReturnCode::Fail;
         }
 
-        CTLineRef line = CTLineCreateWithAttributedString(cachedAttrString_);
-        CGFloat ascent_ct, descent_ct, leading_ct;
-        double width = CTLineGetTypographicBounds(line, &ascent_ct, &descent_ct, &leading_ct);
+        // Use CTFramesetter so that multi-block markdown (headings + lists,
+        // explicit newlines, etc.) is measured across all lines, not just
+        // the first. CTLineCreateWithAttributedString collapses everything
+        // into a single line and reports only that line's metrics.
+        CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(cachedAttrString_);
+        const CGSize constraints = CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX);
+        const CGSize suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter, CFRangeMake(0, 0), nullptr, constraints, nullptr);
 
-        returnSize->width = static_cast<float>(width);
-        returnSize->height = static_cast<float>(ascent_ct + descent_ct + leading_ct);
+        returnSize->width = static_cast<float>(suggested.width);
+        returnSize->height = static_cast<float>(suggested.height);
 
-        CFRelease(line);
+        CFRelease(framesetter);
         return gmpi::ReturnCode::Ok;
     }
 

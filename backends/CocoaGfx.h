@@ -2792,20 +2792,16 @@ inline void BitmapBrush::fillPath(GraphicsContext* context, CGPathRef cgPath, bo
 
     const CGFloat tileW = CGImageGetWidth(patternImage_);
     const CGFloat tileH = CGImageGetHeight(patternImage_);
-    const CGRect bounds = CGPathGetBoundingBox(cgPath);
 
-    const CGFloat startX = offset.x + floor((CGRectGetMinX(bounds) - offset.x) / tileW) * tileW;
-    const CGFloat startY = offset.y + floor((CGRectGetMinY(bounds) - offset.y) / tileH) * tileH;
-
-    for (CGFloat y = startY; y < CGRectGetMaxY(bounds); y += tileH) {
-        for (CGFloat x = startX; x < CGRectGetMaxX(bounds); x += tileW) {
-            CGContextSaveGState(cgCtx);
-            CGContextTranslateCTM(cgCtx, x, y + tileH);
-            CGContextScaleCTM(cgCtx, 1.0, -1.0);
-            CGContextDrawImage(cgCtx, CGRectMake(0, 0, tileW, tileH), patternImage_);
-            CGContextRestoreGState(cgCtx);
-        }
-    }
+    // Use CGContextDrawTiledImage so CG samples ACROSS tile boundaries (rather
+    // than clamping at each tile's edge). Per-tile CGContextDrawImage calls
+    // produce visible 1-px seams at fractional zoom because each tile blends
+    // its clamped edge with the next tile's clamped edge instead of seeing
+    // them as a single continuous pattern. Flip Y around the tile anchor so
+    // the image draws upright under the Y-flipped (Windows-style) CTM.
+    CGContextTranslateCTM(cgCtx, 0, offset.y + tileH);
+    CGContextScaleCTM(cgCtx, 1.0, -1.0);
+    CGContextDrawTiledImage(cgCtx, CGRectMake(offset.x, 0, tileW, tileH), patternImage_);
 
     CGContextRestoreGState(cgCtx);
 }

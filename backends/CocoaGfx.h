@@ -2185,8 +2185,12 @@ public:
 
 		CGRect bounds = CGRectMake(layoutRect->left, layoutRect->top, layoutRect->right - layoutRect->left, layoutRect->bottom - layoutRect->top);
 
-		// Apply paragraph alignment (vertical centering / bottom alignment)
-		if (rtf->paragraphAlignment != gmpi::drawing::ParagraphAlignment::Near)
+		// Apply paragraph alignment (vertical centering / bottom alignment).
+		// For Near we still extend bounds.size.height when the content overflows
+		// the layoutRect so CTFramesetter lays out every line. D2D renders all
+		// lines even past the layoutRect bottom; CTFramesetter, by contrast,
+		// drops any trailing line that doesn't fit, so the last bullet or
+		// paragraph would silently go missing.
 		{
 			gmpi::drawing::Size textSize{};
 			rtf->getTextExtentU(&textSize);
@@ -2201,7 +2205,9 @@ public:
 				bounds.origin.y += (bounds.size.height - textSize.height) / 2;
 				bounds.size.height = textSize.height;
 				break;
-			default:
+			default: // Near
+				if (textSize.height > bounds.size.height)
+					bounds.size.height = textSize.height;
 				break;
 			}
 		}

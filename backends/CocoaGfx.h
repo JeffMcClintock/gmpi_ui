@@ -2778,10 +2778,11 @@ inline void BitmapBrush::fillPath(GraphicsContext* context, CGPathRef cgPath, bo
     else
         CGContextClip(cgCtx);
 
-    gmpi::drawing::Matrix3x2 moduleTransform;
-    context->getTransform(&moduleTransform);
-    auto offset = gmpi::drawing::transformPoint(moduleTransform, {0.0f, 0.0f});
-    offset = gmpi::drawing::transformPoint(brushProperties_.transform, offset);
+    // Anchor the tile lattice to the brush's own origin in the current (per-module)
+    // coordinate space — matches Direct2D's ID2D1BitmapBrush behavior, so a tile
+    // boundary lands at the module's local (0,0) regardless of where the module
+    // sits on the panel.
+    auto offset = gmpi::drawing::transformPoint(brushProperties_.transform, {0.0f, 0.0f});
 
     const CGFloat tileW = CGImageGetWidth(patternImage_);
     const CGFloat tileH = CGImageGetHeight(patternImage_);

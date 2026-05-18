@@ -975,6 +975,12 @@ public:
     {
         std::string uriString(utf8Uri);
 
+        // Handle empty URI gracefully
+        if (uriString.empty())
+        {
+            return;
+        }
+
         // Load using ImageIO (cross-platform macOS/iOS)
         CFStringRef cfPath = CFStringCreateWithCString(kCFAllocatorDefault, utf8Uri, kCFStringEncodingUTF8);
         CFURLRef url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, cfPath, kCFURLPOSIXPathStyle, false);

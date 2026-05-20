@@ -168,6 +168,14 @@ struct pixelSnapper2
 		p.y = std::floor(p.y) + 0.5f;
 		return transformPoint(inverted, p);
 	}
+
+	// Snap a point for use as a stroke endpoint: pass the lineSnap returned
+	// by thickness() / thickness_odd() and the right alignment is picked
+	// automatically (centre for odd-pixel widths, origin for even).
+	gmpi::drawing::Point snapForStroke(gmpi::drawing::Point p, const lineSnap& ls) const
+	{
+		return ls.center_offset != 0.0f ? snapPixelCenter(p) : snapPixelOrigin(p);
+	}
 };
 
 

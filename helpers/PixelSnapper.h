@@ -69,13 +69,34 @@ struct pixelSnapper
 
 struct pixelSnapper2
 {
-	gmpi::drawing::Matrix3x2 transform;
-	gmpi::drawing::Matrix3x2 inverted;
+	gmpi::drawing::Matrix3x2 transform{};
+	gmpi::drawing::Matrix3x2 inverted{};
 
+	// Default-construct as identity (snap methods become no-ops). Safe to use
+	// without calling update(); first update() with a real transform will
+	// always report "changed".
+	pixelSnapper2() = default;
+
+	// One-shot construction — same as default-construct + update().
 	pixelSnapper2(gmpi::drawing::Matrix3x2 t, float rasterisationScale)
 	{
-		transform = t * gmpi::drawing::makeScale({ rasterisationScale, rasterisationScale });
+		update(t, rasterisationScale);
+	}
+
+	// Recompute transform/inverted from the current device-context transform
+	// and rasterization scale. Returns true if anything changed since the
+	// previous call (or the snapper was default-constructed) — caller can use
+	// that to invalidate snap-dependent caches like pre-built geometry. Cheap
+	// on the common "nothing changed" path: one matrix-equality test, no invert.
+	bool update(gmpi::drawing::Matrix3x2 t, float rasterisationScale)
+	{
+		const auto newTransform =
+			t * gmpi::drawing::makeScale({ rasterisationScale, rasterisationScale });
+		if(newTransform == transform)
+			return false;
+		transform = newTransform;
 		inverted = invert(transform);
+		return true;
 	}
 
 	struct lineSnap
@@ -84,7 +105,7 @@ struct pixelSnapper2
 		float center_offset;
 	};
 
-	lineSnap thickness(float strokeWidth)
+	lineSnap thickness(float strokeWidth) const
 	{
 		const auto& scale = transform._11;
 		const auto& invscale = inverted._11;
@@ -100,7 +121,7 @@ struct pixelSnapper2
 	}
 
 	// only snap to odd number of pixels (for lines)
-	lineSnap thickness_odd(float strokeWidth)
+	lineSnap thickness_odd(float strokeWidth) const
 	{
 		const auto& scale = transform._11;
 		const auto& invscale = inverted._11;
@@ -129,11 +150,22 @@ struct pixelSnapper2
 		return inverted._22 * y + inverted._32;
 	}
 
-	gmpi::drawing::Point snapPixelOrigin(gmpi::drawing::Point p) // snap a point to a pixel left-top
+	// snap a point to a pixel top-left (good for fills, even-width strokes)
+	gmpi::drawing::Point snapPixelOrigin(gmpi::drawing::Point p) const
 	{
 		p = transformPoint(transform, p);
 		p.x = std::round(p.x);
 		p.y = std::round(p.y);
+		return transformPoint(inverted, p);
+	}
+
+	// snap a point to a pixel centre (good for odd-width strokes — keeps the
+	// line on the middle of a pixel row so it covers exactly one row at 100%)
+	gmpi::drawing::Point snapPixelCenter(gmpi::drawing::Point p) const
+	{
+		p = transformPoint(transform, p);
+		p.x = std::floor(p.x) + 0.5f;
+		p.y = std::floor(p.y) + 0.5f;
 		return transformPoint(inverted, p);
 	}
 };

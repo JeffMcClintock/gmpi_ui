@@ -139,13 +139,15 @@ private:
 
         switch (alignment)
         {
-        case 1: // center
-            textField.alignment = NSTextAlignmentCenter;
-            break;
-        case 2: // trailing
+        case (int32_t)gmpi::drawing::TextAlignment::Trailing:
             textField.alignment = NSTextAlignmentRight;
             break;
-        default: // leading
+        case (int32_t)gmpi::drawing::TextAlignment::Center:
+            textField.alignment = NSTextAlignmentCenter;
+            break;
+        case (int32_t)gmpi::drawing::TextAlignment::Leading:
+        default:
+            textField.alignment = NSTextAlignmentLeft;
             break;
         }
 

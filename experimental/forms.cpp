@@ -183,13 +183,13 @@ gmpi::ReturnCode Form::onKeyPress(wchar_t c)
 	return gmpi::ReturnCode::Ok;
 }
 
-ScrollPortal::ScrollPortal(gmpi::drawing::Rect pbounds)
+ScrollPortal::ScrollPortal(gmpi::drawing::Rect pbounds, std::string pname)
 {
 	saveParent = gmpi::ui::builder::ThreadLocalCurrentBuilder;
 	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
 	bounds = pbounds;
 
-	auto portal = std::make_unique<builder::ScrollPortal>(bounds);
+	auto portal = std::make_unique<builder::ScrollPortal>(bounds, std::move(pname));
 
 	gmpi::ui::builder::ThreadLocalCurrentBuilder = portal.get(); // &(portal->childViews);
 

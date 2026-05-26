@@ -602,7 +602,8 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		});
 
 	// create a persistent state to store the current vertical scroll position
-	env->reg(scroll_state, "ScrollPortal.scroll");
+	// (per-instance suffix lets multiple ScrollPortals in one form keep independent state)
+	env->reg(scroll_state, name.empty() ? std::string("ScrollPortal.scroll") : "ScrollPortal.scroll." + name);
 
 	// the mouse target updates the model, not the portal directly.
 	mt->onMouseWheel_callback = [this, contentBounds](int32_t flags, int32_t delta, gmpi::drawing::Point p)

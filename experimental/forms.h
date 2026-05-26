@@ -143,9 +143,10 @@ class ScrollPortal
 {
 	gmpi::ui::builder::ViewParent* saveParent = {};
 	gmpi::drawing::Rect bounds{};
-	
+
 public:
-	ScrollPortal(gmpi::drawing::Rect pbounds);
+	// pname suffix lets multiple ScrollPortals in one form keep independent scroll state
+	ScrollPortal(gmpi::drawing::Rect pbounds, std::string pname = {});
 	~ScrollPortal();
 };
 

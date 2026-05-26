@@ -557,8 +557,9 @@ struct ScrollPortal : public View, public ViewParent
 	mutable gmpi_forms::StateRef<float> scroll_state;
 
 	gmpi::drawing::Rect bounds;
+	std::string name; // optional suffix on the scroll-state key, lets multiple ScrollPortals coexist in one form
 
-	ScrollPortal(gmpi::drawing::Rect pbounds) : bounds(pbounds)
+	ScrollPortal(gmpi::drawing::Rect pbounds, std::string pname = {}) : bounds(pbounds), name(std::move(pname))
 	{
 		asView = this;
 	}

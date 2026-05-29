@@ -219,8 +219,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		clickDetector->onPointerDown_callback = [this, tbox, env](const primitive::PointerEvent*)
 			{
 				// account for scrolling
-				auto mtx = tbox->getTransform();
-				const auto absoluteBounds = transformRect(mtx, gmpi::drawing::Rect{ 0.0f, 0.0f, getWidth(bounds), getHeight(bounds) });
+				const auto absoluteBounds = transformRect(tbox->parent->getTransform(), bounds);
 
 				// create combo-box
 				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
@@ -473,8 +472,7 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 	clickDetector->onPointerDown_callback = [this, tbox, env](const primitive::PointerEvent*)
 		{
 			// account for scrolling
-			auto mtx = tbox->getTransform();
-			const auto absoluteBounds = transformRect(mtx, gmpi::drawing::Rect{ 0.0f, 0.0f, getWidth(bounds), getHeight(bounds) });
+			const auto absoluteBounds = transformRect(tbox->parent->getTransform(), bounds);
 
 			// create popup menu
 			gmpi::shared_ptr<gmpi::api::IUnknown> unknown;

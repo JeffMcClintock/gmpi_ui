@@ -86,7 +86,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 	// Clicking over the textLabel brings up a native text-entry box
 	{
-		auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
+		auto clickDetector = new primitive::RectangleMouseTarget(getBounds());
 		canvas.add(clickDetector);
 
 		const auto textRect = clickDetector->bounds;
@@ -98,13 +98,13 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 					| (rightAlign ? (int32_t)gmpi::drawing::TextAlignment::Trailing : (int32_t)gmpi::drawing::TextAlignment::Leading);
 
 				// account for scrolling
-				auto mtx = tbox->getTransform();
-				const auto height = getHeight(getBounds()) * (multiLine ? 2.0f : 1.0f);
-				const auto absoluteBounds = transformRect(mtx, gmpi::drawing::Rect{ 0.0f, 0.0f, getWidth(bounds), height });
+				auto textboxrect = transformRect(tbox->parent->getTransform(), bounds);
+				if(multiLine)
+					textboxrect.bottom += getHeight(textboxrect);
 
 				// creat text-editor
 				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-				env->dialogHost->createTextEdit(&absoluteBounds, unknown.put());
+				env->dialogHost->createTextEdit(&textboxrect, unknown.put());
 				textEdit = unknown.as<gmpi::api::ITextEdit>();
 
 				if (!textEdit)

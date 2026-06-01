@@ -316,15 +316,19 @@ gmpi::drawing::Rect Portal::getContentRect() const
 
 void Portal::setScroll(float dx, float dy)
 {
-	Invalidate(bounds); // invalidate old bounds.
-
 	const auto newTransform = makeTranslation({ bounds.left + dx, bounds.top + dy });
 	if(transform == newTransform) // prevent constant repaints.
 		return;
 
 	transform = newTransform;
 	reverseTransform = makeTranslation({ -bounds.left - dx, -bounds.top - dy });
-	Invalidate(bounds); // invalidate new bounds
+
+	// The portal's visible area is invariant under scroll — invalidate it once in
+	// parent coords. We bypass our own Invalidate(), which is built for children
+	// passing portal-local rects (it would transform `bounds` by the scroll and
+	// miss part of the visible area, leaving smear artifacts).
+	if (parent)
+		parent->Invalidate(bounds);
 }
 
 void Portal::Draw(gmpi::drawing::Graphics& g) const

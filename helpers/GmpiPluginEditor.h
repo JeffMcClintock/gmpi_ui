@@ -220,6 +220,10 @@ public:
 	{
 		return ReturnCode::Unhandled;
 	}
+	gmpi::ReturnCode getToolTip(gmpi::drawing::Point point, gmpi::api::IString* returnString) override
+	{
+		return ReturnCode::Unhandled;
+	}
 
 	ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{

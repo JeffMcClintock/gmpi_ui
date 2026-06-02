@@ -103,6 +103,10 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	// keyboard events.
 	virtual ReturnCode onKeyPress(wchar_t c) = 0;
 
+	// Tooltip text under the pointer. Return Ok and fill returnString to show a tooltip,
+	// or Unhandled to suppress. Called by the host on a hover delay; not on every move.
+	virtual ReturnCode getToolTip(gmpi::drawing::Point point, gmpi::api::IString* returnString) = 0;
+
 	// {D2D020D1-BCEE-49F9-A173-97BC6460A727}
 	inline static const gmpi::api::Guid guid =
 	{ 0xd2d020d1, 0xbcee, 0x49f9, { 0xa1, 0x73, 0x97, 0xbc, 0x64, 0x60, 0xa7, 0x27 } };

@@ -232,7 +232,6 @@ void ToolTipManager::init(HMODULE instanceHandle, HWND parentWindow)
 	if (windowHandle != nullptr || !parentWindow)
 		return;
 
-	TOOLINFO ti{};
 	HWND hwndTT = CreateWindow(TOOLTIPS_CLASS, TEXT(""),
 		WS_POPUP,
 		CW_USEDEFAULT, CW_USEDEFAULT,
@@ -240,13 +239,18 @@ void ToolTipManager::init(HMODULE instanceHandle, HWND parentWindow)
 		NULL, (HMENU)NULL, instanceHandle,
 		NULL);
 
+	// Tracking tooltip: positioned by us via TTM_TRACKPOSITION, shown/hidden
+	// via TTM_TRACKACTIVATE. We don't rely on the tooltip subclassing the
+	// parent and watching WM_MOUSEMOVE — that doesn't work in WinUI3 because
+	// XAML routes pointer events without ever delivering WM_MOUSEMOVE to the
+	// owning HWND. TTF_ABSOLUTE keeps our coords exact (no system fudging).
+	TOOLINFO ti{};
 	ti.cbSize = TTTOOLINFO_V1_SIZE;
-	ti.uFlags = TTF_SUBCLASS;
+	ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
 	ti.hwnd = parentWindow;
 	ti.uId = 0;
 	ti.hinst = instanceHandle;
-	ti.lpszText = const_cast<TCHAR*>(TEXT("This is a tooltip"));
-	ti.rect.left = ti.rect.top = ti.rect.bottom = ti.rect.right = 0;
+	ti.lpszText = const_cast<TCHAR*>(TEXT(""));
 
 	if (!SendMessage(hwndTT, TTM_ADDTOOL, 0, (LPARAM)&ti))
 	{
@@ -275,24 +279,23 @@ void ToolTipManager::onMouseActivity(HWND parentWindow)
 
 void ToolTipManager::show(HWND parentWindow)
 {
-	auto platformObject = windowHandle;
-	if (!platformObject)
+	if (!windowHandle)
 		return;
 
-	RECT rc;
-	rc.left = 0;
-	rc.top = 0;
-	rc.right = 100000;
-	rc.bottom = 100000;
 	TOOLINFO ti{};
 	ti.cbSize = TTTOOLINFO_V1_SIZE;
 	ti.hwnd = parentWindow;
 	ti.uId = 0;
-	ti.rect = rc;
 	ti.lpszText = (TCHAR*)(const TCHAR*)text.c_str();
-	SendMessage(platformObject, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
-	SendMessage(platformObject, TTM_NEWTOOLRECT, 0, (LPARAM)&ti);
-	SendMessage(platformObject, TTM_POPUP, 0, 0);
+	SendMessage(windowHandle, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
+
+	// Position the tooltip just below-right of the cursor (screen coords).
+	// Tracking tooltips are shown by TTM_TRACKACTIVATE; TTM_POPUP wouldn't
+	// fire because the parent HWND never received WM_MOUSEMOVE in WinUI3.
+	POINT cursor;
+	GetCursorPos(&cursor);
+	SendMessage(windowHandle, TTM_TRACKPOSITION, 0, MAKELPARAM(cursor.x + 16, cursor.y + 16));
+	SendMessage(windowHandle, TTM_TRACKACTIVATE, (WPARAM)TRUE, (LPARAM)&ti);
 
 	shown = true;
 }
@@ -308,9 +311,7 @@ void ToolTipManager::hide(HWND parentWindow)
 	ti.cbSize = TTTOOLINFO_V1_SIZE;
 	ti.hwnd = parentWindow;
 	ti.uId = 0;
-	ti.lpszText = 0;
-	SendMessage(windowHandle, TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
-	SendMessage(windowHandle, TTM_POP, 0, 0);
+	SendMessage(windowHandle, TTM_TRACKACTIVATE, (WPARAM)FALSE, (LPARAM)&ti);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -581,6 +582,33 @@ bool DxDrawingFrameHwnd::onTimer()
 		pollHdrChangesCount = 100; // ~1.5s at 15ms timer
 		if (windowWhiteLevel != calcWhiteLevel())
 			recreateSwapChainAndClientAsync();
+	}
+
+	// Tooltip readyToShow tick. WindowProc resets the timer on every mouse
+	// activity (via TooltipOnMouseActivity); when the pointer goes still long
+	// enough for readyToShow() to fire we ask the input client what to display.
+	if (inputClient && tooltip.readyToShow())
+	{
+		POINT P;
+		GetCursorPos(&P);
+
+		// Check mouse is over our window and we don't have capture (i.e. user
+		// isn't dragging). Matches the SE15 guard verbatim.
+		if (WindowFromPoint(P) == hwnd && GetCapture() != hwnd)
+		{
+			ScreenToClient(hwnd, &P);
+
+			const auto point = transformPoint(WindowToDips,
+				gmpi::drawing::Point{ static_cast<float>(P.x), static_cast<float>(P.y) });
+
+			gmpi::ReturnString text;
+			if (inputClient->getToolTip(point, &text) == gmpi::ReturnCode::Ok
+				&& !text.str().empty())
+			{
+				tooltip.getText() = gmpi::directx::Utf8ToWstring(text.str());
+				ShowToolTip();
+			}
+		}
 	}
 
 	if (frameUpdateClient)

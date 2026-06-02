@@ -55,6 +55,7 @@ public:
 	gmpi::ReturnCode onKeyPress(wchar_t c) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point point, gmpi::api::IUnknown* contextMenuItemsSink) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode onContextMenu(int32_t idx) override { return gmpi::ReturnCode::Unhandled; }
+	gmpi::ReturnCode getToolTip(gmpi::drawing::Point point, gmpi::api::IString* returnString) override { return gmpi::ReturnCode::Unhandled; }
 
 	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

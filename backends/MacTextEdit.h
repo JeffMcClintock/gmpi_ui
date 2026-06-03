@@ -263,16 +263,26 @@ public:
 {
     client->CallbackFromCocoa(sender);
 }
-// NSTextFieldDelegate: intercept Return so multiline fields insert a newline
-// instead of firing the action (which would dismiss the editor).
+// NSTextFieldDelegate: handle Return in the field editor.
+// Plain <Enter> commits and closes the edit: returning NO lets the field
+// editor run its default insertNewline: action, which ends editing and fires
+// the control's action (endEditing:). In a multiline field, <Shift>+<Enter>
+// instead inserts a newline and keeps editing. This matches the WinUI3 host.
+// Cocoa routes both Return and Shift+Return through insertNewline:, so we tell
+// them apart by inspecting the current key event's Shift modifier.
 - (BOOL)control:(NSControl*)control textView:(NSTextView*)textView doCommandBySelector:(SEL)commandSelector
 {
     if (commandSelector == @selector(insertNewline:)
         && [control isKindOfClass:[GMPI_EscapableTextField class]]
         && ((GMPI_EscapableTextField*)control).multilineMode)
     {
-        [textView insertNewlineIgnoringFieldEditor:self];
-        return YES;
+        const BOOL shiftDown = ([[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift) != 0;
+        if (shiftDown)
+        {
+            [textView insertNewlineIgnoringFieldEditor:self];
+            return YES; // <Shift>+<Enter>: insert newline, keep editing
+        }
+        // plain <Enter>: fall through to commit & close
     }
     return NO;
 }

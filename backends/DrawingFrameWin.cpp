@@ -1832,6 +1832,32 @@ namespace
 	thread_local GMPI_WIN_TextEditState* currentTextEditState = nullptr;
 
 	constexpr int GMPI_TE_EDIT_ID = 100;
+	constexpr UINT_PTR GMPI_TE_SUBCLASS_ID = 1;
+
+	// Subclass the EDIT control so plain <return> commits and closes the dialog, while
+	// <shift>+<return> still inserts a newline. Without this, a multiline EDIT with
+	// ES_WANTRETURN swallows every <return> as a literal CRLF and the user has no way
+	// to dismiss the textbox via the keyboard except <tab>.
+	LRESULT CALLBACK gmpiTextEditSubclassProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
+		UINT_PTR /*uIdSubclass*/, DWORD_PTR /*dwRefData*/)
+	{
+		if ((message == WM_KEYDOWN || message == WM_CHAR) && wParam == VK_RETURN)
+		{
+			const bool shiftDown = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+			if (!shiftDown)
+			{
+				// Commit on the key-down; swallow both the key-down AND the resulting
+				// WM_CHAR so the EDIT never inserts the break. (Unlike WinUI, our
+				// subclass runs before the control's own window proc, so we really can
+				// prevent the insertion rather than undo it.)
+				if (message == WM_KEYDOWN)
+					PostMessage(GetParent(hWnd), WM_COMMAND, (WPARAM)IDOK, 0);
+				return 0;
+			}
+			// shift+return: fall through so the EDIT inserts a newline as normal.
+		}
+		return DefSubclassProc(hWnd, message, wParam, lParam);
+	}
 
 	BOOL CALLBACK gmpiTextEditDlgProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam)
 	{
@@ -1867,6 +1893,10 @@ namespace
 				::SetWindowText(child, ws.c_str());
 				::SetFocus(child);
 				SendMessage(child, EM_SETSEL, (WPARAM)0, (LPARAM)-1); // select-all
+
+				// Hook <return>/<shift>+<return> so multiline edits can be dismissed by Enter.
+				// Idempotent across repeated activations: same proc+id updates rather than stacks.
+				SetWindowSubclass(child, gmpiTextEditSubclassProc, GMPI_TE_SUBCLASS_ID, 0);
 			}
 			break;
 
@@ -1903,6 +1933,52 @@ namespace
 	{
 		auto ptr = ((uintptr_t)lpIn + 3) & ~(uintptr_t)0x03;
 		return (LPWORD)ptr;
+	}
+
+	// Win32 multiline EDIT controls use CRLF line separators and do not break on a
+	// lone '\n', so a model value stored as LF collapses to a single line in the
+	// control. Translate at the control boundary: CRLF for the EDIT, LF for the model.
+	// CR/LF are ASCII bytes that never occur inside a UTF-8 multibyte sequence, so
+	// scanning the UTF-8 std::string byte-wise is safe.
+	inline std::string newlinesToCrlf(const std::string& s)
+	{
+		std::string out;
+		out.reserve(s.size() + 8);
+		for (size_t i = 0; i < s.size(); ++i)
+		{
+			const char c = s[i];
+			if (c == '\r')
+			{
+				out += "\r\n";
+				if (i + 1 < s.size() && s[i + 1] == '\n')
+					++i; // collapse an existing CRLF
+			}
+			else if (c == '\n')
+				out += "\r\n";
+			else
+				out.push_back(c);
+		}
+		return out;
+	}
+	inline std::string newlinesToLf(const std::string& s)
+	{
+		std::string out;
+		out.reserve(s.size());
+		for (size_t i = 0; i < s.size(); ++i)
+		{
+			const char c = s[i];
+			if (c == '\r')
+			{
+				out.push_back('\n');
+				if (i + 1 < s.size() && s[i + 1] == '\n')
+					++i; // collapse CRLF
+			}
+			else if (c == '\n')
+				out.push_back('\n');
+			else
+				out.push_back(c);
+		}
+		return out;
 	}
 
 	class GMPI_WIN_TextEdit : public gmpi::api::ITextEdit
@@ -1969,7 +2045,7 @@ namespace
 			ClientToScreen(parentWnd, &clientOffset);
 
 			GMPI_WIN_TextEditState state;
-			state.text = text;
+			state.text = newlinesToCrlf(text); // EDIT control needs CRLF to render multiple lines
 			state.multiline = multiline;
 			state.dialogX = clientOffset.x + static_cast<int32_t>(0.5f + nativeLeft);
 			state.dialogY = clientOffset.y + static_cast<int32_t>(0.5f + nativeTop);
@@ -2050,7 +2126,7 @@ namespace
 			GlobalFree(hgbl);
 			DeleteObject(state.dialogFont);
 
-			text = state.text;
+			text = newlinesToLf(state.text); // store the model value as canonical LF
 			currentTextEditState = nullptr;
 
 			if (callback)

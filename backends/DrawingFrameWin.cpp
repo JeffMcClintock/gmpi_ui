@@ -385,8 +385,22 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 
 float DxDrawingFrameBase::getRasterizationScale()
 {
+	float systemDpi{ 1.0f };
+
+	if(getWindowHandle())
+	{
+		systemDpi = GetDpiForWindow(getWindowHandle()) / 96.f;
+	}
+	else
+	{
+		// use system DPI as a guess at the Window DPI until we know the actual DAW window handle in attached().
+		HDC hdc = ::GetDC(NULL);
+		systemDpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
+		::ReleaseDC(NULL, hdc);
+	}
+
 	// Multiply by pluginUIScale (default 1.0 — see HC_PLUGIN_UI_SCALE).
-	return (GetDpiForWindow(getWindowHandle()) / 96.f) * pluginUIScale;
+	return systemDpi * pluginUIScale;
 }
 
 // Tooltip forwarders (initTooltip/TooltipOnMouseActivity/ShowToolTip/HideToolTip)

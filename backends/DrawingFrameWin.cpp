@@ -60,7 +60,16 @@ HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWN
 	return windowHandle;
 }
 
-// Right-click context-menu fallback. Caller has typically already dispatched
+void DetachHostingWindow(HWND windowHandle)
+{
+	// Clear GWLP_USERDATA so any messages still in flight during window
+	// destruction hit the nullptr guard in the window proc and fall through
+	// to DefWindowProc rather than dispatching through a dangling this pointer.
+	if (windowHandle)
+		SetWindowLongPtr(windowHandle, GWLP_USERDATA, 0);
+}
+
+// Right-click context-menu fallback.
 // onPointerDown and only invokes this when the client returned Unhandled — so
 // don't re-fire onPointerDown here. Caches the menu in `contextMenu` to keep
 // it alive across the caller's release. Returns the client's populateContextMenu

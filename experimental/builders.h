@@ -355,6 +355,10 @@ struct TickBox : public View
 	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<bool> value;
 
+	// new. clean separated one-way back-channel (mirrors TextEditView::validateAndSave).
+	// when set, a click routes the new value here instead of writing 'value' directly.
+	std::function <void(bool)> validateAndSave;
+
 	TickBox()
 	{
 		value.addObserver([this]()
@@ -428,6 +432,10 @@ struct FileBrowseButtonView : public View
 	gmpi::drawing::Rect bounds;
 	mutable gmpi_forms::StateRef<std::string> value;
 	mutable gmpi::shared_ptr<gmpi::api::IFileDialog> fileDialog; // needs to be kept alive, so it can be called async.
+
+	// new. clean separated one-way back-channel (mirrors TextEditView::validateAndSave).
+	// when set, a chosen path routes here instead of writing 'value' directly.
+	std::function <void(const std::string&)> validateAndSave;
 
 	FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds) {}
 

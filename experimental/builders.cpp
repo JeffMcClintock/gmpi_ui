@@ -310,7 +310,18 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 
 		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
 			{
-				value.set(!value.get());
+				const bool newValue = !value.get();
+
+				// new way, separated back-channel
+				if (validateAndSave)
+				{
+					validateAndSave(newValue);
+				}
+				else
+				{
+					// classic two-way binding (problematic)
+					value.set(newValue);
+				}
 			};
 
 		// don't work?
@@ -452,7 +463,16 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 					new gmpi::sdk::FileDialogCallback(
 						[this](const std::string& selectedPath) -> void
 						{
-							value.set(selectedPath);
+							// new way, separated back-channel
+							if (validateAndSave)
+							{
+								validateAndSave(selectedPath);
+							}
+							else
+							{
+								// classic two-way binding (problematic)
+								value.set(selectedPath);
+							}
 						})
 				);
 			};

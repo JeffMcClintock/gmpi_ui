@@ -283,7 +283,14 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	bool firstPresent = false;
 	float windowWhiteLevel{};
 	bool monitorChanged = false;
-	std::function<void()> clientInvalidated; // called from Paint if monitor white-level changed since last check.
+	// Owner hook: the swap chain and every device-dependent resource the client
+	// holds (brushes, device bitmaps, layers) are invalid and must be recreated.
+	// The handler detaches the client, recreates the swap chain (detachAndRecreate)
+	// and rebuilds/reattaches the client, so nothing cached against the old
+	// ID2D1Device is ever drawn with the new one ('wrong resource domain' errors).
+	// Raised via recreateSwapChainAndClientAsync on monitor white-level change,
+	// GPU-adapter change, and device loss (failed Present/endDraw/ResizeBuffers).
+	std::function<void()> clientInvalidated;
 
 	virtual float calcWhiteLevel()
 	{
@@ -355,6 +362,11 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 		hdrBitmap = nullptr;
 		hdrRenderTargetDC = nullptr;
 		hdrRenderTarget = nullptr;
+		// Detach the swap-chain bitmap from the context. Bitmap wrappers can hold a
+		// reference to the context (see Bitmap::getNativeBitmap), which would
+		// otherwise keep the dead swap chain's back-buffer alive with it.
+		if (d2dDeviceContext)
+			d2dDeviceContext->SetTarget(nullptr);
 		d2dDeviceContext = nullptr;
 		swapChain = nullptr;
 	}

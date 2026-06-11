@@ -966,7 +966,7 @@ gmpi::ReturnCode Bitmap::lockPixels(gmpi::drawing::api::IBitmapPixels** returnIn
 ID2D1Bitmap* Bitmap::getNativeBitmap(ID2D1DeviceContext* nativeContext)
 {
 	// Check for loss of surface. If so invalidate device-bitmap
-	if (nativeContext != nativeContext_)
+	if (nativeContext != nativeContext_.get())
 	{
 		nativeContext_ = nativeContext;
 		nativeBitmap_ = {};

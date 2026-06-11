@@ -482,7 +482,12 @@ class Bitmap final : public drawing::api::IBitmap
 public:
     gmpi::directx::ComPtr<ID2D1Bitmap> nativeBitmap_;
     gmpi::directx::ComPtr<IWICBitmap> diBitmap_;
-    ID2D1DeviceContext* nativeContext_;
+    // Strong reference, deliberately: getNativeBitmap detects device loss by
+    // comparing context identity. A raw pointer here can false-match when a
+    // recreated context lands on the recycled heap address, serving a bitmap that
+    // belongs to the destroyed device ('wrong resource domain' errors). Holding a
+    // reference makes address reuse impossible while we still compare against it.
+    gmpi::directx::ComPtr<ID2D1DeviceContext> nativeContext_;
     drawing::api::IFactory* factory;
 #ifdef _DEBUG
     std::string debugFilename;

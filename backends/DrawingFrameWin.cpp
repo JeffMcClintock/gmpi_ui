@@ -827,6 +827,20 @@ void tempSharedD2DBase::PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects)
 		return;
 	}
 
+	// Backstop: the device is gone but no rebuild is pending. All known loss paths
+	// (failed Present/endDraw/ResizeBuffers) raise clientInvalidated themselves, but
+	// if anything else released the device, re-creating it in-place beneath an
+	// attached client is unsafe -- everything the client cached against the old
+	// ID2D1Device (brushes, device bitmaps, layers) fails on the new device with
+	// 'wrong resource domain' errors. Prefer the full client rebuild when the owner
+	// supports it. (Before 'reentrant = true' because synchronous handlers call
+	// detachAndRecreate, which asserts !reentrant.)
+	if (!d2dDeviceContext && recreateDeviceOnPaint() && clientInvalidated)
+	{
+		recreateSwapChainAndClientAsync();
+		return;
+	}
+
 	reentrant = true;
 
 	if (!d2dDeviceContext && recreateDeviceOnPaint())
@@ -856,37 +870,65 @@ void tempSharedD2DBase::PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects)
 
 	renderFrame(deviceContext.get(), dirtyRects);
 
-	if (hdrRenderTarget)
-	{
-		assert(hdrWhiteScaleEffect);
-		d2dDeviceContext->DrawImage(
-			hdrWhiteScaleEffect.get(),
-			D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-			D2D1_COMPOSITE_MODE_SOURCE_COPY
-		);
-		d2dDeviceContext->EndDraw();
-	}
+	// renderFrame releases the device when endDraw reports a lost device
+	// (D2DERR_RECREATE_TARGET etc.), in which case there is nothing left to present.
+	bool deviceLost = !swapChain;
 
-	if (firstPresent)
+	if (!deviceLost)
 	{
-		firstPresent = false;
-		const auto hr = swapChain->Present(1, 0);
-		if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
+		if (hdrRenderTarget)
 		{
-			ReleaseDevice();
+			assert(hdrWhiteScaleEffect);
+			d2dDeviceContext->DrawImage(
+				hdrWhiteScaleEffect.get(),
+				D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+				D2D1_COMPOSITE_MODE_SOURCE_COPY
+			);
+			d2dDeviceContext->EndDraw();
 		}
-	}
-	else
-	{
-		DXGI_PRESENT_PARAMETERS presetParameters{ static_cast<UINT>(dirtyRects.size()), reinterpret_cast<RECT*>(dirtyRects.data()), nullptr, nullptr };
-		const auto hr = swapChain->Present1(1, 0, &presetParameters);
-		if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
+
+		if (firstPresent)
 		{
-			ReleaseDevice();
+			firstPresent = false;
+			const auto hr = swapChain->Present(1, 0);
+			if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
+			{
+				ReleaseDevice();
+				deviceLost = true;
+			}
+		}
+		else
+		{
+#if 0 //def _DEBUG
+			if(rand() % 10 == 0) // simulate occasional swapchain presentation failure for testing.
+			{
+				static gmpi::drawing::RectL failRect{};
+				dirtyRects = std::span(&failRect, 1);
+			}
+#endif
+
+			DXGI_PRESENT_PARAMETERS presetParameters{ static_cast<UINT>(dirtyRects.size()), reinterpret_cast<RECT*>(dirtyRects.data()), nullptr, nullptr };
+			const auto hr = swapChain->Present1(1, 0, &presetParameters);
+			if (S_OK != hr && DXGI_STATUS_OCCLUDED != hr)
+			{
+				ReleaseDevice();
+				deviceLost = true;
+			}
 		}
 	}
 
 	reentrant = false;
+
+	// Device-loss recovery: everything the client cached against the dead device
+	// (brushes, device bitmaps, layers) is invalid, so have the owner detach the
+	// client, recreate the swap chain and rebuild the client -- the same flow as a
+	// monitor change. Deferred until 'reentrant' clears because synchronous
+	// clientInvalidated handlers (VST3, JUCE) call detachAndRecreate, which must
+	// not run inside a paint.
+	if (deviceLost)
+	{
+		recreateSwapChainAndClientAsync();
+	}
 }
 
 void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
@@ -1080,7 +1122,12 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 
 void tempSharedD2DBase::recreateSwapChainAndClientAsync()
 {
-	monitorChanged = true;
+	// Idempotent while a rebuild is already pending: several sites can detect the
+	// same device loss (failed present, endDraw, resize) before the handler runs.
+	if (monitorChanged)
+		return;
+
+	monitorChanged = true; // gates PaintFrame until CreateDeviceSwapChainBitmap resets it.
 
 	// notify client that it's device-dependent resources have been invalidated.
 	if (clientInvalidated)
@@ -1296,8 +1343,11 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 
 void tempSharedD2DBase::OnSize(UINT width, UINT height)
 {
-	assert(swapChain);
-	assert(d2dDeviceContext);
+	// The device can legitimately be gone here: it is released on a failed present,
+	// and a size event can arrive before the pending rebuild has run. Nothing to do --
+	// CreateSwapPanel sizes the new swap chain from the window when the rebuild runs.
+	if (!swapChain || !d2dDeviceContext)
+		return;
 
 	d2dDeviceContext->SetTarget(nullptr);
 
@@ -1314,7 +1364,10 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 	}
 	else
 	{
+		// Device lost. The client's device-dependent resources died with it: have
+		// the owner rebuild the swap chain and the client, not just the device.
 		ReleaseDevice();
+		recreateSwapChainAndClientAsync();
 	}
 }
 
@@ -1342,7 +1395,9 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 		}
 		else
 		{
+			// Device lost: rebuild the client along with the swap chain (see OnSize).
 			ReleaseDevice();
+			recreateSwapChainAndClientAsync();
 		}
 	}
 }

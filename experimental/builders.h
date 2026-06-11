@@ -327,6 +327,10 @@ struct ComboBoxView : public View
 
 	mutable gmpi::shared_ptr<gmpi::api::IPopupMenu> combo;
 
+	// new. clean separated one-way back-channel (mirrors TextEditView::validateAndSave).
+	// when set, a selection routes the chosen enum id here instead of writing 'enum_value' directly.
+	std::function <void(int32_t)> validateAndSave;
+
 	ComboBoxView()
 	{
 		enum_value.addObserver([this]()
@@ -396,6 +400,9 @@ struct ToggleSwitch : public View
 	mutable gmpi_forms::StateRef<bool> value;
 	mutable gmpi_forms::StateRef<std::string> text;
 
+	// new. clean separated one-way back-channel (mirrors TextEditView::validateAndSave).
+	std::function <void(bool)> validateAndSave;
+
 	ToggleSwitch(
 		std::string_view labelText,
 		gmpi_forms::State<bool>& pvalue
@@ -414,6 +421,9 @@ struct ToggleSwitch : public View
 			{
 				setDirty();
 			});
+
+		// direct State-is-model: a click writes the bound State (the model) via the back-channel.
+		validateAndSave = [&pvalue](bool v) { pvalue.set(v); };
 	}
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;

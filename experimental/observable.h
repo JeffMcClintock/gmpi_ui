@@ -120,27 +120,10 @@ struct StateRef : public thing
 		return state->get();
 	}
 
-	void set(const T& value)
-	{
-		state->set(value);
-	}
-
-	void set(T&& value)
-	{
-		state->set(std::move(value));
-	}
-
-	StateRef& operator=(const T& value)
-	{
-		set(value);
-		return *this;
-	}
-
-	StateRef& operator=(T&& value)
-	{
-		set(std::move(value));
-		return *this;
-	}
+	// Read-only handle: a StateRef observes/displays a State; it cannot write it directly.
+	// UI -> model goes through a widget's 'validateAndSave' back-channel (which calls the model's
+	// own setter). A widget that genuinely owns/drives its source state writes it explicitly via
+	// getSource()->set().
 
 	void addObserver(std::function<void(void)> callback)
 	{

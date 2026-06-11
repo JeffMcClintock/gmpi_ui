@@ -119,16 +119,9 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 					(
 						[this](const std::string& newValue)
 						{
-							// new way, separated back-channel
-							if(validateAndSave)
-							{
+							// one-way: route the committed value through the back-channel (UI -> model).
+							if (validateAndSave)
 								validateAndSave(newValue);
-							}
-							else
-							{
-								// classic two-way binding (problematic)
-								text = newValue;
-							}
 						}
 					)
 				);
@@ -246,7 +239,11 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 				callback.attach(new gmpi::sdk::PopupMenuCallback(
 					[this](int32_t selectedIndex)
 					{
-						enum_value.set(enum_list_lookup_index(enum_list.get(), selectedIndex).id);
+						const int32_t selectedId = enum_list_lookup_index(enum_list.get(), selectedIndex).id;
+
+						// one-way: route the selection through the back-channel (UI -> model).
+						if (validateAndSave)
+							validateAndSave(selectedId);
 					}
 				));
 
@@ -310,18 +307,9 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 
 		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
 			{
-				const bool newValue = !value.get();
-
-				// new way, separated back-channel
+				// one-way: route the toggled value through the back-channel (UI -> model).
 				if (validateAndSave)
-				{
-					validateAndSave(newValue);
-				}
-				else
-				{
-					// classic two-way binding (problematic)
-					value.set(newValue);
-				}
+					validateAndSave(!value.get());
 			};
 
 		// don't work?
@@ -389,7 +377,9 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
 			{
-				value = !value;
+				// one-way: route the toggled value through the back-channel (UI -> model).
+				if (validateAndSave)
+					validateAndSave(!value.get());
 			};
 
 		// don't work?
@@ -463,16 +453,9 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 					new gmpi::sdk::FileDialogCallback(
 						[this](const std::string& selectedPath) -> void
 						{
-							// new way, separated back-channel
+							// one-way: route the chosen path through the back-channel (UI -> model).
 							if (validateAndSave)
-							{
 								validateAndSave(selectedPath);
-							}
-							else
-							{
-								// classic two-way binding (problematic)
-								value.set(selectedPath);
-							}
 						})
 				);
 			};
@@ -602,7 +585,9 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 						gmpi_forms::StateRef<float> scroll(scroll_state);
 
 						const auto newScroll = std::clamp(scroll.get() - scrollRatio * delta.height, -(info.contentLength - info.visibleLength), 0.0f);
-						scroll.set(newScroll);
+
+						// the scrollbar owns/drives this state: write the source State directly (StateRef is read-only).
+						scroll.getSource()->set(newScroll);
 					}
 				);
 			};
@@ -637,7 +622,9 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		{
 			const auto maxScroll = -(std::max)(0.0f, portal->getContentRect().bottom - getHeight(contentBounds));
 			const auto newScroll = std::clamp(scroll_state.get() + delta * 0.2f, maxScroll, 0.0f);
-			scroll_state.set(newScroll);
+
+			// the scrollbar owns/drives this state: write the source State directly (StateRef is read-only).
+			scroll_state.getSource()->set(newScroll);
 		};
 }
 

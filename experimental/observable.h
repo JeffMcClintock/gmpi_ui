@@ -19,10 +19,14 @@ struct State : public thing
 {
 private:
 	T value = {};
-	int nextObserverHandle{};
-	std::map<int, std::function<void(void)>> observers;
+	// model-side side-effect callbacks (e.g. mark-document-modified, notify views). add-only:
+	// they live as long as the owning model object, which owns this State as a member.
+	std::vector<std::function<void(void)>> observers;
 
 public:
+	// bound StateRefs (the view layer). auto-managed: a StateRef (un)registers itself via
+	// setSource/release. Fired BEFORE 'observers' so cheap view refreshes (setDirty) run before
+	// model side-effects that may rebuild (and thus destroy) those same views.
 	std::vector<StateRef<T>*> watchers;
 
 	State() = default;
@@ -39,7 +43,7 @@ public:
 			c->onChanged();
 
 		for (auto& o : observers)
-			o.second();
+			o();
 	}
 
 	void set(T&& v)
@@ -53,7 +57,7 @@ public:
 			c->onChanged();
 
 		for (auto& o : observers)
-			o.second();
+			o();
 	}
 
 	State& operator=(const T& v)
@@ -86,16 +90,9 @@ public:
 		return value;
 	}
 
-	int addObserver(std::function<void(void)> callback)
+	void addObserver(std::function<void(void)> callback)
 	{
-		const auto handle = nextObserverHandle++;
-		observers[handle] = callback;
-		return handle;
-	}
-
-	void removeObserver(int handle)
-	{
-		observers.erase(handle);
+		observers.push_back(std::move(callback));
 	}
 };
 

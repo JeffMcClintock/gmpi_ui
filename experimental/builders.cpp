@@ -119,7 +119,16 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 					(
 						[this](const std::string& newValue)
 						{
-							text = newValue;
+							// new way, separated back-channel
+							if(validateAndSave)
+							{
+								validateAndSave(newValue);
+							}
+							else
+							{
+								// classic two-way binding (problematic)
+								text = newValue;
+							}
 						}
 					)
 				);

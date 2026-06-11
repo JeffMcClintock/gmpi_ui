@@ -304,6 +304,8 @@ struct TextEditView : public View
 
 	mutable gmpi::shared_ptr<gmpi::api::ITextEdit> textEdit;
 
+	std::function <void(const std::string&)> validateAndSave;
+
 	TextEditView(std::string path = {});
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;

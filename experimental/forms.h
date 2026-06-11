@@ -29,8 +29,10 @@ class Form :
 	, public gmpi::forms::primitive::IMouseParent
 {
 protected:
-	gmpi::api::IDrawingHost* host = {};
-	gmpi::api::IInputHost* inputhost = {};
+	// Ref-counted (not raw): queryInterface addRefs what it returns, and some
+	// hosts hand out tear-offs whose lifetime rides on these refs.
+	gmpi::shared_ptr<gmpi::api::IDrawingHost> host;
+	gmpi::shared_ptr<gmpi::api::IInputHost> inputhost;
 	// can just query	gmpi::api::IDialogHost* dialogHost = {};
 
 	std::function<void(std::string)> onKey;
@@ -203,8 +205,13 @@ struct TextEdit
 {
 	gmpi::ui::builder::TextEditView* view = {};
 	gmpi_forms::StateRef<std::string> name;
+	
 
-	TextEdit(gmpi_forms::State<std::string>& pname);
+	TextEdit(
+		gmpi_forms::State<std::string>& pname
+		// new. clean separated one-way back-channel.
+		, std::function <void(const std::string&)> validateAndSave = {}
+	);
 };
 
 } // namespace gmpi::ui

@@ -15,7 +15,7 @@ Form::Form()
 
 void Form::Invalidate(gmpi::drawing::Rect r) const
 {
-	if (host)
+	if (!host.isNull())
 		host->invalidateRect(&r);
 }
 
@@ -163,8 +163,8 @@ gmpi::ReturnCode Form::setHost(IUnknown* phost)
 		return gmpi::ReturnCode::Ok;
 	}
 
-	phost->queryInterface(&gmpi::api::IDrawingHost::guid, reinterpret_cast<void**>(&host));
-	phost->queryInterface(&gmpi::api::IInputHost::guid, reinterpret_cast<void**>(&inputhost));
+	phost->queryInterface(&gmpi::api::IDrawingHost::guid, host.put_void());
+	phost->queryInterface(&gmpi::api::IInputHost::guid, inputhost.put_void());
 	phost->queryInterface(&gmpi::api::IDialogHost::guid, env.dialogHost.put_void());
 	return gmpi::ReturnCode::Ok;
 }
@@ -256,7 +256,10 @@ ComboBox::ComboBox(gmpi::drawing::Rect bounds)
 	result.push_back(std::move(combo));
 }
 
-TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
+TextEdit::TextEdit(
+	gmpi_forms::State<std::string>& pname
+	, std::function <void(const std::string&)> validateAndSave
+	)
 {
 	name.addObserver([this]()
 		{
@@ -266,6 +269,7 @@ TextEdit::TextEdit(gmpi_forms::State<std::string>& pname)
 	auto editor = std::make_unique<gmpi::ui::builder::TextEditView>();
 	view = editor.get();
 	view->text.setSource(&pname);
+	view->validateAndSave = validateAndSave;
 
 	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
 	result.push_back(std::move(editor));

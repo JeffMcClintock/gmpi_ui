@@ -124,7 +124,7 @@ struct StateRef : public thing
 
 	void addObserver(std::function<void(void)> callback)
 	{
-		callbacks.push_back(callback);
+		callbacks.push_back(std::move(callback));
 	}
 
 	void onChanged()

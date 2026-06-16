@@ -653,6 +653,9 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
     virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, int32_t flags, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ??? remove flags (use CpuRenderTarget instead)
+    // Intersect the current clip region with an arbitrary geometry (cf. JUCE Graphics::reduceClipRegion(const Path&)).
+    // Release it with popAxisAlignedClip(), exactly like a rectangular clip. Added last to preserve vtable layout.
+    virtual gmpi::ReturnCode pushClipGeometry(IPathGeometry* geometry) = 0;
 
     // {F38EC187-BA04-4A63-B1D6-22D931E1F308}
     inline static const gmpi::api::Guid guid =

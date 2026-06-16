@@ -1889,6 +1889,19 @@ public:
 		native->popAxisAlignedClip();
 	}
 
+	// Intersect the current clip region with an arbitrary geometry (cf. JUCE reduceClipRegion(const Path&)).
+	// Release it with popClip() (or popAxisAlignedClip(), which is equivalent).
+	void pushClipGeometry(PathGeometry& geometry)
+	{
+		native->pushClipGeometry(AccessPtr::get(geometry));
+	}
+
+	// Releases the most recent clip pushed with either pushAxisAlignedClip() or pushClipGeometry().
+	void popClip()
+	{
+		native->popAxisAlignedClip();
+	}
+
 	Rect getAxisAlignedClip()
 	{
 		Rect temp;
@@ -2054,6 +2067,29 @@ public:
 	~ClipDrawingToBounds()
 	{
 		graphics.popAxisAlignedClip();
+	}
+};
+
+/*
+	Handy RAII helper for clipping to an arbitrary geometry/path. Automatically restores the previous clip on exit.
+	USEAGE:
+
+	Graphics g(drawingContext);
+	ClipDrawingToGeometry x(g, myPathGeometry);
+*/
+class ClipDrawingToGeometry
+{
+	Graphics& graphics;
+public:
+	ClipDrawingToGeometry(Graphics& g, PathGeometry& geometry) :
+		graphics(g)
+	{
+		graphics.pushClipGeometry(geometry);
+	}
+
+	~ClipDrawingToGeometry()
+	{
+		graphics.popClip();
 	}
 };
 

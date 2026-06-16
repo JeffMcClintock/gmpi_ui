@@ -1026,13 +1026,21 @@ public:
     Factory();
 };
 
+// Clip stack entries mix axis-aligned rectangles (PushAxisAlignedClip) and arbitrary
+// geometries (PushLayer). The kind tag tells popAxisAlignedClip() which one to release.
+// Defined at namespace scope so the SDK3 hosting bridge (which shares the stack by
+// reference) can name the element type.
+enum class ClipKind { Rect, Geometry };
+struct ClipEntry { drawing::Rect bounds; ClipKind kind; };
+
 class GraphicsContext_base : public drawing::api::IDeviceContext
 {
 protected:
     gmpi::directx::ComPtr<ID2D1DeviceContext> context_;
 
     drawing::api::IFactory* factory{};
-    std::vector<drawing::Rect> clipRectStack;
+
+    std::vector<ClipEntry> clipStack;
 
     GraphicsContext_base(drawing::api::IFactory* pfactory, ID2D1DeviceContext* deviceContext = {}) :
         context_(deviceContext)
@@ -1042,7 +1050,7 @@ protected:
         drawing::Rect r;
         r.top = r.left = -defaultClipBounds;
         r.bottom = r.right = defaultClipBounds;
-        clipRectStack.push_back(r);
+        clipStack.push_back({ r, ClipKind::Rect });
     }
 
 public:
@@ -1222,10 +1230,16 @@ public:
 
     ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override;
 
+    ReturnCode pushClipGeometry(drawing::api::IPathGeometry* geometry) override;
+
     ReturnCode popAxisAlignedClip() override
     {
-        context_->PopAxisAlignedClip();
-        clipRectStack.pop_back();
+        if (clipStack.back().kind == ClipKind::Geometry)
+            context_->PopLayer();
+        else
+            context_->PopAxisAlignedClip();
+
+        clipStack.pop_back();
         return ReturnCode::Ok;
     }
 

@@ -679,6 +679,7 @@ typedef struct GMPI_IDeviceContextMethods
     int32_t (*beginDraw)(GMPI_IDeviceContext*);
     int32_t (*endDraw)(GMPI_IDeviceContext*);
     int32_t (*createCompatibleRenderTarget)(GMPI_IDeviceContext*, const GMPI_Size* desiredSize, GMPI_IBitmapRenderTarget** returnBitmapRenderTarget);
+    int32_t (*pushClipGeometry)(GMPI_IDeviceContext*, GMPI_IPathGeometry* geometry);
 } GMPI_IDeviceContextMethods;
 
 // {A1D9751D-0C43-4F57-8958-E0BCE359B2FD}

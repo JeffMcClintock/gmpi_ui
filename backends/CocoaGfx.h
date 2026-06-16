@@ -2529,6 +2529,36 @@ public:
         return gmpi::ReturnCode::Ok;
 	}
 
+	gmpi::ReturnCode pushClipGeometry(gmpi::drawing::api::IPathGeometry* geometry) override
+    {
+        auto pathGeometry = static_cast<const PathGeometry*>(geometry);
+
+        gmpi::drawing::Matrix3x2 currentTransform;
+        getTransform(&currentTransform);
+
+        // Track the geometry's transformed bounding box so getAxisAlignedClip()/clear() stay correct.
+        const auto bbox = CGPathGetPathBoundingBox(pathGeometry->native());
+        gmpi::drawing::Rect localBounds{
+            static_cast<float>(CGRectGetMinX(bbox)), static_cast<float>(CGRectGetMinY(bbox)),
+            static_cast<float>(CGRectGetMaxX(bbox)), static_cast<float>(CGRectGetMaxY(bbox)) };
+        auto absBounds = transformRect(currentTransform, localBounds);
+
+        if (!info.clipRectStack.empty())
+            absBounds = intersectRect(absBounds, info.clipRectStack.back());
+
+        info.clipRectStack.push_back(absBounds);
+
+        // Same save/restore discipline as the rectangular clip, so popAxisAlignedClip() releases either kind.
+        CGContextSaveGState(cgContext_);
+        CGContextAddPath(cgContext_, pathGeometry->native());
+        if (pathGeometry->getFillMode() == gmpi::drawing::FillMode::Alternate)
+            CGContextEOClip(cgContext_);
+        else
+            CGContextClip(cgContext_);
+
+        return gmpi::ReturnCode::Ok;
+	}
+
 	gmpi::ReturnCode popAxisAlignedClip() override
 	{
         info.clipRectStack.pop_back();

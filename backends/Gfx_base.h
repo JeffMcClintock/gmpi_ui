@@ -471,6 +471,12 @@ public:
 		return gmpi::ReturnCode::Fail;
 	}
 
+    gmpi::ReturnCode pushClipGeometry(gmpi::drawing::api::IPathGeometry* geometry) override
+	{
+		// Geometry clipping is not implemented in the software backend (no-op, like pushAxisAlignedClip).
+		return gmpi::ReturnCode::NoSupport;
+	}
+
     gmpi::ReturnCode popAxisAlignedClip() override
 	{
 		clipRectStack.pop_back();

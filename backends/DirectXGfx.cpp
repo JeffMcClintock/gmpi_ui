@@ -1228,7 +1228,7 @@ BitmapRenderTarget::BitmapRenderTarget(GraphicsContext_base* g, const drawing::S
 	if (context_)
 		context_->SetDpi(dpi, dpi);
 
-	clipRectStack.push_back({ 0, 0, desiredSize->width, desiredSize->height });
+	clipStack.push_back({ { 0, 0, desiredSize->width, desiredSize->height }, ClipKind::Rect });
 }
 
 gmpi::ReturnCode BitmapRenderTarget::endDraw()
@@ -1323,9 +1323,36 @@ gmpi::ReturnCode GraphicsContext_base::pushAxisAlignedClip(const drawing::Rect* 
 	drawing::Matrix3x2 currentTransform;
 	context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
 	auto r2 = transformRect(currentTransform , *clipRect);
-	clipRectStack.push_back(r2);
+	clipStack.push_back({ r2, ClipKind::Rect });
 
 //			_RPT4(_CRT_WARN, "                 PushAxisAlignedClip( %f %f %f %f)\n", r2.left, r2.top, r2.right , r2.bottom);
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode GraphicsContext_base::pushClipGeometry(drawing::api::IPathGeometry* geometry)
+{
+	auto d2dGeometry = ((gmpi::directx::Geometry*)geometry)->native();
+
+	D2D1_LAYER_PARAMETERS1 layerParams{};
+	layerParams.contentBounds     = D2D1::InfiniteRect();
+	layerParams.geometricMask     = d2dGeometry;
+	layerParams.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
+	layerParams.maskTransform     = D2D1::Matrix3x2F::Identity(); // geometry is already in the context's current-transform space, like fillGeometry().
+	layerParams.opacity           = 1.0f;
+	layerParams.opacityBrush      = nullptr;
+	layerParams.layerOptions      = D2D1_LAYER_OPTIONS1_NONE;
+
+	// Passing a null layer lets Direct2D 1.1+ manage the backing layer resource from its own pool.
+	context_->PushLayer(&layerParams, nullptr);
+
+	// Record the geometry's transformed bounds so getAxisAlignedClip() still returns a sensible rect.
+	drawing::Matrix3x2 currentTransform;
+	context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
+
+	D2D1_RECT_F bounds{};
+	d2dGeometry->GetBounds(reinterpret_cast<const D2D1_MATRIX_3X2_F*>(&currentTransform), &bounds);
+	clipStack.push_back({ {bounds.left, bounds.top, bounds.right, bounds.bottom}, ClipKind::Geometry });
+
 	return gmpi::ReturnCode::Ok;
 }
 
@@ -1335,7 +1362,7 @@ gmpi::ReturnCode GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* r
 	drawing::Matrix3x2 currentTransform;
 	context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
 	currentTransform = invert(currentTransform);
-	auto r2 = transformRect(currentTransform, clipRectStack.back());
+	auto r2 = transformRect(currentTransform, clipStack.back().bounds);
 
 	*returnClipRect = r2;
 	return gmpi::ReturnCode::Ok;

@@ -205,7 +205,6 @@ struct TextEdit
 {
 	gmpi::ui::builder::TextEditView* view = {};
 	gmpi_forms::StateRef<std::string> name;
-	
 
 	TextEdit(
 		gmpi_forms::State<std::string>& pname

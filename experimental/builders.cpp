@@ -49,9 +49,9 @@ TextEditView::TextEditView(/*gmpi_forms::Environment* env,*/ std::string path)
 void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	const auto& theme = currentTheme();
+
 	// Add a text box.
 	gmpi::drawing::Rect textBoxArea = getBounds();
-	//	textBoxArea.bottom = textBoxArea.top + itemHeight;
 	textBoxArea.left += editor_padding;
 	textBoxArea.right -= editor_padding;
 
@@ -65,6 +65,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	canvas.add(style);
 
 	// background rectangle
+	if(!readOnly)
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
@@ -85,6 +86,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	);
 
 	// Clicking over the textLabel brings up a native text-entry box
+	if(!readOnly)
 	{
 		auto clickDetector = new primitive::RectangleMouseTarget(getBounds());
 		canvas.add(clickDetector);
@@ -172,6 +174,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	canvas.add(style);
 
 	// background rectangle
+	if(!readOnly)
 	{
 		auto style2 = new primitive::ShapeStyle();
 		style2->strokeColor = gmpi::drawing::Colors::TransparentBlack;
@@ -198,64 +201,67 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		tbox
 	);
 
-	// draw a drop-down symbol
-	{
-		auto symbolArea = comboBoxArea;
-		symbolArea.left = symbolArea.right - symbol_width;
-		symbolArea.top -= 4; // else too low
+	if(!readOnly)
+		{
+		// draw a drop-down symbol
+		{
+			auto symbolArea = comboBoxArea;
+			symbolArea.left = symbolArea.right - symbol_width;
+			symbolArea.top -= 4; // else too low
 
-		auto tbox2 = new primitive::TextBox(style, symbolArea, "\xE2\x8C\x84"); // unicode 'down arrowhead'
+			auto tbox2 = new primitive::TextBox(style, symbolArea, "\xE2\x8C\x84"); // unicode 'down arrowhead'
 
-		canvas.add(
-			tbox2
-		);
-	}
+			canvas.add(
+				tbox2
+			);
+		}
 
-	// Clicking over the textLabel brings up a native combo box
-	auto clickDetector = new primitive::RectangleMouseTarget(comboBoxArea);
-	{
-		canvas.add(clickDetector);
+		// Clicking over the textLabel brings up a native combo box
+		auto clickDetector = new primitive::RectangleMouseTarget(comboBoxArea);
+		{
+			canvas.add(clickDetector);
 
-		const auto textRect = clickDetector->bounds;
+			const auto textRect = clickDetector->bounds;
 
-		clickDetector->onPointerDown_callback = [this, tbox, env](const primitive::PointerEvent*)
-			{
-				// account for scrolling
-				const auto absoluteBounds = transformRect(tbox->parent->getTransform(), bounds);
-
-				// create combo-box
-				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-				env->dialogHost->createPopupMenu(&absoluteBounds, unknown.put());
-				combo = unknown.as<gmpi::api::IPopupMenu>();
-
-				if (!combo)
-					return;
-
-				// TODO: !!! set font (at least height).
-				combo->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
-
-				// Single per-item callback shared across all items: only the chosen item's callback fires.
-				gmpi::shared_ptr<gmpi::api::IUnknown> callback;
-				callback.attach(new gmpi::sdk::PopupMenuCallback(
-					[this](int32_t selectedIndex)
-					{
-						const int32_t selectedId = enum_list_lookup_index(enum_list.get(), selectedIndex).id;
-
-						// one-way: route the selection through the back-channel (UI -> model).
-						if (validateAndSave)
-							validateAndSave(selectedId);
-					}
-				));
-
-				// populate combo
-				constexpr int32_t flags{};
-				for (auto& [index, id, text] : it_enum_list2(enum_list.get()))
+			clickDetector->onPointerDown_callback = [this, tbox, env](const primitive::PointerEvent*)
 				{
-					combo->addItem(text.c_str(), index, flags, callback.get());
-				}
+					// account for scrolling
+					const auto absoluteBounds = transformRect(tbox->parent->getTransform(), bounds);
 
-				combo->showAsync();
-			};
+					// create combo-box
+					gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+					env->dialogHost->createPopupMenu(&absoluteBounds, unknown.put());
+					combo = unknown.as<gmpi::api::IPopupMenu>();
+
+					if(!combo)
+						return;
+
+					// TODO: !!! set font (at least height).
+					combo->setAlignment((int32_t)gmpi::drawing::TextAlignment::Leading);
+
+					// Single per-item callback shared across all items: only the chosen item's callback fires.
+					gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+					callback.attach(new gmpi::sdk::PopupMenuCallback(
+						[this](int32_t selectedIndex)
+						{
+							const int32_t selectedId = enum_list_lookup_index(enum_list.get(), selectedIndex).id;
+
+							// one-way: route the selection through the back-channel (UI -> model).
+							if(validateAndSave)
+								validateAndSave(selectedId);
+						}
+					));
+
+					// populate combo
+					constexpr int32_t flags{};
+					for(auto& [index, id, text] : it_enum_list2(enum_list.get()))
+					{
+						combo->addItem(text.c_str(), index, flags, callback.get());
+					}
+
+					combo->showAsync();
+				};
+		}
 	}
 }
 
@@ -301,22 +307,25 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 	canvas.add(textbox);
 
 	// Clicking toggles the value
-	auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
+	if(!readOnly)
 	{
-		canvas.add(clickDetector);
+		auto clickDetector = new primitive::RectangleMouseTarget(textBoxArea);
+		{
+			canvas.add(clickDetector);
 
-		clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
-			{
-				// one-way: route the toggled value through the back-channel (UI -> model).
-				if (validateAndSave)
-					validateAndSave(!value.get());
-			};
+			clickDetector->onPointerDown_callback = [this, clickDetector](const primitive::PointerEvent*)
+				{
+					// one-way: route the toggled value through the back-channel (UI -> model).
+					if(validateAndSave)
+						validateAndSave(!value.get());
+				};
 
-		// don't work?
-		//clickDetector->onPointerUp_callback = [this, clickDetector](gmpi::drawing::Point)
-		//	{
-		//		value.set()(!value.get());
-		//	};
+			// don't work?
+			//clickDetector->onPointerUp_callback = [this, clickDetector](gmpi::drawing::Point)
+			//	{
+			//		value.set()(!value.get());
+			//	};
+		}
 	}
 }
 

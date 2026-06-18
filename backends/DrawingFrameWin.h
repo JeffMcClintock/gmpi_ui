@@ -44,9 +44,9 @@ namespace win32
 		gmpi::api::IUnknown** returnTextEdit);
 
 	// Shared Win32 IPopupMenu factory. `rect` is in DIPs (only the top-left corner
-	// is used — that's where TrackPopupMenu pops the menu from). DPI scaling for
-	// menu position is currently a no-op (DPI=1 path), preserved from the legacy
-	// behaviour of both pre-existing implementations.
+	// is used — that's where TrackPopupMenu pops the menu from). `dpiScale` converts
+	// that corner to native pixels for placement (same contract as the text-edit
+	// factory below), so the menu tracks both system DPI and the plugin's UI Scale.
 	gmpi::ReturnCode createPlatformPopupMenu(
 		HWND parentWnd,
 		const gmpi::drawing::Rect* rect,

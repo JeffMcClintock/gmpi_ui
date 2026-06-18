@@ -1803,7 +1803,12 @@ public:
 
 	gmpi::ReturnCode showAsync() override
 	{
-		POINT nativePoint{(LONG)editrect_s.left, (LONG)editrect_s.top };
+		// editrect_s is in DIPs; convert its top-left to native pixels for placement,
+		// exactly like GMPI_WIN_TextEdit does. dpiScale folds in both the system DPI
+		// and the plugin's UI Scale, so the menu pops up at the right spot at any scale.
+		POINT nativePoint{
+			static_cast<LONG>(0.5f + editrect_s.left * dpiScale),
+			static_cast<LONG>(0.5f + editrect_s.top  * dpiScale) };
 		ClientToScreen(parentWnd, &nativePoint);
 
 		int flags = align | TPM_LEFTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD;

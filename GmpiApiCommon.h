@@ -54,9 +54,9 @@ enum class PinDatatype : int32_t
     Int32 = 8,
     Int64,
     Blob,
-    Class,
+    Struct,
     String,
-    Blob2,
+    Object,
 };
 
 namespace api

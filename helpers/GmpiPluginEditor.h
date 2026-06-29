@@ -31,9 +31,6 @@ class Pin : public PinBase
 public:
 	T value{};
 
-	Pin()
-	{
-	}
 	const T& operator=(const T& pvalue)
 	{
 		if (pvalue != value)

@@ -494,7 +494,12 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 			case WM_MBUTTONDOWN:
 				if (inputClient)
 					r = inputClient->onPointerDown(p, flags);
-				::SetFocus(hwnd);
+				// Only grab keyboard focus to the main window if the widget DIDN'T handle the click.
+				// A widget that returns Handled (e.g. an active in-place text editor) keeps the focus
+				// it already holds - so clicking inside it to reposition the caret no longer fires
+				// WM_KILLFOCUS on its key-listener child window and ends the edit.
+				if (r != gmpi::ReturnCode::Handled)
+					::SetFocus(hwnd);
 				break;
 
 			case WM_RBUTTONDOWN:

@@ -1670,8 +1670,6 @@ public:
 		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
 		unknown = callback;
 		auto dialogCallback = unknown.as<gmpi::api::IStockDialogCallback>();
-		if (!dialogCallback)
-			return gmpi::ReturnCode::Fail;
 
 		UINT mbType = MB_ICONINFORMATION;
 		switch (dialogType)
@@ -1702,7 +1700,9 @@ public:
 		default:       button = gmpi::api::StockDialogButton::Cancel; break;
 		}
 
-		dialogCallback->onComplete(button);
+		if(dialogCallback)
+			dialogCallback->onComplete(button);
+
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -1738,6 +1738,10 @@ class GMPI_WIN_PopupMenu : public gmpi::api::IPopupMenu
 		gmpi::shared_ptr<gmpi::api::IUnknown> callback;
 	};
 	std::vector<MenuCallback> callbacks;
+	// Separators are deferred: a separator/break flag only sets this, and the actual
+	// element is committed when the next real item arrives. That suppresses leading,
+	// trailing and doubled separators (matches WINUI_PlatformMenu in the editor).
+	int32_t pendingSeperator = 0;
 
 public:
 	// Might need to apply DPI to Text size, like text-entry does.
@@ -1759,49 +1763,69 @@ public:
 
 	gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* callback) override
 	{
-       gmpi::shared_ptr<gmpi::api::IUnknown> itemcallback;
+		gmpi::shared_ptr<gmpi::api::IUnknown> itemcallback;
 		itemcallback = callback;
 
-		UINT nativeFlags = MF_STRING;
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
-		{
-			nativeFlags |= MF_CHECKED;
-		}
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
-		{
-			nativeFlags |= MF_GRAYED;
-		}
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
-		{
-			nativeFlags |= MF_SEPARATOR;
-		}
-		if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break)) != 0)
-		{
-			nativeFlags |= MF_MENUBREAK;
-		}
-
 		const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
-		const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;	
+		const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;
+		const int32_t separatorFlags = flags & (static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator) | static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break));
 
-		if (isSubMenuStart || isSubMenuEnd)
+		if(isSubMenuStart || isSubMenuEnd)
 		{
-			if (isSubMenuStart)
+			if(isSubMenuStart)
 			{
 				auto submenu = CreatePopupMenu();
-				AppendMenu(hmenus.back(), nativeFlags | MF_POPUP, (UINT_PTR)submenu, privateStuff::Utf8ToWstring(text).c_str());
+				AppendMenu(hmenus.back(), MF_STRING | MF_POPUP, (UINT_PTR)submenu, privateStuff::Utf8ToWstring(text).c_str());
 				hmenus.push_back(submenu);
 			}
-			else if (isSubMenuEnd)
+			else if(isSubMenuEnd)
 			{
 				hmenus.pop_back();
 			}
+			pendingSeperator = 0; // don't carry a separator across a submenu boundary
+			return gmpi::ReturnCode::Ok;
 		}
-		else
+
+		if(separatorFlags != 0)
 		{
-			menuIds.push_back(id);
-          callbacks.push_back({ id, itemcallback });
-			AppendMenu(hmenus.back(), nativeFlags, menuIds.size(), privateStuff::Utf8ToWstring(text).c_str());
+			// Defer — only commit when a real item follows.
+			pendingSeperator = separatorFlags;
+			return gmpi::ReturnCode::Ok;
 		}
+
+		UINT nativeFlags = MF_STRING;
+		if((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Ticked)) != 0)
+		{
+			nativeFlags |= MF_CHECKED;
+		}
+		if((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Grayed)) != 0)
+		{
+			nativeFlags |= MF_GRAYED;
+		}
+
+		// Flush any pending separator ahead of this real item — but never as the
+		// leading element: an empty current (sub)menu means this is a leading
+		// separator, which should be dropped. Either way, consume the pending flag.
+		if(pendingSeperator)
+		{
+			if(GetMenuItemCount(hmenus.back()) > 0)
+			{
+				if((pendingSeperator & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
+				{
+					AppendMenu(hmenus.back(), MF_SEPARATOR, 0, nullptr);
+				}
+				// A break is a column-break on the following item, not a standalone element.
+				if((pendingSeperator & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break)) != 0)
+				{
+					nativeFlags |= MF_MENUBREAK;
+				}
+			}
+			pendingSeperator = 0;
+		}
+
+		menuIds.push_back(id);
+		callbacks.push_back({ id, itemcallback });
+		AppendMenu(hmenus.back(), nativeFlags, menuIds.size(), privateStuff::Utf8ToWstring(text).c_str());
 
 		return gmpi::ReturnCode::Ok;
 	}

@@ -29,6 +29,10 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClien
     gmpi::drawing::Rect rect;
     std::vector<MenuCallback> callbacks;
     std::vector<NSMenu*> menuStack;
+    // Separators are deferred: a separator/break flag only sets this, and the actual
+    // NSMenuItem is committed when the next real item arrives. That suppresses leading,
+    // trailing and doubled separators (matches the Win32 / WinUI menus).
+    int32_t pendingSeperator = 0;
 
 public:
     GMPI_MAC_PopupMenu(NSView* pview, gmpi::drawing::Rect prect)
@@ -65,31 +69,52 @@ public:
 
     gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags, gmpi::api::IUnknown* itemCallback) override
     {
-        if ((flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator)) != 0)
+        const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
+        const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;
+        const int32_t separatorFlags = flags & (static_cast<int32_t>(gmpi::api::PopupMenuFlags::Separator) | static_cast<int32_t>(gmpi::api::PopupMenuFlags::Break));
+
+        if (isSubMenuStart || isSubMenuEnd)
         {
-            [menuStack.back() addItem:[NSMenuItem separatorItem]];
+            if (isSubMenuStart)
+            {
+                std::string subStripped(text);
+                subStripped.erase(std::remove(subStripped.begin(), subStripped.end(), '&'), subStripped.end());
+                NSString* subNsstr = [NSString stringWithCString:subStripped.c_str() encoding:NSUTF8StringEncoding];
+                auto menuItem = [menuStack.back() addItemWithTitle:subNsstr action:nil keyEquivalent:@""];
+                NSMenu* subMenu = [[NSMenu alloc] init];
+                [menuItem setSubmenu:subMenu];
+                menuStack.push_back(subMenu);
+            }
+            else if (isSubMenuEnd)
+            {
+                menuStack.pop_back();
+            }
+            pendingSeperator = 0; // don't carry a separator across a submenu boundary
             return gmpi::ReturnCode::Ok;
+        }
+
+        if (separatorFlags != 0)
+        {
+            // Defer — only commit when a real item follows.
+            pendingSeperator = separatorFlags;
+            return gmpi::ReturnCode::Ok;
+        }
+
+        // Flush any pending separator ahead of this real item — but never as the
+        // leading element: an empty current (sub)menu means this is a leading
+        // separator, which should be dropped. Either way, consume the pending flag.
+        if (pendingSeperator)
+        {
+            if ([menuStack.back() numberOfItems] > 0)
+                [menuStack.back() addItem:[NSMenuItem separatorItem]];
+
+            pendingSeperator = 0;
         }
 
         std::string stripped(text);
         stripped.erase(std::remove(stripped.begin(), stripped.end(), '&'), stripped.end());
         NSString* nsstr = [NSString stringWithCString:stripped.c_str() encoding:NSUTF8StringEncoding];
 
-        const bool isSubMenuStart = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuBegin)) != 0;
-        const bool isSubMenuEnd = (flags & static_cast<int32_t>(gmpi::api::PopupMenuFlags::SubMenuEnd)) != 0;
-
-        if (isSubMenuStart)
-        {
-            auto menuItem = [menuStack.back() addItemWithTitle:nsstr action:nil keyEquivalent:@""];
-            NSMenu* subMenu = [[NSMenu alloc] init];
-            [menuItem setSubmenu:subMenu];
-            menuStack.push_back(subMenu);
-        }
-        else if (isSubMenuEnd)
-        {
-            menuStack.pop_back();
-        }
-        else
         {
             // operator= AddRefs; the explicit shared_ptr(T*) ctor does not (it assumes refcount=1 from `new`).
             gmpi::shared_ptr<gmpi::api::IUnknown> cb;

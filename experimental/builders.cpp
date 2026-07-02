@@ -26,6 +26,11 @@ void TextLabelView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 	style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
 	canvas.add(style);
 
+	// The text is top-aligned and clipped to its box, and at this body height the line box
+	// slightly exceeds the row — so extend the bottom to give the font's descenders (g, y, p)
+	// room instead of clipping them at the cell edge. (Mirrors TickBox's glyph handling below.)
+	textBoxArea.bottom += 0.35f * getHeight(textBoxArea);
+
 	// Draw the text
 	auto tbox = new primitive::TextBox(style, textBoxArea, text2.get());
 

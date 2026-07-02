@@ -2070,6 +2070,24 @@ public:
 	}
 };
 
+class TempTransform
+{
+	Graphics& graphics;
+	Matrix3x2 originalTransform;
+public:
+	TempTransform(Graphics& g, const Matrix3x2& transform) :
+		graphics(g)
+	{
+		originalTransform = g.getTransform();
+		graphics.setTransform(transform * originalTransform);
+	}
+
+	~TempTransform()
+	{
+		graphics.setTransform(originalTransform);
+	}
+};
+
 /*
 	Handy RAII helper for clipping to an arbitrary geometry/path. Automatically restores the previous clip on exit.
 	USEAGE:

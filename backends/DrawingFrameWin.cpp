@@ -5,9 +5,12 @@
 #include <wrl.h> // Comptr
 #include <commctrl.h>
 #include <shobjidl.h>
+#include <commdlg.h> // ChooseColor (native colour picker)
 #include <cmath> // std::abs
 #include "Core/GmpiApiEditor.h" // for gmpi::api::IEditor in attachClient
 #include "./DrawingFrameWin.h"
+
+#pragma comment(lib, "comdlg32.lib") // ChooseColor
 
 using namespace std;
 using namespace gmpi;
@@ -2482,6 +2485,97 @@ gmpi::ReturnCode DxDrawingFrameBase::createFileDialog(int32_t dialogType, gmpi::
 	return gmpi::hosting::win32::createPlatformFileDialog(getWindowHandle(), dialogType, returnDialog);
 }
 
+// Position the ChooseColor dialog near the mouse cursor (which is on the swatch that launched
+// it) instead of the OS default location, clamped to the monitor work area so it stays visible.
+static UINT_PTR CALLBACK GMPI_ColorDialogHook(HWND hdlg, UINT msg, WPARAM, LPARAM)
+{
+	if (msg == WM_INITDIALOG)
+	{
+		POINT pt{};
+		GetCursorPos(&pt);
+
+		RECT dr{};
+		GetWindowRect(hdlg, &dr);
+		const int w = dr.right - dr.left;
+		const int h = dr.bottom - dr.top;
+
+		int x = pt.x + 16; // offset so the dialog doesn't sit directly under the cursor
+		int y = pt.y + 16;
+
+		MONITORINFO mi{ sizeof(mi) };
+		if (GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi))
+		{
+			if (x + w > mi.rcWork.right)  x = mi.rcWork.right - w;
+			if (y + h > mi.rcWork.bottom) y = mi.rcWork.bottom - h;
+			if (x < mi.rcWork.left)       x = mi.rcWork.left;
+			if (y < mi.rcWork.top)        y = mi.rcWork.top;
+		}
+
+		SetWindowPos(hdlg, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+		return TRUE;
+	}
+	return 0;
+}
+
+// Native Windows colour picker (comdlg32 ChooseColor). RGB only — the Windows dialog has no
+// alpha, so a picked colour is opaque. Colours cross the boundary as linear-light gmpi Colors,
+// converted to/from sRGB 8-bit here (the same convention as colorFromHex).
+class GMPI_WIN_ColorDialog : public gmpi::api::IColorDialog
+{
+	const HWND parentWnd;
+	const gmpi::drawing::Color initialColor; // immutable — supplied at creation
+	static inline COLORREF customColors[16] = {}; // remembered across invocations
+
+public:
+	GMPI_WIN_ColorDialog(HWND pParentWnd, gmpi::drawing::Color pInitialColor)
+		: parentWnd(pParentWnd), initialColor(pInitialColor) {}
+
+	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+	{
+		gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
+		unknown = callback;
+		auto colorCallback = unknown.as<gmpi::api::IColorDialogCallback>();
+		if (!colorCallback)
+			return gmpi::ReturnCode::Fail;
+
+		CHOOSECOLORW cc{};
+		cc.lStructSize = sizeof(cc);
+		cc.hwndOwner = parentWnd;
+		cc.lpCustColors = customColors;
+		cc.rgbResult = RGB(
+			linearPixelToSRGB(initialColor.r),
+			linearPixelToSRGB(initialColor.g),
+			linearPixelToSRGB(initialColor.b));
+		cc.Flags = CC_FULLOPEN | CC_RGBINIT | CC_ENABLEHOOK;
+		cc.lpfnHook = &GMPI_ColorDialogHook;
+
+		if (ChooseColorW(&cc))
+		{
+			const auto picked = colorFromArgb(
+				GetRValue(cc.rgbResult), GetGValue(cc.rgbResult), GetBValue(cc.rgbResult), 1.0f);
+			colorCallback->onComplete(gmpi::ReturnCode::Ok, picked);
+		}
+		else
+		{
+			colorCallback->onComplete(gmpi::ReturnCode::Cancel, initialColor);
+		}
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+		GMPI_QUERYINTERFACE(gmpi::api::IColorDialog);
+		return gmpi::ReturnCode::NoSupport;
+	}
+	GMPI_REFCOUNT
+};
+
+gmpi::ReturnCode DxDrawingFrameBase::createColorDialog(gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog)
+{
+	return gmpi::hosting::win32::createPlatformColorDialog(getWindowHandle(), initialColor, returnDialog);
+}
+
 // ---------------------------------------------------------------------
 // Shared Win32 dialog factories. Counterparts to createPlatformTextEdit
 // — both DxDrawingFrameBase (gmpi_ui) and DrawingFrameBase2 (SynthEditLib)
@@ -2518,6 +2612,19 @@ gmpi::ReturnCode createPlatformStockDialog(
 		static_cast<gmpi::api::StockDialogType>(dialogType),
 		title ? title : "",
 		text ? text : "");
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode createPlatformColorDialog(
+	HWND parentWnd,
+	gmpi::drawing::Color initialColor,
+	gmpi::api::IUnknown** returnDialog)
+{
+	if (!returnDialog)
+		return gmpi::ReturnCode::Fail;
+
+	// GMPI_REFCOUNT initializes refCount2_ = 1, so the freshly-`new`'d object already holds the ref.
+	*returnDialog = new GMPI_WIN_ColorDialog(parentWnd, initialColor);
 	return gmpi::ReturnCode::Ok;
 }
 

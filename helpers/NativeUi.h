@@ -156,6 +156,8 @@ struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 	// dialogType: 0 = open, 1 = save
 	virtual ReturnCode createFileDialog (int32_t dialogType, gmpi::api::IUnknown** returnDialog) = 0;
 	virtual ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog) = 0;
+	// returns an IColorDialog (a native colour picker) seeded with initialColor.
+	virtual ReturnCode createColorDialog(gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog) = 0;
 
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
 	inline static const gmpi::api::Guid guid =
@@ -260,6 +262,27 @@ public:
 	// {3F8E7B2A-C5D1-4E09-A3B6-8D2F1C4E5A70}
 	inline static const gmpi::api::Guid guid =
 	{ 0x3f8e7b2a, 0xc5d1, 0x4e09, { 0xa3, 0xb6, 0x8d, 0x2f, 0x1c, 0x4e, 0x5a, 0x70 } };
+};
+
+// A native colour picker, seeded with its initial colour at creation (IDialogHost::createColorDialog).
+// Call showAsync; the callback's onComplete reports the chosen colour (or a non-Ok result if cancelled).
+struct DECLSPEC_NOVTABLE IColorDialog : gmpi::api::IUnknown
+{
+	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
+
+	// {7F3A9C21-4B6E-4D18-9A2C-1E5F8B0D3A44}
+	inline static const gmpi::api::Guid guid =
+	{ 0x7f3a9c21, 0x4b6e, 0x4d18, { 0x9a, 0x2c, 0x1e, 0x5f, 0x8b, 0x0d, 0x3a, 0x44 } };
+};
+
+struct DECLSPEC_NOVTABLE IColorDialogCallback : gmpi::api::IUnknown
+{
+public:
+	virtual void onComplete(ReturnCode result, gmpi::drawing::Color color) = 0;
+
+	// {2D6B1E90-8C74-4F3A-B1D5-6A9C0E4F2B37}
+	inline static const gmpi::api::Guid guid =
+	{ 0x2d6b1e90, 0x8c74, 0x4f3a, { 0xb1, 0xd5, 0x6a, 0x9c, 0x0e, 0x4f, 0x2b, 0x37 } };
 };
 
 enum class TextMultilineFlag : int32_t
@@ -388,6 +411,23 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IStockDialogCallback);
+	GMPI_REFCOUNT;
+};
+
+class ColorDialogCallback : public gmpi::api::IColorDialogCallback
+{
+	std::function<void(gmpi::drawing::Color)> onSuccess;
+
+public:
+	ColorDialogCallback(std::function<void(gmpi::drawing::Color)> callback = [](gmpi::drawing::Color) {}) : onSuccess(callback) {}
+
+	void onComplete(gmpi::ReturnCode result, gmpi::drawing::Color color) override
+	{
+		if (result == gmpi::ReturnCode::Ok)
+			onSuccess(color);
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IColorDialogCallback);
 	GMPI_REFCOUNT;
 };
 

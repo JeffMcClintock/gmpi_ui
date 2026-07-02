@@ -9,11 +9,13 @@
 // single-header backend, including transitive includes via DrawingFrameMac.h.
 #define GMPI_MAC_TEXTEDIT_IMPLEMENTATION
 #define GMPI_MAC_KEYLISTENER_IMPLEMENTATION
+#define GMPI_MAC_COLORDIALOG_IMPLEMENTATION
 #include "DrawingFrameMac.h"
 #include "MacTextEdit.h"
 #include "MacPopupMenu.h"
 #include "MacStockDialog.h"
 #include "MacFileDialog.h"
+#include "MacColorDialog.h"
 #include "MacKeyListener.h"
 #include "MacEventHelpers.h"
 #import "helpers/IController.h"
@@ -361,6 +363,17 @@ public:
     gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog) override
     {
         *returnDialog = new GMPI_MAC_StockDialog(view, static_cast<gmpi::api::StockDialogType>(dialogType), title, text);
+        return gmpi::ReturnCode::Ok;
+    }
+    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog) override
+    {
+        // NSColorPanel-backed colour picker. Deferred-notify model (fires
+        // onComplete once, on dismissal), matching the modal Windows
+        // ChooseColorW path — see MacColorDialog.h for the cross-platform note.
+        // No extra addRef: GMPI_REFCOUNT starts refCount2_ at 1, and (unlike
+        // createTextEdit/createPopupMenu, which also keep a member) the host
+        // retains no second copy — matches createFileDialog/createStockDialog.
+        *returnDialog = new GMPI_MAC_ColorDialog(view, initialColor);
         return gmpi::ReturnCode::Ok;
     }
 

@@ -68,6 +68,12 @@ namespace win32
 		const char* title,
 		const char* text,
 		gmpi::api::IUnknown** returnDialog);
+
+	// Shared Win32 IColorDialog factory (comdlg32 ChooseColor-backed), seeded with initialColor.
+	gmpi::ReturnCode createPlatformColorDialog(
+		HWND parentWnd,
+		gmpi::drawing::Color initialColor,
+		gmpi::api::IUnknown** returnDialog);
 } // namespace win32
 
 class UpdateRegionWinGdi
@@ -531,6 +537,7 @@ public:
 	gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnKeyListener) override;
 	gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
 	gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog) override;
+	gmpi::ReturnCode createColorDialog(gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog) override;
 
 	// IUnknown methods
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

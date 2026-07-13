@@ -346,17 +346,23 @@ namespace sdk
 struct TextEditCallback : public gmpi::api::ITextEditCallback
 {
 	std::function<void(const std::string&)> onSuccess;
+	std::function<void(void)> onCancel;
 	std::string text;
 
-	TextEditCallback(std::function<void(const std::string&)> callback = [](const std::string&) {}) : onSuccess(callback) {}
+	TextEditCallback(
+		std::function<void(const std::string&)> callback = [](const std::string&) {},
+		std::function<void(void)> cancelCallback = []() {}
+	) : onSuccess(callback), onCancel(cancelCallback) {}
 	void onChanged(const char* ptext) override
 	{
 		text = ptext;
 	}
 	void onComplete(gmpi::ReturnCode result) override
 	{
-		if (result == gmpi::ReturnCode::Ok)
+		if(result == gmpi::ReturnCode::Ok)
 			onSuccess(text);
+		else
+			onCancel();
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::ITextEditCallback);
@@ -366,12 +372,18 @@ struct TextEditCallback : public gmpi::api::ITextEditCallback
 struct PopupMenuCallback : public gmpi::api::IPopupMenuCallback
 {
 	std::function<void(int32_t selectedId)> onSuccess;
+	std::function<void(void)> onCancel;
 
-	PopupMenuCallback(std::function<void(int32_t)> callback = [](int32_t) {}) : onSuccess(callback) {}
+	PopupMenuCallback(
+		std::function<void(int32_t)> callback = [](int32_t) {},
+		std::function<void(void)> cancelCallback = []() {}
+	) : onSuccess(callback), onCancel(cancelCallback) {}
 	void onComplete(gmpi::ReturnCode result, int32_t selectedID) override
 	{
 		if (result == gmpi::ReturnCode::Ok)
 			onSuccess(selectedID);
+		else
+			onCancel();
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IPopupMenuCallback);
@@ -381,9 +393,13 @@ struct PopupMenuCallback : public gmpi::api::IPopupMenuCallback
 class FileDialogCallback : public gmpi::api::IFileDialogCallback
 {
 	std::function<void(const std::string&)> onSuccess;
+	std::function<void(void)> onCancel;
 
 public:
-	FileDialogCallback(std::function<void(const std::string&)> callback = [](const std::string&) {}) : onSuccess(callback) {}
+	FileDialogCallback(
+		std::function<void(const std::string&)> callback = [](const std::string&) {},
+		std::function<void(void)> cancelCallback = []() {}
+	) : onSuccess(callback), onCancel(cancelCallback) {}
 
 	void onComplete(gmpi::ReturnCode result, const char* selectedPath) override
 	{
@@ -391,6 +407,10 @@ public:
 		{
 			std::string pathStr(selectedPath);
 			onSuccess(pathStr);
+		}
+		else
+		{
+			onCancel();
 		}
 	}
 

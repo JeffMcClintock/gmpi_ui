@@ -46,8 +46,8 @@ std::string WStringToUtf8(std::wstring_view p_cstring)
 		static_cast<int>(p_cstring.size()),
 		0,
 		0,
-		NULL,
-		NULL
+		nullptr,
+		nullptr
 	);
 
 	res.resize(size);
@@ -59,8 +59,8 @@ std::string WStringToUtf8(std::wstring_view p_cstring)
 		static_cast<int>(p_cstring.size()),
 		const_cast<LPSTR>(res.data()),
 		static_cast<int>(size),
-		NULL,
-		NULL
+		nullptr,
+		nullptr
 	);
 
 	return res;
@@ -217,7 +217,7 @@ void initFactoryHelper(DxFactoryInfo& info)
 
 	hr = CoCreateInstance(
 		CLSID_WICImagingFactory,
-		NULL,
+		nullptr,
 		CLSCTX_INPROC_SERVER,
 		IID_IWICImagingFactory,
 		info.wicFactory.put_void()
@@ -359,7 +359,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 
 		[[maybe_unused]] auto hr = info.writeFactory->CreateTextFormat(
 			fontScalingInfo.systemFontName.c_str(),
-			NULL,
+			nullptr,
 			(DWRITE_FONT_WEIGHT)fontWeight,
 			(DWRITE_FONT_STYLE)fontStyle,
 			(DWRITE_FONT_STRETCH)fontStretch,
@@ -388,7 +388,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 
 	auto hr = info.writeFactory->CreateTextFormat(
 		fontScalingInfo.systemFontName.c_str(),
-		NULL,
+		nullptr,
 		(DWRITE_FONT_WEIGHT)fontWeight,
 		(DWRITE_FONT_STYLE)fontStyle,
 		(DWRITE_FONT_STRETCH)fontStretch,
@@ -734,7 +734,7 @@ gmpi::directx::ComPtr<IWICBitmap> loadWicBitmap(IWICImagingFactory* WICFactory, 
 			pSource,
 			GUID_WICPixelFormat32bppPBGRA, //Premultiplied
 			WICBitmapDitherTypeNone,
-			NULL,
+			nullptr,
 			0.f,
 			WICBitmapPaletteTypeCustom
 		);
@@ -782,7 +782,7 @@ gmpi::ReturnCode Factory_base::loadImageU(const char* uri, drawing::api::IBitmap
 		if (SUCCEEDED(hr)) {
 			hr = pIWICFactory->CreateDecoderFromStream(
 				pIWICStream,                   // The stream to use to create the decoder
-				NULL,                          // Do not prefer a particular vendor
+				nullptr,                          // Do not prefer a particular vendor
 				WICDecodeMetadataCacheOnLoad,  // Cache metadata when needed
 				pDecoder.put());               // Pointer to the decoder
 		}
@@ -795,7 +795,7 @@ gmpi::ReturnCode Factory_base::loadImageU(const char* uri, drawing::api::IBitmap
 		// To load a bitmap from a file, first use WIC objects to load the image and to convert it to a Direct2D-compatible format.
 		hr = info.wicFactory->CreateDecoderFromFilename(
 			uriW.c_str(),
-			NULL,
+			nullptr,
 			GENERIC_READ,
 			WICDecodeMetadataCacheOnLoad,
 			pDecoder.put()

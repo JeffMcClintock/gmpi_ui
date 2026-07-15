@@ -34,7 +34,7 @@ std::wstring RegisterWindowsClass(HINSTANCE dllHandle, WNDPROC windowProc)
 		swprintf(gClassName, std::size(gClassName), L"GMPIUI%p", dllHandle);
 
 		windowClass.style = CS_GLOBALCLASS;
-		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+		windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
 		windowClass.hInstance = dllHandle;
 		windowClass.lpfnWndProc = windowProc;
 		windowClass.lpszClassName = gClassName;
@@ -52,7 +52,7 @@ HWND CreateHostingWindow(HMODULE dllHandle, const std::wstring& windowClass, HWN
 
 	const auto windowHandle = CreateWindowEx(extended_style, windowClass.c_str(), L"",
 		style, 0, 0, r.right - r.left, r.bottom - r.top,
-		parentWnd, NULL, dllHandle, NULL);
+		parentWnd, nullptr, dllHandle, nullptr);
 
 	if (windowHandle)
 	{
@@ -111,7 +111,7 @@ void UpdateRegionWinGdi::copyDirtyRects(HWND window, gmpi::drawing::SizeL swapCh
 
 	if (regionType != NULLREGION)
 	{
-		int size = GetRegionData(hRegion, 0, NULL); // query size of region data.
+		int size = GetRegionData(hRegion, 0, nullptr); // query size of region data.
 		if (size)
 		{
 			regionDataBuffer.resize(size);
@@ -248,8 +248,8 @@ void ToolTipManager::init(HMODULE instanceHandle, HWND parentWindow)
 		WS_POPUP,
 		CW_USEDEFAULT, CW_USEDEFAULT,
 		CW_USEDEFAULT, CW_USEDEFAULT,
-		NULL, (HMENU)NULL, instanceHandle,
-		NULL);
+		nullptr, (HMENU)nullptr, instanceHandle,
+		nullptr);
 
 	// Tracking tooltip: positioned by us via TTM_TRACKPOSITION, shown/hidden
 	// via TTM_TRACKACTIVATE. We don't rely on the tooltip subclassing the
@@ -406,9 +406,9 @@ float DxDrawingFrameBase::getRasterizationScale()
 	else
 	{
 		// use system DPI as a guess at the Window DPI until we know the actual DAW window handle in attached().
-		HDC hdc = ::GetDC(NULL);
+		HDC hdc = ::GetDC(nullptr);
 		systemDpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
-		::ReleaseDC(NULL, hdc);
+		::ReleaseDC(nullptr, hdc);
 	}
 
 	// Multiply by pluginUIScale (default 1.0 — see HC_PLUGIN_UI_SCALE).
@@ -759,7 +759,7 @@ void DxDrawingFrameBase::renderInDeviceContext(ID2D1DeviceContext* deviceContext
 void DxDrawingFrameHwnd::OnPaint()
 {
 	updateRegion_native.copyDirtyRects(getWindowHandle(), swapChainSize);
-	ValidateRect(getWindowHandle(), NULL);
+	ValidateRect(getWindowHandle(), nullptr);
 
 	auto dirtyRects = updateRegion_native.getUpdateRects();
 	PaintFrame({ dirtyRects.data(), dirtyRects.size() });
@@ -1388,7 +1388,7 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 	{
 		SetWindowPos(
 			windowHandle
-			, NULL
+			, nullptr
 			, 0
 			, 0
 			, width
@@ -1494,8 +1494,8 @@ namespace privateStuff
 			static_cast<int>(p_cstring.size()),
 			0,
 			0,
-			NULL,
-			NULL
+			nullptr,
+			nullptr
 		);
 
 		res.resize(size);
@@ -1507,8 +1507,8 @@ namespace privateStuff
 			static_cast<int>(p_cstring.size()),
 			const_cast<LPSTR>(res.data()),
 			static_cast<int>(size),
-			NULL,
-			NULL
+			nullptr,
+			nullptr
 		);
 
 		return res;
@@ -1558,7 +1558,7 @@ ReturnCode PlatformKeyListener::showAsync(gmpi::api::IUnknown* callback)
 		swprintf(gClassName, std::size(gClassName), L"GMPIKL%p", dllHandle);
 
 		windowClass.style = CS_GLOBALCLASS;
-		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+		windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
 		windowClass.hInstance = dllHandle;
 		windowClass.lpfnWndProc = GenericWindowProc;
 		windowClass.lpszClassName = gClassName;
@@ -1571,7 +1571,7 @@ ReturnCode PlatformKeyListener::showAsync(gmpi::api::IUnknown* callback)
 
 	windowHandle = CreateWindowEx(extended_style, gClassName, L"",
 		style, 0, 0, static_cast<int>(bounds.right - bounds.left), static_cast<int>(bounds.bottom - bounds.top),
-		parentWnd, NULL, dllHandle, NULL);
+		parentWnd, nullptr, dllHandle, nullptr);
 
 	if (!windowHandle)
 		return gmpi::ReturnCode::Fail;
@@ -2168,7 +2168,7 @@ namespace
 			state.dialogH = static_cast<int32_t>(0.5f + (nativeBottom - nativeTop));
 			const int gdiFontSize = -static_cast<int32_t>(0.5f + dpiScale * textHeight); // negative = pixel height
 			state.dialogFont = CreateFont(gdiFontSize, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE,
-				0, 0, 0, 0, 0, NULL);
+				0, 0, 0, 0, 0, nullptr);
 
 			currentTextEditState = &state;
 

@@ -657,7 +657,7 @@ inline gmpi::drawing::Point pointFromLParam(LPARAM lParam, const gmpi::drawing::
 inline gmpi::drawing::Point pointFromScreenLParam(HWND hwnd, LPARAM lParam, const gmpi::drawing::Matrix3x2& windowToDips)
 {
 	POINT pos = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-	MapWindowPoints(NULL, hwnd, &pos, 1);
+	MapWindowPoints(nullptr, hwnd, &pos, 1);
 	return transformPoint(windowToDips, gmpi::drawing::Point{ static_cast<float>(pos.x), static_cast<float>(pos.y) });
 }
 

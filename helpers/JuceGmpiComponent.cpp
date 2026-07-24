@@ -3,7 +3,9 @@
 #include "helpers/Timer.h"
 #include "../../../RefCountMacros.h"
 
-#ifdef _WIN32
+#if GMPI_UI_USE_JUCE_GRAPHICS
+#include "backends/JuceGfx.h"
+#elif defined(_WIN32)
 #include "windowsx.h"
 // Add the path to the gmpi_ui library in the Projucer setting 'Header Search Paths'.
 #include "backends/DrawingFrameWin.h"
@@ -51,10 +53,9 @@ public:
 	gmpi::ReturnCode onPointerMove(gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onPointerUp  (gmpi::drawing::Point point, int32_t flags) override;
 	gmpi::ReturnCode onMouseWheel (gmpi::drawing::Point point, int32_t flags, int32_t delta) override { return gmpi::ReturnCode::Unhandled; }
-	gmpi::ReturnCode setHover(bool isMouseOverMe) { return gmpi::ReturnCode::Unhandled; }
+	gmpi::ReturnCode setHover(bool isMouseOverMe) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode onKeyPress(wchar_t c) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point point, gmpi::api::IUnknown* contextMenuItemsSink) override { return gmpi::ReturnCode::Unhandled; }
-	gmpi::ReturnCode onContextMenu(int32_t idx) override { return gmpi::ReturnCode::Unhandled; }
 	gmpi::ReturnCode getToolTip(gmpi::drawing::Point point, gmpi::api::IString* returnString) override { return gmpi::ReturnCode::Unhandled; }
 
 	// TODO GMPI_QUERYINTERFACE(IDrawingClient::guid, IDrawingClient);
@@ -69,12 +70,93 @@ public:
 };
 
 
-#ifdef _WIN32
+#if GMPI_UI_USE_JUCE_GRAPHICS
+
+// JUCE-graphics backend: an ordinary juce::Component painted via backends/JuceGfx.h.
+// No native window, no platform code - works on any platform JUCE supports (e.g. Linux).
+
+struct GmpiComponent::Pimpl
+{
+	gmpi::jucegfx::Factory factory;
+};
+
+GmpiComponent::GmpiComponent() :
+	internal(std::make_unique<GmpiComponent::Pimpl>())
+{
+}
+
+GmpiComponent::~GmpiComponent() {}
+
+void GmpiComponent::parentHierarchyChanged()
+{
+}
+
+void GmpiComponent::invalidateRect()
+{
+	repaint();
+}
+
+void GmpiComponent::paint(juce::Graphics& g)
+{
+	gmpi::jucegfx::GraphicsContext context(g, &internal->factory);
+
+	gmpi::drawing::Graphics dc(&context);
+	onRender(dc);
+}
+
+namespace
+{
+int32_t toGmpiPointerFlags(const juce::MouseEvent& e, bool isContact)
+{
+	int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+
+	if (isContact)
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::InContact);
+
+	if (e.mods.isLeftButtonDown())
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
+	if (e.mods.isRightButtonDown())
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
+	if (e.mods.isMiddleButtonDown())
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ThirdButton);
+
+	if (e.mods.isShiftDown())
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
+	if (e.mods.isCtrlDown())
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
+	if (e.mods.isAltDown())
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
+
+	return flags;
+}
+}
+
+void GmpiComponent::mouseDown(const juce::MouseEvent& e)
+{
+	onPointerDown({ e.position.x, e.position.y }, toGmpiPointerFlags(e, true));
+}
+
+void GmpiComponent::mouseMove(const juce::MouseEvent& e)
+{
+	onPointerMove({ e.position.x, e.position.y }, toGmpiPointerFlags(e, false));
+}
+
+void GmpiComponent::mouseDrag(const juce::MouseEvent& e)
+{
+	onPointerMove({ e.position.x, e.position.y }, toGmpiPointerFlags(e, true));
+}
+
+void GmpiComponent::mouseUp(const juce::MouseEvent& e)
+{
+	// note: in juce::Component::mouseUp, e.mods still reports the button that was just released.
+	onPointerUp({ e.position.x, e.position.y }, toGmpiPointerFlags(e, false));
+}
+
+#elif defined(_WIN32)
 
 class JuceDrawingFrameBase : public gmpi::hosting::DxDrawingFrameHwnd
 {
 	juce::HWNDComponent& juceComponent;
-	int pollHdrChangesCount = 100;
 
 public:
 	JuceDrawingFrameBase(juce::HWNDComponent& pJuceComponent) : juceComponent(pJuceComponent)
@@ -87,8 +169,6 @@ public:
 	{
 		return (HWND)juceComponent.getHWND();
 	}
-	float calcWhiteLevel() override;
-	bool onTimer() override;
 };
 
 LRESULT CALLBACK DrawingFrameWindowProc(
@@ -133,25 +213,6 @@ void JuceDrawingFrameBase::open(void* pparentWnd, int width, int height)
 	}
 
 	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
-}
-
-float JuceDrawingFrameBase::calcWhiteLevel()
-{
-	return gmpi::hosting::calcWhiteLevelForHwnd(getWindowHandle());
-}
-
-bool JuceDrawingFrameBase::onTimer()
-{
-	if(pollHdrChangesCount-- < 0)
-	{
-		pollHdrChangesCount = 100; // 1.5s
-
-		if (windowWhiteLevel != calcWhiteLevel())
-		{
-			recreateSwapChainAndClientAsync();
-		}
-	}
-	return gmpi::hosting::DxDrawingFrameBase::onTimer();
 }
 
 struct GmpiComponent::Pimpl

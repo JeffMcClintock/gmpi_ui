@@ -163,6 +163,11 @@ public:
 	{
 	}
 
+	~JuceDrawingFrameBase()
+	{
+		gmpi::hosting::DetachHostingWindow(getWindowHandle());
+	}
+
 	void open(void* pParentWnd, int width, int height);
 
 	HWND getWindowHandle() override
@@ -177,6 +182,11 @@ LRESULT CALLBACK DrawingFrameWindowProc(
 	WPARAM wParam,
 	LPARAM lParam)
 {
+	if (message == WM_NCDESTROY)
+	{
+		gmpi::hosting::DetachHostingWindow(hwnd);
+	}
+
 	auto drawingFrame = (gmpi::hosting::DxDrawingFrameHwnd*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 	if (drawingFrame)
 	{

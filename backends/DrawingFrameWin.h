@@ -633,6 +633,10 @@ protected:
 	HWND parentWnd = {};
 
 public:
+	~DrawingFrame()
+	{
+		close();
+	}
 
 	HWND getWindowHandle() override
 	{
@@ -640,9 +644,12 @@ public:
 	}
 
 	void open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize = {});
+	// Mirror of open(): stops the tick timer, clears the window-proc back-pointer
+	// and destroys the child HWND we created, so no message arriving during or
+	// after teardown (e.g. the host's window-destruction cascade) can dispatch
+	// through a dangling frame pointer.
+	void close();
 	void reSize(int left, int top, int right, int bottom);
-	virtual void doClose() {}
-
 };
 
 

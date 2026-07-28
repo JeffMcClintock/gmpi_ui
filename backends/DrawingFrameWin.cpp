@@ -358,6 +358,10 @@ HMODULE tempSharedD2DBase::getDllHandle()
 
 void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSize)
 {
+	close(); // support re-opening on a new parent without orphaning the previous window.
+
+	parentWnd = (HWND)pParentWnd;
+
 	RECT r{};
 	if (overrideSize)
 	{
@@ -370,8 +374,6 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 		// auto size to parent
 		GetClientRect(parentWnd, &r);
 	}
-
-	parentWnd = (HWND)pParentWnd;
 
 	const auto windowClass = gmpi::hosting::RegisterWindowsClass(getDllHandle(), DrawingFrameWindowProc);
 	windowHandle = gmpi::hosting::CreateHostingWindow(getDllHandle(), windowClass, parentWnd, r, (LONG_PTR) this);
@@ -394,6 +396,22 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 
 	// starting Timer latest to avoid first event getting 'in-between' other init events.
 	startTimer(15); // 16.66 = 60Hz. 16ms timer seems to miss v-sync. Faster timers offer no improvement to framerate.
+}
+
+void DrawingFrame::close()
+{
+	stopTimer();
+
+	// Clear GWLP_USERDATA first so messages delivered during DestroyWindow
+	// (WM_DESTROY, WM_NCDESTROY, etc.) fall through to DefWindowProc rather
+	// than dispatching through this (possibly mid-destruction) frame.
+	DetachHostingWindow(windowHandle);
+
+	if (windowHandle)
+	{
+		::DestroyWindow(windowHandle);
+		windowHandle = {};
+	}
 }
 
 float DxDrawingFrameBase::getRasterizationScale()

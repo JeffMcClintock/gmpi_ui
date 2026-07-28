@@ -123,9 +123,15 @@ public:
 	// simultaneously (all three declare identical-signature pure virtuals).
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override
 	{
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
-		editorHost = unknown.as<gmpi::api::IEditorHost>();
-		editorHost2 = unknown.as<gmpi::api::IEditorHost2>();
+		// we're borrowing 'phost', not adopting it: queryInterface addRefs,
+		// whereas constructing a shared_ptr from the raw pointer would steal the host's reference.
+		editorHost = nullptr;
+		editorHost2 = nullptr;
+		if (phost)
+		{
+			phost->queryInterface(&gmpi::api::IEditorHost::guid, editorHost.put_void());
+			phost->queryInterface(&gmpi::api::IEditorHost2::guid, editorHost2.put_void());
+		}
 
 		for (auto& p : pins)
 			p.second->host = editorHost.get();
@@ -197,11 +203,16 @@ public:
 	{
 		PluginEditorBase::setHost(phost);
 
-		gmpi::shared_ptr<gmpi::api::IUnknown> unknown(phost);
-
-		inputHost = unknown.as<gmpi::api::IInputHost>();
-		drawingHost = unknown.as<gmpi::api::IDrawingHost>();
-		dialogHost = unknown.as<gmpi::api::IDialogHost>();
+		// borrow, don't adopt (see PluginEditorBase::setHost).
+		inputHost = nullptr;
+		drawingHost = nullptr;
+		dialogHost = nullptr;
+		if (phost)
+		{
+			phost->queryInterface(&gmpi::api::IInputHost::guid, inputHost.put_void());
+			phost->queryInterface(&gmpi::api::IDrawingHost::guid, drawingHost.put_void());
+			phost->queryInterface(&gmpi::api::IDialogHost::guid, dialogHost.put_void());
+		}
 
 		return ReturnCode::Ok;
 	}

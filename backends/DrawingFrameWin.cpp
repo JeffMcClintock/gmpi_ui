@@ -11,6 +11,7 @@
 #include "./DrawingFrameWin.h"
 
 #pragma comment(lib, "comdlg32.lib") // ChooseColor
+#pragma comment(lib, "comctl32.lib") // SetWindowSubclass/DefSubclassProc
 
 using namespace std;
 using namespace gmpi;

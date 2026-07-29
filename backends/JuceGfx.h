@@ -22,7 +22,7 @@ Known limitations (compared to the native backends):
  - gradients interpolate in sRGB space (JUCE) rather than linear color space.
  - radial gradients ignore gradientOriginOffset (JUCE has no focal-point support).
  - fillGeometry ignores the opacityBrush parameter.
- - createRichTextFormat (markdown text) is not implemented.
+ - rich text (markdown) ignores lineSpacing/baseline and strikethrough runs.
  - clear() alpha-blends like a fill; it cannot write transparency into the target.
 */
 
@@ -34,6 +34,8 @@ Known limitations (compared to the native backends):
 #include "../Drawing.h"
 #include "../RefCountMacros.h"
 #include "Gfx_base.h" // se::generic_graphics: StrokeStyle storage + arc-to-bezier fallbacks.
+#include "MarkdownParser.h" // shared markdown parser for rich text (createRichTextFormat).
+#include "../helpers/BitmapMask.h" // drawing::detail float16 conversions (lockPixels staging).
 
 namespace gmpi
 {
@@ -411,7 +413,7 @@ public:
 
 	ReturnCode getFontMetrics(drawing::FontMetrics* returnFontMetrics) override
 	{
-		const auto emSize = font.getHeight() * font.getHeightToPointsFactor();
+		const auto emSize = font.getHeightInPoints();
 
 		drawing::FontMetrics metrics{};
 		metrics.ascent = font.getAscent();
@@ -441,13 +443,28 @@ public:
 
 // BITMAPS
 
+// SynthEdit's native backends run linear half-float pixel pipelines (Direct2D
+// FP16 swapchain on Windows, FP16 backing bitmap on macOS), and plugins are
+// written against that: they iterate locked pixels as 64bpp RGBA half (e.g.
+// LED glow sprites) without consulting getPixelFormat. JUCE software images
+// are 8-bit sRGB, so raw juce pixels would be silently overrun. Instead,
+// colour locks expose a converting RGBA_16f staging buffer (linear,
+// premultiplied) that syncs with the juce image on lock/unlock.
+// 8-bit alpha masks pass straight through, matching the native backends.
+//
+// Note: the sRGB<->linear transfer is applied per channel on premultiplied
+// values (no un-premultiply round trip) — the same approximation the rest of
+// this backend uses for colour conversion.
 class BitmapPixels final : public drawing::api::IBitmapPixels
 {
+	juce::Image image; // shared reference, keeps the pixel data alive while locked.
 	std::unique_ptr<juce::Image::BitmapData> bitmapData;
-	int32_t pixelFormat = BGRA_sRGB_8i;
+	int32_t pixelFormat = RGBA_16f;
+	int32_t lockFlags{};
+	std::vector<uint16_t> halfBuffer; // RGBA half-float, linear, premultiplied.
 
 public:
-	BitmapPixels(juce::Image& image, int32_t flags)
+	BitmapPixels(juce::Image& pimage, int32_t flags) : image(pimage), lockFlags(flags)
 	{
 		const auto mode =
 			flags == static_cast<int32_t>(drawing::BitmapLockFlags::Read) ? juce::Image::BitmapData::readOnly :
@@ -456,20 +473,61 @@ public:
 
 		bitmapData = std::make_unique<juce::Image::BitmapData>(image, mode);
 
-		// JUCE software images are premultiplied BGRA (little-endian ARGB), same as the Direct2D backend exposes.
 		if (image.getFormat() == juce::Image::SingleChannel)
+		{
 			pixelFormat = Alpha_8i;
+			return;
+		}
+
+		// Colour image: build the half-float staging buffer.
+		halfBuffer.assign(static_cast<size_t>(bitmapData->width) * bitmapData->height * 4, 0);
+
+		if ((flags & static_cast<int32_t>(drawing::BitmapLockFlags::Read)) != 0)
+		{
+			auto* dest = halfBuffer.data();
+			for (int y = 0; y < bitmapData->height; ++y)
+			{
+				const auto* src = bitmapData->getLinePointer(y); // premultiplied sRGB, memory order B,G,R,A.
+				for (int x = 0; x < bitmapData->width; ++x, src += 4, dest += 4)
+				{
+					dest[0] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(src[2]));
+					dest[1] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(src[1]));
+					dest[2] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(src[0]));
+					dest[3] = drawing::detail::floatToHalf(src[3] * (1.0f / 255.0f));
+				}
+			}
+		}
+	}
+
+	~BitmapPixels()
+	{
+		if (halfBuffer.empty() || (lockFlags & static_cast<int32_t>(drawing::BitmapLockFlags::Write)) == 0)
+			return;
+
+		const auto* src = halfBuffer.data();
+		for (int y = 0; y < bitmapData->height; ++y)
+		{
+			auto* dest = bitmapData->getLinePointer(y);
+			for (int x = 0; x < bitmapData->width; ++x, src += 4, dest += 4)
+			{
+				// overbright half-float values clamp to the 8-bit range.
+				dest[2] = drawing::linearPixelToSRGB(std::clamp(drawing::detail::halfToFloat(src[0]), 0.0f, 1.0f));
+				dest[1] = drawing::linearPixelToSRGB(std::clamp(drawing::detail::halfToFloat(src[1]), 0.0f, 1.0f));
+				dest[0] = drawing::linearPixelToSRGB(std::clamp(drawing::detail::halfToFloat(src[2]), 0.0f, 1.0f));
+				dest[3] = static_cast<uint8_t>(0.5f + 255.0f * std::clamp(drawing::detail::halfToFloat(src[3]), 0.0f, 1.0f));
+			}
+		}
 	}
 
 	ReturnCode getAddress(uint8_t** returnAddress) override
 	{
-		*returnAddress = bitmapData->data;
+		*returnAddress = halfBuffer.empty() ? bitmapData->data : reinterpret_cast<uint8_t*>(halfBuffer.data());
 		return ReturnCode::Ok;
 	}
 
 	ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) override
 	{
-		*returnBytesPerRow = bitmapData->lineStride;
+		*returnBytesPerRow = halfBuffer.empty() ? bitmapData->lineStride : bitmapData->width * 8;
 		return ReturnCode::Ok;
 	}
 
@@ -516,6 +574,26 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(drawing::api::IBitmap);
+	GMPI_REFCOUNT
+};
+
+// Immutable formatted text layout created from a markdown string (see MarkdownParser.h).
+// Holds a juce::AttributedString; measuring and rendering go through juce::TextLayout.
+// The text colour is left default here and stamped from the foreground brush at draw time.
+class RichTextFormat final : public drawing::api::IRichTextFormat
+{
+public:
+	juce::AttributedString attributedString;
+
+	ReturnCode getTextExtentU(drawing::Size* returnSize) override
+	{
+		juce::TextLayout layout;
+		layout.createLayout(attributedString, 100000.0f);
+		*returnSize = { layout.getWidth(), layout.getHeight() };
+		return ReturnCode::Ok;
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(drawing::api::IRichTextFormat);
 	GMPI_REFCOUNT
 };
 
@@ -1060,7 +1138,22 @@ public:
 
 	ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override
 	{
-		return ReturnCode::NoSupport;
+		auto* rtf = dynamic_cast<RichTextFormat*>(richTextFormat);
+		auto* fill = toFill(defaultForegroundBrush);
+		if (!rtf || !fill)
+			return ReturnCode::Fail;
+
+		// Markdown runs carry fonts only, so stamping the brush colour over the
+		// whole string can't clobber any per-run colour. Gradient-brush text is
+		// approximated by the fill's base colour.
+		auto attributedString = rtf->attributedString;
+		attributedString.setColour(fill->getFillType().colour);
+
+		juce::TextLayout layout;
+		layout.createLayout(attributedString, layoutRect->right - layoutRect->left);
+		layout.draw(*g, toJuce(*layoutRect));
+
+		return ReturnCode::Ok;
 	}
 
 	ReturnCode setTransform(const drawing::Matrix3x2* transform) override
@@ -1309,23 +1402,22 @@ public:
 		constexpr float referenceHeight = 100.0f;
 		juce::Font font(juce::FontOptions{ family, referenceHeight, styleFlags });
 
-		float juceHeight = fontHeight;
 		if ((fontFlags & static_cast<int32_t>(drawing::FontFlags::CapHeight)) != 0)
 		{
 			// fontHeight specifies the cap-height.
+			float juceHeight = fontHeight;
 			const auto referenceCapHeight = measureGlyphTop(font, "H");
 			if (referenceCapHeight > 0.0f)
 				juceHeight = referenceHeight * fontHeight / referenceCapHeight;
+
+			font = font.withHeight(juceHeight);
 		}
 		else
 		{
-			// fontHeight specifies the em-size (DirectWrite semantics); JUCE's font height is ascent + descent.
-			const auto pointsFactor = font.getHeightToPointsFactor();
-			if (pointsFactor > 0.0f)
-				juceHeight = fontHeight / pointsFactor;
+			// fontHeight specifies the em-size (DirectWrite semantics); JUCE's
+			// point height is exactly that (its regular height is ascent + descent).
+			font = font.withPointHeight(fontHeight);
 		}
-
-		font = font.withHeight(juceHeight);
 
 		// JUCE has no font-stretch support; approximate it with horizontal scaling.
 		if (fontStretch != drawing::FontStretch::Normal && fontStretch != drawing::FontStretch::Undefined)
@@ -1408,7 +1500,83 @@ public:
 	ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName, int32_t fontFlags, drawing::TextAlignment textAlignment, drawing::ParagraphAlignment paragraphAlignment, drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, drawing::api::IRichTextFormat** returnRichTextFormat) override
 	{
 		*returnRichTextFormat = {};
-		return ReturnCode::NoSupport;
+
+		// base text format with regular weight/style (markdown controls bold/italic).
+		drawing::api::ITextFormat* baseTextFormatApi{};
+		if (createTextFormat(fontFamilyName, drawing::FontWeight::Regular, drawing::FontStyle::Normal, drawing::FontStretch::Normal, fontHeight, fontFlags, &baseTextFormatApi) != ReturnCode::Ok || !baseTextFormatApi)
+			return ReturnCode::Fail;
+
+		const auto baseFont = static_cast<TextFormat*>(baseTextFormatApi)->font;
+		baseTextFormatApi->release();
+
+		const auto parsed = drawing::parseMarkdown(markdownText);
+		const auto& plain = parsed.plainText;
+
+		gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
+		auto* richText = new RichTextFormat();
+		wrapper.attach(richText);
+		auto& attributedString = richText->attributedString;
+
+		attributedString.setWordWrap(wordWrapping == drawing::WordWrapping::NoWrap
+			? juce::AttributedString::WordWrap::none
+			: juce::AttributedString::WordWrap::byWord);
+
+		int justification{};
+		switch (textAlignment)
+		{
+		case drawing::TextAlignment::Trailing: justification = juce::Justification::right; break;
+		case drawing::TextAlignment::Center:   justification = juce::Justification::horizontallyCentred; break;
+		default:                               justification = juce::Justification::left; break;
+		}
+		switch (paragraphAlignment)
+		{
+		case drawing::ParagraphAlignment::Far:    justification |= juce::Justification::bottom; break;
+		case drawing::ParagraphAlignment::Center: justification |= juce::Justification::verticallyCentred; break;
+		default:                                  justification |= juce::Justification::top; break;
+		}
+		attributedString.setJustification(justification);
+
+		// juce::TextLayout has no uniform line-spacing control; lineSpacing/baseline
+		// fall back to the fonts' natural spacing.
+
+		const auto appendSegment = [&](size_t start, size_t end, const drawing::MarkdownRun* run)
+		{
+			if (end <= start || start >= plain.size())
+				return;
+			end = (std::min)(end, plain.size());
+
+			auto font = baseFont;
+			if (run)
+			{
+				if (run->fontSizeScale > 0.0f)
+					font = font.withHeight(font.getHeight() * run->fontSizeScale);
+
+				int style = font.getStyleFlags();
+				if (run->bold)
+					style |= juce::Font::bold;
+				if (run->italic)
+					style |= juce::Font::italic;
+
+				if (run->monospace)
+					font = juce::Font(juce::FontOptions{ juce::Font::getDefaultMonospacedFontName(), font.getHeight(), style });
+				else if (style != font.getStyleFlags())
+					font = font.withStyle(style);
+				// strikethrough: no juce::Font support; rendered as regular text.
+			}
+
+			attributedString.append(juce::String::fromUTF8(plain.data() + start, static_cast<int>(end - start)), font);
+		};
+
+		size_t pos = 0;
+		for (const auto& run : parsed.runs)
+		{
+			appendSegment(pos, run.startPosition, nullptr);
+			appendSegment(run.startPosition, run.startPosition + static_cast<size_t>(run.length), &run);
+			pos = run.startPosition + run.length;
+		}
+		appendSegment(pos, plain.size(), nullptr);
+
+		return wrapper->queryInterface(&drawing::api::IRichTextFormat::guid, reinterpret_cast<void**>(returnRichTextFormat));
 	}
 
 	ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) override

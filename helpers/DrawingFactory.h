@@ -5,9 +5,9 @@
 
 // Cross-platform drawing factory helper.
 //
-// Owns a platform-specific backend factory (DirectX on Windows, Cocoa on macOS)
-// and exposes the cross-platform gmpi::drawing API.  No backend headers or
-// platform namespaces leak into the caller.
+// Owns a platform-specific backend factory (DirectX on Windows, Cocoa on macOS,
+// JUCE elsewhere) and exposes the cross-platform gmpi::drawing API.  No backend
+// headers or platform namespaces leak into the caller.
 //
 // Usage:
 //   gmpi::drawing::DrawingFactory ctx;
@@ -19,8 +19,9 @@
 //   gmpi::drawing::savePng(path, bitmap);
 //
 // Build setup:
-//   Add DrawingFactory_win.cpp (Windows) or DrawingFactory_mac.mm (macOS)
-//   to your target's source list.
+//   Add DrawingFactory_win.cpp (Windows), DrawingFactory_mac.mm (macOS), or
+//   DrawingFactory_juce.cpp (JUCE backend, e.g. Linux) to your target's
+//   source list.
 
 namespace gmpi { namespace drawing {
 

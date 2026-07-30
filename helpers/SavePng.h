@@ -24,6 +24,13 @@
 #include <ImageIO/ImageIO.h>
 #endif
 
+// JUCE backend (e.g. Linux): only available to targets with a generated JuceHeader.h,
+// so including this header stays harmless in non-JUCE builds.
+#if !defined(_WIN32) && !defined(__APPLE__) && __has_include(<JuceHeader.h>)
+#define GMPI_UI_SAVEPNG_JUCE 1
+#include "backends/JuceGfx.h"
+#endif
+
 namespace gmpi { namespace drawing {
 
 namespace detail {
@@ -57,6 +64,7 @@ inline uint8_t linearToSRGB(uint8_t v)
 // Handles both render-target pixel formats:
 //   Windows: 64bppPRGBAHalf (8 bytes/pixel) and 32bppPBGRA (4 bytes/pixel)
 //   macOS:   128bpp float (16 bytes/pixel)  and 32bpp (4 bytes/pixel)
+//   JUCE backend (e.g. Linux): encodes the wrapped juce::Image directly.
 // Output is always a 32bpp sRGB PNG.
 //
 // Returns true on success.
@@ -260,5 +268,51 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     return ok;
 }
 #endif // __APPLE__
+
+#if GMPI_UI_SAVEPNG_JUCE
+// JUCE backend: the bitmap wraps a juce::Image (8-bit sRGB), so encode it
+// directly with JUCE's PNG writer, which converts JUCE's premultiplied
+// pixels to PNG's straight alpha.
+inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
+{
+    auto* juceBitmap = dynamic_cast<jucegfx::Bitmap*>(AccessPtr::get(bitmap));
+    if (!juceBitmap || juceBitmap->image.isNull())
+        return false;
+
+    if (const auto dir = path.parent_path(); !dir.empty())
+        std::filesystem::create_directories(dir);
+
+    auto image = juceBitmap->image;
+
+    // JUCE's PNG writer can't encode single-channel images; save masks as opaque grayscale.
+    if (image.getFormat() == juce::Image::SingleChannel)
+    {
+        juce::Image grey(juce::Image::RGB, image.getWidth(), image.getHeight(), false, juce::SoftwareImageType{});
+        const juce::Image::BitmapData src(image, juce::Image::BitmapData::readOnly);
+        juce::Image::BitmapData dst(grey, juce::Image::BitmapData::writeOnly);
+
+        for (int y = 0; y < src.height; ++y)
+        {
+            for (int x = 0; x < src.width; ++x)
+            {
+                const auto v = *src.getPixelPointer(x, y);
+                dst.setPixelColour(x, y, juce::Colour(v, v, v));
+            }
+        }
+
+        image = grey;
+    }
+
+    const juce::File file(juce::String::fromUTF8(std::filesystem::absolute(path).c_str()));
+    juce::FileOutputStream stream(file);
+    if (stream.failedToOpen())
+        return false;
+
+    stream.setPosition(0);
+    stream.truncate(); // FileOutputStream appends to existing files by default.
+
+    return juce::PNGImageFormat{}.writeImageToStream(image, stream);
+}
+#endif // GMPI_UI_SAVEPNG_JUCE
 
 }} // namespace gmpi::drawing

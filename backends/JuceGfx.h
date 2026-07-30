@@ -30,7 +30,13 @@ Known limitations (compared to the native backends):
 #include <vector>
 #include <algorithm>
 #include <cmath>
+// Targets made with juce_add_* have a generated JuceHeader.h; plain targets
+// (static libs, test executables) link the juce modules directly instead.
+#if __has_include(<JuceHeader.h>)
 #include <JuceHeader.h>
+#else
+#include <juce_gui_basics/juce_gui_basics.h>
+#endif
 #include "../Drawing.h"
 #include "../RefCountMacros.h"
 #include "Gfx_base.h" // se::generic_graphics: StrokeStyle storage + arc-to-bezier fallbacks.

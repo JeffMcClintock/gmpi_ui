@@ -24,11 +24,14 @@
 #include <ImageIO/ImageIO.h>
 #endif
 
-// JUCE backend (e.g. Linux): only available to targets with a generated JuceHeader.h,
-// so including this header stays harmless in non-JUCE builds.
-#if !defined(_WIN32) && !defined(__APPLE__) && __has_include(<JuceHeader.h>)
+// JUCE backend (e.g. Linux): only available to targets that can see the JUCE
+// headers (generated JuceHeader.h or directly-linked juce modules), so
+// including this header stays harmless in non-JUCE builds.
+#if !defined(_WIN32) && !defined(__APPLE__)
+#if __has_include(<JuceHeader.h>) || __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #define GMPI_UI_SAVEPNG_JUCE 1
 #include "backends/JuceGfx.h"
+#endif
 #endif
 
 namespace gmpi { namespace drawing {

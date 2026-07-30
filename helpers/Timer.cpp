@@ -77,6 +77,22 @@ namespace gmpi
 		}
 	}
 
+	void TimerManager::pump(int elapsedMs)
+	{
+		for (auto& timer : timers)
+		{
+			if (!timer.isRunning())
+				continue;
+
+			timer.pendingMs += elapsedMs;
+			if (timer.pendingMs >= timer.periodMilliSeconds)
+			{
+				timer.pendingMs = 0;
+				timer.onTimer(); // may stop timers / unregister clients; the std::list stays valid.
+			}
+		}
+	}
+
 
 	TimerManager::TimerManager() :
 		interval_(IDLE_PERIOD)
@@ -120,6 +136,12 @@ namespace gmpi
 				idleTimer_ = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + periodMilliSeconds * 0.001f, periodMilliSeconds * 0.001f, 0, 0, timerCallback_GMPI_Wrapper, &timerContext);
 				if (idleTimer_)
 					CFRunLoopAddTimer(CFRunLoopGetCurrent(), (CFRunLoopTimerRef)idleTimer_, kCFRunLoopCommonModes);
+#endif
+#if !defined(_WIN32) && !defined(__APPLE__)
+				// No native timer source: mark the timer running and rely on the
+				// host application driving TimerManager::pump() (see Timer.h).
+				idleTimer_ = this;
+				pendingMs = 0;
 #endif
 			}
 		}

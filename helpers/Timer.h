@@ -42,6 +42,7 @@ class Timer
 public:
 	timer_id_t idleTimer_ = {};
 	int periodMilliSeconds;
+	int pendingMs = 0; // elapsed-time accumulator for host-pumped timers (see TimerManager::pump).
 	clientContainer_t clients_;
 
 	Timer(int pPeriodMilliSeconds = 50) :
@@ -72,6 +73,12 @@ public:
 	void unRegisterClient( TimerClient* client );
 	void setInterval( int intervalMs );
     void onTimer(se_sdk_timers::timer_id_t timerId);
+
+	// On platforms with no native timer source (e.g. Linux, where Windows
+	// SetTimer / macOS CFRunLoopTimer don't exist) the host application must
+	// call this periodically on the UI thread, passing the elapsed time.
+	// Do NOT call it on Windows/macOS — the native timers already fire there.
+	void pump(int elapsedMs);
 
 private:
 	int interval_;

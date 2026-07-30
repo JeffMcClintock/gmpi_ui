@@ -20,10 +20,15 @@ See helpers/JuceGmpiComponent.h for a ready-made component doing exactly that.
 
 Known limitations (compared to the native backends):
  - gradients interpolate in sRGB space (JUCE) rather than linear color space.
+ - alpha compositing happens in 8-bit sRGB space rather than linear float, so
+   semi-transparent overlaps/blends produce slightly different midtones.
  - radial gradients ignore gradientOriginOffset (JUCE has no focal-point support).
  - fillGeometry ignores the opacityBrush parameter.
  - rich text (markdown) ignores lineSpacing/baseline and strikethrough runs.
  - clear() alpha-blends like a fill; it cannot write transparency into the target.
+ - dashed strokes ignore the dash phase (dashOffset), and 'dot' dashes merge
+   into a solid line at small stroke widths.
+ - sharp miter joins are truncated (JUCE clips long miter spikes to a bevel).
 */
 
 #include <memory>
@@ -468,9 +473,10 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
 	int32_t pixelFormat = RGBA_16f;
 	int32_t lockFlags{};
 	std::vector<uint16_t> halfBuffer; // RGBA half-float, linear, premultiplied.
+	std::vector<uint8_t> byteBuffer;  // BGRA 8-bit, LINEAR, premultiplied (SRGBPixels targets).
 
 public:
-	BitmapPixels(juce::Image& pimage, int32_t flags) : image(pimage), lockFlags(flags)
+	BitmapPixels(juce::Image& pimage, int32_t flags, bool rawSRGB) : image(pimage), lockFlags(flags)
 	{
 		const auto mode =
 			flags == static_cast<int32_t>(drawing::BitmapLockFlags::Read) ? juce::Image::BitmapData::readOnly :
@@ -482,6 +488,33 @@ public:
 		if (image.getFormat() == juce::Image::SingleChannel)
 		{
 			pixelFormat = Alpha_8i;
+			return;
+		}
+
+		// Bitmaps created with BitmapRenderTargetFlags::SRGBPixels lock as 32bpp
+		// premultiplied BGRA whose byte values are LINEAR — matching the native
+		// backends (despite the flag name; see helpers/SavePng.h) — via an 8-bit
+		// converting staging buffer.
+		if (rawSRGB)
+		{
+			pixelFormat = BGRA_sRGB_8i;
+			byteBuffer.assign(static_cast<size_t>(bitmapData->width) * bitmapData->height * 4, 0);
+
+			if ((flags & static_cast<int32_t>(drawing::BitmapLockFlags::Read)) != 0)
+			{
+				auto* dest = byteBuffer.data();
+				for (int y = 0; y < bitmapData->height; ++y)
+				{
+					const auto* src = bitmapData->getLinePointer(y); // premultiplied sRGB, memory order B,G,R,A.
+					for (int x = 0; x < bitmapData->width; ++x, src += 4, dest += 4)
+					{
+						dest[0] = static_cast<uint8_t>(0.5f + 255.0f * drawing::SRGBPixelToLinear(src[0]));
+						dest[1] = static_cast<uint8_t>(0.5f + 255.0f * drawing::SRGBPixelToLinear(src[1]));
+						dest[2] = static_cast<uint8_t>(0.5f + 255.0f * drawing::SRGBPixelToLinear(src[2]));
+						dest[3] = src[3];
+					}
+				}
+			}
 			return;
 		}
 
@@ -507,7 +540,28 @@ public:
 
 	~BitmapPixels()
 	{
-		if (halfBuffer.empty() || (lockFlags & static_cast<int32_t>(drawing::BitmapLockFlags::Write)) == 0)
+		if ((lockFlags & static_cast<int32_t>(drawing::BitmapLockFlags::Write)) == 0)
+			return;
+
+		if (!byteBuffer.empty())
+		{
+			// linear 8-bit staging back to the juce image's sRGB bytes.
+			const auto* src = byteBuffer.data();
+			for (int y = 0; y < bitmapData->height; ++y)
+			{
+				auto* dest = bitmapData->getLinePointer(y);
+				for (int x = 0; x < bitmapData->width; ++x, src += 4, dest += 4)
+				{
+					dest[0] = drawing::linearPixelToSRGB(src[0] * (1.0f / 255.0f));
+					dest[1] = drawing::linearPixelToSRGB(src[1] * (1.0f / 255.0f));
+					dest[2] = drawing::linearPixelToSRGB(src[2] * (1.0f / 255.0f));
+					dest[3] = src[3];
+				}
+			}
+			return;
+		}
+
+		if (halfBuffer.empty())
 			return;
 
 		const auto* src = halfBuffer.data();
@@ -527,13 +581,19 @@ public:
 
 	ReturnCode getAddress(uint8_t** returnAddress) override
 	{
-		*returnAddress = halfBuffer.empty() ? bitmapData->data : reinterpret_cast<uint8_t*>(halfBuffer.data());
+		if (!byteBuffer.empty())
+			*returnAddress = byteBuffer.data();
+		else
+			*returnAddress = halfBuffer.empty() ? bitmapData->data : reinterpret_cast<uint8_t*>(halfBuffer.data());
 		return ReturnCode::Ok;
 	}
 
 	ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) override
 	{
-		*returnBytesPerRow = halfBuffer.empty() ? bitmapData->lineStride : bitmapData->width * 8;
+		if (!byteBuffer.empty())
+			*returnBytesPerRow = bitmapData->width * 4;
+		else
+			*returnBytesPerRow = halfBuffer.empty() ? bitmapData->lineStride : bitmapData->width * 8;
 		return ReturnCode::Ok;
 	}
 
@@ -552,8 +612,10 @@ class Bitmap final : public drawing::api::IBitmap
 public:
 	juce::Image image; // shared reference (juce::Image is reference-counted).
 	drawing::api::IFactory* factory{};
+	bool sRGBPixels = false; // created with BitmapRenderTargetFlags::SRGBPixels: lock as raw 8-bit.
 
-	Bitmap(drawing::api::IFactory* pfactory, juce::Image pimage) : image(pimage), factory(pfactory) {}
+	Bitmap(drawing::api::IFactory* pfactory, juce::Image pimage, bool psRGBPixels = false) :
+		image(pimage), factory(pfactory), sRGBPixels(psRGBPixels) {}
 
 	ReturnCode getSizeU(drawing::SizeU* returnSize) override
 	{
@@ -569,7 +631,7 @@ public:
 			return ReturnCode::Fail;
 
 		gmpi::shared_ptr<gmpi::api::IUnknown> pixels;
-		pixels.attach(new BitmapPixels(image, flags));
+		pixels.attach(new BitmapPixels(image, flags, sRGBPixels));
 		return pixels->queryInterface(&drawing::api::IBitmapPixels::guid, reinterpret_cast<void**>(returnPixels));
 	}
 
@@ -1289,9 +1351,11 @@ class BitmapRenderTarget final : public GraphicsContextBase // emulated by caref
 {
 	juce::Image image;
 	std::unique_ptr<juce::Graphics> ownedGraphics;
+	int32_t createFlags{};
 
 public:
 	BitmapRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IFactory* pfactory) : GraphicsContextBase(pfactory)
+		, createFlags(flags)
 	{
 		const bool isMask = (flags & static_cast<int32_t>(drawing::BitmapRenderTargetFlags::Mask)) != 0;
 
@@ -1311,8 +1375,9 @@ public:
 	virtual ReturnCode getBitmap(drawing::api::IBitmap** returnBitmap)
 	{
 		*returnBitmap = {};
+		const bool sRGBPixels = (createFlags & static_cast<int32_t>(drawing::BitmapRenderTargetFlags::SRGBPixels)) != 0;
 		gmpi::shared_ptr<gmpi::api::IUnknown> bitmap;
-		bitmap.attach(new Bitmap(factory, image));
+		bitmap.attach(new Bitmap(factory, image, sRGBPixels));
 		return bitmap->queryInterface(&drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
 	}
 
@@ -1452,8 +1517,9 @@ public:
 			true,
 			juce::SoftwareImageType{});
 
+		const bool sRGBPixels = (flags & static_cast<int32_t>(drawing::BitmapRenderTargetFlags::SRGBPixels)) != 0;
 		gmpi::shared_ptr<gmpi::api::IUnknown> bitmap;
-		bitmap.attach(new Bitmap(this, image));
+		bitmap.attach(new Bitmap(this, image, sRGBPixels));
 		return bitmap->queryInterface(&drawing::api::IBitmap::guid, reinterpret_cast<void**>(returnBitmap));
 	}
 

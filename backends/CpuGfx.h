@@ -227,7 +227,534 @@ struct Figure
 {
     std::vector<drawing::Point> points;
     bool filled{ true }; // FigureBegin::Filled; hollow figures are never filled (D2D semantics)
+    bool closed{ false }; // FigureEnd::Closed; only strokes care (joins vs caps)
 };
+
+// ---------------------------------------------------------------------------
+// Stroking: a stroke is geometry, not a raster operation. Each figure is
+// widened into a set of convex pieces (segment quads, join wedges, caps) which
+// are then nonzero-filled as a union. Every piece is emitted with the same
+// winding direction, so overlaps reinforce instead of cancelling, and because
+// the whole widened outline lands in one coverage buffer before a single
+// blend, a translucent self-overlapping stroke does not double-darken.
+//
+// Widening happens in LOCAL space, before the transform, so a non-uniform
+// scale produces an elliptical pen exactly like Direct2D.
+// ---------------------------------------------------------------------------
+namespace stroke
+{
+
+constexpr float kTwoPi = 6.28318530717959f;
+
+inline drawing::Point sub(drawing::Point a, drawing::Point b) { return { a.x - b.x, a.y - b.y }; }
+inline float length(drawing::Point d) { return std::sqrt(d.x * d.x + d.y * d.y); }
+
+// Append a polygon, normalising its winding so that nonzero-filling the whole
+// collection yields the union of the pieces (opposite windings would cancel).
+inline void emitPolygon(std::vector<Figure>& out, std::vector<drawing::Point> pts)
+{
+    if (pts.size() < 3)
+        return;
+
+    float area2 = 0.0f;
+    for (size_t i = 0; i < pts.size(); ++i)
+    {
+        const auto& a = pts[i];
+        const auto& b = pts[(i + 1) % pts.size()];
+        area2 += a.x * b.y - b.x * a.y;
+    }
+    if (area2 == 0.0f)
+        return; // degenerate sliver contributes nothing
+    if (area2 > 0.0f)
+        std::reverse(pts.begin(), pts.end());
+
+    out.emplace_back();
+    out.back().points = std::move(pts);
+    out.back().filled = true;
+    out.back().closed = true;
+}
+
+// Segment count for a circle of radius r. The tolerance is tighter than the
+// curve flattener's 0.25px because round caps/joins are compared directly
+// against Direct2D's true circles, where 0.25px of flattening is visible.
+inline int arcSegments(float r)
+{
+    constexpr float tol = 0.02f;
+    if (r <= tol)
+        return 4;
+    const float step = 2.0f * std::acos(std::clamp(1.0f - tol / r, -1.0f, 1.0f));
+    if (!(step > 0.0f))
+        return 256;
+    return std::clamp(int(std::ceil(kTwoPi / step)), 8, 256);
+}
+
+inline void emitDisc(std::vector<Figure>& out, drawing::Point c, float r)
+{
+    const int n = arcSegments(r);
+    // Vertices sit ON the circle. Outsetting to centre the flattening error
+    // (r / cos(pi/n)) is tempting but makes the disc bulge past the stroke
+    // band at the tangent points, which reads worse than being a hair small.
+    std::vector<drawing::Point> pts;
+    pts.reserve(size_t(n));
+    for (int i = 0; i < n; ++i)
+    {
+        const float a = kTwoPi * float(i) / float(n);
+        pts.push_back({ c.x + r * std::cos(a), c.y + r * std::sin(a) });
+    }
+    emitPolygon(out, std::move(pts));
+}
+
+inline float signedArea2(const std::vector<drawing::Point>& pts)
+{
+    float area2 = 0.0f;
+    for (size_t i = 0; i < pts.size(); ++i)
+    {
+        const auto& a = pts[i];
+        const auto& b = pts[(i + 1) % pts.size()];
+        area2 += a.x * b.y - b.x * a.y;
+    }
+    return area2;
+}
+
+// Append the polygon exactly as given (no winding normalisation). Used for
+// contours whose relative orientation carries meaning — a closed figure's
+// stroke is an annulus, and its inner ring must wind opposite the outer one to
+// punch the hole under nonzero fill.
+inline void emitContour(std::vector<Figure>& out, std::vector<drawing::Point> pts)
+{
+    if (pts.size() < 3)
+        return;
+    out.emplace_back();
+    out.back().points = std::move(pts);
+    out.back().filled = true;
+    out.back().closed = true;
+}
+
+inline void appendArc(std::vector<drawing::Point>& contour, drawing::Point c, float r, float a0, float delta)
+{
+    const int full = arcSegments(r);
+    const int steps = (std::max)(1, int(std::ceil(std::fabs(delta) / kTwoPi * float(full))));
+    for (int i = 0; i <= steps; ++i)
+    {
+        const float a = a0 + delta * float(i) / float(steps);
+        contour.push_back({ c.x + r * std::cos(a), c.y + r * std::sin(a) });
+    }
+}
+
+// Append the join at vertex v (between incoming unit dir u0 and outgoing u1)
+// to the contour being traced along the +normal side.
+inline void appendJoin(std::vector<drawing::Point>& contour, drawing::Point v, drawing::Point u0, drawing::Point u1,
+                       float hw, drawing::LineJoin join, float miterLimit)
+{
+    const drawing::Point n0{ -u0.y * hw, u0.x * hw };
+    const drawing::Point n1{ -u1.y * hw, u1.x * hw };
+    const drawing::Point a{ v.x + n0.x, v.y + n0.y };
+    const drawing::Point b{ v.x + n1.x, v.y + n1.y };
+
+    const float cross = u0.x * u1.y - u0.y * u1.x;
+    const float dot = u0.x * u1.x + u0.y * u1.y;
+    if (std::fabs(cross) < 1e-6f && dot > 0.0f)
+    {
+        contour.push_back(a); // collinear: the offset lines already meet
+        return;
+    }
+
+    // This side is the outside of the turn when the path turns away from it.
+    const bool outer = (cross < 0.0f);
+    if (!outer)
+    {
+        // Inner side: both offset points. The little crossover loop this makes
+        // is interior to the stroke, and nonzero filling absorbs it.
+        contour.push_back(a);
+        contour.push_back(b);
+        return;
+    }
+
+    switch (join)
+    {
+    case drawing::LineJoin::Round:
+    {
+        float a0 = std::atan2(n0.y, n0.x);
+        float a1 = std::atan2(n1.y, n1.x);
+        float delta = a1 - a0;
+        while (delta > 3.14159265358979f) delta -= kTwoPi;
+        while (delta < -3.14159265358979f) delta += kTwoPi;
+        appendArc(contour, v, hw, a0, delta);
+        return;
+    }
+    case drawing::LineJoin::Miter:
+    case drawing::LineJoin::MiterOrBevel:
+    {
+        const drawing::Point bis{ n0.x + n1.x, n0.y + n1.y };
+        const float bisLen = length(bis);
+        if (bisLen > 1e-6f)
+        {
+            // cos of half the turn angle, from the unit bisector and unit normal
+            const float cosHalf = (bis.x * n0.x + bis.y * n0.y) / (bisLen * hw);
+            if (cosHalf > 1e-4f)
+            {
+                const float miterDist = hw / cosHalf;
+                const float limit = miterLimit * hw; // D2D/SVG ratio: miterLength / strokeWidth
+                if (miterDist <= limit)
+                {
+                    const float k = miterDist / bisLen;
+                    contour.push_back(a);
+                    contour.push_back({ v.x + bis.x * k, v.y + bis.y * k });
+                    contour.push_back(b);
+                    return;
+                }
+                if (join == drawing::LineJoin::Miter)
+                {
+                    // Past the limit, D2D's plain MITER keeps the spike but
+                    // cuts it off flat at the limit distance (MITER_OR_BEVEL
+                    // is the one that falls back to a bevel).
+                    const float k = miterDist / bisLen;
+                    const drawing::Point tip{ v.x + bis.x * k, v.y + bis.y * k };
+                    const float atBis = hw * cosHalf; // distance along the bisector at a and b
+                    const float denom = miterDist - atBis;
+                    if (denom > 1e-6f)
+                    {
+                        const float t = std::clamp((limit - atBis) / denom, 0.0f, 1.0f);
+                        contour.push_back(a);
+                        contour.push_back({ a.x + (tip.x - a.x) * t, a.y + (tip.y - a.y) * t });
+                        contour.push_back({ b.x + (tip.x - b.x) * t, b.y + (tip.y - b.y) * t });
+                        contour.push_back(b);
+                        return;
+                    }
+                }
+            }
+        }
+        break; // MiterOrBevel past the limit, or a 180-degree reversal: bevel
+    }
+    default:
+        break;
+    }
+
+    contour.push_back(a); // Bevel
+    contour.push_back(b);
+}
+
+// Append the cap that turns the contour around at endpoint p, where u is the
+// outward direction of travel.
+inline void appendCap(std::vector<drawing::Point>& contour, drawing::Point p, drawing::Point u,
+                      float hw, drawing::CapStyle cap)
+{
+    const drawing::Point n{ -u.y * hw, u.x * hw };
+    switch (cap)
+    {
+    case drawing::CapStyle::Square:
+        contour.push_back({ p.x + n.x + u.x * hw, p.y + n.y + u.y * hw });
+        contour.push_back({ p.x - n.x + u.x * hw, p.y - n.y + u.y * hw });
+        break;
+    case drawing::CapStyle::Round:
+        // Half turn from +normal to -normal, bulging through +u.
+        appendArc(contour, p, hw, std::atan2(n.y, n.x), -3.14159265358979f);
+        break;
+    default: // Flat: the contour closes straight across
+        break;
+    }
+}
+
+// Trace one offset side of an open polyline, inserting joins at the interior
+// vertices.
+inline void appendOpenSide(std::vector<drawing::Point>& contour, const std::vector<drawing::Point>& pts,
+                           const std::vector<drawing::Point>& dirs, float hw,
+                           drawing::LineJoin join, float miterLimit)
+{
+    const size_t n = pts.size();
+    contour.push_back({ pts[0].x - dirs[0].y * hw, pts[0].y + dirs[0].x * hw });
+    for (size_t i = 1; i + 1 < n; ++i)
+        appendJoin(contour, pts[i], dirs[i - 1], dirs[i], hw, join, miterLimit);
+    const auto& uLast = dirs[n - 2];
+    contour.push_back({ pts[n - 1].x - uLast.y * hw, pts[n - 1].y + uLast.x * hw });
+}
+
+// Widen one flattened figure into stroke outline contours.
+//
+// The outline is traced as a contour rather than stamped as overlapping
+// quads/wedges/discs. A coverage rasterizer accumulates AREA per pixel, so
+// overlapping pieces double-count inside a partially covered pixel (a round
+// cap overlapping its segment quad reads as ~95% covered where the true union
+// is 50%). Tracing a single boundary has no overlap to double-count.
+inline void widenFigure(const Figure& fig, float halfWidth, drawing::CapStyle cap,
+                        drawing::LineJoin join, float miterLimit, std::vector<Figure>& out)
+{
+    // Drop consecutive duplicates (zero-length segments have no direction, and
+    // a closed figure repeats its start point).
+    std::vector<drawing::Point> pts;
+    pts.reserve(fig.points.size());
+    for (const auto& p : fig.points)
+    {
+        if (!std::isfinite(p.x) || !std::isfinite(p.y))
+            return; // poisoned figure: skip entirely
+        if (pts.empty() || length(sub(p, pts.back())) > 1e-6f)
+            pts.push_back(p);
+    }
+    const bool closed = fig.closed;
+    if (closed && pts.size() > 1 && length(sub(pts.back(), pts.front())) <= 1e-6f)
+        pts.pop_back();
+
+    if (pts.empty())
+        return;
+
+    if (pts.size() == 1)
+    {
+        // Degenerate figure: D2D still marks it with a round or square cap.
+        if (cap == drawing::CapStyle::Round)
+            emitDisc(out, pts[0], halfWidth);
+        else if (cap == drawing::CapStyle::Square)
+            emitPolygon(out, { { pts[0].x - halfWidth, pts[0].y - halfWidth },
+                               { pts[0].x + halfWidth, pts[0].y - halfWidth },
+                               { pts[0].x + halfWidth, pts[0].y + halfWidth },
+                               { pts[0].x - halfWidth, pts[0].y + halfWidth } });
+        return;
+    }
+
+    const size_t n = pts.size();
+    const size_t segCount = closed ? n : n - 1;
+
+    // Unit direction of each segment (duplicates were already dropped, so no
+    // segment is zero-length). Computed straight from the point list so the
+    // forward and reversed walks cannot disagree about indexing.
+    const auto segmentDirs = [segCount](const std::vector<drawing::Point>& p, bool& ok) {
+        std::vector<drawing::Point> d(segCount);
+        for (size_t i = 0; i < segCount; ++i)
+        {
+            const auto v = sub(p[(i + 1) % p.size()], p[i]);
+            const float len = length(v);
+            if (!(len > 0.0f))
+            {
+                ok = false;
+                return d;
+            }
+            d[i] = { v.x / len, v.y / len };
+        }
+        return d;
+    };
+
+    bool ok = true;
+    const std::vector<drawing::Point> dirs = segmentDirs(pts, ok);
+    std::vector<drawing::Point> reversedPts(pts.rbegin(), pts.rend());
+    const std::vector<drawing::Point> reversedDirs = segmentDirs(reversedPts, ok);
+    if (!ok)
+        return; // shouldn't happen after dedupe; bail rather than divide by zero
+
+    if (!closed)
+    {
+        // One contour: up one side, around the end cap, back the other side,
+        // around the start cap.
+        std::vector<drawing::Point> contour;
+        appendOpenSide(contour, pts, dirs, halfWidth, join, miterLimit);
+        appendCap(contour, pts.back(), dirs.back(), halfWidth, cap);
+        appendOpenSide(contour, reversedPts, reversedDirs, halfWidth, join, miterLimit);
+        appendCap(contour, pts.front(), reversedDirs.back(), halfWidth, cap);
+
+        // Canonical winding, so strokes of separate figures reinforce rather
+        // than cancel where they overlap under nonzero fill.
+        if (signedArea2(contour) > 0.0f)
+            std::reverse(contour.begin(), contour.end());
+        emitContour(out, std::move(contour));
+        return;
+    }
+
+    // Closed figure: an annulus — outer ring plus an oppositely wound inner
+    // ring that punches the hole.
+    std::vector<drawing::Point> ring0, ring1;
+    for (size_t i = 0; i < n; ++i)
+        appendJoin(ring0, pts[i], dirs[(i + segCount - 1) % segCount], dirs[i % segCount], halfWidth, join, miterLimit);
+    for (size_t i = 0; i < n; ++i)
+        appendJoin(ring1, reversedPts[i], reversedDirs[(i + segCount - 1) % segCount], reversedDirs[i % segCount], halfWidth, join, miterLimit);
+
+    // When the pen is wider than the figure, the inward offset passes through
+    // itself: the inner ring comes out inverted and punches a hole where the
+    // stroke should read solid. Detect it geometrically — the ring's signed
+    // area is not a usable signal, because the corner crossover loops subtract
+    // enough to flip the sign of a perfectly valid small ring.
+    {
+        float minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
+        for (const auto& p : pts)
+        {
+            minX = (std::min)(minX, p.x); maxX = (std::max)(maxX, p.x);
+            minY = (std::min)(minY, p.y); maxY = (std::max)(maxY, p.y);
+        }
+        if (halfWidth >= 0.5f * (std::min)(maxX - minX, maxY - minY))
+        {
+            auto& inner = (signedArea2(pts) > 0.0f) ? ring0 : ring1;
+            inner.clear();
+        }
+    }
+
+    // No winding fix-up here, deliberately. Because +n is always the same
+    // rotation of the travel direction, the OUTER ring always comes out
+    // negatively wound whichever way the source figure is wound: for a
+    // positively wound figure the forward walk offsets inward (ring0 = inner)
+    // and the reversed walk outward (ring1 = outer, negative); for a
+    // negatively wound one it is the other way round. That already matches the
+    // canonical sign forced on open contours above, so every stroke band in a
+    // geometry reinforces under nonzero fill. Canonicalising on ring0 instead
+    // (as this once did) flips the outer ring positive for half of all input
+    // windings, and overlapping bands then cancel to holes.
+    emitContour(out, std::move(ring0));
+    emitContour(out, std::move(ring1));
+}
+
+// Everything a stroke needs: the style properties plus any custom dash array.
+struct Params
+{
+    drawing::StrokeStyleProperties props{};
+    std::vector<float> dashes;
+};
+
+// Dash lengths in absolute units. The built-in patterns are Direct2D's,
+// expressed in multiples of the stroke width. Empty result = solid.
+inline std::vector<float> dashPattern(const Params& params, float strokeWidth)
+{
+    std::vector<float> p;
+    switch (params.props.dashStyle)
+    {
+    case drawing::DashStyle::Dash:       p = { 2.0f, 2.0f }; break;
+    case drawing::DashStyle::Dot:        p = { 0.0f, 2.0f }; break;
+    case drawing::DashStyle::DashDot:    p = { 2.0f, 2.0f, 0.0f, 2.0f }; break;
+    case drawing::DashStyle::DashDotDot: p = { 2.0f, 2.0f, 0.0f, 2.0f, 0.0f, 2.0f }; break;
+    case drawing::DashStyle::Custom:     p = params.dashes; break;
+    default:                             return {}; // Solid
+    }
+
+    float total = 0.0f;
+    for (auto& v : p)
+    {
+        v = (v < 0.0f ? 0.0f : v) * strokeWidth;
+        total += v;
+    }
+    if (!(total > 0.0f) || p.size() < 2)
+        return {}; // degenerate pattern: draw solid rather than nothing at all
+    return p;
+}
+
+// Split one figure into the "on" runs of the dash pattern, as open figures.
+inline void dashFigure(const Figure& fig, const std::vector<float>& pattern, float offset,
+                       std::vector<Figure>& out)
+{
+    std::vector<drawing::Point> pts;
+    pts.reserve(fig.points.size() + 1);
+    for (const auto& p : fig.points)
+    {
+        if (!std::isfinite(p.x) || !std::isfinite(p.y))
+            return;
+        if (pts.empty() || length(sub(p, pts.back())) > 1e-6f)
+            pts.push_back(p);
+    }
+    if (fig.closed && pts.size() > 1 && length(sub(pts.back(), pts.front())) > 1e-6f)
+        pts.push_back(pts.front()); // dashes run continuously around a closed figure
+    if (pts.size() < 2)
+        return;
+
+    // Cumulative arc length at each vertex.
+    std::vector<float> arc(pts.size(), 0.0f);
+    for (size_t i = 1; i < pts.size(); ++i)
+        arc[i] = arc[i - 1] + length(sub(pts[i], pts[i - 1]));
+    const float totalLen = arc.back();
+    if (!(totalLen > 0.0f))
+        return;
+
+    float cycle = 0.0f;
+    for (float v : pattern)
+        cycle += v;
+
+    // Point at a given arc length along the polyline.
+    const auto pointAtArc = [&](float d) {
+        d = std::clamp(d, 0.0f, totalLen);
+        size_t i = 1;
+        while (i + 1 < pts.size() && arc[i] < d)
+            ++i;
+        const float segLen = arc[i] - arc[i - 1];
+        const float t = segLen > 0.0f ? (d - arc[i - 1]) / segLen : 0.0f;
+        return drawing::Point{ pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+                               pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
+    };
+
+    // Start phase within the pattern.
+    float phase = std::fmod(offset, cycle);
+    if (phase < 0.0f)
+        phase += cycle;
+    size_t idx = 0;
+    while (phase >= pattern[idx] && pattern[idx] > 0.0f)
+    {
+        phase -= pattern[idx];
+        idx = (idx + 1) % pattern.size();
+    }
+
+    // Walk the pattern along the polyline. Each cycle advances by `cycle` > 0,
+    // so this always terminates even when some entries are zero-length.
+    float pos = -phase;
+    while (pos < totalLen)
+    {
+        const float len = pattern[idx];
+        const float start = pos;
+        const float end = pos + len;
+        const bool on = (idx % 2) == 0;
+
+        if (on && end >= 0.0f && start <= totalLen)
+        {
+            const float s = (std::max)(start, 0.0f);
+            const float e = (std::min)(end, totalLen);
+            Figure run;
+            run.filled = true;
+            run.closed = false;
+            if (e <= s)
+            {
+                run.points.push_back(pointAtArc(s)); // zero-length dash: a dot
+            }
+            else
+            {
+                run.points.push_back(pointAtArc(s));
+                for (size_t i = 0; i < pts.size(); ++i)
+                    if (arc[i] > s && arc[i] < e)
+                        run.points.push_back(pts[i]); // keep interior corners
+                run.points.push_back(pointAtArc(e));
+            }
+            out.push_back(std::move(run));
+        }
+
+        pos = end;
+        idx = (idx + 1) % pattern.size();
+    }
+}
+
+inline void widen(const std::vector<Figure>& figures, float strokeWidth,
+                  const Params& params, std::vector<Figure>& out)
+{
+    const float hw = strokeWidth * 0.5f;
+    const float miterLimit = (std::max)(1.0f, params.props.miterLimit);
+    const auto pattern = dashPattern(params, strokeWidth);
+
+    if (pattern.empty())
+    {
+        for (const auto& fig : figures)
+            widenFigure(fig, hw, params.props.lineCap, params.props.lineJoin, miterLimit, out);
+        return;
+    }
+
+    std::vector<Figure> dashed;
+    for (const auto& fig : figures)
+        dashFigure(fig, pattern, params.props.dashOffset * strokeWidth, dashed);
+    for (const auto& fig : dashed)
+        widenFigure(fig, hw, params.props.lineCap, params.props.lineJoin, miterLimit, out);
+}
+
+} // namespace stroke
+
+// Stroke parameters from an IStrokeStyle (null = Direct2D defaults).
+inline stroke::Params strokeParams(drawing::api::IStrokeStyle* strokeStyle)
+{
+    stroke::Params params;
+    if (auto* ss = dynamic_cast<se::generic_graphics::StrokeStyle*>(strokeStyle))
+    {
+        params.props = ss->strokeStyleProperties;
+        params.dashes = ss->dashes;
+    }
+    return params;
+}
 
 class PathGeometry final : public drawing::api::IPathGeometry
 {
@@ -240,10 +767,40 @@ public:
 
     ReturnCode open(drawing::api::IGeometrySink** returnGeometrySink) override;
 
-    ReturnCode strokeContainsPoint(drawing::Point, float, drawing::api::IStrokeStyle*, const drawing::Matrix3x2*, bool* returnContains) override
+    ReturnCode strokeContainsPoint(drawing::Point point, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
     {
         *returnContains = false;
-        return ReturnCode::NoSupport; // milestone 3 (stroker)
+        if (!(strokeWidth > 0.0f) || !std::isfinite(strokeWidth))
+            return ReturnCode::Ok;
+
+        std::vector<Figure> widened;
+        stroke::widen(figures, strokeWidth, strokeParams(strokeStyle), widened);
+
+        // Sum the winding over ALL pieces, exactly as the nonzero fill does.
+        // The pieces are not independent shapes: a closed figure's stroke is
+        // an annulus whose inner ring must subtract, so testing each piece on
+        // its own and OR-ing would report the shape's whole interior as being
+        // on the stroke.
+        const drawing::Matrix3x2 identity;
+        const auto& m = worldTransform ? *worldTransform : identity;
+        int winding = 0;
+        for (const auto& piece : widened)
+        {
+            const size_t n = piece.points.size();
+            for (size_t i = 0; i < n; ++i)
+            {
+                const auto a = drawing::transformPoint(m, piece.points[i]);
+                const auto b = drawing::transformPoint(m, piece.points[(i + 1) % n]);
+                if ((a.y <= point.y) != (b.y <= point.y))
+                {
+                    const float xCross = a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y);
+                    if (point.x < xCross)
+                        winding += (b.y > a.y) ? 1 : -1;
+                }
+            }
+        }
+        *returnContains = (winding != 0);
+        return ReturnCode::Ok;
     }
 
     ReturnCode fillContainsPoint(drawing::Point point, const drawing::Matrix3x2* worldTransform, bool* returnContains) override
@@ -273,9 +830,40 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode getWidenedBounds(float, drawing::api::IStrokeStyle*, const drawing::Matrix3x2*, drawing::Rect*) override
+    ReturnCode getWidenedBounds(float strokeWidth, drawing::api::IStrokeStyle* strokeStyle, const drawing::Matrix3x2* worldTransform, drawing::Rect* returnBounds) override
     {
-        return ReturnCode::NoSupport; // milestone 3 (stroker)
+        *returnBounds = {};
+        if (!(strokeWidth > 0.0f) || !std::isfinite(strokeWidth))
+            return ReturnCode::Ok;
+
+        std::vector<Figure> widened;
+        stroke::widen(figures, strokeWidth, strokeParams(strokeStyle), widened);
+
+        const drawing::Matrix3x2 identity;
+        const auto& m = worldTransform ? *worldTransform : identity;
+        bool any = false;
+        drawing::Rect bounds{};
+        for (const auto& piece : widened)
+        {
+            for (const auto& p : piece.points)
+            {
+                const auto tp = drawing::transformPoint(m, p);
+                if (!any)
+                {
+                    bounds = { tp.x, tp.y, tp.x, tp.y };
+                    any = true;
+                }
+                else
+                {
+                    bounds.left = (std::min)(bounds.left, tp.x);
+                    bounds.top = (std::min)(bounds.top, tp.y);
+                    bounds.right = (std::max)(bounds.right, tp.x);
+                    bounds.bottom = (std::max)(bounds.bottom, tp.y);
+                }
+            }
+        }
+        *returnBounds = bounds;
+        return ReturnCode::Ok;
     }
 
     ReturnCode getFactory(drawing::api::IFactory** returnFactory) override
@@ -321,6 +909,15 @@ public:
         if (!path->figures.empty())
             path->figures.back().points.push_back(point);
         lastPoint = point;
+    }
+
+    void endFigure(drawing::FigureEnd figureEnd) override
+    {
+        if (!path->figures.empty())
+            path->figures.back().closed = (figureEnd == drawing::FigureEnd::Closed);
+        // The base class appends the closing segment; widenFigure drops the
+        // duplicated start point.
+        se::generic_graphics::GeometrySink::endFigure(figureEnd);
     }
 
     void setFillMode(drawing::FillMode fillMode) override
@@ -525,6 +1122,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     std::vector<float> rowBuf;      // fp32 staging for one row span
     std::vector<drawing::Point> devicePoints;
     std::vector<char> figureValid;
+    std::vector<Figure> strokeFigures; // widened stroke outline, reused per call
 
 public:
     RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size) : factory(pfactory)
@@ -637,14 +1235,40 @@ public:
         if (opacityBrush)
             return ReturnCode::NoSupport; // masked fills: fail loudly rather than render wrong
 
-        // A non-finite color would poison even zero-coverage pixels through
+        return fillFigures(path->figures, path->fillMode, *solid);
+    }
+
+    ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+    {
+        auto* path = dynamic_cast<PathGeometry*>(pathGeometry);
+        auto* solid = dynamic_cast<SolidColorBrush*>(brush);
+        if (!path || !solid)
+            return ReturnCode::NoSupport;
+        if (!(strokeWidth > 0.0f) || !std::isfinite(strokeWidth))
+            return ReturnCode::Ok; // D2D draws nothing for a zero-width stroke
+
+        // Widen in local space (so a non-uniform transform yields an elliptical
+        // pen, like D2D), then fill the union of the pieces.
+        strokeFigures.clear();
+        stroke::widen(path->figures, strokeWidth, strokeParams(strokeStyle), strokeFigures);
+        return fillFigures(strokeFigures, drawing::FillMode::Winding, *solid);
+    }
+
+private:
+    // Rasterize + blend a set of already-flattened figures. The single entry
+    // point to pixels: both fillGeometry and drawGeometry come through here.
+    ReturnCode fillFigures(const std::vector<Figure>& figures, drawing::FillMode fillMode, const SolidColorBrush& brushRef)
+    {
+        const SolidColorBrush* solid = &brushRef;
+
+        // A non-finite colour would poison even zero-coverage pixels through
         // the blend (NaN * 0 = NaN); render nothing instead.
         if (!(std::isfinite(solid->color.r) && std::isfinite(solid->color.g) &&
               std::isfinite(solid->color.b) && std::isfinite(solid->color.a) &&
               std::isfinite(solid->opacity)))
             return ReturnCode::Ok;
 
-        if (path->figures.empty())
+        if (figures.empty())
             return ReturnCode::Ok;
 
         auto& s = bitmap->surface;
@@ -658,7 +1282,7 @@ public:
         float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
         {
             size_t figStart = 0;
-            for (const auto& fig : path->figures)
+            for (const auto& fig : figures)
             {
                 bool valid = fig.filled && !fig.points.empty();
                 for (const auto& p : fig.points)
@@ -715,7 +1339,7 @@ public:
 
         size_t base = 0;
         size_t figIndex = 0;
-        for (const auto& fig : path->figures)
+        for (const auto& fig : figures)
         {
             const size_t n = fig.points.size();
             if (!figureValid[figIndex++])
@@ -743,7 +1367,7 @@ public:
         const float sr = solid->color.r * sa;
         const float sg = solid->color.g * sa;
         const float sb = solid->color.b * sa;
-        const bool nonzero = (path->fillMode == drawing::FillMode::Winding);
+        const bool nonzero = (fillMode == drawing::FillMode::Winding);
 
         // Chunk-aligned blend span; row padding absorbs the rounding (cov = 0 there).
         const int ax0 = ix0 & ~3;
@@ -801,11 +1425,7 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode drawGeometry(drawing::api::IPathGeometry*, drawing::api::IBrush*, float, drawing::api::IStrokeStyle*) override
-    {
-        return ReturnCode::NoSupport; // milestone 3 (stroker)
-    }
-
+public:
     ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
     {
         auto geometry = createRoundedRectGeometry(roundedRect);

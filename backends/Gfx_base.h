@@ -304,10 +304,14 @@ public:
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
 
+        // Walk the same way Direct2D's native rectangle does — top edge first,
+        // then clockwise. Fills don't care, but a dashed stroke's phase starts
+        // at the figure's first point, so walking the other way puts every dash
+        // on the wrong edge.
         sink.beginFigure({rect->left, rect->top}, filled ? gmpi::drawing::FigureBegin::Filled : gmpi::drawing::FigureBegin::Hollow);
-        sink.addLine({rect->left, rect->bottom});
-        sink.addLine({rect->right, rect->bottom});
         sink.addLine({rect->right, rect->top});
+        sink.addLine({rect->right, rect->bottom});
+        sink.addLine({rect->left, rect->bottom});
 
 		sink.endFigure(gmpi::drawing::FigureEnd::Closed);
 		sink.close();

@@ -114,8 +114,41 @@ fp16 pixels via `lockPixels`.
    x/y radius swap in Gfx_base's arc flattener, a heap-underflow (`acc[-1]`)
    when interpolated x rounds an ulp below 0 (caught by adversarial review),
    several float→int UB cases at extreme coordinates.
-3. **Stroker**: butt/square caps, miter/bevel joins; round = flattened arcs;
-   dashes later by splitting the polyline before widening.
+3. **Stroker** — DONE (Aug 2026): flat/square/round caps, miter/bevel/round
+   joins with miter limit, open and closed figures, strokes under transform
+   (widened in local space, so a non-uniform scale gives an elliptical pen like
+   D2D), dashes (all built-in styles, custom arrays and dash offset — the
+   polyline is split into "on" runs before widening), plus
+   `strokeContainsPoint`/`getWidenedBounds` off the same widener.
+
+   The outline is traced as a **contour**, not stamped as overlapping quads,
+   wedges and discs. That matters specifically because this is a coverage
+   rasterizer: it accumulates *area* per pixel, so overlapping pieces
+   double-count inside a partially covered pixel — a round cap over its own
+   segment quad measured ~95% covered where the true union is 50%. Tracing one
+   boundary has no overlap to double-count. Closed figures emit an annulus
+   (outer ring plus an oppositely wound inner ring); open figures emit a single
+   contour, up one side, around the end cap, back the other side.
+
+   Three D2D behaviours worth remembering, each established by rendering the
+   same scene through both backends rather than from the docs:
+   * `LineJoin::Miter` past the miter limit does **not** bevel — it keeps the
+     spike and cuts it off flat at the limit distance. `MiterOrBevel` is the
+     one that bevels.
+   * A dashed stroke's phase starts at the figure's first point, so the
+     rectangle helper must walk the same way D2D's native rectangle does (top
+     edge first, then clockwise) or every dash lands on the wrong edge.
+   * There is no winding fix-up on the annulus, deliberately: +normal is always
+     the same rotation of the travel direction, so the outer ring is always
+     negatively wound whichever way the source figure is wound. Canonicalising
+     on "the first ring" instead flips the outer ring for half of all inputs,
+     and overlapping stroke bands then cancel to holes under nonzero fill.
+
+   Known gap: when the pen is wider than the figure, the inward offset folds
+   through itself. A full fix is offset-curve self-intersection removal; for
+   now the inner ring is dropped when the pen exceeds half the figure's
+   smaller bounding dimension, which covers the common "fat pen on a small
+   shape" case. Partial folds on non-convex figures can still leave artefacts.
 4. **Curve accuracy**: device-space flattening tolerance (re-flatten under zoom).
 5. **Gradients**: linear, then radial; stops premultiplied linear.
 6. **Bitmaps & offscreens**: `drawBitmap` (bilinear), `createCompatibleRenderTarget`,

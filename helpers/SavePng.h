@@ -84,7 +84,9 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     const uint8_t* srcData = pixels.getAddress();
     const int32_t  srcBpr  = pixels.getBytesPerRow();
     const SizeU    size    = bitmap.getSize();
-    const int32_t  srcBpp  = srcBpr / static_cast<int32_t>(size.width); // 4 or 8
+    // From the pixel format, not srcBpr / width: rows may be padded (e.g. the
+    // CPU backend pads stride to a multiple of 8 pixels).
+    const int32_t  srcBpp  = pixels.getBytesPerPixel(); // 4 or 8
 
     // Output is always 32bpp BGRA sRGB.
     const int32_t outBpr = static_cast<int32_t>(size.width) * 4;
@@ -156,29 +158,27 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     }
 
     // Encode to PNG via WIC.
-    IWICImagingFactory* rawWic{};
+    // NOTE: create into ComPtr::put() — the ComPtr(raw) constructor AddRefs,
+    // which would leak these objects and leave the file locked for writing.
+    gmpi::directx::ComPtr<IWICImagingFactory> wic;
     CoCreateInstance(
         CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-        __uuidof(IWICImagingFactory), reinterpret_cast<void**>(&rawWic));
-    gmpi::directx::ComPtr<IWICImagingFactory> wic(rawWic);
+        __uuidof(IWICImagingFactory), wic.put_void());
     if (!wic) return false;
 
-    IWICStream* rawStream{};
-    wic->CreateStream(&rawStream);
-    gmpi::directx::ComPtr<IWICStream> stream(rawStream);
+    gmpi::directx::ComPtr<IWICStream> stream;
+    wic->CreateStream(stream.put());
     if (!stream) return false;
     stream->InitializeFromFilename(path.wstring().c_str(), GENERIC_WRITE);
 
-    IWICBitmapEncoder* rawEncoder{};
-    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &rawEncoder);
-    gmpi::directx::ComPtr<IWICBitmapEncoder> encoder(rawEncoder);
+    gmpi::directx::ComPtr<IWICBitmapEncoder> encoder;
+    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.put());
     if (!encoder) return false;
     encoder->Initialize(stream, WICBitmapEncoderNoCache);
 
-    IWICBitmapFrameEncode* rawFrame{};
+    gmpi::directx::ComPtr<IWICBitmapFrameEncode> frame;
     IPropertyBag2* props{};
-    encoder->CreateNewFrame(&rawFrame, &props);
-    gmpi::directx::ComPtr<IWICBitmapFrameEncode> frame(rawFrame);
+    encoder->CreateNewFrame(frame.put(), &props);
     if (props) props->Release();
     if (!frame) return false;
 
@@ -206,7 +206,7 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     uint8_t* data = pixels.getAddress();
     int32_t  bpr  = pixels.getBytesPerRow();
     SizeU    size = bitmap.getSize();
-    int32_t  bpp  = bpr / static_cast<int32_t>(size.width);
+    int32_t  bpp  = pixels.getBytesPerPixel(); // from the format; rows may be padded
 
     // If float-linear (128bpp), convert to 8-bit sRGB RGBA for PNG output.
     std::vector<uint8_t> srgbBuf;

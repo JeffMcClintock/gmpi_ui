@@ -89,11 +89,54 @@ intrinsics until a profile demands them.
 
 ## Display output (milestone 7)
 
-`endDraw` on a windowed target converts the dirty rect fp16-linear-scRGB → 8-bit
-sRGB with a single ordered/blue-noise dither (1 LSB of the target), directly into
-an XShm / `wl_shm` buffer. A 10-bit path is the same code with a different encode.
-Offscreen (`createCpuRenderTarget`) targets skip this — tests and callers read the
-fp16 pixels via `lockPixels`.
+The **frame** — not `endDraw` — converts the dirty rect from fp16-linear-scRGB to
+8-bit sRGB with a single blue-noise dither (1 LSB of the target), writing into
+whatever buffer the window system gave it (XShm, `wl_shm`, a `juce::Image`).
+A 10-bit path is the same code with a different encode. Offscreen
+(`createCpuRenderTarget`) targets never touch it — tests and callers read the fp16
+pixels via `lockPixels`.
+
+> Corrected Aug 2026. This section previously said `endDraw` on a windowed target
+> wrote *directly* into an XShm buffer. That would put a window-system dependency
+> inside `backends/CpuGfx.h`, and that file's freedom from platform code is
+> exactly what lets the test suite and the SynthEditCL screenshot path run
+> headless with nothing linked against X11. The frame calls `endDraw()` and then
+> calls the encoder; `CpuGfx.h` is not involved.
+
+`backends/CpuEncode.h` — **DONE (Aug 2026)**. Takes plain descriptors
+(`SourceSurface` / `DestSurface` + a `PixelEncoding` enum) rather than any window
+handle, so it has no dependency on the backend *or* the platform and is testable
+on its own. `tests/cpu_present_tests.cpp` proves it headlessly on Windows and
+Linux, with identical numbers on both.
+
+**Dither is load-bearing, not decoration.** Measured on linearly-interpolated
+ramps encoded straight to 8-bit sRGB: a full-range 0→255 ramp is fine (4-pixel
+steps), but the gradients a synth panel is actually made of are not — 40→60 over
+400 px gives **24-pixel** bands, over 800 px **48-pixel** bands, a 10→30 glow
+27 px, a 200→215 background 28 px. That the full-range case looks fine is why
+this gets missed.
+
+Two properties make the dither honest, and both are asserted rather than assumed:
+
+* The 64×64 void-and-cluster tile uses **every value 0..255 exactly 16 times**.
+  So for a constant input the mean over an aligned 64×64 block is the true value
+  with *zero* error — a flat fill cannot shift colour. The test asserts an exact
+  integer identity, not a tolerance.
+* The tile is genuinely blue: the variance of its 8×8 block means is 0.07× that
+  of a shuffle of the same histogram. Blue rather than Bayer specifically because
+  a flat fill flips only a few percent of pixels, and Bayer puts every one of
+  them on a regular lattice, which reads as cross-hatch.
+
+The trap, and the reason `DirtyRectInvariance` is the headline test: **the tile
+must be indexed by absolute destination coordinates, never relative to the
+rectangle**. Otherwise a partial repaint produces different pixels from a full
+one, and the seam only appears when some unrelated widget invalidates a
+neighbouring region. Verified by encoding a surface whole, then again as a
+shuffled partition of awkward strips, and requiring `memcmp == 0`.
+
+Alpha is composited over black — i.e. the premultiplied value is used as-is.
+Copying the un-premultiply from `helpers/SavePng.h` (correct there, because PNG
+carries alpha) would turn 25%-alpha white from 137 into 255.
 
 ## Milestones
 
@@ -241,7 +284,35 @@ fp16 pixels via `lockPixels`.
    premultiplied bytes into PNG, which has no premultiplied form — every
    translucent pixel was saved too dark (50%-alpha white round-tripped as 50%
    grey).
-7. **Present path**: dithered sRGB encode + X11/Wayland blit.
+7. **Present path** ← current. Staged so each stage is verifiable on its own:
+   **1** encode + dither, headless — **DONE (Aug 2026)**, see "Display output"
+   above; **2** hoist the portable parts of `backends/DrawingFrameWin.*`
+   (dirty-rect queue, paint loop, DIP↔pixel) into a shared base — they contain no
+   Win32 today and re-typing them for X11 is how the two diverge; **3** X11
+   window + XShm blit driven by a standalone demo; **4** input, resize, DPI;
+   **5** embed in a real host.
+
+   The decision everything else follows from: **the frame attaches to a window it
+   did not create, and never owns an event loop or a thread.** That is the API
+   contract, not a preference — VST3 hands you an XID via
+   `attached(parent, "X11EmbedWindowID")` and `Steinberg::Linux::IRunLoop` is the
+   only sanctioned way to be called; CLAP is `clap_host_posix_fd_support` plus
+   `clap_host_timer_support`, level-triggered. So the frame's entry points are
+   `onFdReadable()` and `onTimer()`, and the stage-3 demo is not a second design —
+   it is a 30-line `select()` driver calling those same two entry points.
+
+   Wayland is deliberately out: CLAP's `clap/ext/gui.h` still says "embed is
+   currently not supported", and every Linux DAW runs plugins under XWayland,
+   where the X11 path works unchanged. The seam that keeps it cheap later is
+   `DestSurface` — a `wl_shm` buffer is another destination, not a rewrite.
+
+   Verifiable here (WSLg): X.Org at `:0`, TrueColor depth 24/32bpp, `LSBFirst`
+   with `R=0x00ff0000` — which is byte order B,G,R,X, i.e. exactly
+   `PixelEncoding::Bgra8888`. `XShmAttach` succeeds, so the shared-memory path is
+   testable, and `xwd`/`xdotool`/XTest are present, so stages 3 and 4 can be
+   checked by screen-grabbing and comparing against the already-proven encoder
+   rather than by eye. **Not** verifiable here: any DAW (stages 5–6), real HiDPI,
+   and non-composited tearing.
 8. **Text** ← current. Scope includes **CJK and colour emoji**; right-to-left
    (bidi, cursive shaping) is explicitly excluded.
 

@@ -11,6 +11,8 @@ using namespace gmpi::drawing;
 /* FUTURE ideas
 */
 
+#include <cmath> // linearToSRGB01
+
 #include "GmpiApiCommon.h"
 
 #pragma pack(push,8)
@@ -399,6 +401,20 @@ struct FontMetrics
     float strikethroughPosition{}; // Strikethrough position is the position of strikethrough relative to the English baseline. The value is usually made positive in order to place the strikethrough above the baseline.
     float strikethroughThickness{};
 };
+
+// The sRGB transfer function, encode direction (IEC 61966-2-1), on [0,1].
+//
+// ONE definition, deliberately. Every surface in this library is linear, and
+// every path that leaves it for an 8-bit consumer has to apply this curve: the
+// PNG encoder in helpers/SavePng.h and the screen encoder in
+// backends/CpuEncode.h. A second copy is how a golden image and the display
+// silently stop agreeing.
+inline float linearToSRGB01(float c)
+{
+	c = c < 0.0f ? 0.0f : (c > 1.0f ? 1.0f : c);
+	return (c <= 0.0031308f) ? c * 12.92f
+	                         : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+}
 
 // The character alignment box: ascent + descent, EXCLUDING lineGap.
 //

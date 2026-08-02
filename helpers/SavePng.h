@@ -43,13 +43,11 @@ namespace gmpi { namespace drawing {
 namespace detail {
 
 // Linear float [0,1] → sRGB uint8_t [0,255].
+// The curve itself lives in GmpiApiDrawing.h so the screen encoder
+// (backends/CpuEncode.h) and these golden images cannot drift apart.
 inline uint8_t linearToSRGB_f(float c)
 {
-    c = std::clamp(c, 0.0f, 1.0f);
-    float s = (c <= 0.0031308f)
-        ? c * 12.92f
-        : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
-    return static_cast<uint8_t>(std::clamp(s * 255.0f + 0.5f, 0.0f, 255.0f));
+    return static_cast<uint8_t>(std::clamp(linearToSRGB01(c) * 255.0f + 0.5f, 0.0f, 255.0f));
 }
 
 #ifdef _WIN32

@@ -567,9 +567,28 @@ public:
     float scale() const { return fontSize / float(face->unitsPerEm); }
     float ascent() const { return em.ascent * scale(); }
     float descent() const { return em.descent * scale(); }
-    // Line height comes from the PRIMARY font, so a line does not change height
-    // just because one fallback glyph appeared in it.
-    float lineHeight() const { return lineSpacing >= 0.0f ? lineSpacing : (ascent() + descent()); }
+
+    // Baseline-to-baseline distance. It includes lineGap, matching DirectWrite:
+    // measured on Arial at 20, each additional line advances by
+    // ascent+descent+lineGap (22.998), not ascent+descent (22.344).
+    // Metrics come from the PRIMARY font, so a line does not change height just
+    // because one fallback glyph appeared in it.
+    float lineAdvance() const
+    {
+        return lineSpacing >= 0.0f ? lineSpacing : (ascent() + descent() + em.lineGap * scale());
+    }
+
+    // Total height of n lines. There is no trailing line gap — DirectWrite's
+    // height for n lines is (n-1) advances plus one body height.
+    float blockHeight(size_t lines) const
+    {
+        if (lines == 0)
+            return 0.0f;
+        if (lineSpacing >= 0.0f)
+            return float(lines) * lineSpacing;
+        return float(lines - 1) * lineAdvance() + ascent() + descent();
+    }
+
     float baselineOffset() const { return lineSpacing >= 0.0f ? baseline : ascent(); }
 
     static bool covers(const detail::FontFace& f, uint32_t codepoint)
@@ -844,7 +863,7 @@ public:
         for (const auto& line : lines)
             width = (std::max)(width, line.width);
 
-        *returnSize = { width, float(lines.size()) * lineHeight() };
+        *returnSize = { width, blockHeight(lines.size()) };
         return ReturnCode::Ok;
     }
 
@@ -1096,19 +1115,25 @@ public:
         format->face = face;
         format->em = detail::readMetrics(*face);
 
-        // FontFlags decides what the requested height MEANS. BodyHeight (the
-        // wrapper's default) makes it ascent+descent, CapHeight makes it the
-        // cap height, and SystemHeight passes it through as the em size. The
-        // Direct2D backend rescales the same way; without this every extent
-        // and layout would disagree between backends.
+        // FontFlags decides what the requested height MEANS, and this
+        // deliberately mirrors the Direct2D backend's test EXACTLY — including
+        // the part that does not do what its name suggests.
+        //
+        // FontFlags::BodyHeight is 0, so DirectXGfx.cpp's
+        // "(fontFlags & FontFlags::BodyHeight) != 0" is never true: the D2D
+        // backend computes a body-height scale factor and then never applies
+        // it, leaving the default meaning "em size = requested height". Scaling
+        // here instead would render every string about 10% smaller than on
+        // Windows for the same request, which for a plugin UI is worse than
+        // matching a questionable behaviour. Measured against DirectWrite:
+        // Arial at 20 gives ascent 18.11 unscaled versus 16.21 scaled.
+        //
+        // If the D2D branch is ever repaired, this is the matching place to
+        // change.
         const float upem = float(face->unitsPerEm);
         float emSize = fontHeight;
         if ((fontFlags & int32_t(FontFlags::CapHeight)) != 0)
             emSize = fontHeight * upem / format->em.capHeight;
-        else if ((fontFlags & int32_t(FontFlags::SystemHeight)) != 0)
-            emSize = fontHeight;
-        else // BodyHeight == 0, the default
-            emSize = fontHeight * upem / (format->em.ascent + format->em.descent);
 
         format->fontSize = emSize;
 
@@ -1138,6 +1163,18 @@ public:
         if (lines.empty())
             return ReturnCode::Ok;
 
+        // DrawTextOptions::Clip confines the text to its layout rectangle,
+        // which matters for descenders and for text that overflows.
+        const bool clipToLayout = (options & DrawTextOptions::Clip) != 0;
+        if (clipToLayout)
+            context->pushAxisAlignedClip(&layoutRect);
+        struct ClipGuard
+        {
+            api::IDeviceContext* ctx;
+            bool active;
+            ~ClipGuard() { if (active) ctx->popAxisAlignedClip(); }
+        } clipGuard{ context, clipToLayout };
+
         api::IPathGeometry* rawGeometry{};
         if (factory->createPathGeometry(&rawGeometry) != ReturnCode::Ok || !rawGeometry)
             return ReturnCode::Fail;
@@ -1166,7 +1203,7 @@ public:
         struct PaintGlyphDraw { std::shared_ptr<detail::FontFace> face; uint32_t glyph; float penX, penY, scale; };
         std::vector<PaintGlyphDraw> paintGlyphs;
 
-        const float lineHeight = format->lineHeight();
+        const float lineHeight = format->lineAdvance();
         const float blockHeight = float(lines.size()) * lineHeight;
 
         float y = layoutRect.top;
@@ -1265,6 +1302,17 @@ public:
 
         if (!paintGlyphs.empty())
         {
+            // COLRv1 fonts can reference the "foreground" palette entry, which
+            // means whatever colour the text is being drawn in.
+            hb_color_t foreground = HB_COLOR(0, 0, 0, 255);
+            if (auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush))
+            {
+                const auto& c = solid->color;
+                foreground = HB_COLOR(linearPixelToSRGB(c.b), linearPixelToSRGB(c.g),
+                                      linearPixelToSRGB(c.r),
+                                      uint8_t(std::clamp(c.a * solid->opacity * 255.0f + 0.5f, 0.0f, 255.0f)));
+            }
+
             Matrix3x2 saved{};
             context->getTransform(&saved);
 
@@ -1283,8 +1331,11 @@ public:
                 state.baseTransform = glyphToLocal * saved;
                 state.apply();
 
+                // Foreground-palette layers take the text brush's colour, the
+                // way a monochrome glyph would; painting them black regardless
+                // would make those parts of an emoji ignore the brush.
                 hb_font_paint_glyph(item.face->unscaledFont.get(), item.glyph,
-                                    detail::glyphPaintFuncs(), &state, 0, HB_COLOR(0, 0, 0, 255));
+                                    detail::glyphPaintFuncs(), &state, 0, foreground);
 
                 // Unwind anything the font left open, so a malformed glyph
                 // cannot leak a clip into subsequent drawing.

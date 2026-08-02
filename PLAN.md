@@ -265,11 +265,26 @@ fp16 pixels via `lockPixels`.
    platform code and HarfBuzz — it takes an `ICpuTextEngine` seam, and
    `helpers/CpuTextEngine.h` is the only file that includes `hb.h`.
 
-   Parity note: `FontFlags::BodyHeight` (the wrapper's default) means the
-   requested height is ascent+descent, not the em size, and `CapHeight` means
-   it is the cap height. The Direct2D backend implements this by measuring the
-   font at a reference size and rescaling; the text engine has to do the same
-   or every extent and layout will disagree.
+   Parity note, and a trap. `FontFlags::BodyHeight` is documented as "the
+   requested height is ascent+descent" and is the wrapper's default — but
+   **its value is 0**, so the Direct2D backend's test
+   `(fontFlags & FontFlags::BodyHeight) != 0` can never be true. DirectXGfx
+   computes a body-height scale factor and then never applies it, so in
+   practice the default means "em size = requested height". The CPU engine
+   mirrors that exactly, including the dead branch, because rendering every
+   string ~10% smaller than Windows would be far worse than matching a
+   questionable behaviour. `CapHeight` (value 1) works and is applied.
+
+   With that matched, CPU text metrics agree with DirectWrite **exactly** —
+   ascent, descent, lineGap, capHeight, xHeight, advance width and multi-line
+   heights all to the digit (`CpuVsD2D.TextMetricsAgreeWithDirectWrite`). Line
+   advance includes lineGap; total height for n lines is (n-1) advances plus
+   one body height, with no trailing gap. Both facts were measured, not assumed.
+
+   Open decision for the owner: repairing the D2D branch would make
+   `BodyHeight` behave as documented, but would resize text in every existing
+   UI built against the current behaviour. If it is ever repaired, the matching
+   place to change is `createTextFormat` in `helpers/CpuTextEngine.h`.
 
    Stages: **A** shaping + font discovery + monochrome glyphs (this alone gets
    Latin *and* CJK) — **DONE (Aug 2026)**; **B** line breaking + grapheme

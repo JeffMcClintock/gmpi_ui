@@ -400,6 +400,25 @@ struct FontMetrics
     float strikethroughThickness{};
 };
 
+// The character alignment box: ascent + descent, EXCLUDING lineGap.
+//
+// "ascent + descent" is only well defined once you say which of a font's three
+// competing vertical metrics they come from, and the answer is not free choice:
+// backends must agree or the same text is different sizes on different
+// platforms. The normative source is
+//
+//   OS/2 fsSelection bit 7 (USE_TYPO_METRICS) set
+//       ascent = sTypoAscender, descent = -sTypoDescender
+//   otherwise
+//       ascent = usWinAscent,   descent = usWinDescent
+//
+// which is what Direct2D reports - measured, not assumed, across fonts covering
+// both branches (see CpuVsD2D.TextMetricsAgreeWithDirectWrite).
+//
+// It is specifically NOT hhea. For Arial and Verdana hhea agrees, so reading
+// the wrong table looks correct; for Calibri and Consolas hhea ascent+descent
+// is exactly one em against OS/2's 1.2207 and 1.1709, a 22% and 17% error in
+// the quantity body-height font scaling divides by.
 inline float calcBodyHeight(const FontMetrics& fm)
 {
 	return fm.ascent + fm.descent;

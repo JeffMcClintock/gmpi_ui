@@ -127,23 +127,109 @@ inline float metricOr(hb_font_t* font, hb_ot_metrics_tag_t tag, float fallback)
     return fallback;
 }
 
+// Big-endian table readers. Font tables are always big-endian, whatever the
+// host is; the lengths are checked so a truncated or absent table falls back
+// rather than reading past the blob.
+inline int16_t  beI16(const uint8_t* p) { return int16_t((uint16_t(p[0]) << 8) | p[1]); }
+inline uint16_t beU16(const uint8_t* p) { return uint16_t((uint16_t(p[0]) << 8) | p[1]); }
+
+// Borrow a font table, returning its bytes only if it is long enough to hold
+// the field we are about to read. A short or absent table yields nullptr, so
+// callers fall back rather than reading past the blob.
+inline const uint8_t* tableBytes(const HbBlob& blob, unsigned needed)
+{
+    unsigned length{};
+    const char* data = hb_blob_get_data(blob.get(), &length);
+    return (data && length >= needed) ? reinterpret_cast<const uint8_t*>(data) : nullptr;
+}
+
+// Vertical metrics, read the way Direct2D reads them.
+//
+// This does NOT go through hb_font_get_h_extents, which prefers hhea. That is a
+// legitimate choice, just a different one from the platform backends, and the
+// difference is not academic: for Calibri and Consolas hhea ascent+descent is
+// exactly one em while OS/2 usWin says 1.2207 em and 1.1709 em, so the two
+// backends disagreed by 22% and 17% on the very quantity body-height font
+// scaling divides by. Arial happens to have hhea == usWin, which is why the
+// original cross-backend test agreed and proved nothing.
+//
+// The rule below is not from documentation - it was measured against
+// DirectWrite on five fonts covering both branches (CpuVsD2D
+// .TextMetricsAgreeWithDirectWrite), and reproduces it to the digit:
+//
+//   USE_TYPO_METRICS set  ->  sTypoAscender / -sTypoDescender / sTypoLineGap
+//   otherwise             ->  usWinAscent / usWinDescent, and the GDI
+//                             "external leading" line gap:
+//                               max(0, hhea.lineGap - (winSum - hheaSum))
+//
+// Verified: Arial/Verdana (hhea == usWin), Calibri/Consolas (they differ),
+// Bahnschrift (sets the bit; typo 1.0000 em vs usWin 1.2002 em, and Direct2D
+// follows typo).
+inline bool readVerticalMetrics(hb_face_t* face, EmMetrics& m)
+{
+    constexpr unsigned kOs2Min = 78;  // through usWinDescent
+    constexpr unsigned kHheaMin = 10; // through lineGap
+
+    const HbBlob os2(hb_face_reference_table(face, HB_TAG('O', 'S', '/', '2')));
+    const uint8_t* o = tableBytes(os2, kOs2Min);
+    if (!o)
+        return false;
+
+    const uint16_t fsSelection = beU16(o + 62);
+    constexpr uint16_t kUseTypoMetrics = 1u << 7;
+
+    if (fsSelection & kUseTypoMetrics)
+    {
+        m.ascent  =  float(beI16(o + 68)); // sTypoAscender
+        m.descent = -float(beI16(o + 70)); // sTypoDescender (negative in the file)
+        m.lineGap =  float(beI16(o + 72)); // sTypoLineGap
+        return m.ascent > 0.0f;
+    }
+
+    const float winAscent  = float(beU16(o + 74));
+    const float winDescent = float(beU16(o + 76));
+    m.ascent = winAscent;
+    m.descent = winDescent;
+    m.lineGap = 0.0f;
+
+    const HbBlob hhea(hb_face_reference_table(face, HB_TAG('h', 'h', 'e', 'a')));
+    if (const uint8_t* h = tableBytes(hhea, kHheaMin))
+    {
+        const float hheaAscender  = float(beI16(h + 4));
+        const float hheaDescender = float(beI16(h + 6));
+        const float hheaLineGap   = float(beI16(h + 8));
+        // Leading already covered by the (usually larger) win box is not added
+        // again - otherwise Calibri would gain a phantom 452-unit gap that
+        // Direct2D does not report.
+        const float excess = (winAscent + winDescent) - (hheaAscender - hheaDescender);
+        m.lineGap = (std::max)(0.0f, hheaLineGap - excess);
+    }
+
+    return m.ascent > 0.0f;
+}
+
 inline EmMetrics readMetrics(const FontFace& face)
 {
     hb_font_t* font = face.unscaledFont.get();
     const float upem = float(face.unitsPerEm);
 
-    hb_font_extents_t extents{};
-    hb_font_get_h_extents(font, &extents);
-
     EmMetrics m;
-    // HarfBuzz reports ascender up-positive and descender down-negative; the
-    // drawing API wants both as positive distances from the baseline.
-    m.ascent = float(extents.ascender);
-    m.descent = -float(extents.descender);
-    m.lineGap = float(extents.line_gap);
+    if (!readVerticalMetrics(face.face.get(), m))
+    {
+        // No usable OS/2 (some bitmap-only and CFF faces). HarfBuzz's own
+        // extents are the next best thing.
+        hb_font_extents_t extents{};
+        hb_font_get_h_extents(font, &extents);
+        // HarfBuzz reports ascender up-positive and descender down-negative; the
+        // drawing API wants both as positive distances from the baseline.
+        m.ascent = float(extents.ascender);
+        m.descent = -float(extents.descender);
+        m.lineGap = float(extents.line_gap);
+    }
 
     if (m.ascent <= 0.0f) m.ascent = 0.8f * upem;
     if (m.descent <= 0.0f) m.descent = 0.2f * upem;
+    if (m.lineGap < 0.0f) m.lineGap = 0.0f;
 
     m.capHeight = metricOr(font, HB_OT_METRICS_TAG_CAP_HEIGHT, 0.7f * upem);
     m.xHeight = metricOr(font, HB_OT_METRICS_TAG_X_HEIGHT, 0.5f * upem);

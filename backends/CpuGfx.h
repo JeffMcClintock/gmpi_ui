@@ -184,6 +184,33 @@ inline ReturnCode Bitmap::lockPixels(drawing::api::IBitmapPixels** returnPixels,
 }
 
 // ---------------------------------------------------------------------------
+// Text seam. Text needs shaping, font discovery and colour-glyph handling,
+// none of which belong in a rasterizer — so this header knows nothing about
+// HarfBuzz or any platform font API. A text engine turns a string into
+// geometry through the PUBLIC drawing API, and the render target then fills
+// that geometry by the ordinary path. Text therefore adds no pixel-touching
+// code, exactly like every other primitive here.
+//
+// helpers/CpuTextEngine.h implements this over HarfBuzz.
+// ---------------------------------------------------------------------------
+class ICpuTextEngine
+{
+public:
+    virtual ~ICpuTextEngine() = default;
+
+    virtual ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight, drawing::FontStyle,
+                                        drawing::FontStretch, float fontHeight, int32_t fontFlags,
+                                        drawing::api::ITextFormat** returnTextFormat) = 0;
+
+    // Lay out `text` inside `layoutRect` and emit the glyph outlines as a
+    // filled path geometry, in the same coordinate space the caller draws in.
+    virtual ReturnCode getTextGeometry(drawing::api::ITextFormat* textFormat, const char* utf8, int32_t length,
+                                       const drawing::Rect& layoutRect, int32_t options,
+                                       drawing::api::IFactory* factory,
+                                       drawing::api::IPathGeometry** returnGeometry) = 0;
+};
+
+// ---------------------------------------------------------------------------
 // Internal brush interface: fills a span of premultiplied linear RGBA for the
 // blender. Everything the renderer paints with implements this, so the blend
 // loop never branches on brush type.
@@ -1678,6 +1705,10 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     Bitmap* bitmap{}; // owned (refcounted)
     drawing::Matrix3x2 transform_;
 
+    // The factory owns the text engine; reach it through the factory so a
+    // render target never holds a stale pointer.
+    ICpuTextEngine* textEngine() const;
+
     // scratch buffers, reused across fills
     std::vector<float> accBuf;      // (w + 2) * h coverage deltas
     std::vector<float> covBuf;      // per-row coverage, indexed by absolute x
@@ -2084,9 +2115,33 @@ public:
         return this->drawGeometry(drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
     }
 
+    ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat,
+                         const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options) override
+    {
+        auto* cpuBrush = dynamic_cast<CpuBrush*>(brush);
+        auto* engine = textEngine();
+        if (!engine || !cpuBrush || !textFormat || !layoutRect)
+            return ReturnCode::NoSupport;
+
+        // Text becomes geometry, then goes through the ordinary fill path.
+        drawing::api::IPathGeometry* rawGeometry{};
+        const auto r = engine->getTextGeometry(textFormat, string, int32_t(stringLength),
+                                               *layoutRect, options, factory, &rawGeometry);
+        if (r != ReturnCode::Ok || !rawGeometry)
+            return r == ReturnCode::Ok ? ReturnCode::Fail : r;
+
+        gmpi::shared_ptr<drawing::api::IPathGeometry> geometry;
+        geometry.attach(rawGeometry);
+
+        auto* path = dynamic_cast<PathGeometry*>(rawGeometry);
+        if (!path)
+            return ReturnCode::Fail;
+        return fillFigures(path->figures, path->fillMode, *cpuBrush);
+    }
+
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat*, const drawing::Rect*, drawing::api::IBrush*, int32_t) override
     {
-        return ReturnCode::NoSupport; // milestone 8 (text)
+        return ReturnCode::NoSupport; // text stage E (rich text)
     }
 
     // ---- target ------------------------------------------------------------
@@ -2166,10 +2221,20 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode createTextFormat(const char*, drawing::FontWeight, drawing::FontStyle, drawing::FontStretch, float, int32_t, drawing::api::ITextFormat** returnTextFormat) override
+    // Text engine, injected like the image decoder so this header depends on
+    // neither HarfBuzz nor any platform font API. helpers/CpuTextEngine.h
+    // provides one; without it, text reports NoSupport.
+    ICpuTextEngine* textEngine{};
+
+    ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle,
+                                drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags,
+                                drawing::api::ITextFormat** returnTextFormat) override
     {
         *returnTextFormat = {};
-        return ReturnCode::NoSupport; // milestone 8 (text)
+        if (!textEngine)
+            return ReturnCode::NoSupport;
+        return textEngine->createTextFormat(fontFamilyName, fontWeight, fontStyle, fontStretch,
+                                            fontHeight, fontFlags, returnTextFormat);
     }
 
     ReturnCode createImage(int32_t width, int32_t height, int32_t /*flags*/, drawing::api::IBitmap** returnBitmap) override
@@ -2276,6 +2341,12 @@ public:
     GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
     GMPI_REFCOUNT_NO_DELETE; // typically owned on the stack by the host
 };
+
+inline ICpuTextEngine* RenderTarget::textEngine() const
+{
+    auto* cpuFactory = dynamic_cast<Factory*>(factory);
+    return cpuFactory ? cpuFactory->textEngine : nullptr;
+}
 
 } // namespace cpugfx
 } // namespace gmpi

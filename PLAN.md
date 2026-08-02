@@ -222,7 +222,79 @@ fp16 pixels via `lockPixels`.
    translucent pixel was saved too dark (50%-alpha white round-tripped as 50%
    grey).
 7. **Present path**: dithered sRGB encode + X11/Wayland blit.
-8. **Text**: FreeType glyph coverage feeds the same span blender as path coverage.
+8. **Text** ← current. Scope includes **CJK and colour emoji**; right-to-left
+   (bidi, cursive shaping) is explicitly excluded.
+
+   **HarfBuzz**, vendored, exactly as JUCE does it — one amalgamation source
+   file (`harfbuzz.cc`), no HarfBuzz build system involved. It is the only
+   dependency, and it covers shaping, glyph outlines, and colour-glyph access
+   in one library. (JUCE reached the same conclusion: `Typeface::
+   getOutlineForGlyph` pulls outlines from HarfBuzz and hands them to JUCE's
+   own `EdgeTable` rasterizer. Skia does the opposite — it delegates glyph
+   masks to the platform via `SkScalerContext` — which is the wrong trade for
+   us, since the whole point of this backend is not depending on the platform.)
+
+   **Glyphs stay paths.** `hb_font_draw_glyph` emits move/line/quadratic/cubic,
+   which maps one-to-one onto the existing geometry sink, so text goes through
+   the ordinary fill path and adds no pixel-touching code. Text is the last
+   milestone and it does not break the "one path to pixels" property.
+
+   **Colour emoji largely reduce to work already done.** `hb_font_paint_glyph`
+   drives a callback interface whose operations are nearly a description of
+   milestones 3-6: `color` is a solid fill, `linear_gradient` and
+   `radial_gradient` are milestone 5 (its radial is the focal two-circle form
+   already implemented), `image` is milestone 6 plus the decoder seam, and
+   `push_transform`/`push_clip_rectangle` already exist. Bitmap emoji
+   (CBDT/sbix, i.e. Apple Color Emoji and older Noto) arrive as PNG blobs from
+   `hb_ot_color_glyph_reference_png` and feed the existing decoder.
+
+   Genuinely new work, in cost order: font fallback and run itemisation (no
+   font covers Latin + CJK + emoji, so text must be split into runs per
+   covering font); line breaking (UAX #14 — CJK breaks between characters, not
+   at spaces) plus grapheme clustering (UAX #29, so ZWJ sequences, skin-tone
+   modifiers and flag pairs are not split); **geometry clipping**, since
+   `pushClipGeometry` is still `NoSupport` here and COLRv1's `push_clip_glyph`
+   needs it; a sweep (conic) gradient brush, which COLRv1 has and we do not;
+   and `push_group`/`pop_group`, which needs an offscreen (have it) plus
+   non-`over` compositing (do not). SVG-in-OpenType is out of scope.
+
+   Font *discovery* is the platform-specific part, and gets the same treatment
+   as image decoding: a callback on the factory, platform implementations in
+   `helpers/FontProvider.h` (DirectWrite, CoreText, fontconfig), meeting at a
+   platform-free interchange struct. `backends/CpuGfx.h` stays free of both
+   platform code and HarfBuzz — it takes an `ICpuTextEngine` seam, and
+   `helpers/CpuTextEngine.h` is the only file that includes `hb.h`.
+
+   Parity note: `FontFlags::BodyHeight` (the wrapper's default) means the
+   requested height is ascent+descent, not the em size, and `CapHeight` means
+   it is the cap height. The Direct2D backend implements this by measuring the
+   font at a reference size and rescaling; the text engine has to do the same
+   or every extent and layout will disagree.
+
+   Stages: **A** shaping + font discovery + monochrome glyphs (this alone gets
+   Latin *and* CJK) — **DONE (Aug 2026)**; **B** line breaking + grapheme
+   clusters + font fallback; **C** bitmap emoji; **D** COLRv1 emoji; and a
+   glyph atlas for performance — cached coverage masks feed the same blender,
+   since it already consumes a coverage array and does not care where it came
+   from.
+
+   Stage A shipped as `helpers/CpuTextEngine.h` (the only file that includes
+   `hb.h`) plus `helpers/FontProvider.h` / `helpers/FontFile.h` for discovery.
+   Shaping, metrics, extents, explicit newlines, word wrap, both alignment
+   axes, line-spacing override, and the `FontFlags` rescale all work, and CJK
+   renders given a font that covers it. Glyph outlines are filled with
+   **nonzero** winding — counters (the hole in an 'o') come out wrong
+   otherwise, since glyphs wind them opposite to the exterior.
+
+   Known stage-A gaps, all deliberate: no font fallback (one font per format,
+   so mixed-script text needs the family named explicitly), word wrap breaks at
+   spaces only (UAX #14 in stage B is what CJK actually needs), and outlines
+   are re-extracted per draw rather than cached.
+
+   Testing differs here, and the fixture already anticipates it: text is
+   compared by correlation with per-platform reference images, because
+   different rasterizers legitimately differ. Metrics and layout (extents, line
+   counts, alignment) are asserted exactly against D2D; pixels are not.
 
 Perf posture: optimize nothing before milestone 2's goldens pass. The architecture
 (spans, chunks, codec seam) is the headroom — SIMD intrinsics and threading slot in

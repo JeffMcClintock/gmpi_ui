@@ -369,8 +369,30 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 		);
 
 		const auto referenceMetrics = getFontMetricsHelper(referenceTextFormat.get());
-		fontScalingInfo.bodyHeight = referenceFontSize / calcBodyHeight(referenceMetrics);
-		fontScalingInfo.capHeight  = referenceFontSize / referenceMetrics.capHeight;
+
+		// Defensive, NOT a fix for an observed failure — and worth stating why,
+		// so nobody "simplifies" it back on the same wrong reasoning.
+		//
+		// 1/0 here would hand CreateTextFormat an infinite size, and that fails
+		// SILENTLY: DirectWrite accepts an infinite font size (only 0, negative
+		// and NaN are rejected) and produces infinite text extents.
+		//
+		// It does not happen in practice. DirectWrite never reports a zero
+		// capHeight: where OS/2 has no sCapHeight field (version 1 tables such
+		// as Wingdings, Symbol, Marlett, Webdings) or stores an explicit zero
+		// (SimSun-ExtB), it synthesises one — measured from the capital glyphs
+		// where the font has them, else a flat 0.7 em. Sweeping all 1164 faces
+		// installed on a stock Windows box: zero faces report capHeight == 0,
+		// and zero report ascent + descent == 0.
+		//
+		// So this guards corrupt or exotic faces only. 1.0 means "no scaling",
+		// the only sane answer for a font that cannot describe the metric asked
+		// for. See CpuVsD2D.CapHeightWorksForFontsWithoutSCapHeight.
+		const auto bodyHeight = calcBodyHeight(referenceMetrics);
+		fontScalingInfo.bodyHeight = bodyHeight > 0.0f ? referenceFontSize / bodyHeight : 1.0f;
+		fontScalingInfo.capHeight  = referenceMetrics.capHeight > 0.0f
+			? referenceFontSize / referenceMetrics.capHeight
+			: 1.0f;
 	}
 
 	// Scale cell height according to metrics
@@ -515,7 +537,13 @@ gmpi::ReturnCode Factory_base::createRichTextFormat(
 		}
 		if (run.fontSizeScale > 0.0f)
 		{
-			dwLayout->SetFontSize(fontSize * run.fontSizeScale, range);
+			// Scale the size the BASE FORMAT ended up with, not the caller's
+			// requested one. createTextFormat above may have scaled it to hit a
+			// requested cap-height or body-height, and multiplying the raw
+			// request here would drop that scaling for headings only — leaving
+			// a markdown document whose body obeys the font flag and whose
+			// headings do not.
+			dwLayout->SetFontSize(dwFormat->GetFontSize() * run.fontSizeScale, range);
 		}
 	}
 

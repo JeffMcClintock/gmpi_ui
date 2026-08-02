@@ -245,8 +245,19 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
                 uint8_t* dst = srgbBuf.data() + y * srgbBpr + x * 4;
                 // Premultiplied, to match the kCGImageAlphaPremultipliedLast
                 // context below: CoreGraphics bitmap contexts have no straight
-                // (kCGImageAlphaLast) 8-bit RGBA form, so ImageIO does the
-                // conversion to PNG's straight alpha when encoding.
+                // (kCGImageAlphaLast) 8-bit RGBA form, so this relies on
+                // ImageIO converting to PNG's straight alpha when encoding.
+                //
+                // UNVERIFIED on macOS. The equivalent assumption was FALSE on
+                // Windows — WIC was told the buffer was premultiplied
+                // (32bppPBGRA) and wrote those bytes into the file anyway,
+                // saving every translucent pixel too dark. CpuBackend.
+                // PngAlphaRoundTrip is deliberately cross-platform and will
+                // fail here if ImageIO behaves the same way. The fix would be
+                // to skip the bitmap context entirely: build the straight-alpha
+                // buffer as the Windows path does and hand it to CGImageCreate
+                // with kCGImageAlphaLast, which CGImage does support even
+                // though CGBitmapContext does not.
                 const float aNorm = a / 255.0f;
                 dst[0] = static_cast<uint8_t>(detail::linearToSRGB_f(fr) * aNorm + 0.5f);
                 dst[1] = static_cast<uint8_t>(detail::linearToSRGB_f(fg) * aNorm + 0.5f);

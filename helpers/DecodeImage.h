@@ -52,6 +52,12 @@
 
 namespace gmpi { namespace drawing {
 
+// Defined when this translation unit actually has a decodeImageFile() to call.
+// Not every target does — the fallback needs JUCE headers in scope.
+#if defined(_WIN32) || defined(__APPLE__) || GMPI_UI_DECODE_IMAGE_JUCE
+#define GMPI_UI_HAVE_IMAGE_DECODER 1
+#endif
+
 #ifdef _WIN32
 inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& returnImage)
 {

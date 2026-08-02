@@ -189,9 +189,11 @@ fp16 pixels via `lockPixels`.
    focal discriminant goes negative, and a wedge of the plane collapses to flat
    last-stop colour.
 
-   Still open, and deliberately not changed here because it is shared API used
-   by every backend: `invert()` itself should reject a singular matrix rather
-   than return infinities.
+   `invert()` itself was fixed separately (it is shared API used by every
+   backend): it now returns identity when there is no usable inverse, and
+   `tryInvert()` reports failure for callers that care. The test is on the
+   finiteness of the *result*, not `det != 0`, because a determinant small
+   enough that `1/det` overflows is equally unusable.
 6. **Bitmaps & offscreens**: `drawBitmap` (bilinear), `createCompatibleRenderTarget`,
    `createImage`/`loadImageU` (PNG → premul linear fp16) — unblocks `CachedBlur`.
 7. **Present path**: dithered sRGB encode + X11/Wayland blit.

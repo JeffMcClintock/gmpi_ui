@@ -25,6 +25,7 @@ using namespace gmpi::drawing;
 #include <array>
 #include <span>
 #include <math.h>
+#include <cmath>
 #include <charconv>
 #include <string_view>
 #include <algorithm>
@@ -342,12 +343,26 @@ inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 	return lhs;
 }
 
-[[nodiscard]] inline Matrix3x2 invert(const Matrix3x2& transform)
+[[nodiscard]] inline bool isFinite(const Matrix3x2& transform)
+{
+	return std::isfinite(transform._11) && std::isfinite(transform._12)
+		&& std::isfinite(transform._21) && std::isfinite(transform._22)
+		&& std::isfinite(transform._31) && std::isfinite(transform._32);
+}
+
+// Invert a transform, reporting whether it could be done.
+//
+// Fails for a singular transform (a zero scale, or a collapse onto a line),
+// and equally for one that is invertible on paper but whose inverse is not
+// representable: a determinant small enough that 1/det overflows to infinity
+// is just as unusable. Testing the RESULT for finiteness catches both, where a
+// det != 0 test catches only the first.
+[[nodiscard]] inline bool tryInvert(const Matrix3x2& transform, Matrix3x2& returnInverse)
 {
 	const auto det = transform._11 * transform._22 - transform._12 * transform._21;
 	const auto s = 1.0f / det;
 
-	return {
+	const Matrix3x2 result{
 		s *  transform._22,
 		s * -transform._12,
 		s * -transform._21,
@@ -355,6 +370,31 @@ inline Rect& operator*=(Rect& lhs, Matrix3x2 rhs)
 		s * (transform._21 * transform._32 - transform._22 * transform._31),
 		s * (transform._12 * transform._31 - transform._11 * transform._32),
 	};
+
+	if (!isFinite(result))
+		return false;
+
+	returnInverse = result;
+	return true;
+}
+
+// Invert a transform, falling back to the identity when it has no usable
+// inverse. Use tryInvert() when the caller needs to know.
+//
+// The fallback matters: this is used to map device space back to local space
+// (brush coordinates, hit testing, getAxisAlignedClip), and a UI animating a
+// scale through zero is ordinary. Returning the infinities that fall out of
+// 1/0 propagates NaN into whatever consumes the result — a gradient brush
+// painted NaN across entire spans, which is permanent in a float surface
+// because NaN * 0 is still NaN. Identity is finite and leaves coordinates
+// alone; the geometry drawn through a collapsed transform has no area and
+// paints nothing regardless.
+[[nodiscard]] inline Matrix3x2 invert(const Matrix3x2& transform)
+{
+	Matrix3x2 result;
+	if (!tryInvert(transform, result))
+		return {}; // identity
+	return result;
 }
 
 [[nodiscard]] inline Matrix3x2 makeTranslation(Size size)

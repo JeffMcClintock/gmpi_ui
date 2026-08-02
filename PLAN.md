@@ -290,9 +290,36 @@ fp16 pixels via `lockPixels`.
    Latin *and* CJK) — **DONE (Aug 2026)**; **B** line breaking + grapheme
    clusters + font fallback — **DONE (Aug 2026)**; **C** bitmap emoji —
    **DONE (Aug 2026), but see the platform note below**;
-   **D** COLRv1 emoji — **DONE (Aug 2026)**; and a glyph atlas for performance — cached coverage
-   masks feed the same blender, since it already consumes a coverage array and
-   does not care where it came from.
+   **D** COLRv1 emoji — **DONE (Aug 2026)**; and a **glyph atlas — DONE
+   (Aug 2026)**: cached coverage masks feed the same blender, since it already
+   consumes a coverage array and does not care where it came from.
+
+   The atlas caches rasterized glyph coverage keyed by face, glyph, device
+   scale and sub-pixel position, replacing per-draw outline extraction,
+   flattening and rasterization with a blend. Measured 1.63x faster on a line
+   of Latin text in a Debug build. `raster::rasterizeCoverage` is now shared by
+   the atlas and by geometry clipping, so neither can drift from filling on
+   what a fill mode means.
+
+   It is an optimisation, not a rendering change, and the test proves that by
+   rendering the same scene both ways and comparing pixels — the engine has a
+   `useGlyphAtlas` switch purely so the two paths can be compared. Agreement is
+   close but deliberately not bit-exact: origins are quantised to quarter
+   pixels (as FreeType and Skia do), so they can differ by up to an eighth of a
+   pixel. Measured worst 0.12, mean 0.05 over the ~9% of pixels that are glyph
+   edge.
+
+   The fast path needs the software backend, a solid brush and a transform
+   without rotation or skew; everything else falls back to the geometry path,
+   which is why rotated text still draws. The cache is capped at 8 MB and
+   cleared wholesale when exceeded — text redraws constantly, so it refills at
+   once.
+
+   Trap worth remembering: quantise the position to the sub-pixel grid FIRST,
+   then split into whole pixels and a bucket. Taking the fraction before
+   rounding drops the carry, so a fraction of 0.9 buckets as 0 without
+   advancing the integer part and the glyph lands a whole pixel left. That bug
+   showed as worst 0.95 against the geometry path, versus 0.12 once fixed.
 
    Stage B added `helpers/TextSegmentation.h` (portable, no dependencies) and
    font fallback. Text is now itemised into runs by covering font, so

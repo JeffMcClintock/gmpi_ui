@@ -1625,6 +1625,14 @@ public:
 		return temp;
 	}
 
+	// ExtendMode governs what the gradient paints outside [0,1] along its axis.
+	GradientstopCollection createGradientstopCollection(std::span<const Gradientstop> gradientStops, ExtendMode extendMode)
+	{
+		GradientstopCollection temp;
+		native->createGradientstopCollection(gradientStops.data(), static_cast<uint32_t>(gradientStops.size()), extendMode, AccessPtr::put(temp));
+		return temp;
+	}
+
 	LinearGradientBrush createLinearGradientBrush(LinearGradientBrushProperties linearGradientBrushProperties, BrushProperties brushProperties, GradientstopCollection gradientStopCollection)
 	{
 		LinearGradientBrush temp;

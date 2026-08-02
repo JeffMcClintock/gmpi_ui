@@ -181,9 +181,29 @@ inline ReturnCode Bitmap::lockPixels(drawing::api::IBitmapPixels** returnPixels,
 }
 
 // ---------------------------------------------------------------------------
+// Internal brush interface: fills a span of premultiplied linear RGBA for the
+// blender. Everything the renderer paints with implements this, so the blend
+// loop never branches on brush type.
+// ---------------------------------------------------------------------------
+class CpuBrush
+{
+public:
+    virtual ~CpuBrush() = default;
+
+    // Premultiplied linear RGBA for device pixels (x0 .. x0+count-1) on row y.
+    // deviceToLocal maps device space to the space the geometry was given in
+    // (i.e. the inverse of the context transform at draw time).
+    virtual void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const = 0;
+
+    // False if this brush would paint non-finite values, which would poison
+    // even zero-coverage pixels through the blend (NaN * 0 = NaN).
+    virtual bool isPaintable() const = 0;
+};
+
+// ---------------------------------------------------------------------------
 // Solid color brush. GMPI Color is linear, non-premultiplied.
 // ---------------------------------------------------------------------------
-class SolidColorBrush final : public drawing::api::ISolidColorBrush
+class SolidColorBrush final : public drawing::api::ISolidColorBrush, public CpuBrush
 {
 public:
     drawing::api::IFactory* factory{};
@@ -195,6 +215,22 @@ public:
     {
         if (properties)
             opacity = properties->opacity;
+    }
+
+    bool isPaintable() const override
+    {
+        return std::isfinite(color.r) && std::isfinite(color.g) && std::isfinite(color.b)
+            && std::isfinite(color.a) && std::isfinite(opacity);
+    }
+
+    void evalSpan(const drawing::Matrix3x2&, int, int, int count, float* dst) const override
+    {
+        const float a = color.a * opacity;
+        const float r = color.r * a, g = color.g * a, b = color.b * a;
+        for (int i = 0; i < count; ++i, dst += 4)
+        {
+            dst[0] = r; dst[1] = g; dst[2] = b; dst[3] = a;
+        }
     }
 
     void setColor(const drawing::Color* pcolor) override
@@ -212,6 +248,296 @@ public:
     {
         *returnInterface = {};
         GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+};
+
+// ---------------------------------------------------------------------------
+// Gradients
+// ---------------------------------------------------------------------------
+class GradientstopCollection final : public drawing::api::IGradientstopCollection
+{
+public:
+    drawing::api::IFactory* factory{};
+    std::vector<drawing::Gradientstop> stops; // sorted by position
+    drawing::ExtendMode extendMode{ drawing::ExtendMode::Clamp };
+
+    GradientstopCollection(drawing::api::IFactory* pfactory, const drawing::Gradientstop* pstops, uint32_t count, drawing::ExtendMode pextendMode)
+        : factory(pfactory), stops(pstops, pstops + count), extendMode(pextendMode)
+    {
+        std::stable_sort(stops.begin(), stops.end(),
+            [](const drawing::Gradientstop& a, const drawing::Gradientstop& b) { return a.position < b.position; });
+    }
+
+    bool isPaintable() const
+    {
+        if (stops.empty())
+            return false;
+        for (const auto& s : stops)
+            if (!std::isfinite(s.position) || !std::isfinite(s.color.r) || !std::isfinite(s.color.g)
+                || !std::isfinite(s.color.b) || !std::isfinite(s.color.a))
+                return false;
+        return true;
+    }
+
+    // Straight (non-premultiplied) linear colour at gradient parameter t.
+    drawing::Color colorAt(float t) const
+    {
+        // A non-finite t makes every comparison below false, which would walk
+        // the stop search off the end (out of bounds for a single-stop
+        // collection). It is reachable: a near-singular transform can push a
+        // device point to infinity, and Wrap then turns inf into NaN via
+        // inf - floor(inf). Pin it to the start of the gradient instead.
+        if (!std::isfinite(t))
+            t = 0.0f;
+
+        // Apply the extend mode first: it wraps the parameter, not the colours.
+        switch (extendMode)
+        {
+        case drawing::ExtendMode::Wrap:
+            t -= std::floor(t);
+            break;
+        case drawing::ExtendMode::Mirror:
+        {
+            const float f = std::fabs(t - 2.0f * std::floor(t * 0.5f)); // period 2
+            t = f > 1.0f ? 2.0f - f : f;
+            break;
+        }
+        default:
+            t = std::clamp(t, 0.0f, 1.0f);
+            break;
+        }
+
+        if (t <= stops.front().position)
+            return stops.front().color;
+        if (t >= stops.back().position)
+            return stops.back().color;
+
+        size_t i = 1;
+        while (i < stops.size() && stops[i].position < t)
+            ++i;
+        if (i >= stops.size())
+            return stops.back().color; // total function, whatever t is
+        const auto& s0 = stops[i - 1];
+        const auto& s1 = stops[i];
+        const float span = s1.position - s0.position;
+        const float k = span > 0.0f ? (t - s0.position) / span : 0.0f;
+        return { s0.color.r + (s1.color.r - s0.color.r) * k,
+                 s0.color.g + (s1.color.g - s0.color.g) * k,
+                 s0.color.b + (s1.color.b - s0.color.b) * k,
+                 s0.color.a + (s1.color.a - s0.color.a) * k };
+    }
+
+    ReturnCode getFactory(drawing::api::IFactory** returnFactory) override
+    {
+        *returnFactory = factory;
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(drawing::api::IGradientstopCollection);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+};
+
+// Shared plumbing for the two gradient brushes: stop lookup, brush transform,
+// opacity, and turning a gradient parameter into a premultiplied span entry.
+class GradientBrushBase : public CpuBrush
+{
+protected:
+    drawing::api::IFactory* factory{};
+    gmpi::shared_ptr<GradientstopCollection> stops;
+    drawing::Matrix3x2 brushTransform;
+    float opacity{ 1.0f };
+
+    GradientBrushBase(drawing::api::IFactory* pfactory, const drawing::BrushProperties* properties, drawing::api::IGradientstopCollection* collection)
+        : factory(pfactory)
+    {
+        if (auto* c = dynamic_cast<GradientstopCollection*>(collection))
+        {
+            c->addRef();
+            stops.attach(c);
+        }
+        if (properties)
+        {
+            opacity = properties->opacity;
+            brushTransform = properties->transform;
+        }
+    }
+
+    // Device space -> the brush's own coordinate space.
+    drawing::Matrix3x2 deviceToBrush(const drawing::Matrix3x2& deviceToLocal) const
+    {
+        return deviceToLocal * drawing::invert(brushTransform);
+    }
+
+    void writeStop(float t, float* dst) const
+    {
+        const auto c = stops->colorAt(t);
+        const float a = c.a * opacity;
+        dst[0] = c.r * a; dst[1] = c.g * a; dst[2] = c.b * a; dst[3] = a;
+    }
+
+public:
+    bool isPaintable() const override
+    {
+        return stops.get() != nullptr && stops->isPaintable() && std::isfinite(opacity)
+            && std::isfinite(brushTransform._11) && std::isfinite(brushTransform._12)
+            && std::isfinite(brushTransform._21) && std::isfinite(brushTransform._22)
+            && std::isfinite(brushTransform._31) && std::isfinite(brushTransform._32);
+    }
+};
+
+class LinearGradientBrush final : public drawing::api::ILinearGradientBrush, public GradientBrushBase
+{
+    drawing::Point startPoint, endPoint;
+
+public:
+    LinearGradientBrush(drawing::api::IFactory* pfactory, const drawing::LinearGradientBrushProperties* props,
+                        const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* collection)
+        : GradientBrushBase(pfactory, brushProperties, collection)
+        , startPoint(props->startPoint), endPoint(props->endPoint)
+    {
+    }
+
+    void setStartPoint(drawing::Point p) override { startPoint = p; }
+    void setEndPoint(drawing::Point p) override { endPoint = p; }
+
+    void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const override
+    {
+        const auto m = deviceToBrush(deviceToLocal);
+        const drawing::Point axis{ endPoint.x - startPoint.x, endPoint.y - startPoint.y };
+        const float lenSq = axis.x * axis.x + axis.y * axis.y;
+
+        if (!(lenSq > 0.0f))
+        {
+            // Degenerate axis: D2D paints the last stop's colour.
+            for (int i = 0; i < count; ++i)
+                writeStop(1.0f, dst + size_t(i) * 4);
+            return;
+        }
+
+        // t is affine in device x, so walk it incrementally along the span
+        // (this is the "per-row ramp" the plan calls for).
+        const auto p0 = drawing::transformPoint(m, { float(x0) + 0.5f, float(y) + 0.5f });
+        const auto p1 = drawing::transformPoint(m, { float(x0) + 1.5f, float(y) + 0.5f });
+        float t = ((p0.x - startPoint.x) * axis.x + (p0.y - startPoint.y) * axis.y) / lenSq;
+        const float dt = ((p1.x - p0.x) * axis.x + (p1.y - p0.y) * axis.y) / lenSq;
+
+        for (int i = 0; i < count; ++i, dst += 4, t += dt)
+            writeStop(t, dst);
+    }
+
+    ReturnCode getFactory(drawing::api::IFactory** returnFactory) override
+    {
+        *returnFactory = factory;
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(drawing::api::ILinearGradientBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+};
+
+class RadialGradientBrush final : public drawing::api::IRadialGradientBrush, public GradientBrushBase
+{
+    drawing::Point center, originOffset;
+    float radiusX{}, radiusY{};
+
+public:
+    RadialGradientBrush(drawing::api::IFactory* pfactory, const drawing::RadialGradientBrushProperties* props,
+                        const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* collection)
+        : GradientBrushBase(pfactory, brushProperties, collection)
+        , center(props->center), originOffset(props->gradientOriginOffset)
+        , radiusX(props->radiusX), radiusY(props->radiusY)
+    {
+    }
+
+    void setCenter(drawing::Point p) override { center = p; }
+    void setGradientOriginOffset(drawing::Point p) override { originOffset = p; }
+    void setRadiusX(float r) override { radiusX = r; }
+    void setRadiusY(float r) override { radiusY = r; }
+
+    void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const override
+    {
+        const auto m = deviceToBrush(deviceToLocal);
+
+        if (!(radiusX != 0.0f && radiusY != 0.0f) || !std::isfinite(radiusX) || !std::isfinite(radiusY))
+        {
+            for (int i = 0; i < count; ++i)
+                writeStop(1.0f, dst + size_t(i) * 4);
+            return;
+        }
+
+        // Work in a space where the gradient ellipse is the unit circle. The
+        // focus is the gradient origin; t = 1 / k where k scales the ray from
+        // the focus through the point out to the circle (the standard focal
+        // radial gradient, as in SVG and Canvas).
+        //
+        // The solver needs |f| < 1. Clamp by LENGTH, not per-axis: a diagonal
+        // offset such as (0.9, 0.9) survives a per-component clamp with
+        // |f| = 1.27, which drives the discriminant negative and paints a wedge
+        // of the plane a flat last-stop colour.
+        float fx = originOffset.x / radiusX;
+        float fy = originOffset.y / radiusY;
+        const float fLen = std::sqrt(fx * fx + fy * fy);
+        if (!(fLen < 0.999f))
+        {
+            const float k = std::isfinite(fLen) && fLen > 0.0f ? 0.999f / fLen : 0.0f;
+            fx *= k;
+            fy *= k;
+        }
+        const float fLenSq = fx * fx + fy * fy;
+
+        const auto p0 = drawing::transformPoint(m, { float(x0) + 0.5f, float(y) + 0.5f });
+        const auto p1 = drawing::transformPoint(m, { float(x0) + 1.5f, float(y) + 0.5f });
+        const float stepX = (p1.x - p0.x) / radiusX;
+        const float stepY = (p1.y - p0.y) / radiusY;
+        float qx = (p0.x - center.x) / radiusX;
+        float qy = (p0.y - center.y) / radiusY;
+
+        for (int i = 0; i < count; ++i, dst += 4, qx += stepX, qy += stepY)
+        {
+            const float dx = qx - fx;
+            const float dy = qy - fy;
+            const float a = dx * dx + dy * dy;
+            float t;
+            if (a <= 0.0f)
+            {
+                t = 0.0f; // at the focus
+            }
+            else
+            {
+                const float b = fx * dx + fy * dy;              // half of the linear term
+                const float disc = b * b + a * (1.0f - fLenSq); // always >= 0 for |f| < 1
+                const float k = (-b + std::sqrt((std::max)(disc, 0.0f))) / a;
+                t = (k > 0.0f) ? 1.0f / k : 1.0f;
+            }
+            writeStop(t, dst);
+        }
+    }
+
+    ReturnCode getFactory(drawing::api::IFactory** returnFactory) override
+    {
+        *returnFactory = factory;
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(drawing::api::IRadialGradientBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         return ReturnCode::NoSupport;
     }
@@ -1120,6 +1446,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     std::vector<float> accBuf;      // (w + 2) * h coverage deltas
     std::vector<float> covBuf;      // per-row coverage, indexed by absolute x
     std::vector<float> rowBuf;      // fp32 staging for one row span
+    std::vector<float> srcBuf;      // premultiplied source colour for one row span
     std::vector<drawing::Point> devicePoints;
     std::vector<char> figureValid;
     std::vector<Figure> strokeFigures; // widened stroke outline, reused per call
@@ -1151,16 +1478,31 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode createGradientstopCollection(const drawing::Gradientstop*, uint32_t, drawing::ExtendMode, drawing::api::IGradientstopCollection** returnCollection) override
+    ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnCollection) override
     {
         *returnCollection = {};
-        return ReturnCode::NoSupport; // milestone 5 (gradients)
+        if (!gradientstops || gradientstopsCount == 0)
+            return ReturnCode::Fail;
+        *returnCollection = new GradientstopCollection(factory, gradientstops, gradientstopsCount, extendMode);
+        return ReturnCode::Ok;
     }
 
-    ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties*, const drawing::BrushProperties*, drawing::api::IGradientstopCollection*, drawing::api::ILinearGradientBrush** returnBrush) override
+    ReturnCode createLinearGradientBrush(const drawing::LinearGradientBrushProperties* linearGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::ILinearGradientBrush** returnBrush) override
     {
         *returnBrush = {};
-        return ReturnCode::NoSupport; // milestone 5 (gradients)
+        if (!linearGradientBrushProperties || !dynamic_cast<GradientstopCollection*>(gradientstopCollection))
+            return ReturnCode::Fail;
+        *returnBrush = new LinearGradientBrush(factory, linearGradientBrushProperties, brushProperties, gradientstopCollection);
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode createRadialGradientBrush(const drawing::RadialGradientBrushProperties* radialGradientBrushProperties, const drawing::BrushProperties* brushProperties, drawing::api::IGradientstopCollection* gradientstopCollection, drawing::api::IRadialGradientBrush** returnBrush) override
+    {
+        *returnBrush = {};
+        if (!radialGradientBrushProperties || !dynamic_cast<GradientstopCollection*>(gradientstopCollection))
+            return ReturnCode::Fail;
+        *returnBrush = new RadialGradientBrush(factory, radialGradientBrushProperties, brushProperties, gradientstopCollection);
+        return ReturnCode::Ok;
     }
 
     // ---- state -------------------------------------------------------------
@@ -1229,20 +1571,20 @@ public:
     ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
     {
         auto* path = dynamic_cast<PathGeometry*>(pathGeometry);
-        auto* solid = dynamic_cast<SolidColorBrush*>(brush);
-        if (!path || !solid)
-            return ReturnCode::NoSupport; // other brush types: milestones 5/6
+        auto* cpuBrush = dynamic_cast<CpuBrush*>(brush);
+        if (!path || !cpuBrush)
+            return ReturnCode::NoSupport; // e.g. bitmap brushes: milestone 6
         if (opacityBrush)
             return ReturnCode::NoSupport; // masked fills: fail loudly rather than render wrong
 
-        return fillFigures(path->figures, path->fillMode, *solid);
+        return fillFigures(path->figures, path->fillMode, *cpuBrush);
     }
 
     ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
         auto* path = dynamic_cast<PathGeometry*>(pathGeometry);
-        auto* solid = dynamic_cast<SolidColorBrush*>(brush);
-        if (!path || !solid)
+        auto* cpuBrush = dynamic_cast<CpuBrush*>(brush);
+        if (!path || !cpuBrush)
             return ReturnCode::NoSupport;
         if (!(strokeWidth > 0.0f) || !std::isfinite(strokeWidth))
             return ReturnCode::Ok; // D2D draws nothing for a zero-width stroke
@@ -1251,21 +1593,17 @@ public:
         // pen, like D2D), then fill the union of the pieces.
         strokeFigures.clear();
         stroke::widen(path->figures, strokeWidth, strokeParams(strokeStyle), strokeFigures);
-        return fillFigures(strokeFigures, drawing::FillMode::Winding, *solid);
+        return fillFigures(strokeFigures, drawing::FillMode::Winding, *cpuBrush);
     }
 
 private:
     // Rasterize + blend a set of already-flattened figures. The single entry
     // point to pixels: both fillGeometry and drawGeometry come through here.
-    ReturnCode fillFigures(const std::vector<Figure>& figures, drawing::FillMode fillMode, const SolidColorBrush& brushRef)
+    ReturnCode fillFigures(const std::vector<Figure>& figures, drawing::FillMode fillMode, const CpuBrush& brush)
     {
-        const SolidColorBrush* solid = &brushRef;
-
         // A non-finite colour would poison even zero-coverage pixels through
         // the blend (NaN * 0 = NaN); render nothing instead.
-        if (!(std::isfinite(solid->color.r) && std::isfinite(solid->color.g) &&
-              std::isfinite(solid->color.b) && std::isfinite(solid->color.a) &&
-              std::isfinite(solid->opacity)))
+        if (!brush.isPaintable())
             return ReturnCode::Ok;
 
         if (figures.empty())
@@ -1360,14 +1698,11 @@ private:
             base += n;
         }
 
-        // 4. Per row: prefix-sum to coverage, then blend.
-        //    Premultiplied source; over with coverage:
+        // 4. Per row: prefix-sum to coverage, ask the brush for the source
+        //    colours, then blend. Premultiplied source, over with coverage:
         //    dst = src*cov + dst*(1 - srcA*cov)
-        const float sa = solid->color.a * solid->opacity;
-        const float sr = solid->color.r * sa;
-        const float sg = solid->color.g * sa;
-        const float sb = solid->color.b * sa;
         const bool nonzero = (fillMode == drawing::FillMode::Winding);
+        const auto deviceToLocal = drawing::invert(transform_);
 
         // Chunk-aligned blend span; row padding absorbs the rounding (cov = 0 there).
         const int ax0 = ix0 & ~3;
@@ -1376,6 +1711,7 @@ private:
 
         covBuf.assign(size_t(s.stridePixels), 0.0f);
         rowBuf.resize(size_t(spanPx) * 4);
+        srcBuf.resize(size_t(spanPx) * 4);
 
         for (int y = 0; y < h; ++y)
         {
@@ -1403,17 +1739,19 @@ private:
 
             uint16_t* p = s.row(iy0 + y) + size_t(ax0) * 4;
             loadSpan(p, rowBuf.data(), spanPx * 4);
+            brush.evalSpan(deviceToLocal, ax0, iy0 + y, spanPx, srcBuf.data());
 
             float* d = rowBuf.data();
+            const float* sc = srcBuf.data();
             const float* cv = cov + ax0;
-            for (int i = 0; i < spanPx; ++i, d += 4)
+            for (int i = 0; i < spanPx; ++i, d += 4, sc += 4)
             {
                 const float c = cv[i];
-                const float k = 1.0f - sa * c;
-                d[0] = sr * c + d[0] * k;
-                d[1] = sg * c + d[1] * k;
-                d[2] = sb * c + d[2] * k;
-                d[3] = sa * c + d[3] * k;
+                const float k = 1.0f - sc[3] * c;
+                d[0] = sc[0] * c + d[0] * k;
+                d[1] = sc[1] * c + d[1] * k;
+                d[2] = sc[2] * c + d[2] * k;
+                d[3] = sc[3] * c + d[3] * k;
             }
 
             storeSpan(rowBuf.data(), p, spanPx * 4);

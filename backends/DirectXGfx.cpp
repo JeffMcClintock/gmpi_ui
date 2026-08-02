@@ -1059,13 +1059,23 @@ gmpi::ReturnCode GraphicsContext_base::createGradientstopCollection(const drawin
 
 	ID2D1GradientStopCollection1* native2{};
 
+	// Honour the caller's extend mode (this used to be hard-coded to CLAMP, so
+	// Wrap and Mirror silently rendered as Clamp).
+	D2D1_EXTEND_MODE nativeExtendMode = D2D1_EXTEND_MODE_CLAMP;
+	switch (extendMode)
+	{
+	case drawing::ExtendMode::Wrap:   nativeExtendMode = D2D1_EXTEND_MODE_WRAP;   break;
+	case drawing::ExtendMode::Mirror: nativeExtendMode = D2D1_EXTEND_MODE_MIRROR; break;
+	default: break;
+	}
+
 	HRESULT hr = context_->CreateGradientStopCollection(
 		(const D2D1_GRADIENT_STOP*)gradientstops,
 		gradientstopsCount,
 		D2D1_COLOR_SPACE_SRGB,
 		D2D1_COLOR_SPACE_SRGB,
 		D2D1_BUFFER_PRECISION_16BPC_FLOAT, // the same in 8-bit, correct in HDR
-		D2D1_EXTEND_MODE_CLAMP,
+		nativeExtendMode,
 		D2D1_COLOR_INTERPOLATION_MODE_STRAIGHT,
 		&native2);
 

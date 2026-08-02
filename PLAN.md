@@ -150,7 +150,48 @@ fp16 pixels via `lockPixels`.
    smaller bounding dimension, which covers the common "fat pen on a small
    shape" case. Partial folds on non-convex figures can still leave artefacts.
 4. **Curve accuracy**: device-space flattening tolerance (re-flatten under zoom).
-5. **Gradients**: linear, then radial; stops premultiplied linear.
+5. **Gradients** — DONE (Aug 2026): linear and radial (including elliptical
+   radii and a focal origin offset), all three extend modes, brush opacity and
+   brush transform, usable for both fills and strokes.
+
+   Brushes implement an internal `CpuBrush` interface that fills a span of
+   premultiplied linear RGBA, so the blend loop never branches on brush type —
+   a solid colour is just a constant span. Stops interpolate in **straight
+   (non-premultiplied) linear** colour: D2D uses
+   `D2D1_COLOR_INTERPOLATION_MODE_STRAIGHT`, and an alpha-varying gradient
+   matches it at zero pixel difference. Linear gradients walk `t` incrementally
+   along the span (the per-row ramp); radial solves the standard focal
+   quadratic per pixel.
+
+   Fixed in the DirectX backend along the way: `createGradientstopCollection`
+   hard-coded `D2D1_EXTEND_MODE_CLAMP`, so Wrap and Mirror silently rendered as
+   Clamp on Windows. With that passed through, all three modes match the CPU
+   backend exactly. `Drawing.h` also gained a `createGradientstopCollection`
+   overload taking an ExtendMode — the wrapper previously had no way to ask for
+   one.
+
+   Deliberate divergence: a zero-length linear axis is undefined, and D2D's
+   answer is not worth copying (it paints a fixed neutral grey that does not
+   depend on the stops at all). We paint the last stop.
+
+   Robustness, from an adversarial review that measured D2D as ground truth:
+   `Drawing.h`'s `invert()` has **no zero-determinant guard**, so any collapsed
+   or near-collapsed transform (a scale animating through zero, or one small
+   enough that the determinant underflows) inverts to an infinite matrix. That
+   made the gradient parameter non-finite, and a non-finite `t` used to sail
+   through every comparison in `colorAt` — reading one past the end of a
+   single-stop collection, and painting NaN over the whole chunk-aligned span
+   including zero-coverage pixels. NaN is permanent in the surface too, because
+   `NaN * 0` is still NaN, so nothing but a `clear()` repairs it. `colorAt` now
+   pins a non-finite `t` to 0 and its index is clamped, which makes it total.
+   The radial focus is clamped by vector **length**, not per-axis: a diagonal
+   offset like (0.9, 0.9) survives a per-component clamp with |f| = 1.27, the
+   focal discriminant goes negative, and a wedge of the plane collapses to flat
+   last-stop colour.
+
+   Still open, and deliberately not changed here because it is shared API used
+   by every backend: `invert()` itself should reject a singular matrix rather
+   than return infinities.
 6. **Bitmaps & offscreens**: `drawBitmap` (bilinear), `createCompatibleRenderTarget`,
    `createImage`/`loadImageU` (PNG → premul linear fp16) — unblocks `CachedBlur`.
 7. **Present path**: dithered sRGB encode + X11/Wayland blit.

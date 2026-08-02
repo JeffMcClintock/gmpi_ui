@@ -1702,6 +1702,51 @@ inline void accumulateEdgeClipped(float* acc, int w, int h, drawing::Point p0, d
     }
 }
 
+// Rasterize figures that are ALREADY IN DEVICE SPACE into a coverage mask
+// covering `bounds`. One implementation shared by geometry clipping and the
+// glyph atlas, so neither can drift from filling on what a fill mode means.
+inline void rasterizeCoverage(const std::vector<Figure>& figures, drawing::FillMode fillMode,
+                              const drawing::RectL& bounds, std::vector<float>& returnAlpha)
+{
+    const int w = bounds.right - bounds.left;
+    const int h = bounds.bottom - bounds.top;
+    returnAlpha.clear();
+    if (w <= 0 || h <= 0)
+        return;
+
+    const int rowStride = w + 2;
+    std::vector<float> acc(size_t(rowStride) * h, 0.0f);
+
+    for (const auto& fig : figures)
+    {
+        const size_t n = fig.points.size();
+        if (!fig.filled || n == 0)
+            continue;
+        for (size_t i = 0; i < n; ++i)
+        {
+            auto a = fig.points[i];
+            auto b = fig.points[(i + 1) % n];
+            a.x -= float(bounds.left); a.y -= float(bounds.top);
+            b.x -= float(bounds.left); b.y -= float(bounds.top);
+            accumulateEdgeClipped(acc.data(), w, h, a, b);
+        }
+    }
+
+    returnAlpha.assign(size_t(w) * h, 0.0f);
+    const bool nonzero = (fillMode == drawing::FillMode::Winding);
+    for (int y = 0; y < h; ++y)
+    {
+        const float* accRow = acc.data() + size_t(y) * rowStride;
+        float* out = returnAlpha.data() + size_t(y) * w;
+        float run = 0.0f;
+        for (int x = 0; x < w; ++x)
+        {
+            run += accRow[x];
+            out[x] = foldCoverage(run, nonzero);
+        }
+    }
+}
+
 } // namespace raster
 
 // ---------------------------------------------------------------------------
@@ -1788,41 +1833,96 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         if (w <= 0 || h <= 0)
             return;
 
-        const int rowStride = w + 2;
-        std::vector<float> acc(size_t(rowStride) * h, 0.0f);
-
+        // Hand the device-space copy to the shared rasterizer.
+        std::vector<Figure> deviceFigures;
+        deviceFigures.reserve(figures.size());
         size_t figIndex = 0;
         for (const auto& fig : figures)
         {
             const size_t base = figureStart[figIndex++];
-            const size_t n = fig.points.size();
-            if (!fig.filled || n == 0)
+            if (!fig.filled || fig.points.empty())
                 continue;
-            for (size_t i = 0; i < n; ++i)
-            {
-                auto a = points[base + i];
-                auto b = points[base + (i + 1) % n];
-                a.x -= ix0; a.y -= iy0;
-                b.x -= ix0; b.y -= iy0;
-                raster::accumulateEdgeClipped(acc.data(), w, h, a, b);
-            }
+            Figure copy;
+            copy.filled = true;
+            copy.closed = true;
+            copy.points.assign(points.begin() + base, points.begin() + base + fig.points.size());
+            deviceFigures.push_back(std::move(copy));
         }
 
         mask.bounds = { ix0, iy0, ix1, iy1 };
-        mask.alpha.assign(size_t(w) * h, 0.0f);
-        const bool nonzero = (fillMode == drawing::FillMode::Winding);
-        for (int y = 0; y < h; ++y)
-        {
-            const float* accRow = acc.data() + size_t(y) * rowStride;
-            float* out = mask.alpha.data() + size_t(y) * w;
-            float run = 0.0f;
-            for (int x = 0; x < w; ++x)
-            {
-                run += accRow[x];
-                out[x] = raster::foldCoverage(run, nonzero);
-            }
-        }
+        raster::rasterizeCoverage(deviceFigures, fillMode, mask.bounds, mask.alpha);
+        if (mask.alpha.empty())
+            mask.bounds = {};
     }
+
+public:
+    // Blend a precomputed coverage mask — the glyph atlas fast path. Coverage
+    // arrives ready-made instead of being accumulated from edges, and from
+    // there it takes exactly the same route to pixels as any fill: clip mask,
+    // brush span, premultiplied over.
+    ReturnCode blendCoverageMask(const float* alpha, int maskWidth, int maskHeight,
+                                 int dstX, int dstY, const CpuBrush& brush)
+    {
+        if (!alpha || maskWidth <= 0 || maskHeight <= 0 || !brush.isPaintable())
+            return ReturnCode::Ok;
+
+        auto& s = bitmap->surface;
+        const auto clip = drawing::intersectRect(clipRectStack.back(), surfaceBounds());
+        if (!(clip.left < clip.right) || !(clip.top < clip.bottom))
+            return ReturnCode::Ok;
+
+        const int ix0 = (std::max)(dstX, aliasedCoord(clip.left));
+        const int iy0 = (std::max)(dstY, aliasedCoord(clip.top));
+        const int ix1 = (std::min)(dstX + maskWidth, aliasedCoord(clip.right));
+        const int iy1 = (std::min)(dstY + maskHeight, aliasedCoord(clip.bottom));
+        if (ix1 <= ix0 || iy1 <= iy0)
+            return ReturnCode::Ok;
+
+        const auto deviceToLocal = drawing::invert(transform_);
+        const int ax0 = ix0 & ~3;
+        const int ax1 = (std::min)(s.stridePixels, (ix1 + 3) & ~3);
+        const int spanPx = ax1 - ax0;
+
+        covBuf.assign(size_t(s.stridePixels), 0.0f);
+        rowBuf.resize(size_t(spanPx) * 4);
+        srcBuf.resize(size_t(spanPx) * 4);
+
+        const auto* clipMask = activeClipMask();
+
+        for (int y = iy0; y < iy1; ++y)
+        {
+            const float* maskRow = alpha + size_t(y - dstY) * size_t(maskWidth);
+            float* cov = covBuf.data();
+            for (int x = ix0; x < ix1; ++x)
+                cov[x] = maskRow[x - dstX];
+            if (clipMask)
+                for (int x = ix0; x < ix1; ++x)
+                    cov[x] *= clipMask->at(x, y);
+
+            uint16_t* p = s.row(y) + size_t(ax0) * 4;
+            loadSpan(p, rowBuf.data(), spanPx * 4);
+            brush.evalSpan(deviceToLocal, ax0, y, spanPx, srcBuf.data());
+
+            float* d = rowBuf.data();
+            const float* sc = srcBuf.data();
+            const float* cv = cov + ax0;
+            for (int i = 0; i < spanPx; ++i, d += 4, sc += 4)
+            {
+                const float c = cv[i];
+                const float k = 1.0f - sc[3] * c;
+                d[0] = sc[0] * c + d[0] * k;
+                d[1] = sc[1] * c + d[1] * k;
+                d[2] = sc[2] * c + d[2] * k;
+                d[3] = sc[3] * c + d[3] * k;
+            }
+            storeSpan(rowBuf.data(), p, spanPx * 4);
+
+            std::memset(cov + ix0, 0, size_t(ix1 - ix0) * sizeof(float));
+        }
+        return ReturnCode::Ok;
+    }
+
+private:
 
     // scratch buffers, reused across fills
     std::vector<float> accBuf;      // (w + 2) * h coverage deltas

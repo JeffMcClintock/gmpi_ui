@@ -921,6 +921,120 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     // Decoded colour-glyph images, keyed by face and glyph.
     std::map<std::pair<const detail::FontFace*, uint32_t>, gmpi::shared_ptr<api::IBitmap>> colorGlyphCache;
 
+    // --- glyph atlas --------------------------------------------------------
+    //
+    // Outlines are otherwise extracted, flattened and rasterized on every draw.
+    // A cached coverage mask replaces all of that with a blend, and feeds the
+    // renderer's ordinary mask path, so pixels are identical to the slow route.
+    //
+    // Horizontal sub-pixel position is quantised rather than rounded: rounding
+    // glyph origins to whole pixels visibly changes spacing. Vertical too, so
+    // that a fractional translation does not shift text.
+    static constexpr int kSubPixelSteps = 4;
+
+    struct GlyphKey
+    {
+        const detail::FontFace* face{};
+        uint32_t glyph{};
+        float scaleX{}, scaleY{};
+        int subX{}, subY{};
+
+        bool operator<(const GlyphKey& o) const
+        {
+            return std::tie(face, glyph, scaleX, scaleY, subX, subY)
+                 < std::tie(o.face, o.glyph, o.scaleX, o.scaleY, o.subX, o.subY);
+        }
+    };
+
+    struct GlyphMask
+    {
+        std::shared_ptr<detail::FontFace> face; // keeps the key's pointer valid
+        drawing::RectL bounds{};                // relative to the pen, device pixels
+        std::vector<float> alpha;
+    };
+
+    std::map<GlyphKey, std::shared_ptr<const GlyphMask>> glyphAtlas;
+    size_t glyphAtlasBytes{};
+
+    // Masks are small but unbounded in variety (every size, every glyph). Cap
+    // the total and start over rather than growing without limit; text redraws
+    // constantly, so the cache refills immediately and the cliff is invisible.
+    static constexpr size_t kGlyphAtlasBudget = 8u * 1024u * 1024u;
+
+    std::shared_ptr<const GlyphMask> glyphMask(api::IFactory* factory,
+                                               const std::shared_ptr<detail::FontFace>& face,
+                                               uint32_t glyph, float scaleX, float scaleY,
+                                               int subX, int subY)
+    {
+        const GlyphKey key{ face.get(), glyph, scaleX, scaleY, subX, subY };
+        if (auto it = glyphAtlas.find(key); it != glyphAtlas.end())
+            return it->second;
+
+        auto mask = std::make_shared<GlyphMask>();
+        mask->face = face;
+
+        // Flatten the outline through the ordinary geometry sink, positioned by
+        // the sub-pixel offset, then rasterize it with the renderer's own
+        // coverage code.
+        api::IPathGeometry* rawGeometry{};
+        if (factory->createPathGeometry(&rawGeometry) != ReturnCode::Ok || !rawGeometry)
+            return {};
+        gmpi::shared_ptr<api::IPathGeometry> geometry;
+        geometry.attach(rawGeometry);
+
+        api::IGeometrySink* rawSink{};
+        if (geometry->open(&rawSink) != ReturnCode::Ok || !rawSink)
+            return {};
+        gmpi::shared_ptr<api::IGeometrySink> sink;
+        sink.attach(rawSink);
+        sink->setFillMode(FillMode::Winding);
+
+        detail::GlyphOutlineSink outline;
+        outline.sink = sink.get();
+        outline.scaleX = scaleX;
+        outline.scaleY = -scaleY; // font space is y-up
+        outline.originX = float(subX) / float(kSubPixelSteps);
+        outline.originY = float(subY) / float(kSubPixelSteps);
+        outline.figureOpen = false;
+        hb_font_draw_glyph(face->unscaledFont.get(), glyph, detail::glyphDrawFuncs(), &outline);
+        if (outline.figureOpen)
+            sink->endFigure(FigureEnd::Closed);
+        sink->close();
+
+        auto* path = dynamic_cast<cpugfx::PathGeometry*>(geometry.get());
+        if (!path)
+            return {};
+
+        float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+        for (const auto& fig : path->figures)
+            for (const auto& p : fig.points)
+            {
+                if (!std::isfinite(p.x) || !std::isfinite(p.y))
+                    return {};
+                minX = (std::min)(minX, p.x); maxX = (std::max)(maxX, p.x);
+                minY = (std::min)(minY, p.y); maxY = (std::max)(maxY, p.y);
+            }
+
+        if (minX <= maxX)
+        {
+            // One pixel of margin so antialiased edges are not clipped away.
+            mask->bounds = { int(std::floor(minX)) - 1, int(std::floor(minY)) - 1,
+                             int(std::ceil(maxX)) + 1, int(std::ceil(maxY)) + 1 };
+            cpugfx::raster::rasterizeCoverage(path->figures, FillMode::Winding, mask->bounds, mask->alpha);
+        }
+        // A blank glyph (space) caches an empty mask, which is still worth
+        // storing so it is not re-flattened every draw.
+
+        if (glyphAtlasBytes > kGlyphAtlasBudget)
+        {
+            glyphAtlas.clear();
+            glyphAtlasBytes = 0;
+        }
+        glyphAtlasBytes += mask->alpha.size() * sizeof(float);
+        glyphAtlas[key] = mask;
+        return mask;
+    }
+
     static std::string cacheKey(const char* family, FontWeight weight, FontStyle style, FontStretch stretch)
     {
         return std::string(family ? family : "") + "/" + std::to_string(int(weight)) + "/"
@@ -1101,6 +1215,14 @@ public:
     // helpers/DecodeImage.h supplies one: engine.imageDecoder = decodeImageMemory;
     std::function<bool(const uint8_t*, size_t, DecodedImage&)> imageDecoder;
 
+    // Cache rasterized glyph coverage instead of re-extracting outlines every
+    // draw. Off makes every glyph take the geometry path, which is how the two
+    // are compared in tests; there is no other reason to disable it.
+    bool useGlyphAtlas{ true };
+
+    // Number of masks currently held, for tests and diagnostics.
+    size_t glyphAtlasSize() const { return glyphAtlas.size(); }
+
     ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle,
                                 FontStretch fontStretch, float fontHeight, int32_t fontFlags,
                                 api::ITextFormat** returnTextFormat) override
@@ -1215,6 +1337,19 @@ public:
         }
 
         const bool snap = (options & DrawTextOptions::NoSnap) == 0;
+
+        // The atlas fast path needs the software backend, a solid brush, and a
+        // transform without rotation or skew — a rotated glyph would need a
+        // different mask per angle, which defeats caching. Anything else falls
+        // through to the geometry path below, which produces the same pixels.
+        auto* cpuTarget = dynamic_cast<cpugfx::RenderTarget*>(context);
+        auto* cpuBrush = dynamic_cast<cpugfx::CpuBrush*>(brush);
+        Matrix3x2 contextTransform;
+        context->getTransform(&contextTransform);
+        const bool axisAligned = contextTransform._12 == 0.0f && contextTransform._21 == 0.0f
+                              && contextTransform._11 > 0.0f && contextTransform._22 > 0.0f;
+        const bool useAtlas = useGlyphAtlas && cpuTarget && cpuBrush && axisAligned;
+
         detail::GlyphOutlineSink outline;
         outline.sink = sink.get();
         outline.scaleX = format->scale();
@@ -1268,6 +1403,43 @@ public:
                         }
                         x += run.advances[i];
                         continue;
+                    }
+
+                    if (useAtlas)
+                    {
+                        // Position in device space, split into a whole-pixel
+                        // destination and a quantised sub-pixel offset that
+                        // selects which cached mask to use.
+                        const auto device = drawing::transformPoint(contextTransform, { penX, penY });
+
+                        // Round the position to the sub-pixel grid FIRST, then
+                        // split it. Taking the fraction before rounding loses
+                        // the carry: a fraction of 0.9 rounds to the next whole
+                        // pixel, and bucketing it as 0 without incrementing the
+                        // integer part shifts the glyph a whole pixel left.
+                        const float gx = std::floor(device.x * kSubPixelSteps + 0.5f);
+                        const float gy = std::floor(device.y * kSubPixelSteps + 0.5f);
+                        const int ix = int(std::floor(gx / kSubPixelSteps));
+                        const int iy = int(std::floor(gy / kSubPixelSteps));
+                        const int subX = int(gx) - ix * kSubPixelSteps;
+                        const int subY = int(gy) - iy * kSubPixelSteps;
+
+                        if (auto mask = glyphMask(factory, run.face, run.glyphs[i],
+                                                  run.scale * contextTransform._11,
+                                                  run.scale * contextTransform._22, subX, subY))
+                        {
+                            if (!mask->alpha.empty())
+                            {
+                                const int w = mask->bounds.right - mask->bounds.left;
+                                const int h = mask->bounds.bottom - mask->bounds.top;
+                                cpuTarget->blendCoverageMask(
+                                    mask->alpha.data(), w, h,
+                                    ix + mask->bounds.left, iy + mask->bounds.top,
+                                    *cpuBrush);
+                            }
+                            x += run.advances[i];
+                            continue;
+                        }
                     }
 
                     outline.originX = penX;

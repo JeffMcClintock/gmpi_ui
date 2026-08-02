@@ -32,7 +32,7 @@
 #undef  NOMINMAX
 #define NOMINMAX
 #include <Windows.h>
-#include <dwrite.h>
+#include <dwrite_2.h> // IDWriteFactory2 / IDWriteFontFallback, for font fallback
 #include "backends/DirectXGfx.h" // gmpi::directx::ComPtr
 #endif
 
@@ -56,6 +56,109 @@ namespace gmpi { namespace drawing {
 #endif
 
 namespace detail {
+
+#ifdef _WIN32
+// A text source holding exactly one string, which is all
+// IDWriteFontFallback::MapCharacters needs to answer "which font covers this".
+class SingleStringTextSource final : public IDWriteTextAnalysisSource
+{
+    const wchar_t* text_;
+    UINT32 length_;
+    ULONG refCount_{ 1 };
+
+public:
+    SingleStringTextSource(const wchar_t* text, UINT32 length) : text_(text), length_(length) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override
+    {
+        if (iid == __uuidof(IUnknown) || iid == __uuidof(IDWriteTextAnalysisSource))
+        {
+            *object = this;
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refCount_; }
+    ULONG STDMETHODCALLTYPE Release() override { return --refCount_; }
+
+    HRESULT STDMETHODCALLTYPE GetTextAtPosition(UINT32 position, const WCHAR** text, UINT32* length) override
+    {
+        if (position >= length_) { *text = nullptr; *length = 0; return S_OK; }
+        *text = text_ + position;
+        *length = length_ - position;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetTextBeforePosition(UINT32 position, const WCHAR** text, UINT32* length) override
+    {
+        if (position == 0 || position > length_) { *text = nullptr; *length = 0; return S_OK; }
+        *text = text_;
+        *length = position;
+        return S_OK;
+    }
+    DWRITE_READING_DIRECTION STDMETHODCALLTYPE GetParagraphReadingDirection() override
+    {
+        return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
+    }
+    HRESULT STDMETHODCALLTYPE GetLocaleName(UINT32, UINT32* length, const WCHAR** localeName) override
+    {
+        *length = length_;
+        *localeName = nullptr;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetNumberSubstitution(UINT32, UINT32* length, IDWriteNumberSubstitution** substitution) override
+    {
+        *length = length_;
+        *substitution = nullptr;
+        return S_OK;
+    }
+};
+
+inline bool mapFallbackFont(IDWriteFactory* writeFactory, const std::wstring& baseFamily,
+                            const FontRequest& request, gmpi::directx::ComPtr<IDWriteFont>& returnFont)
+{
+    gmpi::directx::ComPtr<IDWriteFactory2> factory2;
+    if (FAILED(writeFactory->QueryInterface(__uuidof(IDWriteFactory2),
+                                            reinterpret_cast<void**>(factory2.put_void()))) || !factory2)
+        return false;
+
+    gmpi::directx::ComPtr<IDWriteFontFallback> fallback;
+    if (FAILED(factory2->GetSystemFontFallback(fallback.put())) || !fallback)
+        return false;
+
+    // The codepoint as UTF-16, since that is what DirectWrite analyses.
+    wchar_t buffer[3]{};
+    UINT32 bufferLength{};
+    const uint32_t c = request.mustCoverCodepoint;
+    if (c >= 0x10000)
+    {
+        const uint32_t v = c - 0x10000;
+        buffer[0] = wchar_t(0xD800 + (v >> 10));
+        buffer[1] = wchar_t(0xDC00 + (v & 0x3FF));
+        bufferLength = 2;
+    }
+    else
+    {
+        buffer[0] = wchar_t(c);
+        bufferLength = 1;
+    }
+
+    SingleStringTextSource source(buffer, bufferLength);
+    UINT32 mappedLength{};
+    FLOAT scale{};
+    // Write straight into put(): MapCharacters hands over a reference, and the
+    // ComPtr raw constructor would AddRef it a second time.
+    if (FAILED(fallback->MapCharacters(&source, 0, bufferLength, nullptr, baseFamily.c_str(),
+                                       static_cast<DWRITE_FONT_WEIGHT>(request.weight),
+                                       static_cast<DWRITE_FONT_STYLE>(request.style),
+                                       static_cast<DWRITE_FONT_STRETCH>(request.stretch),
+                                       &mappedLength, returnFont.put(), &scale)) || !returnFont)
+        return false;
+
+    return true;
+}
+#endif // _WIN32
 
 inline bool readWholeFile(const std::string& path, std::vector<uint8_t>& returnBytes)
 {
@@ -106,20 +209,34 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     if (FAILED(writeFactory->GetSystemFontCollection(collection.put())) || !collection)
         return false;
 
-    UINT32 index{};
-    BOOL exists{};
-    if (FAILED(collection->FindFamilyName(familyName.c_str(), &index, &exists)) || !exists)
-        return false;
-
-    gmpi::directx::ComPtr<IDWriteFontFamily> family;
-    if (FAILED(collection->GetFontFamily(index, family.put())) || !family)
-        return false;
-
     gmpi::directx::ComPtr<IDWriteFont> font;
-    if (FAILED(family->GetFirstMatchingFont(static_cast<DWRITE_FONT_WEIGHT>(request.weight),
-                                            static_cast<DWRITE_FONT_STRETCH>(request.stretch),
-                                            static_cast<DWRITE_FONT_STYLE>(request.style),
-                                            font.put())) || !font)
+
+    if (request.mustCoverCodepoint != 0)
+    {
+        // Fallback: ask DirectWrite which font can actually render this
+        // character. No single font covers Latin, CJK and emoji, so mixed text
+        // has to be split into runs by covering font.
+        if (!detail::mapFallbackFont(writeFactory.get(), familyName, request, font))
+            return false;
+    }
+    else
+    {
+        UINT32 index{};
+        BOOL exists{};
+        if (FAILED(collection->FindFamilyName(familyName.c_str(), &index, &exists)) || !exists)
+            return false;
+
+        gmpi::directx::ComPtr<IDWriteFontFamily> family;
+        if (FAILED(collection->GetFontFamily(index, family.put())) || !family)
+            return false;
+
+        if (FAILED(family->GetFirstMatchingFont(static_cast<DWRITE_FONT_WEIGHT>(request.weight),
+                                                static_cast<DWRITE_FONT_STRETCH>(request.stretch),
+                                                static_cast<DWRITE_FONT_STYLE>(request.style),
+                                                font.put())) || !font)
+            return false;
+    }
+    if (!font)
         return false;
 
     gmpi::directx::ComPtr<IDWriteFontFace> face;
@@ -208,6 +325,37 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     CFRelease(descriptor);
     if (!font)
         return false;
+
+    // Fallback: ask CoreText for a font that can actually render this
+    // character, since no single font covers Latin, CJK and emoji.
+    if (request.mustCoverCodepoint != 0)
+    {
+        UniChar utf16[2]{};
+        CFIndex utf16Length{};
+        const uint32_t c = request.mustCoverCodepoint;
+        if (c >= 0x10000)
+        {
+            const uint32_t v = c - 0x10000;
+            utf16[0] = UniChar(0xD800 + (v >> 10));
+            utf16[1] = UniChar(0xDC00 + (v & 0x3FF));
+            utf16Length = 2;
+        }
+        else
+        {
+            utf16[0] = UniChar(c);
+            utf16Length = 1;
+        }
+
+        CTFontRef covering = CTFontCreateForString(
+            font, CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, utf16,
+                                                     utf16Length, kCFAllocatorNull),
+            CFRangeMake(0, utf16Length));
+        if (covering)
+        {
+            CFRelease(font);
+            font = covering;
+        }
+    }
 
     CFURLRef url = static_cast<CFURLRef>(CTFontCopyAttribute(font, kCTFontURLAttribute));
     CFRelease(font);

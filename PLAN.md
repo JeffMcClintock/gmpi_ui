@@ -273,10 +273,30 @@ fp16 pixels via `lockPixels`.
 
    Stages: **A** shaping + font discovery + monochrome glyphs (this alone gets
    Latin *and* CJK) — **DONE (Aug 2026)**; **B** line breaking + grapheme
-   clusters + font fallback; **C** bitmap emoji; **D** COLRv1 emoji; and a
-   glyph atlas for performance — cached coverage masks feed the same blender,
-   since it already consumes a coverage array and does not care where it came
-   from.
+   clusters + font fallback — **DONE (Aug 2026)**; **C** bitmap emoji;
+   **D** COLRv1 emoji; and a glyph atlas for performance — cached coverage
+   masks feed the same blender, since it already consumes a coverage array and
+   does not care where it came from.
+
+   Stage B added `helpers/TextSegmentation.h` (portable, no dependencies) and
+   font fallback. Text is now itemised into runs by covering font, so
+   "Hi 你好" renders from one string with Arial and a system CJK font side by
+   side; fallback lookups are cached per codepoint because they hit the system
+   font database. A line may mix fonts, so each run carries its own face and
+   scale, while line height stays on the *primary* font — otherwise a line
+   would change height just because one fallback glyph appeared in it.
+
+   Wrapping was also rebuilt. It used to re-shape a candidate string per word,
+   which is quadratic and cannot wrap CJK at all (no spaces). Now runs are
+   shaped **once**, glyphs carry their source byte cluster, and breaking walks
+   the accumulated advances choosing the last permitted opportunity that fits.
+
+   Segmentation is a deliberate SUBSET of UAX #14 and #29, documented range by
+   range: combining marks, ZWJ sequences, variation selectors, skin-tone
+   modifiers and regional-indicator pairs all stay in one cluster, and breaks
+   are offered between ideographs with kinsoku rules keeping closing
+   punctuation off the start of a line. Not covered: Indic and other complex
+   scripts, whose clusters need script-specific tables.
 
    Stage A shipped as `helpers/CpuTextEngine.h` (the only file that includes
    `hb.h`) plus `helpers/FontProvider.h` / `helpers/FontFile.h` for discovery.

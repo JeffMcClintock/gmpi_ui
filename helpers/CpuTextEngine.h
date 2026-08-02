@@ -36,6 +36,7 @@
 #include "../Drawing.h"
 #include "../backends/CpuGfx.h"
 #include "FontFile.h"
+#include "TextSegmentation.h"
 
 namespace gmpi { namespace drawing {
 
@@ -239,41 +240,129 @@ public:
     float lineSpacing{ -1.0f };
     float baseline{};
 
-    struct ShapedRun
+    // One run of glyphs from a single font. Mixed-script text needs several,
+    // because no font covers Latin, CJK and emoji.
+    struct GlyphRun
     {
+        std::shared_ptr<detail::FontFace> face;
         std::vector<uint32_t> glyphs;
-        std::vector<float> advances;  // device units, per glyph
+        std::vector<float> advances;   // device units, per glyph
         std::vector<float> offsetsX;
         std::vector<float> offsetsY;
+        std::vector<uint32_t> clusters; // byte offset in the source, per glyph
+        float scale{};                 // this face's units -> device
         float width{};
     };
 
     struct Line
     {
-        std::string text;
-        ShapedRun shaped;
+        std::vector<GlyphRun> runs;
+        float width{};
     };
+
+    // A stretch of source text that one font covers.
+    struct FontRunSpan
+    {
+        std::shared_ptr<detail::FontFace> face;
+        uint32_t beginByte{};
+        uint32_t endByte{};
+    };
+
+    // Called back to find a font covering a codepoint the primary font lacks.
+    std::function<std::shared_ptr<detail::FontFace>(uint32_t)> fallbackFor;
 
     float scale() const { return fontSize / float(face->unitsPerEm); }
     float ascent() const { return em.ascent * scale(); }
     float descent() const { return em.descent * scale(); }
+    // Line height comes from the PRIMARY font, so a line does not change height
+    // just because one fallback glyph appeared in it.
     float lineHeight() const { return lineSpacing >= 0.0f ? lineSpacing : (ascent() + descent()); }
     float baselineOffset() const { return lineSpacing >= 0.0f ? baseline : ascent(); }
 
-    // Shape one line of text. Left-to-right, single font: stage A.
-    ShapedRun shape(const std::string& text) const
+    static bool covers(const detail::FontFace& f, uint32_t codepoint)
     {
-        ShapedRun run;
-        if (text.empty())
+        hb_codepoint_t glyph{};
+        return hb_font_get_nominal_glyph(f.unscaledFont.get(), codepoint, &glyph) != 0;
+    }
+
+    // Split the text into stretches each covered by one font. Cluster
+    // boundaries are respected, so a ZWJ emoji sequence or a combining mark
+    // never lands in a different run from its base.
+    std::vector<FontRunSpan> itemize(std::string_view utf8) const
+    {
+        std::vector<FontRunSpan> spans;
+        const auto cps = text::decodeUtf8(utf8);
+        if (cps.empty())
+            return spans;
+        const auto clusterStarts = text::graphemeBoundaries(cps);
+
+        std::shared_ptr<detail::FontFace> current;
+        uint32_t spanBegin{};
+
+        for (size_t i = 0; i < cps.size(); ++i)
+        {
+            if (!clusterStarts[i])
+                continue; // mid-cluster: keep whatever font the cluster started with
+
+            const uint32_t c = cps[i].value;
+
+            // Characters with no visible glyph must not drag in a fallback font.
+            std::shared_ptr<detail::FontFace> wanted = current ? current : face;
+            const bool neutral = (c == ' ' || c == '\t' || text::isGraphemeExtender(c));
+            if (!neutral && !(wanted && covers(*wanted, c)))
+            {
+                if (covers(*face, c))
+                    wanted = face;
+                else if (fallbackFor)
+                {
+                    if (auto fallback = fallbackFor(c))
+                        wanted = fallback;
+                    else
+                        wanted = face; // nothing covers it; the primary draws .notdef
+                }
+                else
+                {
+                    wanted = face;
+                }
+            }
+
+            if (!current)
+            {
+                current = wanted;
+                spanBegin = cps[i].byteOffset;
+            }
+            else if (wanted != current)
+            {
+                spans.push_back({ current, spanBegin, cps[i].byteOffset });
+                current = wanted;
+                spanBegin = cps[i].byteOffset;
+            }
+        }
+
+        if (current)
+            spans.push_back({ current, spanBegin, uint32_t(utf8.size()) });
+        return spans;
+    }
+
+    GlyphRun shapeSpan(const std::shared_ptr<detail::FontFace>& runFace,
+                       std::string_view whole, uint32_t beginByte, uint32_t endByte) const
+    {
+        GlyphRun run;
+        run.face = runFace;
+        run.scale = fontSize / float(runFace->unitsPerEm);
+        if (endByte <= beginByte)
             return run;
 
-        detail::HbFont font(hb_font_create(face->face.get()));
+        detail::HbFont font(hb_font_create(runFace->face.get()));
         if (!font)
             return run;
-        hb_font_set_scale(font.get(), int(face->unitsPerEm), int(face->unitsPerEm));
+        hb_font_set_scale(font.get(), int(runFace->unitsPerEm), int(runFace->unitsPerEm));
 
         detail::HbBuffer buffer(hb_buffer_create());
-        hb_buffer_add_utf8(buffer.get(), text.c_str(), int(text.size()), 0, int(text.size()));
+        // Give HarfBuzz the whole string with an item range, so shaping sees
+        // the surrounding context rather than a truncated fragment.
+        hb_buffer_add_utf8(buffer.get(), whole.data(), int(whole.size()),
+                           int(beginByte), int(endByte - beginByte));
         hb_buffer_set_direction(buffer.get(), HB_DIRECTION_LTR);
         hb_buffer_guess_segment_properties(buffer.get());
         hb_shape(font.get(), buffer.get(), nullptr, 0);
@@ -281,73 +370,141 @@ public:
         unsigned count{};
         const hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buffer.get(), &count);
         const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buffer.get(), &count);
-        const float s = scale();
 
         run.glyphs.reserve(count);
         for (unsigned i = 0; i < count; ++i)
         {
             run.glyphs.push_back(info[i].codepoint);
-            run.advances.push_back(float(pos[i].x_advance) * s);
-            run.offsetsX.push_back(float(pos[i].x_offset) * s);
-            run.offsetsY.push_back(float(pos[i].y_offset) * s);
-            run.width += float(pos[i].x_advance) * s;
+            run.clusters.push_back(info[i].cluster);
+            run.advances.push_back(float(pos[i].x_advance) * run.scale);
+            run.offsetsX.push_back(float(pos[i].x_offset) * run.scale);
+            run.offsetsY.push_back(float(pos[i].y_offset) * run.scale);
+            run.width += float(pos[i].x_advance) * run.scale;
         }
         return run;
     }
 
-    // Split into paragraphs on newlines, then word-wrap each to maxWidth.
+    // Shape a paragraph into runs, then break it into lines at the allowed
+    // opportunities. Shaping happens ONCE; breaking walks the accumulated
+    // advances, rather than re-shaping a candidate string per word.
+    void layoutParagraph(std::string_view paragraph, float maxWidth, std::vector<Line>& returnLines) const
+    {
+        const bool wrap = wordWrapping == WordWrapping::Wrap && maxWidth > 0.0f;
+
+        std::vector<GlyphRun> runs;
+        for (const auto& span : itemize(paragraph))
+            runs.push_back(shapeSpan(span.face, paragraph, span.beginByte, span.endByte));
+
+        if (runs.empty())
+        {
+            returnLines.push_back({});
+            return;
+        }
+
+        if (!wrap)
+        {
+            Line line;
+            for (auto& run : runs)
+            {
+                line.width += run.width;
+                line.runs.push_back(std::move(run));
+            }
+            returnLines.push_back(std::move(line));
+            return;
+        }
+
+        // Byte offsets where a break is permitted.
+        const auto cps = text::decodeUtf8(paragraph);
+        const auto opportunities = text::lineBreakOpportunities(cps);
+        std::vector<uint8_t> canBreakAtByte(paragraph.size() + 1, 0);
+        for (size_t i = 0; i < cps.size(); ++i)
+            if (opportunities[i])
+                canBreakAtByte[cps[i].byteOffset] = 1;
+
+        // Flatten to a glyph sequence so breaking can walk it linearly.
+        struct FlatGlyph { size_t runIndex; size_t glyphIndex; float advance; uint32_t cluster; };
+        std::vector<FlatGlyph> flat;
+        for (size_t r = 0; r < runs.size(); ++r)
+            for (size_t g = 0; g < runs[r].glyphs.size(); ++g)
+                flat.push_back({ r, g, runs[r].advances[g], runs[r].clusters[g] });
+
+        size_t lineStart = 0;
+        while (lineStart < flat.size())
+        {
+            float width = 0.0f;
+            size_t lastBreak = 0;      // exclusive end of the best candidate
+            size_t i = lineStart;
+            for (; i < flat.size(); ++i)
+            {
+                const bool isBreak = flat[i].cluster < canBreakAtByte.size() && canBreakAtByte[flat[i].cluster];
+                if (isBreak && i > lineStart)
+                {
+                    if (width > maxWidth)
+                        break;
+                    lastBreak = i;
+                }
+                width += flat[i].advance;
+            }
+
+            size_t lineEnd = flat.size();
+            if (i < flat.size() || width > maxWidth)
+                lineEnd = (lastBreak > lineStart) ? lastBreak : (std::max)(lineStart + 1, i);
+            if (lineEnd <= lineStart)
+                lineEnd = lineStart + 1; // always make progress
+
+            returnLines.push_back(buildLine(runs, flat, lineStart, lineEnd));
+            lineStart = lineEnd;
+        }
+    }
+
+    template <class FlatGlyphT>
+    static Line buildLine(const std::vector<GlyphRun>& runs, const std::vector<FlatGlyphT>& flat,
+                          size_t begin, size_t end)
+    {
+        Line line;
+        for (size_t i = begin; i < end; )
+        {
+            const size_t runIndex = flat[i].runIndex;
+            GlyphRun piece;
+            piece.face = runs[runIndex].face;
+            piece.scale = runs[runIndex].scale;
+            while (i < end && flat[i].runIndex == runIndex)
+            {
+                const size_t g = flat[i].glyphIndex;
+                piece.glyphs.push_back(runs[runIndex].glyphs[g]);
+                piece.clusters.push_back(runs[runIndex].clusters[g]);
+                piece.advances.push_back(runs[runIndex].advances[g]);
+                piece.offsetsX.push_back(runs[runIndex].offsetsX[g]);
+                piece.offsetsY.push_back(runs[runIndex].offsetsY[g]);
+                piece.width += runs[runIndex].advances[g];
+                ++i;
+            }
+            line.width += piece.width;
+            line.runs.push_back(std::move(piece));
+        }
+        return line;
+    }
+
+    // Split on newlines, then lay out each paragraph.
     void layout(const char* utf8, int32_t length, float maxWidth, std::vector<Line>& returnLines) const
     {
         returnLines.clear();
         if (!utf8)
             return;
-        const std::string text(utf8, length < 0 ? std::char_traits<char>::length(utf8) : size_t(length));
-        const bool wrap = wordWrapping == WordWrapping::Wrap && maxWidth > 0.0f;
+        const std::string_view text(utf8, length < 0 ? std::char_traits<char>::length(utf8) : size_t(length));
 
         size_t lineStart = 0;
         while (lineStart <= text.size())
         {
             size_t lineEnd = text.find('\n', lineStart);
-            std::string paragraph = text.substr(lineStart, lineEnd == std::string::npos ? std::string::npos
-                                                                                        : lineEnd - lineStart);
+            auto paragraph = text.substr(lineStart, lineEnd == std::string_view::npos ? std::string_view::npos
+                                                                                      : lineEnd - lineStart);
             if (!paragraph.empty() && paragraph.back() == '\r')
-                paragraph.pop_back();
+                paragraph.remove_suffix(1);
 
-            if (!wrap)
-            {
-                returnLines.push_back({ paragraph, shape(paragraph) });
-            }
-            else
-            {
-                // Break at spaces. Stage B replaces this with UAX #14, which is
-                // what CJK needs — it breaks between characters, not at spaces.
-                std::string current;
-                size_t wordStart = 0;
-                while (wordStart <= paragraph.size())
-                {
-                    size_t spaceAt = paragraph.find(' ', wordStart);
-                    const std::string word = paragraph.substr(
-                        wordStart, spaceAt == std::string::npos ? std::string::npos : spaceAt - wordStart);
-                    const std::string candidate = current.empty() ? word : current + " " + word;
+            layoutParagraph(paragraph, maxWidth, returnLines);
 
-                    if (!current.empty() && shape(candidate).width > maxWidth)
-                    {
-                        returnLines.push_back({ current, shape(current) });
-                        current = word;
-                    }
-                    else
-                    {
-                        current = candidate;
-                    }
-
-                    if (spaceAt == std::string::npos)
-                        break;
-                    wordStart = spaceAt + 1;
-                }
-                returnLines.push_back({ current, shape(current) });
-            }
-
-            if (lineEnd == std::string::npos)
+            if (lineEnd == std::string_view::npos)
                 break;
             lineStart = lineEnd + 1;
         }
@@ -371,7 +528,7 @@ public:
 
         float width{};
         for (const auto& line : lines)
-            width = (std::max)(width, line.shaped.width);
+            width = (std::max)(width, line.width);
 
         *returnSize = { width, float(lines.size()) * lineHeight() };
         return ReturnCode::Ok;
@@ -405,6 +562,10 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
 {
     std::function<bool(const FontRequest&, FontData&)> fontProvider;
     std::map<std::string, std::shared_ptr<detail::FontFace>> faceCache;
+    // Fallback lookups hit the system font database, which is far too slow to
+    // repeat per character; cache the answer per codepoint (null included, so a
+    // character nothing covers is only looked up once).
+    std::map<uint32_t, std::shared_ptr<detail::FontFace>> fallbackCache;
 
     static std::string cacheKey(const char* family, FontWeight weight, FontStyle style, FontStretch stretch)
     {
@@ -437,6 +598,42 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
 
         faceCache[key] = face;
         return face;
+    }
+
+    std::shared_ptr<detail::FontFace> findFallback(const std::string& baseFamily, FontWeight weight,
+                                                   FontStyle style, FontStretch stretch, uint32_t codepoint)
+    {
+        if (auto it = fallbackCache.find(codepoint); it != fallbackCache.end())
+            return it->second;
+
+        std::shared_ptr<detail::FontFace> result;
+        if (fontProvider)
+        {
+            FontRequest request;
+            request.familyName = baseFamily;
+            request.weight = weight;
+            request.style = style;
+            request.stretch = stretch;
+            request.mustCoverCodepoint = codepoint;
+
+            FontData data;
+            if (fontProvider(request, data) && data)
+            {
+                auto candidate = std::make_shared<detail::FontFace>();
+                if (candidate->init(std::move(data)))
+                {
+                    hb_codepoint_t glyph{};
+                    // Only accept a font that really has the character; a
+                    // provider that ignores mustCoverCodepoint would otherwise
+                    // hand back the primary font and produce .notdef boxes.
+                    if (hb_font_get_nominal_glyph(candidate->unscaledFont.get(), codepoint, &glyph))
+                        result = candidate;
+                }
+            }
+        }
+
+        fallbackCache[codepoint] = result;
+        return result;
     }
 
 public:
@@ -474,6 +671,12 @@ public:
             emSize = fontHeight * upem / (format->em.ascent + format->em.descent);
 
         format->fontSize = emSize;
+
+        const std::string baseFamily = fontFamilyName ? fontFamilyName : "system-ui";
+        format->fallbackFor = [this, baseFamily, fontWeight, fontStyle, fontStretch](uint32_t codepoint) {
+            return findFallback(baseFamily, fontWeight, fontStyle, fontStretch, codepoint);
+        };
+
         *returnTextFormat = format.release();
         return ReturnCode::Ok;
     }
@@ -529,8 +732,8 @@ public:
             float x = layoutRect.left;
             switch (format->textAlignment)
             {
-            case TextAlignment::Trailing: x = layoutRect.right - line.shaped.width; break;
-            case TextAlignment::Center:   x = 0.5f * (layoutRect.left + layoutRect.right - line.shaped.width); break;
+            case TextAlignment::Trailing: x = layoutRect.right - line.width; break;
+            case TextAlignment::Center:   x = 0.5f * (layoutRect.left + layoutRect.right - line.width); break;
             default: break;
             }
 
@@ -538,16 +741,21 @@ public:
             if (snap)
                 baselineY = std::floor(baselineY + 0.5f); // whole-pixel baselines read sharper
 
-            for (size_t i = 0; i < line.shaped.glyphs.size(); ++i)
+            // Each run carries its own face, since a line may mix fonts.
+            for (const auto& run : line.runs)
             {
-                outline.originX = x + line.shaped.offsetsX[i];
-                outline.originY = baselineY - line.shaped.offsetsY[i];
-                outline.figureOpen = false;
-                hb_font_draw_glyph(format->face->unscaledFont.get(), line.shaped.glyphs[i],
-                                   detail::glyphDrawFuncs(), &outline);
-                if (outline.figureOpen)
-                    sink->endFigure(FigureEnd::Closed);
-                x += line.shaped.advances[i];
+                outline.scale = run.scale;
+                for (size_t i = 0; i < run.glyphs.size(); ++i)
+                {
+                    outline.originX = x + run.offsetsX[i];
+                    outline.originY = baselineY - run.offsetsY[i];
+                    outline.figureOpen = false;
+                    hb_font_draw_glyph(run.face->unscaledFont.get(), run.glyphs[i],
+                                       detail::glyphDrawFuncs(), &outline);
+                    if (outline.figureOpen)
+                        sink->endFigure(FigureEnd::Closed);
+                    x += run.advances[i];
+                }
             }
             y += lineHeight;
         }

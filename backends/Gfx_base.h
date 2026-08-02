@@ -140,8 +140,11 @@ public:
 		int i, ndivs;
 		float hda, kappa;
 
-		rx = fabsf(arc->size.height);// args[0]);			// y radius
-		ry = fabsf(arc->size.width);//args[1]);				// x radius
+		// ArcSegment::size follows D2D_ARC_SEGMENT: width = x radius, height = y radius.
+		// (These were swapped for years — harmless for circles, wrong for ellipses;
+		// caught by the CPU-vs-D2D comparison tests.)
+		rx = fabsf(arc->size.width);				// x radius
+		ry = fabsf(arc->size.height);				// y radius
 		rotx = arc->rotationAngle /* args[2] */ / 180.0f * static_cast<float>(M_PI); // NSVG_PI;		// x rotation angle
 		fa = (int)arc->arcSize;// fabsf(args[3]) > 1e-6 ? 1 : 0;	// Large arc
 		fs = (int)arc->sweepDirection;// fabsf(args[4]) > 1e-6 ? 1 : 0;	// Sweep direction
@@ -269,13 +272,17 @@ public:
 	GMPI_REFCOUNT;
 };
 
-class GraphicsContext : public gmpi::drawing::api::IDeviceContext
+// Templated on the base interface so a subclass can implement an extended
+// interface (e.g. IBitmapRenderTarget) by standard inheritance, rather than the
+// fragile "emulated by careful vtable layout" trick.
+template <class TBaseInterface>
+class GraphicsContextT : public TBaseInterface
 {
 protected:
 	std::vector<gmpi::drawing::Rect> clipRectStack;
 
 public:
-	GraphicsContext()
+	GraphicsContextT()
 	{
 		const float defaultClipBounds = 100000.0f;
 		gmpi::drawing::Rect r;
@@ -284,7 +291,7 @@ public:
 		clipRectStack.push_back(r);
 	}
 
-	virtual ~GraphicsContext()
+	virtual ~GraphicsContextT()
 	{
 	}
 
@@ -292,15 +299,19 @@ public:
 	{
 		// create geometry
         gmpi::drawing::Factory factory;
-        getFactory(gmpi::drawing::AccessPtr::put(factory));
+        this->getFactory(gmpi::drawing::AccessPtr::put(factory));
 
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
 
+        // Walk the same way Direct2D's native rectangle does — top edge first,
+        // then clockwise. Fills don't care, but a dashed stroke's phase starts
+        // at the figure's first point, so walking the other way puts every dash
+        // on the wrong edge.
         sink.beginFigure({rect->left, rect->top}, filled ? gmpi::drawing::FigureBegin::Filled : gmpi::drawing::FigureBegin::Hollow);
-        sink.addLine({rect->left, rect->bottom});
-        sink.addLine({rect->right, rect->bottom});
         sink.addLine({rect->right, rect->top});
+        sink.addLine({rect->right, rect->bottom});
+        sink.addLine({rect->left, rect->bottom});
 
 		sink.endFigure(gmpi::drawing::FigureEnd::Closed);
 		sink.close();
@@ -311,14 +322,16 @@ public:
     gmpi::ReturnCode drawRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createRectangleGeometry(rect, false);
-		drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
+		this->drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
         return gmpi::ReturnCode::Ok;
 	}
 
     gmpi::ReturnCode fillRectangle(const gmpi::drawing::Rect* rect, gmpi::drawing::api::IBrush* brush) override
 	{
-		auto geometry = createRectangleGeometry(rect);
-		fillGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, nullptr);
+		// filled=true: hollow figures are not filled (D2D FIGURE_BEGIN semantics),
+		// so a fill helper must build Filled figures.
+		auto geometry = createRectangleGeometry(rect, true);
+		this->fillGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, nullptr);
         return gmpi::ReturnCode::Ok;
 	}
 
@@ -330,7 +343,7 @@ public:
     gmpi::ReturnCode drawLine(gmpi::drawing::Point point0, gmpi::drawing::Point point1, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createLineGeometry(point0, point1);
-		drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
+		this->drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
 		return gmpi::ReturnCode::Ok;
 	}
 	
@@ -338,7 +351,7 @@ public:
 	{
 		// create geometry
         gmpi::drawing::Factory factory;
-		getFactory(gmpi::drawing::AccessPtr::put(factory));
+		this->getFactory(gmpi::drawing::AccessPtr::put(factory));
 
 		auto geometry = factory.createPathGeometry();
 		auto sink = geometry.open();
@@ -356,7 +369,7 @@ public:
 	{
 		// create geometry
         gmpi::drawing::Factory factory;
-        getFactory(gmpi::drawing::AccessPtr::put(factory));
+        this->getFactory(gmpi::drawing::AccessPtr::put(factory));
 
         auto geometry = factory.createPathGeometry();
         auto sink = geometry.open();
@@ -455,14 +468,14 @@ public:
     gmpi::ReturnCode drawEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush, float strokeWidth, gmpi::drawing::api::IStrokeStyle* strokeStyle) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
-		drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
+		this->drawGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
 		return gmpi::ReturnCode::Ok;
 	}
 
     gmpi::ReturnCode fillEllipse(const gmpi::drawing::Ellipse* ellipse, gmpi::drawing::api::IBrush* brush) override
 	{
 		auto geometry = createEllipseGeometry(ellipse);
-		fillGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, nullptr);
+		this->fillGeometry(gmpi::drawing::AccessPtr::get(geometry), brush, nullptr);
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -479,7 +492,11 @@ public:
 
     gmpi::ReturnCode popAxisAlignedClip() override
 	{
-		clipRectStack.pop_back();
+		// Unbalanced pops must not empty the stack: later clear()/fill calls
+		// read clipRectStack.back(). D2D reports the imbalance at EndDraw but
+		// keeps rendering; do likewise.
+		if (clipRectStack.size() > 1)
+			clipRectStack.pop_back();
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -501,6 +518,9 @@ public:
 	GMPI_QUERYINTERFACE_METHOD(gmpi::drawing::api::IDeviceContext);
 	GMPI_REFCOUNT_NO_DELETE;
 };
+
+// The original, non-templated name: a plain IDeviceContext implementation.
+using GraphicsContext = GraphicsContextT<gmpi::drawing::api::IDeviceContext>;
 
 }
 }

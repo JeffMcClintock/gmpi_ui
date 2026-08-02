@@ -84,7 +84,9 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     const uint8_t* srcData = pixels.getAddress();
     const int32_t  srcBpr  = pixels.getBytesPerRow();
     const SizeU    size    = bitmap.getSize();
-    const int32_t  srcBpp  = srcBpr / static_cast<int32_t>(size.width); // 4 or 8
+    // From the pixel format, not srcBpr / width: rows may be padded (e.g. the
+    // CPU backend pads stride to a multiple of 8 pixels).
+    const int32_t  srcBpp  = pixels.getBytesPerPixel(); // 4 or 8
 
     // Output is always 32bpp BGRA sRGB.
     const int32_t outBpr = static_cast<int32_t>(size.width) * 4;
@@ -137,54 +139,43 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
                 r = detail::linearToSRGB(static_cast<uint8_t>(std::clamp(src[2] / fa + 0.5f, 0.0f, 255.0f)));
             }
 
-            // Store sRGB BGRA, re-premultiplied.
-            if (a == 255)
-            {
-                dst[0] = b; dst[1] = g; dst[2] = r; dst[3] = 255;
-            }
-            else
-            {
-                float fa = a / 255.0f;
-                dst[0] = static_cast<uint8_t>(b * fa + 0.5f);
-                dst[1] = static_cast<uint8_t>(g * fa + 0.5f);
-                dst[2] = static_cast<uint8_t>(r * fa + 0.5f);
-                dst[3] = a;
-            }
+            // Store sRGB BGRA with STRAIGHT alpha: PNG has no premultiplied
+            // form, so premultiplying here saved every translucent pixel too
+            // dark (50%-alpha white came back as 50% grey).
+            dst[0] = b; dst[1] = g; dst[2] = r; dst[3] = a;
             src += srcBpp;
             dst += 4;
         }
     }
 
     // Encode to PNG via WIC.
-    IWICImagingFactory* rawWic{};
+    // NOTE: create into ComPtr::put() — the ComPtr(raw) constructor AddRefs,
+    // which would leak these objects and leave the file locked for writing.
+    gmpi::directx::ComPtr<IWICImagingFactory> wic;
     CoCreateInstance(
         CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-        __uuidof(IWICImagingFactory), reinterpret_cast<void**>(&rawWic));
-    gmpi::directx::ComPtr<IWICImagingFactory> wic(rawWic);
+        __uuidof(IWICImagingFactory), wic.put_void());
     if (!wic) return false;
 
-    IWICStream* rawStream{};
-    wic->CreateStream(&rawStream);
-    gmpi::directx::ComPtr<IWICStream> stream(rawStream);
+    gmpi::directx::ComPtr<IWICStream> stream;
+    wic->CreateStream(stream.put());
     if (!stream) return false;
     stream->InitializeFromFilename(path.wstring().c_str(), GENERIC_WRITE);
 
-    IWICBitmapEncoder* rawEncoder{};
-    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &rawEncoder);
-    gmpi::directx::ComPtr<IWICBitmapEncoder> encoder(rawEncoder);
+    gmpi::directx::ComPtr<IWICBitmapEncoder> encoder;
+    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.put());
     if (!encoder) return false;
     encoder->Initialize(stream, WICBitmapEncoderNoCache);
 
-    IWICBitmapFrameEncode* rawFrame{};
+    gmpi::directx::ComPtr<IWICBitmapFrameEncode> frame;
     IPropertyBag2* props{};
-    encoder->CreateNewFrame(&rawFrame, &props);
-    gmpi::directx::ComPtr<IWICBitmapFrameEncode> frame(rawFrame);
+    encoder->CreateNewFrame(frame.put(), &props);
     if (props) props->Release();
     if (!frame) return false;
 
     frame->Initialize(nullptr);
     frame->SetSize(size.width, size.height);
-    WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppPBGRA;
+    WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA; // straight alpha, matching the buffer above
     frame->SetPixelFormat(&fmt);
     frame->WritePixels(size.height, outBpr, static_cast<UINT>(srgbData.size()), srgbData.data());
     frame->Commit();
@@ -206,23 +197,42 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     uint8_t* data = pixels.getAddress();
     int32_t  bpr  = pixels.getBytesPerRow();
     SizeU    size = bitmap.getSize();
-    int32_t  bpp  = bpr / static_cast<int32_t>(size.width);
+    int32_t  bpp  = pixels.getBytesPerPixel(); // from the format; rows may be padded
 
-    // If float-linear (128bpp), convert to 8-bit sRGB RGBA for PNG output.
+    // Convert any high-precision linear format to 8-bit sRGB RGBA for PNG.
+    // 16 bytes/pixel is 128bpp float (the CoreGraphics render target); 8 is
+    // 64bpp half-float, which is what the software backend produces on every
+    // platform — without this branch its pixels were written out as raw
+    // half-float bit patterns reinterpreted as 8-bit RGBA.
     std::vector<uint8_t> srgbBuf;
     int32_t  srgbBpr = bpr;
     uint8_t* pngData = data;
 
-    if (bpp == 16)
+    if (bpp == 16 || bpp == 8)
     {
+        const bool isHalf = (bpp == 8);
         srgbBpr = static_cast<int32_t>(size.width) * 4;
         srgbBuf.resize(srgbBpr * size.height);
         for (uint32_t y = 0; y < size.height; ++y)
         {
             for (uint32_t x = 0; x < size.width; ++x)
             {
-                const float* f = reinterpret_cast<const float*>(data + y * bpr + x * 16);
-                float fr = f[0], fg = f[1], fb = f[2], fa = f[3];
+                const uint8_t* srcPixel = data + y * bpr + x * bpp;
+                float fr, fg, fb, fa;
+                if (isHalf)
+                {
+                    const uint16_t* h = reinterpret_cast<const uint16_t*>(srcPixel);
+                    fr = detail::halfToFloat(h[0]);
+                    fg = detail::halfToFloat(h[1]);
+                    fb = detail::halfToFloat(h[2]);
+                    fa = detail::halfToFloat(h[3]);
+                }
+                else
+                {
+                    const float* f = reinterpret_cast<const float*>(srcPixel);
+                    fr = f[0]; fg = f[1]; fb = f[2]; fa = f[3];
+                }
+
                 uint8_t a = static_cast<uint8_t>(std::clamp(fa * 255.0f + 0.5f, 0.0f, 255.0f));
                 if (fa > 0.0f)
                 {
@@ -233,8 +243,22 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
                 else { fr = fg = fb = 0.0f; }
 
                 uint8_t* dst = srgbBuf.data() + y * srgbBpr + x * 4;
-                // Re-premultiply in sRGB for PNG.
-                float aNorm = a / 255.0f;
+                // Premultiplied, to match the kCGImageAlphaPremultipliedLast
+                // context below: CoreGraphics bitmap contexts have no straight
+                // (kCGImageAlphaLast) 8-bit RGBA form, so this relies on
+                // ImageIO converting to PNG's straight alpha when encoding.
+                //
+                // UNVERIFIED on macOS. The equivalent assumption was FALSE on
+                // Windows — WIC was told the buffer was premultiplied
+                // (32bppPBGRA) and wrote those bytes into the file anyway,
+                // saving every translucent pixel too dark. CpuBackend.
+                // PngAlphaRoundTrip is deliberately cross-platform and will
+                // fail here if ImageIO behaves the same way. The fix would be
+                // to skip the bitmap context entirely: build the straight-alpha
+                // buffer as the Windows path does and hand it to CGImageCreate
+                // with kCGImageAlphaLast, which CGImage does support even
+                // though CGBitmapContext does not.
+                const float aNorm = a / 255.0f;
                 dst[0] = static_cast<uint8_t>(detail::linearToSRGB_f(fr) * aNorm + 0.5f);
                 dst[1] = static_cast<uint8_t>(detail::linearToSRGB_f(fg) * aNorm + 0.5f);
                 dst[2] = static_cast<uint8_t>(detail::linearToSRGB_f(fb) * aNorm + 0.5f);

@@ -22,7 +22,17 @@ namespace detail
             int shift = 14 - exp;
             return sign | static_cast<uint16_t>((mant + (1u << (shift - 1))) >> shift);
         }
-        return sign | static_cast<uint16_t>((static_cast<uint32_t>(exp) << 10) | (mant >> 13));
+        // Round-to-nearest-even (matches F16C hardware and D2D), carrying a
+        // mantissa overflow into the exponent. Plain truncation biases every
+        // store slightly dark, which accumulates over repeated blend passes.
+        uint32_t m = mant + 0xFFFu + ((mant >> 13) & 1u);
+        if (m & 0x800000u)
+        {
+            m = 0;
+            if (++exp >= 31)
+                return sign | 0x7c00u;
+        }
+        return sign | static_cast<uint16_t>((static_cast<uint32_t>(exp) << 10) | (m >> 13));
     }
 
     inline float halfToFloat(uint16_t h)
@@ -249,7 +259,9 @@ inline void applyMask(Bitmap& image, Bitmap& mask)
     const int32_t  imageBpr  = imagePx.getBytesPerRow();
     const int32_t  maskBpr   = maskPx.getBytesPerRow();
     const auto     size      = image.getSize();
-    const int32_t  imageBpp  = imageBpr / static_cast<int32_t>(size.width);
+    // From the pixel format, not imageBpr / width: rows may be padded (e.g. the
+    // CPU backend pads stride to a multiple of 8 pixels).
+    const int32_t  imageBpp  = imagePx.getBytesPerPixel();
 
     for (uint32_t y = 0; y < size.height; ++y)
     {

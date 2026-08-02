@@ -275,7 +275,7 @@ fp16 pixels via `lockPixels`.
    Latin *and* CJK) — **DONE (Aug 2026)**; **B** line breaking + grapheme
    clusters + font fallback — **DONE (Aug 2026)**; **C** bitmap emoji —
    **DONE (Aug 2026), but see the platform note below**;
-   **D** COLRv1 emoji; and a glyph atlas for performance — cached coverage
+   **D** COLRv1 emoji — **DONE (Aug 2026)**; and a glyph atlas for performance — cached coverage
    masks feed the same blender, since it already consumes a coverage array and
    does not care where it came from.
 
@@ -316,6 +316,30 @@ fp16 pixels via `lockPixels`.
    Noto Color Emoji (CBDT). The emoji drawing test skips with that reason
    rather than pretending to pass; the memory decoder it depends on is tested
    directly and unconditionally.
+
+   Stage D draws COLRv1 vector colour glyphs, which is what actually renders
+   emoji on Windows. A probe recorded the operations Segoe UI Emoji really
+   emits across a spread of glyphs, and the answer decided the scope:
+   `push_clip_glyph` (325), `push_transform` (791), `linear_gradient` (179),
+   `radial_gradient` (109), `color` (37), `push_clip_rectangle` (7) — and
+   **no** sweep gradients, groups, blend modes or images at all. Those are left
+   unimplemented rather than approximated, so a font needing them paints
+   nothing (visible) instead of something wrong (not).
+
+   Everything else was already here: `color` is a solid fill, the gradients are
+   milestone 5, and the transforms are `setTransform`. The one genuine
+   prerequisite was **geometry clipping** — `pushClipGeometry` is now real:
+   the geometry is rasterized to a coverage mask, intersected with the enclosing
+   clip, and multiplied into coverage at fill time, so a shaped clip is
+   antialiased like any other edge. Fill and clip share one fill-mode fold, so
+   they cannot disagree about what nonzero means. It matches D2D (which uses
+   PushLayer) within antialiasing jitter.
+
+   Worth remembering: the y-flip from font space (y-up) belongs in the glyph's
+   base transform, NOT at the leaves. Flipping in the outline sink and in the
+   gradient coordinates puts it on the wrong side of HarfBuzz's own paint
+   transforms, which operate in font space — the emoji still renders, but
+   layers land in the wrong places and the result is mud.
 
    Stage A shipped as `helpers/CpuTextEngine.h` (the only file that includes
    `hb.h`) plus `helpers/FontProvider.h` / `helpers/FontFile.h` for discovery.

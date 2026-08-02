@@ -1615,6 +1615,17 @@ inline void accumulateEdge(float* acc, int w, int h, drawing::Point p0, drawing:
     }
 }
 
+// Turn an accumulated winding number into coverage. Shared by filling and by
+// clip-mask generation, so the two can never disagree about what a fill mode
+// means.
+inline float foldCoverage(float run, bool nonzero)
+{
+    if (nonzero)
+        return (std::min)(1.0f, std::fabs(run));
+    const float t = std::fmod(std::fabs(run), 2.0f);
+    return 1.0f - std::fabs(t - 1.0f);
+}
+
 // Clip an edge to the raster area's horizontal range, preserving winding:
 // portions left of x=0 are projected onto the x=0 boundary (their winding
 // affects every visible cell on their rows); portions right of x=w cannot
@@ -1709,6 +1720,109 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // The factory owns the text engine; reach it through the factory so a
     // render target never holds a stale pointer.
     ICpuTextEngine* textEngine() const;
+
+    // A clip of arbitrary shape, as per-pixel coverage over a device-space box.
+    // Outside the box the clip is empty, so callers must test bounds first.
+    struct ClipMask
+    {
+        drawing::RectL bounds{};
+        std::vector<float> alpha;
+
+        float at(int x, int y) const
+        {
+            if (x < bounds.left || x >= bounds.right || y < bounds.top || y >= bounds.bottom)
+                return 0.0f;
+            return alpha[size_t(y - bounds.top) * size_t(bounds.right - bounds.left) + size_t(x - bounds.left)];
+        }
+        float& atMutable(int x, int y)
+        {
+            return alpha[size_t(y - bounds.top) * size_t(bounds.right - bounds.left) + size_t(x - bounds.left)];
+        }
+    };
+
+    // Parallel to clipRectStack: null means "no shaped clip at this depth".
+    std::vector<std::shared_ptr<const ClipMask>> clipMaskStack{ nullptr };
+
+    const ClipMask* activeClipMask() const { return clipMaskStack.back().get(); }
+
+    // Rasterize figures into a coverage mask, using the same edge accumulation
+    // and the same fill-mode fold as ordinary filling.
+    void buildClipMask(const std::vector<Figure>& figures, drawing::FillMode fillMode, ClipMask& mask)
+    {
+        mask.bounds = {};
+        mask.alpha.clear();
+
+        float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+        std::vector<drawing::Point> points;
+        std::vector<size_t> figureStart;
+        for (const auto& fig : figures)
+        {
+            figureStart.push_back(points.size());
+            for (const auto& p : fig.points)
+            {
+                const auto dp = drawing::transformPoint(transform_, p);
+                if (!std::isfinite(dp.x) || !std::isfinite(dp.y))
+                    return; // poisoned geometry clips everything out
+                points.push_back(dp);
+                minX = (std::min)(minX, dp.x); maxX = (std::max)(maxX, dp.x);
+                minY = (std::min)(minY, dp.y); maxY = (std::max)(maxY, dp.y);
+            }
+        }
+        if (points.empty() || minX > maxX)
+            return;
+
+        const auto clip = drawing::intersectRect(clipRectStack.back(), surfaceBounds());
+        if (!(clip.left < clip.right) || !(clip.top < clip.bottom))
+            return;
+        minX = std::clamp(minX, clip.left, clip.right);
+        maxX = std::clamp(maxX, clip.left, clip.right);
+        minY = std::clamp(minY, clip.top, clip.bottom);
+        maxY = std::clamp(maxY, clip.top, clip.bottom);
+
+        const int ix0 = (std::max)(int(std::floor(minX)), aliasedCoord(clip.left));
+        const int iy0 = (std::max)(int(std::floor(minY)), aliasedCoord(clip.top));
+        const int ix1 = (std::min)(int(std::ceil(maxX)), aliasedCoord(clip.right));
+        const int iy1 = (std::min)(int(std::ceil(maxY)), aliasedCoord(clip.bottom));
+        const int w = ix1 - ix0;
+        const int h = iy1 - iy0;
+        if (w <= 0 || h <= 0)
+            return;
+
+        const int rowStride = w + 2;
+        std::vector<float> acc(size_t(rowStride) * h, 0.0f);
+
+        size_t figIndex = 0;
+        for (const auto& fig : figures)
+        {
+            const size_t base = figureStart[figIndex++];
+            const size_t n = fig.points.size();
+            if (!fig.filled || n == 0)
+                continue;
+            for (size_t i = 0; i < n; ++i)
+            {
+                auto a = points[base + i];
+                auto b = points[base + (i + 1) % n];
+                a.x -= ix0; a.y -= iy0;
+                b.x -= ix0; b.y -= iy0;
+                raster::accumulateEdgeClipped(acc.data(), w, h, a, b);
+            }
+        }
+
+        mask.bounds = { ix0, iy0, ix1, iy1 };
+        mask.alpha.assign(size_t(w) * h, 0.0f);
+        const bool nonzero = (fillMode == drawing::FillMode::Winding);
+        for (int y = 0; y < h; ++y)
+        {
+            const float* accRow = acc.data() + size_t(y) * rowStride;
+            float* out = mask.alpha.data() + size_t(y) * w;
+            float run = 0.0f;
+            for (int x = 0; x < w; ++x)
+            {
+                run += accRow[x];
+                out[x] = raster::foldCoverage(run, nonzero);
+            }
+        }
+    }
 
     // scratch buffers, reused across fills
     std::vector<float> accBuf;      // (w + 2) * h coverage deltas
@@ -1861,6 +1975,46 @@ public:
     {
         // D2D semantics: the rect is in local space at push time; stack is device space.
         clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), transformBounds(transform_, *clipRect)));
+        clipMaskStack.push_back(clipMaskStack.back()); // a rect clip needs no mask of its own
+        return ReturnCode::Ok;
+    }
+
+    // Clip to an arbitrary geometry. Rasterized to a coverage mask and
+    // intersected with whatever clip is already active, so the clip edge is
+    // antialiased like any other edge rather than stair-stepped.
+    ReturnCode pushClipGeometry(drawing::api::IPathGeometry* geometry) override
+    {
+        auto* path = dynamic_cast<PathGeometry*>(geometry);
+        if (!path)
+            return ReturnCode::NoSupport;
+
+        auto mask = std::make_shared<ClipMask>();
+        buildClipMask(path->figures, path->fillMode, *mask);
+
+        // Intersect with the enclosing clip.
+        if (const auto* previous = activeClipMask())
+        {
+            for (int y = mask->bounds.top; y < mask->bounds.bottom; ++y)
+                for (int x = mask->bounds.left; x < mask->bounds.right; ++x)
+                    mask->atMutable(x, y) *= previous->at(x, y);
+        }
+
+        clipRectStack.push_back(drawing::intersectRect(
+            clipRectStack.back(),
+            drawing::Rect{ float(mask->bounds.left), float(mask->bounds.top),
+                           float(mask->bounds.right), float(mask->bounds.bottom) }));
+        clipMaskStack.push_back(std::move(mask));
+        return ReturnCode::Ok;
+    }
+
+    // Both stacks move together, so a pop always undoes exactly one push
+    // whichever kind it was.
+    ReturnCode popAxisAlignedClip() override
+    {
+        if (clipRectStack.size() > 1)
+            clipRectStack.pop_back();
+        if (clipMaskStack.size() > 1)
+            clipMaskStack.pop_back();
         return ReturnCode::Ok;
     }
 
@@ -2058,23 +2212,17 @@ private:
             float* cov = covBuf.data();
 
             float run = 0.0f;
-            if (nonzero)
+            for (int x = 0; x < w; ++x)
             {
-                for (int x = 0; x < w; ++x)
-                {
-                    run += acc[x];
-                    cov[ix0 + x] = (std::min)(1.0f, std::fabs(run));
-                }
+                run += acc[x];
+                cov[ix0 + x] = raster::foldCoverage(run, nonzero);
             }
-            else
-            {
+
+            // An arbitrary-geometry clip is a coverage mask; intersecting is a
+            // multiply, which also antialiases the clip edge.
+            if (const auto* mask = activeClipMask())
                 for (int x = 0; x < w; ++x)
-                {
-                    run += acc[x];
-                    const float t = std::fmod(std::fabs(run), 2.0f);
-                    cov[ix0 + x] = 1.0f - std::fabs(t - 1.0f);
-                }
-            }
+                    cov[ix0 + x] *= mask->at(ix0 + x, iy0 + y);
 
             uint16_t* p = s.row(iy0 + y) + size_t(ax0) * 4;
             loadSpan(p, rowBuf.data(), spanPx * 4);

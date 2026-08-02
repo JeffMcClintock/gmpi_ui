@@ -77,7 +77,8 @@ struct FontFace
     HbFont unscaledFont;        // font at units-per-em, for metrics and outlines
     unsigned unitsPerEm{ 1000 };
 
-    bool hasColorPng{}; // CBDT/sbix: Apple Color Emoji, Noto Color Emoji
+    bool hasColorPng{};   // CBDT/sbix: Apple Color Emoji, older Noto Color Emoji
+    bool hasColorPaint{}; // COLRv1: Segoe UI Emoji, current Noto Color Emoji
 
     bool init(FontData&& data)
     {
@@ -101,6 +102,7 @@ struct FontFace
         hb_font_set_scale(unscaledFont.get(), int(unitsPerEm), int(unitsPerEm));
 
         hasColorPng = hb_ot_color_has_png(face.get()) != 0;
+        hasColorPaint = hb_ot_color_has_paint(face.get()) != 0;
         return true;
     }
 };
@@ -158,14 +160,17 @@ inline EmMetrics readMetrics(const FontFace& face)
 struct GlyphOutlineSink
 {
     api::IGeometrySink* sink{};
-    float scale{};        // font units -> device
+    // Separate axes because font space is y-up and this API is y-down. Text
+    // sets scaleY negative to flip here; COLRv1 painting sets both to 1 and
+    // lets the context transform do the flip, because HarfBuzz's paint
+    // transforms operate in font space and must compose BEFORE it.
+    float scaleX{}, scaleY{};
     float originX{}, originY{};
     bool figureOpen{};
 
     Point map(float x, float y) const
     {
-        // Font space is y-up; the drawing API is y-down.
-        return { originX + x * scale, originY - y * scale };
+        return { originX + x * scaleX, originY + y * scaleY };
     }
 };
 
@@ -211,6 +216,268 @@ inline void glyphClosePath(hb_draw_funcs_t*, void* userData, hb_draw_state_t*, v
         s->sink->endFigure(FigureEnd::Closed);
         s->figureOpen = false;
     }
+}
+
+inline hb_draw_funcs_t* glyphDrawFuncs(); // defined below; used by the clip painter
+
+// ---------------------------------------------------------------------------
+// COLRv1 painting.
+//
+// HarfBuzz does not hand back an image for a colour glyph; it drives a
+// callback interface, and those callbacks are very nearly a description of
+// primitives this renderer already has. Measured against Segoe UI Emoji, the
+// operations actually used are: push/pop transform, push_clip_glyph,
+// push_clip_rectangle, pop_clip, color, linear_gradient and radial_gradient.
+// Sweep gradients, groups and blend modes are never emitted by that font, so
+// they are declined rather than approximated — a font that needs them will
+// simply not paint, which is visible, instead of painting something wrong.
+//
+// Everything below draws through the PUBLIC drawing API.
+// ---------------------------------------------------------------------------
+struct PaintState
+{
+    api::IDeviceContext* context{};
+    api::IFactory* factory{};
+    Matrix3x2 baseTransform;             // font units -> device, at the pen
+    std::vector<Matrix3x2> transformStack;
+    int clipDepth{};
+    bool failed{};
+
+    Matrix3x2 current() const { return transformStack.empty() ? baseTransform : transformStack.back(); }
+
+    void apply() const
+    {
+        const auto m = current();
+        context->setTransform(&m);
+    }
+
+    // Fill everything the current clip allows. COLRv1's paint operations mean
+    // "cover the current clip with this paint", so the shape comes from the
+    // clip and the geometry is just a big enough rectangle.
+    void fillClip(api::IBrush* brush) const
+    {
+        Rect clip{};
+        if (context->getAxisAlignedClip(&clip) != ReturnCode::Ok)
+            return;
+        context->fillRectangle(&clip, brush);
+    }
+};
+
+inline Color fromHbColor(hb_color_t c)
+{
+    // HarfBuzz colours are 8-bit sRGB, unpremultiplied; ours are linear.
+    return { SRGBPixelToLinear(hb_color_get_red(c)),
+             SRGBPixelToLinear(hb_color_get_green(c)),
+             SRGBPixelToLinear(hb_color_get_blue(c)),
+             hb_color_get_alpha(c) * (1.0f / 255.0f) };
+}
+
+// Turn a HarfBuzz colour line into a stop collection.
+inline gmpi::shared_ptr<api::IGradientstopCollection> makeStops(api::IDeviceContext* context, hb_color_line_t* colorLine)
+{
+    gmpi::shared_ptr<api::IGradientstopCollection> collection;
+    if (!colorLine)
+        return collection;
+
+    unsigned count = hb_color_line_get_color_stops(colorLine, 0, nullptr, nullptr);
+    if (count == 0)
+        return collection;
+    std::vector<hb_color_stop_t> hbStops(count);
+    hb_color_line_get_color_stops(colorLine, 0, &count, hbStops.data());
+
+    std::vector<Gradientstop> stops;
+    stops.reserve(count);
+    for (const auto& s : hbStops)
+        stops.push_back({ s.offset, fromHbColor(s.color) });
+
+    ExtendMode extend = ExtendMode::Clamp;
+    switch (hb_color_line_get_extend(colorLine))
+    {
+    case HB_PAINT_EXTEND_REPEAT:  extend = ExtendMode::Wrap;   break;
+    case HB_PAINT_EXTEND_REFLECT: extend = ExtendMode::Mirror; break;
+    default: break;
+    }
+
+    api::IGradientstopCollection* raw{};
+    if (context->createGradientstopCollection(stops.data(), uint32_t(stops.size()), extend, &raw) == ReturnCode::Ok)
+        collection.attach(raw);
+    return collection;
+}
+
+inline void paintPushTransform(hb_paint_funcs_t*, void* data,
+                               float xx, float yx, float xy, float yy, float dx, float dy, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    // HarfBuzz gives column-major xx,yx,xy,yy,dx,dy; this API is row-major.
+    const Matrix3x2 m{ xx, yx, xy, yy, dx, dy };
+    s->transformStack.push_back(m * s->current());
+    s->apply();
+}
+
+inline void paintPopTransform(hb_paint_funcs_t*, void* data, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    if (!s->transformStack.empty())
+        s->transformStack.pop_back();
+    s->apply();
+}
+
+inline void paintPushClipRectangle(hb_paint_funcs_t*, void* data,
+                                   float xmin, float ymin, float xmax, float ymax, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    // Font-space coordinates: the context transform flips y, and
+    // pushAxisAlignedClip takes the bounds of all four transformed corners, so
+    // a y-inverted rectangle is handled correctly.
+    const Rect r{ xmin, ymin, xmax, ymax };
+    s->context->pushAxisAlignedClip(&r);
+    ++s->clipDepth;
+}
+
+inline void paintPushClipGlyph(hb_paint_funcs_t*, void* data, hb_codepoint_t glyph, hb_font_t* font, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+
+    api::IPathGeometry* rawGeometry{};
+    if (s->factory->createPathGeometry(&rawGeometry) != ReturnCode::Ok || !rawGeometry)
+    {
+        s->failed = true;
+        return;
+    }
+    gmpi::shared_ptr<api::IPathGeometry> geometry;
+    geometry.attach(rawGeometry);
+
+    api::IGeometrySink* rawSink{};
+    if (geometry->open(&rawSink) != ReturnCode::Ok || !rawSink)
+    {
+        s->failed = true;
+        return;
+    }
+    gmpi::shared_ptr<api::IGeometrySink> sink;
+    sink.attach(rawSink);
+    sink->setFillMode(FillMode::Winding);
+
+    // The glyph outline is in font units, and the context transform already
+    // maps those to device, so emit it unscaled.
+    GlyphOutlineSink outline;
+    outline.sink = sink.get();
+    outline.scaleX = 1.0f;
+    outline.scaleY = 1.0f; // the context transform carries the y-flip
+    outline.originX = 0.0f;
+    outline.originY = 0.0f;
+    outline.figureOpen = false;
+    hb_font_draw_glyph(font, glyph, glyphDrawFuncs(), &outline);
+    if (outline.figureOpen)
+        sink->endFigure(FigureEnd::Closed);
+    sink->close();
+
+    s->context->pushClipGeometry(geometry.get());
+    ++s->clipDepth;
+}
+
+inline void paintPopClip(hb_paint_funcs_t*, void* data, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    if (s->clipDepth > 0)
+    {
+        s->context->popAxisAlignedClip();
+        --s->clipDepth;
+    }
+}
+
+inline void paintColor(hb_paint_funcs_t*, void* data, hb_bool_t, hb_color_t color, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    const auto c = fromHbColor(color);
+    api::ISolidColorBrush* raw{};
+    if (s->context->createSolidColorBrush(&c, nullptr, &raw) != ReturnCode::Ok || !raw)
+        return;
+    gmpi::shared_ptr<api::ISolidColorBrush> brush;
+    brush.attach(raw);
+    s->fillClip(brush.get());
+}
+
+inline void paintLinearGradient(hb_paint_funcs_t*, void* data, hb_color_line_t* colorLine,
+                                float x0, float y0, float x1, float y1, float x2, float y2, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    auto stops = makeStops(s->context, colorLine);
+    if (!stops)
+        return;
+
+    // COLRv1 gives p0, p1 and a rotation point p2. Project p1 onto the line
+    // perpendicular to (p2 - p0) through p0, which is the equivalent simple
+    // two-point gradient.
+    const float dx = x2 - x0, dy = y2 - y0;
+    float ex = x1 - x0, ey = y1 - y0;
+    const float lenSq = dx * dx + dy * dy;
+    if (lenSq > 0.0f)
+    {
+        const float k = (ex * dx + ey * dy) / lenSq;
+        ex -= dx * k;
+        ey -= dy * k;
+    }
+
+    LinearGradientBrushProperties props{};
+    props.startPoint = { x0, y0 };                  // font space; the transform flips y
+    props.endPoint = { x0 + ex, y0 + ey };
+    const BrushProperties brushProps{};
+
+    api::ILinearGradientBrush* raw{};
+    if (s->context->createLinearGradientBrush(&props, &brushProps, stops.get(), &raw) != ReturnCode::Ok || !raw)
+        return;
+    gmpi::shared_ptr<api::ILinearGradientBrush> brush;
+    brush.attach(raw);
+    s->fillClip(brush.get());
+}
+
+inline void paintRadialGradient(hb_paint_funcs_t*, void* data, hb_color_line_t* colorLine,
+                                float x0, float y0, float r0, float x1, float y1, float r1, void*)
+{
+    auto* s = static_cast<PaintState*>(data);
+    auto stops = makeStops(s->context, colorLine);
+    if (!stops)
+        return;
+
+    // COLRv1's radial gradient is the two-circle form. This API's radial brush
+    // is the focal form: outer circle plus an origin offset, which matches when
+    // the inner circle is small — the common case in emoji.
+    RadialGradientBrushProperties props{};
+    props.center = { x1, y1 };
+    props.gradientOriginOffset = { x0 - x1, y0 - y1 };
+    props.radiusX = r1 > 0.0f ? r1 : r0;
+    props.radiusY = props.radiusX;
+    if (!(props.radiusX > 0.0f))
+        return;
+    const BrushProperties brushProps{};
+
+    api::IRadialGradientBrush* raw{};
+    if (s->context->createRadialGradientBrush(&props, &brushProps, stops.get(), &raw) != ReturnCode::Ok || !raw)
+        return;
+    gmpi::shared_ptr<api::IRadialGradientBrush> brush;
+    brush.attach(raw);
+    s->fillClip(brush.get());
+}
+
+inline hb_paint_funcs_t* glyphPaintFuncs()
+{
+    static hb_paint_funcs_t* funcs = [] {
+        hb_paint_funcs_t* f = hb_paint_funcs_create();
+        hb_paint_funcs_set_push_transform_func(f, paintPushTransform, nullptr, nullptr);
+        hb_paint_funcs_set_pop_transform_func(f, paintPopTransform, nullptr, nullptr);
+        hb_paint_funcs_set_push_clip_glyph_func(f, paintPushClipGlyph, nullptr, nullptr);
+        hb_paint_funcs_set_push_clip_rectangle_func(f, paintPushClipRectangle, nullptr, nullptr);
+        hb_paint_funcs_set_pop_clip_func(f, paintPopClip, nullptr, nullptr);
+        hb_paint_funcs_set_color_func(f, paintColor, nullptr, nullptr);
+        hb_paint_funcs_set_linear_gradient_func(f, paintLinearGradient, nullptr, nullptr);
+        hb_paint_funcs_set_radial_gradient_func(f, paintRadialGradient, nullptr, nullptr);
+        // Deliberately unset: sweep_gradient, push_group/pop_group, image.
+        // Segoe UI Emoji emits none of them; a font that needs them will paint
+        // nothing rather than something wrong.
+        hb_paint_funcs_make_immutable(f);
+        return f;
+    }();
+    return funcs;
 }
 
 inline hb_draw_funcs_t* glyphDrawFuncs()
@@ -805,6 +1072,11 @@ public:
         struct ColorGlyphDraw { std::shared_ptr<detail::FontFace> face; uint32_t glyph; Rect dest; };
         std::vector<ColorGlyphDraw> colorGlyphs;
 
+        // COLRv1 glyphs are painted, not decoded — HarfBuzz drives fills,
+        // gradients and clips that map onto this API's own primitives.
+        struct PaintGlyphDraw { std::shared_ptr<detail::FontFace> face; uint32_t glyph; float penX, penY, scale; };
+        std::vector<PaintGlyphDraw> paintGlyphs;
+
         const float lineHeight = format->lineHeight();
         const float blockHeight = float(lines.size()) * lineHeight;
 
@@ -819,7 +1091,8 @@ public:
         const bool snap = (options & DrawTextOptions::NoSnap) == 0;
         detail::GlyphOutlineSink outline;
         outline.sink = sink.get();
-        outline.scale = format->scale();
+        outline.scaleX = format->scale();
+        outline.scaleY = -format->scale(); // font space is y-up
 
         for (const auto& line : lines)
         {
@@ -838,11 +1111,20 @@ public:
             // Each run carries its own face, since a line may mix fonts.
             for (const auto& run : line.runs)
             {
-                outline.scale = run.scale;
+                outline.scaleX = run.scale;
+                outline.scaleY = -run.scale;
                 for (size_t i = 0; i < run.glyphs.size(); ++i)
                 {
                     const float penX = x + run.offsetsX[i];
                     const float penY = baselineY - run.offsetsY[i];
+
+                    if (run.face->hasColorPaint &&
+                        hb_ot_color_glyph_has_paint(run.face->face.get(), run.glyphs[i]))
+                    {
+                        paintGlyphs.push_back({ run.face, run.glyphs[i], penX, penY, run.scale });
+                        x += run.advances[i];
+                        continue;
+                    }
 
                     if (run.face->hasColorPng && hasColorImage(*run.face, run.glyphs[i]))
                     {
@@ -890,6 +1172,40 @@ public:
                 context->drawBitmap(bitmap.get(), &item.dest, 1.0f,
                                     BitmapInterpolationMode::Linear, &source);
             }
+        }
+
+        if (!paintGlyphs.empty())
+        {
+            Matrix3x2 saved{};
+            context->getTransform(&saved);
+
+            for (const auto& item : paintGlyphs)
+            {
+                // Map font units (y-up) to device at this glyph's pen position,
+                // on top of whatever transform the caller had active.
+                // Negative y scale: font space is y-up. Doing the flip HERE
+                // rather than at the leaves is what makes HarfBuzz's paint
+                // transforms compose in the right order.
+                const Matrix3x2 glyphToLocal{ item.scale, 0.0f, 0.0f, -item.scale, item.penX, item.penY };
+
+                detail::PaintState state;
+                state.context = context;
+                state.factory = factory;
+                state.baseTransform = glyphToLocal * saved;
+                state.apply();
+
+                hb_font_paint_glyph(item.face->unscaledFont.get(), item.glyph,
+                                    detail::glyphPaintFuncs(), &state, 0, HB_COLOR(0, 0, 0, 255));
+
+                // Unwind anything the font left open, so a malformed glyph
+                // cannot leak a clip into subsequent drawing.
+                while (state.clipDepth > 0)
+                {
+                    context->popAxisAlignedClip();
+                    --state.clipDepth;
+                }
+            }
+            context->setTransform(&saved);
         }
         return ReturnCode::Ok;
     }

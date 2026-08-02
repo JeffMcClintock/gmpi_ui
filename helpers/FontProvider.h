@@ -243,11 +243,40 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     if (FAILED(font->CreateFontFace(face.put())) || !face)
         return false;
 
+    // Identify what was actually resolved, so a caller can tell that two
+    // requests landed on the same font file and share one loaded copy.
+    {
+        gmpi::directx::ComPtr<IDWriteFontFamily> resolvedFamily;
+        gmpi::directx::ComPtr<IDWriteLocalizedStrings> names;
+        if (SUCCEEDED(font->GetFontFamily(resolvedFamily.put())) && resolvedFamily &&
+            SUCCEEDED(resolvedFamily->GetFamilyNames(names.put())) && names)
+        {
+            UINT32 length{};
+            if (SUCCEEDED(names->GetStringLength(0, &length)) && length > 0)
+            {
+                std::wstring wide(length + 1, L'\0');
+                if (SUCCEEDED(names->GetString(0, wide.data(), length + 1)))
+                {
+                    wide.resize(length);
+                    const int needed = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
+                    if (needed > 1)
+                    {
+                        returnFont.resolvedName.resize(needed - 1);
+                        WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, returnFont.resolvedName.data(),
+                                            needed, nullptr, nullptr);
+                    }
+                }
+            }
+        }
+    }
+
     UINT32 fileCount{ 1 };
-    IDWriteFontFile* rawFile{};
-    if (FAILED(face->GetFiles(&fileCount, &rawFile)) || fileCount == 0 || !rawFile)
+    // Written straight into put(): GetFiles hands over a reference, and the
+    // ComPtr raw constructor would AddRef it a second time and leak the file
+    // object along with its backing stream.
+    gmpi::directx::ComPtr<IDWriteFontFile> fontFile;
+    if (FAILED(face->GetFiles(&fileCount, fontFile.put())) || fileCount == 0 || !fontFile)
         return false;
-    gmpi::directx::ComPtr<IDWriteFontFile> fontFile(rawFile);
 
     // Read the bytes through DirectWrite's own loader rather than assuming a
     // filesystem path: a font may come from memory or a custom collection.
@@ -271,12 +300,21 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     if (FAILED(stream->ReadFileFragment(&fragment, 0, fileSize, &context)) || !fragment)
         return false;
 
-    returnFont.bytes.assign(static_cast<const uint8_t*>(fragment),
-                            static_cast<const uint8_t*>(fragment) + fileSize);
+    try
+    {
+        returnFont.bytes.assign(static_cast<const uint8_t*>(fragment),
+                                static_cast<const uint8_t*>(fragment) + fileSize);
+    }
+    catch (...)
+    {
+        stream->ReleaseFileFragment(context); // a throwing copy must not leak the mapping
+        throw;
+    }
     stream->ReleaseFileFragment(context);
 
     returnFont.faceIndex = face->GetIndex();
-    returnFont.resolvedName = request.familyName;
+    if (returnFont.resolvedName.empty())
+        returnFont.resolvedName = request.familyName;
     return true;
 }
 #endif // _WIN32
@@ -346,14 +384,17 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
             utf16Length = 1;
         }
 
-        CTFontRef covering = CTFontCreateForString(
-            font, CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, utf16,
-                                                     utf16Length, kCFAllocatorNull),
-            CFRangeMake(0, utf16Length));
-        if (covering)
+        CFStringRef query = CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, utf16,
+                                                               utf16Length, kCFAllocatorNull);
+        if (query)
         {
-            CFRelease(font);
-            font = covering;
+            CTFontRef covering = CTFontCreateForString(font, query, CFRangeMake(0, utf16Length));
+            CFRelease(query); // owned here, not by CTFontCreateForString
+            if (covering)
+            {
+                CFRelease(font);
+                font = covering;
+            }
         }
     }
 
@@ -371,7 +412,9 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 
     if (!detail::readWholeFile(pathBuffer, returnFont.bytes))
         return false;
-    returnFont.resolvedName = request.familyName;
+    // The file path identifies what was actually resolved, so two requests that
+    // land on the same font share one loaded copy.
+    returnFont.resolvedName = pathBuffer;
     return true;
 }
 #endif // __APPLE__
@@ -437,7 +480,9 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     if (!detail::readWholeFile(path, returnFont.bytes))
         return false;
     returnFont.faceIndex = static_cast<uint32_t>((std::max)(0, faceIndex));
-    returnFont.resolvedName = request.familyName;
+    // The file path identifies what was actually resolved, so two requests that
+    // land on the same font share one loaded copy.
+    returnFont.resolvedName = path;
     return true;
 }
 #endif // GMPI_UI_FONT_PROVIDER_FONTCONFIG

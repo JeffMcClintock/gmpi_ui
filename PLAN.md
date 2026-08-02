@@ -349,10 +349,25 @@ fp16 pixels via `lockPixels`.
    **nonzero** winding — counters (the hole in an 'o') come out wrong
    otherwise, since glyphs wind them opposite to the exterior.
 
-   Known stage-A gaps, all deliberate: no font fallback (one font per format,
-   so mixed-script text needs the family named explicitly), word wrap breaks at
-   spaces only (UAX #14 in stage B is what CJK actually needs), and outlines
-   are re-extracted per draw rather than cached.
+   Known gaps, all deliberate: outlines are re-extracted per draw rather than
+   cached (the glyph atlas), and `IRichTextFormat` markdown is unimplemented.
+
+   From the text-engine review, two findings worth remembering:
+   * **Font selection must prefer the PRIMARY font**, re-entering it as soon as
+     it covers the text, which is what DirectWrite's `MapCharacters` does.
+     Preferring whichever font the previous character used makes fallback
+     sticky, and because fallback faces cover ASCII (emoji fonts carry 0-9 and
+     `#` for keycaps; CJK fonts carry half-width Latin), one leading symbol
+     dragged the entire rest of the string into the wrong font — measured:
+     `"<emoji> Hello 2024"` itemised as a single Segoe UI Emoji run.
+   * **Fallback resolves per codepoint**, so a page of CJK asks for a font
+     hundreds of times. Faces are now shared per distinct font *file*; without
+     that, every answer kept its own private copy of a multi-megabyte font.
+
+   A note on testing that: width is a **useless** detector for wrong-font bugs.
+   Yu Gothic UI and Segoe UI Emoji both measure "Hello 2024" within about a
+   pixel of Arial, so the first regression test passed happily with the bug
+   still in. The test asserts font identity per run instead.
 
    Testing differs here, and the fixture already anticipates it: text is
    compared by correlation with per-platform reference images, because

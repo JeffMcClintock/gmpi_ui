@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <hb.h>
@@ -79,9 +80,11 @@ struct FontFace
 
     bool hasColorPng{};   // CBDT/sbix: Apple Color Emoji, older Noto Color Emoji
     bool hasColorPaint{}; // COLRv1: Segoe UI Emoji, current Noto Color Emoji
+    std::string name;     // what the provider resolved to; for diagnostics
 
     bool init(FontData&& data)
     {
+        name = data.resolvedName;
         bytes = std::move(data.bytes);
         blob = HbBlob(hb_blob_create(reinterpret_cast<const char*>(bytes.data()),
                                      unsigned(bytes.size()), HB_MEMORY_MODE_READONLY, nullptr, nullptr));
@@ -342,6 +345,11 @@ inline void paintPushClipGlyph(hb_paint_funcs_t*, void* data, hb_codepoint_t gly
     if (s->factory->createPathGeometry(&rawGeometry) != ReturnCode::Ok || !rawGeometry)
     {
         s->failed = true;
+        // Keep push/pop balanced (see below): an empty clip is also the right
+        // result when no geometry could be created.
+        const Rect empty{ 0.0f, 0.0f, 0.0f, 0.0f };
+        s->context->pushAxisAlignedClip(&empty);
+        ++s->clipDepth;
         return;
     }
     gmpi::shared_ptr<api::IPathGeometry> geometry;
@@ -351,6 +359,11 @@ inline void paintPushClipGlyph(hb_paint_funcs_t*, void* data, hb_codepoint_t gly
     if (geometry->open(&rawSink) != ReturnCode::Ok || !rawSink)
     {
         s->failed = true;
+        // Push SOMETHING so the matching pop_clip stays balanced: an empty
+        // clip is the correct answer anyway, since no shape could be built.
+        const Rect empty{ 0.0f, 0.0f, 0.0f, 0.0f };
+        s->context->pushAxisAlignedClip(&empty);
+        ++s->clipDepth;
         return;
     }
     gmpi::shared_ptr<api::IGeometrySink> sink;
@@ -371,7 +384,15 @@ inline void paintPushClipGlyph(hb_paint_funcs_t*, void* data, hb_codepoint_t gly
         sink->endFigure(FigureEnd::Closed);
     sink->close();
 
-    s->context->pushClipGeometry(geometry.get());
+    // Every path through this function pushes exactly one clip, so the font's
+    // matching pop_clip always has something to pop. A backend that declines
+    // geometry clipping falls back to an empty clip rather than desynchronising
+    // the stack and leaking a clip into later drawing.
+    if (s->context->pushClipGeometry(geometry.get()) != ReturnCode::Ok)
+    {
+        const Rect empty{ 0.0f, 0.0f, 0.0f, 0.0f };
+        s->context->pushAxisAlignedClip(&empty);
+    }
     ++s->clipDepth;
 }
 
@@ -577,25 +598,39 @@ public:
                 continue; // mid-cluster: keep whatever font the cluster started with
 
             const uint32_t c = cps[i].value;
-
-            // Characters with no visible glyph must not drag in a fallback font.
-            std::shared_ptr<detail::FontFace> wanted = current ? current : face;
             const bool neutral = (c == ' ' || c == '\t' || text::isGraphemeExtender(c));
-            if (!neutral && !(wanted && covers(*wanted, c)))
+
+            // The PRIMARY font always wins where it can, which is what
+            // DirectWrite's MapCharacters does: it is handed the base family at
+            // every unmapped position and returns the base font whenever the
+            // base covers the text. Preferring whichever font the previous
+            // character used instead makes fallback sticky — and because
+            // fallback faces cover ASCII (Segoe UI Emoji carries 0-9 and # for
+            // keycaps, CJK fonts carry half-width Latin), one leading symbol
+            // drags the entire rest of the string into the wrong font. Measured:
+            // "<emoji> Hello 2024" itemised as a SINGLE Segoe UI Emoji run.
+            std::shared_ptr<detail::FontFace> wanted;
+            if (neutral)
             {
-                if (covers(*face, c))
-                    wanted = face;
-                else if (fallbackFor)
-                {
-                    if (auto fallback = fallbackFor(c))
-                        wanted = fallback;
-                    else
-                        wanted = face; // nothing covers it; the primary draws .notdef
-                }
-                else
-                {
-                    wanted = face;
-                }
+                wanted = current ? current : face; // spaces and marks join the run they follow
+            }
+            else if (covers(*face, c))
+            {
+                wanted = face;
+            }
+            else if (current && current != face && covers(*current, c))
+            {
+                wanted = current; // keep a fallback run together for its own script
+            }
+            else if (fallbackFor)
+            {
+                wanted = fallbackFor(c);
+                if (!wanted)
+                    wanted = face; // nothing covers it; the primary draws .notdef
+            }
+            else
+            {
+                wanted = face;
             }
 
             if (!current)
@@ -708,7 +743,14 @@ public:
             size_t i = lineStart;
             for (; i < flat.size(); ++i)
             {
-                const bool isBreak = flat[i].cluster < canBreakAtByte.size() && canBreakAtByte[flat[i].cluster];
+                // Only the FIRST glyph of a cluster may start a line. One
+                // cluster can shape to several glyphs (a base plus a mark, or a
+                // decomposed emoji), and they all carry the same source byte —
+                // so testing the byte alone would happily break between them,
+                // splitting a grapheme.
+                const bool clusterStart = (i == 0) || flat[i].cluster != flat[i - 1].cluster;
+                const bool isBreak = clusterStart && flat[i].cluster < canBreakAtByte.size()
+                                  && canBreakAtByte[flat[i].cluster];
                 if (isBreak && i > lineStart)
                 {
                     if (width > maxWidth)
@@ -832,12 +874,31 @@ public:
 // ---------------------------------------------------------------------------
 class CpuTextEngine final : public cpugfx::ICpuTextEngine
 {
+    struct FallbackKey
+    {
+        uint32_t codepoint{};
+        int weight{}, style{}, stretch{};
+        std::string baseFamily;
+
+        bool operator<(const FallbackKey& o) const
+        {
+            return std::tie(codepoint, weight, style, stretch, baseFamily)
+                 < std::tie(o.codepoint, o.weight, o.style, o.stretch, o.baseFamily);
+        }
+    };
+
     std::function<bool(const FontRequest&, FontData&)> fontProvider;
+    // One entry per distinct font FILE, shared by every format and every
+    // fallback that resolves to it.
     std::map<std::string, std::shared_ptr<detail::FontFace>> faceCache;
+    // Maps a (family, weight, style, stretch) request to its resolved face, so
+    // repeat createTextFormat calls skip the system font database.
+    std::map<std::string, std::shared_ptr<detail::FontFace>> requestCache;
     // Fallback lookups hit the system font database, which is far too slow to
-    // repeat per character; cache the answer per codepoint (null included, so a
-    // character nothing covers is only looked up once).
-    std::map<uint32_t, std::shared_ptr<detail::FontFace>> fallbackCache;
+    // repeat per character; cache the answer (null included, so a character
+    // nothing covers is only looked up once). The faces themselves are shared
+    // via faceCache, so this map holds pointers, not font files.
+    std::map<FallbackKey, std::shared_ptr<detail::FontFace>> fallbackCache;
     // Decoded colour-glyph images, keyed by face and glyph.
     std::map<std::pair<const detail::FontFace*, uint32_t>, gmpi::shared_ptr<api::IBitmap>> colorGlyphCache;
 
@@ -849,8 +910,8 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
 
     std::shared_ptr<detail::FontFace> loadFace(const char* family, FontWeight weight, FontStyle style, FontStretch stretch)
     {
-        const auto key = cacheKey(family, weight, style, stretch);
-        if (auto it = faceCache.find(key); it != faceCache.end())
+        const auto requestKey = cacheKey(family, weight, style, stretch);
+        if (auto it = requestCache.find(requestKey); it != requestCache.end())
             return it->second;
 
         if (!fontProvider)
@@ -866,18 +927,19 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         if (!fontProvider(request, data) || !data)
             return {};
 
-        auto face = std::make_shared<detail::FontFace>();
-        if (!face->init(std::move(data)))
-            return {};
-
-        faceCache[key] = face;
+        auto face = adoptFace(std::move(data), 0);
+        if (face)
+            requestCache[requestKey] = face;
         return face;
     }
 
     std::shared_ptr<detail::FontFace> findFallback(const std::string& baseFamily, FontWeight weight,
                                                    FontStyle style, FontStretch stretch, uint32_t codepoint)
     {
-        if (auto it = fallbackCache.find(codepoint); it != fallbackCache.end())
+        // Keyed on the style too: a bold run and a regular run must not share
+        // whichever face happened to be requested first.
+        const FallbackKey key{ codepoint, int(weight), int(style), int(stretch), baseFamily };
+        if (auto it = fallbackCache.find(key); it != fallbackCache.end())
             return it->second;
 
         std::shared_ptr<detail::FontFace> result;
@@ -892,22 +954,49 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
 
             FontData data;
             if (fontProvider(request, data) && data)
-            {
-                auto candidate = std::make_shared<detail::FontFace>();
-                if (candidate->init(std::move(data)))
-                {
-                    hb_codepoint_t glyph{};
-                    // Only accept a font that really has the character; a
-                    // provider that ignores mustCoverCodepoint would otherwise
-                    // hand back the primary font and produce .notdef boxes.
-                    if (hb_font_get_nominal_glyph(candidate->unscaledFont.get(), codepoint, &glyph))
-                        result = candidate;
-                }
-            }
+                result = adoptFace(std::move(data), codepoint);
         }
 
-        fallbackCache[codepoint] = result;
+        fallbackCache[key] = result;
         return result;
+    }
+
+    // Share one FontFace per distinct font file. Fallback is resolved per
+    // CODEPOINT, so a page of CJK asks for a font hundreds of times and gets
+    // the same file back every time; without this, each answer kept its own
+    // private copy of a multi-megabyte font. Deduplication is on what the
+    // provider actually resolved to, plus the file's size and face index.
+    std::shared_ptr<detail::FontFace> adoptFace(FontData&& data, uint32_t mustCover)
+    {
+        const std::string key = data.resolvedName + "|" + std::to_string(data.faceIndex)
+                              + "|" + std::to_string(data.bytes.size());
+        if (auto it = faceCache.find(key); it != faceCache.end())
+        {
+            const auto& existing = it->second;
+            if (mustCover == 0)
+                return existing;
+            hb_codepoint_t glyph{};
+            if (existing && hb_font_get_nominal_glyph(existing->unscaledFont.get(), mustCover, &glyph))
+                return existing;
+            return {};
+        }
+
+        auto candidate = std::make_shared<detail::FontFace>();
+        if (!candidate->init(std::move(data)))
+            return {};
+
+        if (mustCover != 0)
+        {
+            // Only accept a font that really has the character; a provider that
+            // ignored mustCoverCodepoint would otherwise hand back the primary
+            // font and quietly produce .notdef boxes.
+            hb_codepoint_t glyph{};
+            if (!hb_font_get_nominal_glyph(candidate->unscaledFont.get(), mustCover, &glyph))
+                return {};
+        }
+
+        faceCache[key] = candidate;
+        return candidate;
     }
 
     // --- colour glyphs (CBDT/sbix) -----------------------------------------

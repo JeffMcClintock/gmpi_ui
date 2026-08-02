@@ -214,6 +214,26 @@ fp16 pixels via `lockPixels`.
    interchange struct: 8-bit sRGB RGBA, straight alpha. A host can substitute
    its own decoder for an asset pipeline or a format we don't cover.
 
+   **`Mask` and `SRGBPixels` render targets** (added Aug 2026, when the Linux
+   build proved `CachedBlur` needs them — drop shadows, glows and neumorphic
+   bumps all render through an 8-bit mask). Rendering stays fp16 in every case;
+   the flags change only what `lockPixels` *presents*: `Alpha_8i` (one coverage
+   byte, tightly packed — no stride padding, because callers index it as
+   width*height) or `BGRA_sRGB_8i`. `endDraw` then rounds the surface through
+   that format, because those targets really are 8-bit buffers on the DirectX
+   and JUCE backends and 8-bit **linear** storage is coarse where it hurts: one
+   step near black is ~20 sRGB levels once displayed, so skipping this makes the
+   CPU backend quietly better than the others rather than the same.
+
+   And a gamma trap worth stating plainly. An `SRGBPixels` bitmap holds LINEAR
+   bytes — that is what the renderer writes and what `lockPixels` returns —
+   but *sampling* one runs those bytes through the sRGB curve, because that is
+   what D2D does with a 32bppPBGRA buffer (the "wrong gamma but consistent with
+   SE 1.5" note in `DirectXGfx.cpp`). Measured, not assumed: 50% blue over red
+   composites to linear 0.5, which is sRGB 188, and D2D's reference image has
+   127 — exactly 0.5 re-decoded through the curve. The CPU sampler reproduces
+   it, deliberately: a SynthEdit panel must not change appearance on Linux.
+
    Two fixes fell out of testing this. Inner stroke joins now use the true
    corner (where the two offset lines meet) rather than pushing both offset
    points: the crossover loop that made closed the notch, so an inner corner
@@ -431,6 +451,39 @@ later without redesign.
   CPU backend implements the same seam, so the existing drawing tests can
   eventually run against it with per-backend reference images (the fixture already
   supports platform-specific references).
+- **Linux runs on this backend as of Aug 2026** — JUCE is gone from that build.
+  `tests/DrawingTestContext_cpu.cpp` wires `cpugfx::Factory` + `CpuTextEngine`,
+  and the only system dependencies are fontconfig (font discovery) and libpng
+  (image codec), so it builds and runs headless with no GPU and no display
+  server. 167 pass, 14 skip, 0 fail.
+
+  The reference images tell the real story. The old JUCE-era `*_linux.png`
+  overrides were **deleted, not regenerated**: with the CPU backend, Linux now
+  matches the *shared Direct2D* references for every non-text test — geometry,
+  gradients, bitmaps, clips, masks, blurs. That is a far stronger check than
+  blessing our own output, since a bug can no longer hide inside a reference we
+  generated ourselves. Only the 29 text tests keep a `_linux.png`, and for a
+  reason that will not go away: a different rasterizer (HarfBuzz + our coverage
+  rasterizer vs DirectWrite) and a different font (fontconfig substitutes
+  Liberation Sans for Arial).
+
+  Three real bugs surfaced only by building on Linux, none of which any Windows
+  test could have caught:
+  * `BitmapRenderTargetFlags::Mask` returned `NoSupport`, so `CachedBlur`
+    dereferenced a null render target — a hard crash, not a failure.
+  * Colour emoji fell back to a *monochrome* glyph. fontconfig ranks family
+    similarity above coverage, so a fallback request for U+1F600 while the base
+    family is Arial lands on DejaVu Sans, which does cover it, in outline form.
+    The provider now asks fontconfig's `emoji` generic family first for
+    emoji-presentation codepoints (what browsers and GTK do), and verifies real
+    coverage before accepting a match.
+  * The macOS branch of the test CMakeLists never linked HarfBuzz, so
+    `cpu_text_tests.cpp` could not have built there at all.
+
+  Skips are honest gaps, not noise: 12 rich-text tests (markdown parsing and
+  mixed-format runs are unimplemented in this backend — the fixture asks the
+  factory and skips rather than crashing) and 2 COLRv1 emoji tests (Noto Color
+  Emoji on this box is CBDT/PNG, so the COLR path has no font to exercise).
 - Cross-backend comparison on Windows: render the same scene via DirectX and CPU
   factories and diff (tolerance-based — FMA contraction and D2D's rasterizer will
   differ by an LSB or two on AA edges).

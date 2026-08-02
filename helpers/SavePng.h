@@ -24,13 +24,17 @@
 #include <ImageIO/ImageIO.h>
 #endif
 
-// JUCE backend (e.g. Linux): only available to targets that can see the JUCE
-// headers (generated JuceHeader.h or directly-linked juce modules), so
-// including this header stays harmless in non-JUCE builds.
+// Elsewhere (e.g. Linux), whichever encoder the including target can see. Kept
+// in the same preference order as helpers/DecodeImage.h: JUCE first so that a
+// system libpng cannot silently change an existing JUCE target's dependencies,
+// libpng otherwise for the dependency-light CPU-backend build.
 #if !defined(_WIN32) && !defined(__APPLE__)
 #if __has_include(<JuceHeader.h>) || __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #define GMPI_UI_SAVEPNG_JUCE 1
 #include "backends/JuceGfx.h"
+#elif __has_include(<png.h>)
+#define GMPI_UI_SAVEPNG_LIBPNG 1
+#include <png.h>
 #endif
 #endif
 
@@ -341,5 +345,136 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     return juce::PNGImageFormat{}.writeImageToStream(image, stream);
 }
 #endif // GMPI_UI_SAVEPNG_JUCE
+
+#if GMPI_UI_SAVEPNG_LIBPNG
+namespace detail {
+
+// Unlike the Windows and macOS encoders, which each know exactly one or two
+// render-target layouts, this one is driven entirely by the bit-encoded pixel
+// format, so it covers every format a backend can report.
+// Output: 8-bit sRGB RGBA with STRAIGHT alpha — the one thing PNG can store.
+inline bool bitmapToSrgbRgba8(BitmapPixels& pixels, SizeU size, std::vector<uint8_t>& out)
+{
+    const int32_t format = pixels.getPixelFormat();
+    const int32_t bpp = pixels.getBytesPerPixel();
+    const int32_t bpr = pixels.getBytesPerRow();
+    const uint8_t* srcData = pixels.getAddress();
+    if (!srcData || bpp <= 0)
+        return false;
+
+    const bool isInt = pixels.isInteger();
+    const int32_t layout = pixels.channelLayout(); // 0=BGRA 1=RGBA 2=ARGB 3=ABGR
+
+    out.assign(size_t(size.width) * size.height * 4, 0);
+
+    for (uint32_t y = 0; y < size.height; ++y)
+    {
+        const uint8_t* src = srcData + size_t(y) * bpr;
+        uint8_t* dst = out.data() + size_t(y) * size.width * 4;
+
+        for (uint32_t x = 0; x < size.width; ++x, src += bpp, dst += 4)
+        {
+            float c[4]{}; // in channel order as stored
+
+            // 8bpp alpha mask: one channel, no colour, no premultiplication.
+            if (format == api::IBitmapPixels::Alpha_8i)
+            {
+                const uint8_t v = src[0];
+                dst[0] = dst[1] = dst[2] = v;
+                dst[3] = 255;
+                continue;
+            }
+
+            if (isInt)
+            {
+                const int32_t bytesPerChannel = bpp / 4;
+                for (int i = 0; i < 4; ++i)
+                    c[i] = (bytesPerChannel == 2)
+                        ? reinterpret_cast<const uint16_t*>(src)[i] / 65535.0f
+                        : src[i] / 255.0f;
+            }
+            else if (bpp == 16) // 32-bit float per channel
+            {
+                for (int i = 0; i < 4; ++i)
+                    c[i] = reinterpret_cast<const float*>(src)[i];
+            }
+            else // 16-bit half float per channel
+            {
+                for (int i = 0; i < 4; ++i)
+                    c[i] = detail::halfToFloat(reinterpret_cast<const uint16_t*>(src)[i]);
+            }
+
+            // Reorder to RGBA.
+            float r, g, b, a;
+            switch (layout)
+            {
+            case 1:  r = c[0]; g = c[1]; b = c[2]; a = c[3]; break; // RGBA
+            case 2:  a = c[0]; r = c[1]; g = c[2]; b = c[3]; break; // ARGB
+            case 3:  a = c[0]; b = c[1]; g = c[2]; r = c[3]; break; // ABGR
+            default: b = c[0]; g = c[1]; r = c[2]; a = c[3]; break; // BGRA
+            }
+
+            // Un-premultiply. Every render-target format here is premultiplied;
+            // PNG has no premultiplied form, so skipping this leaves every
+            // translucent pixel too dark (50%-alpha white saved as 50% grey).
+            if (a > 0.0f)
+            {
+                r = std::clamp(r / a, 0.0f, 1.0f);
+                g = std::clamp(g / a, 0.0f, 1.0f);
+                b = std::clamp(b / a, 0.0f, 1.0f);
+            }
+            else
+            {
+                r = g = b = 0.0f;
+            }
+
+            // Every format here is LINEAR, including the one whose name says
+            // otherwise: BGRA_sRGB_8i holds linear bytes on the DirectX and JUCE
+            // backends alike (the Windows encoder above un-gammas it the same
+            // way), so isSRGB() is not consulted.
+            dst[0] = linearToSRGB_f(r);
+            dst[1] = linearToSRGB_f(g);
+            dst[2] = linearToSRGB_f(b);
+            dst[3] = static_cast<uint8_t>(std::clamp(a * 255.0f + 0.5f, 0.0f, 255.0f));
+        }
+    }
+
+    return true;
+}
+
+} // namespace detail
+
+inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
+{
+    if (const auto dir = path.parent_path(); !dir.empty())
+        std::filesystem::create_directories(dir);
+
+    auto pixels = bitmap.lockPixels(BitmapLockFlags::Read);
+    if (!pixels)
+        return false;
+
+    const SizeU size = bitmap.getSize();
+    if (size.width == 0 || size.height == 0)
+        return false;
+
+    std::vector<uint8_t> rgba;
+    if (!detail::bitmapToSrgbRgba8(pixels, size, rgba))
+        return false;
+
+    png_image image;
+    std::memset(&image, 0, sizeof image);
+    image.version = PNG_IMAGE_VERSION;
+    image.width = size.width;
+    image.height = size.height;
+    image.format = PNG_FORMAT_RGBA;
+
+    // row_stride 0 = tightly packed, which is how bitmapToSrgbRgba8 writes.
+    const int ok = png_image_write_to_file(&image, path.string().c_str(),
+        0 /*convert_to_8bit*/, rgba.data(), 0 /*row_stride*/, nullptr /*colormap*/);
+    png_image_free(&image);
+
+    return ok != 0;
+}
+#endif // GMPI_UI_SAVEPNG_LIBPNG
 
 }} // namespace gmpi::drawing

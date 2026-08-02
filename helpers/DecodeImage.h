@@ -41,20 +41,31 @@
 #include <ImageIO/ImageIO.h>
 #endif
 
-// Elsewhere (e.g. Linux), fall back to JUCE when the including target can see
-// it — the same arrangement helpers/SavePng.h uses for encoding.
+// Elsewhere (e.g. Linux) there is no OS image framework, so pick whichever
+// decoder the including target can actually see:
+//
+//   JUCE     — when the target already builds against JUCE (the SynthEdit JUCE
+//              app). Preferred, so that adding libpng to the system does not
+//              silently change an existing target's link requirements.
+//   libpng   — the dependency-light path used by the pure CPU backend. PNG only,
+//              which covers every image these renderers load: test assets and
+//              the PNG blobs that colour-emoji fonts store in CBDT/sbix.
 #if !defined(_WIN32) && !defined(__APPLE__)
 #if __has_include(<JuceHeader.h>) || __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #define GMPI_UI_DECODE_IMAGE_JUCE 1
 #include "backends/JuceGfx.h"
+#elif __has_include(<png.h>)
+#define GMPI_UI_DECODE_IMAGE_LIBPNG 1
+#include <png.h>
+#include <cstring>
 #endif
 #endif
 
 namespace gmpi { namespace drawing {
 
 // Defined when this translation unit actually has a decodeImageFile() to call.
-// Not every target does — the fallback needs JUCE headers in scope.
-#if defined(_WIN32) || defined(__APPLE__) || GMPI_UI_DECODE_IMAGE_JUCE
+// Not every target does — the fallbacks need JUCE or libpng headers in scope.
+#if defined(_WIN32) || defined(__APPLE__) || GMPI_UI_DECODE_IMAGE_JUCE || GMPI_UI_DECODE_IMAGE_LIBPNG
 #define GMPI_UI_HAVE_IMAGE_DECODER 1
 #endif
 
@@ -316,5 +327,78 @@ inline bool convertJuceImage(juce::Image image, DecodedImage& returnImage)
 
 } // namespace detail
 #endif // GMPI_UI_DECODE_IMAGE_JUCE
+
+#if GMPI_UI_DECODE_IMAGE_LIBPNG
+namespace detail {
+
+// libpng's "simplified API" (1.6+) already lands on exactly the interchange
+// format: PNG_FORMAT_RGBA is 8-bit sRGB with straight alpha, and libpng applies
+// whatever gAMA/sRGB/tRNS chunks the file carries and expands palettes and
+// 16-bit samples on the way. So there is no conversion pass here — unlike the
+// WIC, ImageIO and JUCE paths, which each land somewhere else first.
+inline bool finishPngRead(png_image& image, DecodedImage& returnImage)
+{
+    image.format = PNG_FORMAT_RGBA;
+
+    if (image.width == 0 || image.height == 0)
+    {
+        png_image_free(&image);
+        return false;
+    }
+
+    const uint32_t width = image.width;
+    const uint32_t height = image.height;
+    std::vector<uint8_t> pixels(PNG_IMAGE_SIZE(image));
+
+    // row_stride 0 means "tightly packed", which is what DecodedImage wants.
+    if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr))
+    {
+        png_image_free(&image);
+        return false;
+    }
+    png_image_free(&image); // idempotent; finish_read already released on success
+
+    returnImage.width = width;
+    returnImage.height = height;
+    returnImage.pixels = std::move(pixels);
+    return true;
+}
+
+inline void initPngImage(png_image& image)
+{
+    std::memset(&image, 0, sizeof image);
+    image.version = PNG_IMAGE_VERSION;
+}
+
+} // namespace detail
+
+inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& returnImage)
+{
+    returnImage = {};
+
+    png_image image;
+    detail::initPngImage(image);
+    if (!png_image_begin_read_from_file(&image, path.c_str()))
+        return false;
+
+    return detail::finishPngRead(image, returnImage);
+}
+
+// Decode from memory. Colour-emoji glyphs arrive as PNG blobs from the font,
+// never as files.
+inline bool decodeImageMemory(const uint8_t* data, size_t size, DecodedImage& returnImage)
+{
+    returnImage = {};
+    if (!data || size == 0)
+        return false;
+
+    png_image image;
+    detail::initPngImage(image);
+    if (!png_image_begin_read_from_memory(&image, data, size))
+        return false;
+
+    return detail::finishPngRead(image, returnImage);
+}
+#endif // GMPI_UI_DECODE_IMAGE_LIBPNG
 
 }} // namespace gmpi::drawing

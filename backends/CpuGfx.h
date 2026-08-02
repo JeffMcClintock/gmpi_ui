@@ -79,6 +79,15 @@ inline int aliasedCoord(float edge)
     return int(std::ceil(edge - 0.5f));
 }
 
+// sRGB transfer function, decode direction (IEC 61966-2-1). Negatives are
+// clamped away first: std::pow of a negative base with a fractional exponent
+// is NaN, and one NaN texel poisons a whole bilinear neighbourhood.
+inline float srgbToLinear(float s)
+{
+    s = (std::max)(0.0f, s);
+    return (s <= 0.04045f) ? s / 12.92f : std::pow((s + 0.055f) / 1.055f, 2.4f);
+}
+
 // ---------------------------------------------------------------------------
 // Surface: owned fp16 RGBA pixel storage.
 // Stride in pixels is a multiple of 8 so rows are 64-byte multiples, and the
@@ -105,6 +114,26 @@ struct Surface
     uint16_t* row(int32_t y) { return pixels + size_t(y) * stridePixels * 4; }
 };
 
+// A render target always rasterizes into the fp16 surface above. Two creation
+// flags change only how lockPixels() PRESENTS those pixels to the CPU:
+//
+//   Mask       -> Alpha_8i:     one byte of coverage per pixel
+//   SRGBPixels -> BGRA_sRGB_8i: four bytes, premultiplied — and despite the
+//                               format name, LINEAR, matching what the DirectX
+//                               and JUCE backends put in a 32bppPBGRA buffer
+//                               (see the un-gamma pass in helpers/SavePng.h).
+//
+// Nothing else in the renderer changes, which is the point: one surface type,
+// one set of blend loops, and the conversion confined to lock/unlock.
+inline int32_t lockFormatFromFlags(int32_t flags)
+{
+    if (flags & int32_t(drawing::BitmapRenderTargetFlags::Mask))
+        return drawing::api::IBitmapPixels::Alpha_8i;
+    if (flags & int32_t(drawing::BitmapRenderTargetFlags::SRGBPixels))
+        return drawing::api::IBitmapPixels::BGRA_sRGB_8i;
+    return drawing::api::IBitmapPixels::RGBA_16f;
+}
+
 // ---------------------------------------------------------------------------
 // Bitmap / BitmapPixels
 // ---------------------------------------------------------------------------
@@ -114,7 +143,11 @@ public:
     Surface surface;
     drawing::api::IFactory* factory{};
 
-    Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h) : factory(pfactory)
+    // What lockPixels() hands out. Rendering is fp16 regardless.
+    int32_t lockFormat{ drawing::api::IBitmapPixels::RGBA_16f };
+
+    Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h, int32_t flags = 0)
+        : factory(pfactory), lockFormat(lockFormatFromFlags(flags))
     {
         surface.init(w, h);
     }
@@ -146,30 +179,126 @@ public:
 class BitmapPixels final : public drawing::api::IBitmapPixels
 {
     Bitmap* bitmap; // keeps the surface alive while locked
+    int32_t lockFlags{};
+
+    // Only used by the 8-bit lock formats. Tightly packed (no stride padding):
+    // callers index it as width*height bytes, and the fp16 surface's padding is
+    // an implementation detail they should not see.
+    std::vector<uint8_t> staging;
+
+    int32_t bytesPerPixel() const { return bitmap->lockFormat & 0xFF; }
+    bool    converts()      const { return bitmap->lockFormat != drawing::api::IBitmapPixels::RGBA_16f; }
+
+    // fp16 premultiplied linear RGBA -> the 8-bit lock format.
+    void surfaceToStaging()
+    {
+        const auto& s = bitmap->surface;
+        const int32_t bpp = bytesPerPixel();
+        const bool mask = bitmap->lockFormat == drawing::api::IBitmapPixels::Alpha_8i;
+
+        for (int32_t y = 0; y < s.height; ++y)
+        {
+            const uint16_t* src = bitmap->surface.pixels + size_t(y) * s.stridePixels * 4;
+            uint8_t* dst = staging.data() + size_t(y) * s.width * bpp;
+
+            for (int32_t x = 0; x < s.width; ++x, src += 4, dst += bpp)
+            {
+                const auto toByte = [](float v) {
+                    return uint8_t(std::clamp(v * 255.0f + 0.5f, 0.0f, 255.0f));
+                };
+
+                if (mask)
+                {
+                    dst[0] = toByte(drawing::detail::halfToFloat(src[3]));
+                }
+                else
+                {
+                    dst[0] = toByte(drawing::detail::halfToFloat(src[2])); // B
+                    dst[1] = toByte(drawing::detail::halfToFloat(src[1])); // G
+                    dst[2] = toByte(drawing::detail::halfToFloat(src[0])); // R
+                    dst[3] = toByte(drawing::detail::halfToFloat(src[3])); // A
+                }
+            }
+        }
+    }
+
+    // The reverse, for locks that included Write.
+    void stagingToSurface()
+    {
+        const auto& s = bitmap->surface;
+        const int32_t bpp = bytesPerPixel();
+        const bool mask = bitmap->lockFormat == drawing::api::IBitmapPixels::Alpha_8i;
+
+        for (int32_t y = 0; y < s.height; ++y)
+        {
+            const uint8_t* src = staging.data() + size_t(y) * s.width * bpp;
+            uint16_t* dst = bitmap->surface.pixels + size_t(y) * s.stridePixels * 4;
+
+            for (int32_t x = 0; x < s.width; ++x, src += bpp, dst += 4)
+            {
+                if (mask)
+                {
+                    // A coverage mask has no colour of its own, so it comes back
+                    // as premultiplied white: coverage c reads as (c,c,c,c),
+                    // which is what "c of a white shape covers this pixel" means
+                    // and round-trips the white brush the mask was drawn with.
+                    const uint16_t c = drawing::detail::floatToHalf(src[0] / 255.0f);
+                    dst[0] = dst[1] = dst[2] = dst[3] = c;
+                }
+                else
+                {
+                    dst[0] = drawing::detail::floatToHalf(src[2] / 255.0f); // R
+                    dst[1] = drawing::detail::floatToHalf(src[1] / 255.0f); // G
+                    dst[2] = drawing::detail::floatToHalf(src[0] / 255.0f); // B
+                    dst[3] = drawing::detail::floatToHalf(src[3] / 255.0f); // A
+                }
+            }
+        }
+    }
 
 public:
-    BitmapPixels(Bitmap* pbitmap) : bitmap(pbitmap)
+    BitmapPixels(Bitmap* pbitmap, int32_t flags) : bitmap(pbitmap), lockFlags(flags)
     {
         bitmap->addRef();
+
+        if (converts())
+        {
+            const auto& s = bitmap->surface;
+            staging.assign(size_t(s.width) * s.height * bytesPerPixel(), 0);
+
+            // Write-only locks overwrite everything, so skip the read pass. A
+            // lock with no flags at all is treated as a read: that is what the
+            // platform backends do, and reading garbage is the worse failure.
+            if (0 == (lockFlags & int32_t(drawing::BitmapLockFlags::Write)) ||
+                0 != (lockFlags & int32_t(drawing::BitmapLockFlags::Read)))
+            {
+                surfaceToStaging();
+            }
+        }
     }
     ~BitmapPixels()
     {
+        if (converts() && 0 != (lockFlags & int32_t(drawing::BitmapLockFlags::Write)))
+            stagingToSurface();
+
         bitmap->release();
     }
 
     ReturnCode getAddress(uint8_t** returnAddress) override
     {
-        *returnAddress = reinterpret_cast<uint8_t*>(bitmap->surface.pixels);
+        *returnAddress = converts() ? staging.data()
+                                    : reinterpret_cast<uint8_t*>(bitmap->surface.pixels);
         return ReturnCode::Ok;
     }
     ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) override
     {
-        *returnBytesPerRow = bitmap->surface.stridePixels * 8;
+        *returnBytesPerRow = converts() ? bitmap->surface.width * bytesPerPixel()
+                                        : bitmap->surface.stridePixels * 8;
         return ReturnCode::Ok;
     }
     ReturnCode getPixelFormat(int32_t* returnPixelFormat) override
     {
-        *returnPixelFormat = drawing::api::IBitmapPixels::RGBA_16f;
+        *returnPixelFormat = bitmap->lockFormat;
         return ReturnCode::Ok;
     }
 
@@ -177,9 +306,9 @@ public:
     GMPI_REFCOUNT;
 };
 
-inline ReturnCode Bitmap::lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t /*flags*/)
+inline ReturnCode Bitmap::lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t flags)
 {
-    *returnPixels = new BitmapPixels(this);
+    *returnPixels = new BitmapPixels(this, flags);
     return ReturnCode::Ok;
 }
 
@@ -350,6 +479,19 @@ private:
         const uint16_t* p = bitmap->surface.pixels + (size_t(y) * s.stridePixels + size_t(x)) * 4;
         for (int c = 0; c < 4; ++c)
             out[c] = drawing::detail::halfToFloat(p[c]);
+
+        // An SRGBPixels bitmap holds LINEAR bytes — that is what the renderer
+        // writes into it and what lockPixels hands back — but sampling one runs
+        // those bytes through the sRGB curve, because that is what Direct2D and
+        // CoreGraphics do with a 32bppPBGRA buffer. The round trip is a gamma
+        // error, kept deliberately: SynthEdit panels have been drawn against it
+        // since 1.5, and a plugin must not change appearance on Linux. Alpha is
+        // never gamma-encoded, so it passes through.
+        if (bitmap->lockFormat == drawing::api::IBitmapPixels::BGRA_sRGB_8i)
+        {
+            for (int c = 0; c < 3; ++c)
+                out[c] = srgbToLinear(out[c]);
+        }
     }
 
     void sample(float sx, float sy, float* out) const
@@ -1934,9 +2076,9 @@ private:
     std::vector<Figure> strokeFigures; // widened stroke outline, reused per call
 
 public:
-    RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size) : factory(pfactory)
+    RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size, int32_t flags = 0) : factory(pfactory)
     {
-        bitmap = new Bitmap(factory, int32_t(size.width), int32_t(size.height));
+        bitmap = new Bitmap(factory, int32_t(size.width), int32_t(size.height), flags);
 
         // Clip stack is in device space; replace the base's huge default with the surface bounds.
         clipRectStack.clear();
@@ -2011,18 +2153,12 @@ public:
     {
         *returnBitmapRenderTarget = {};
 
-        // Only the default fp16 target for now, same as the factory entry point.
-        constexpr int32_t unsupported =
-            int32_t(drawing::BitmapRenderTargetFlags::Mask) | int32_t(drawing::BitmapRenderTargetFlags::SRGBPixels);
-        if (flags & unsupported)
-            return ReturnCode::NoSupport;
-
         const drawing::SizeU size{
             uint32_t((std::max)(0.0f, std::ceil(desiredSize.width))),
             uint32_t((std::max)(0.0f, std::ceil(desiredSize.height))) };
         try
         {
-            *returnBitmapRenderTarget = new RenderTarget(factory, size);
+            *returnBitmapRenderTarget = new RenderTarget(factory, size, flags);
         }
         catch (...)
         {
@@ -2125,7 +2261,22 @@ public:
     }
 
     ReturnCode beginDraw() override { return ReturnCode::Ok; }
-    ReturnCode endDraw() override { return ReturnCode::Ok; }
+    ReturnCode endDraw() override
+    {
+        // A Mask or SRGBPixels target really is an 8-bit buffer on the DirectX
+        // and JUCE backends, and 8-bit LINEAR storage is coarse where it hurts:
+        // one step near black is ~20 sRGB levels once displayed. Rendering here
+        // stays fp16 — but the stored result is rounded to what the flagged
+        // format can hold, so compositing this bitmap matches the other
+        // backends instead of being quietly better than them.
+        if (bitmap && bitmap->lockFormat != drawing::api::IBitmapPixels::RGBA_16f)
+        {
+            drawing::api::IBitmapPixels* raw{};
+            if (bitmap->lockPixels(&raw, int32_t(drawing::BitmapLockFlags::ReadWrite)) == ReturnCode::Ok && raw)
+                raw->release(); // the round trip through the lock format IS the quantization
+        }
+        return ReturnCode::Ok;
+    }
 
     // ---- drawing -----------------------------------------------------------
     ReturnCode clear(const drawing::Color* clearColor) override
@@ -2507,12 +2658,12 @@ public:
                                             fontHeight, fontFlags, returnTextFormat);
     }
 
-    ReturnCode createImage(int32_t width, int32_t height, int32_t /*flags*/, drawing::api::IBitmap** returnBitmap) override
+    ReturnCode createImage(int32_t width, int32_t height, int32_t flags, drawing::api::IBitmap** returnBitmap) override
     {
         *returnBitmap = {};
         try
         {
-            *returnBitmap = new Bitmap(this, width, height);
+            *returnBitmap = new Bitmap(this, width, height, flags);
         }
         catch (...)
         {
@@ -2577,6 +2728,7 @@ public:
 
     ReturnCode getPlatformPixelFormat(int32_t* returnPixelFormat) override
     {
+        // The factory's own answer: what an unflagged target locks as.
         *returnPixelFormat = drawing::api::IBitmapPixels::RGBA_16f;
         return ReturnCode::Ok;
     }
@@ -2591,15 +2743,9 @@ public:
     {
         *returnBitmapRenderTarget = {};
 
-        // Only the default fp16 target for now (Mask / SRGBPixels: milestone 6).
-        constexpr int32_t unsupported =
-            int32_t(drawing::BitmapRenderTargetFlags::Mask) | int32_t(drawing::BitmapRenderTargetFlags::SRGBPixels);
-        if (flags & unsupported)
-            return ReturnCode::NoSupport;
-
         try
         {
-            *returnBitmapRenderTarget = new RenderTarget(this, size); // refcount born at 1; caller owns it
+            *returnBitmapRenderTarget = new RenderTarget(this, size, flags); // refcount born at 1; caller owns it
         }
         catch (...)
         {

@@ -420,18 +420,34 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 #endif // __APPLE__
 
 #if GMPI_UI_FONT_PROVIDER_FONTCONFIG
-inline bool findFont(const FontRequest& request, FontData& returnFont)
-{
-    returnFont = {};
+namespace detail {
 
-    if (!FcInit())
-        return false;
+// Codepoints that default to EMOJI presentation, i.e. must come from a colour
+// font to look right. Deliberately a coarse range test rather than the full
+// UTS #51 property: the blocks below are emoji-presentation almost throughout,
+// while the older BMP symbols (U+2600 etc.) default to TEXT presentation and so
+// belong on the ordinary text font.
+//
+// Not handled: U+FE0F, which flips an otherwise-text codepoint to emoji
+// presentation. Fallback here is resolved per codepoint and never sees the
+// variation selector that follows.
+inline bool hasEmojiPresentation(uint32_t c)
+{
+    return (c >= 0x1F300 && c <= 0x1FAFF)   // pictographs, emoticons, transport, extended-A
+        || (c >= 0x1F1E6 && c <= 0x1F1FF);  // regional indicators (flags)
+}
+
+// One FcFontMatch. Returns the matched file, and whether it really covers the
+// codepoint — FcFontMatch always returns something, coverage or not.
+inline bool matchFontFile(const FontRequest& request, const std::string& family,
+                          std::string& returnPath, int& returnFaceIndex, bool& returnCovers)
+{
+    returnCovers = false;
 
     FcPattern* pattern = FcPatternCreate();
     if (!pattern)
         return false;
 
-    const std::string family = (request.familyName == "system-ui") ? "sans-serif" : request.familyName;
     FcPatternAddString(pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(family.c_str()));
 
     // fontconfig's weight scale is its own; map the common stops.
@@ -468,12 +484,68 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
         return false;
 
     FcChar8* file{};
-    int faceIndex{};
     const bool gotFile = FcPatternGetString(matched, FC_FILE, 0, &file) == FcResultMatch && file;
-    FcPatternGetInteger(matched, FC_INDEX, 0, &faceIndex);
+    returnFaceIndex = 0;
+    FcPatternGetInteger(matched, FC_INDEX, 0, &returnFaceIndex);
+    returnPath = gotFile ? reinterpret_cast<const char*>(file) : std::string{};
 
-    std::string path = gotFile ? reinterpret_cast<const char*>(file) : std::string{};
+    if (request.mustCoverCodepoint != 0)
+    {
+        FcCharSet* got{};
+        if (FcPatternGetCharSet(matched, FC_CHARSET, 0, &got) == FcResultMatch && got)
+            returnCovers = FcCharSetHasChar(got, request.mustCoverCodepoint) != FcFalse;
+    }
+
     FcPatternDestroy(matched);
+    return !returnPath.empty();
+}
+
+} // namespace detail
+
+inline bool findFont(const FontRequest& request, FontData& returnFont)
+{
+    returnFont = {};
+
+    if (!FcInit())
+        return false;
+
+    const std::string requested = (request.familyName == "system-ui") ? "sans-serif" : request.familyName;
+
+    // fontconfig ranks family similarity ABOVE coverage, so a fallback request
+    // for U+1F600 while the base family is Arial lands on DejaVu Sans, which
+    // does cover it — as a monochrome outline. Ask fontconfig's `emoji` generic
+    // family first for emoji-presentation codepoints, the same thing browsers
+    // and GTK do, so a colour font wins.
+    std::vector<std::string> families;
+    if (request.mustCoverCodepoint != 0 && detail::hasEmojiPresentation(request.mustCoverCodepoint))
+        families.push_back("emoji");
+    families.push_back(requested);
+
+    std::string path;
+    int faceIndex{};
+    for (size_t i = 0; i < families.size(); ++i)
+    {
+        std::string candidate;
+        int candidateIndex{};
+        bool covers{};
+        if (!detail::matchFontFile(request, families[i], candidate, candidateIndex, covers))
+            continue;
+
+        // Keep the first answer as a floor, then hold out for real coverage:
+        // if no emoji font is installed, the monochrome glyph beats nothing.
+        if (path.empty())
+        {
+            path = candidate;
+            faceIndex = candidateIndex;
+        }
+        if (covers || request.mustCoverCodepoint == 0)
+        {
+            path = candidate;
+            faceIndex = candidateIndex;
+            break;
+        }
+    }
+
     if (path.empty())
         return false;
 

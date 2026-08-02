@@ -139,19 +139,10 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
                 r = detail::linearToSRGB(static_cast<uint8_t>(std::clamp(src[2] / fa + 0.5f, 0.0f, 255.0f)));
             }
 
-            // Store sRGB BGRA, re-premultiplied.
-            if (a == 255)
-            {
-                dst[0] = b; dst[1] = g; dst[2] = r; dst[3] = 255;
-            }
-            else
-            {
-                float fa = a / 255.0f;
-                dst[0] = static_cast<uint8_t>(b * fa + 0.5f);
-                dst[1] = static_cast<uint8_t>(g * fa + 0.5f);
-                dst[2] = static_cast<uint8_t>(r * fa + 0.5f);
-                dst[3] = a;
-            }
+            // Store sRGB BGRA with STRAIGHT alpha: PNG has no premultiplied
+            // form, so premultiplying here saved every translucent pixel too
+            // dark (50%-alpha white came back as 50% grey).
+            dst[0] = b; dst[1] = g; dst[2] = r; dst[3] = a;
             src += srcBpp;
             dst += 4;
         }
@@ -184,7 +175,7 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
 
     frame->Initialize(nullptr);
     frame->SetSize(size.width, size.height);
-    WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppPBGRA;
+    WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA; // straight alpha, matching the buffer above
     frame->SetPixelFormat(&fmt);
     frame->WritePixels(size.height, outBpr, static_cast<UINT>(srgbData.size()), srgbData.data());
     frame->Commit();
@@ -208,21 +199,40 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
     SizeU    size = bitmap.getSize();
     int32_t  bpp  = pixels.getBytesPerPixel(); // from the format; rows may be padded
 
-    // If float-linear (128bpp), convert to 8-bit sRGB RGBA for PNG output.
+    // Convert any high-precision linear format to 8-bit sRGB RGBA for PNG.
+    // 16 bytes/pixel is 128bpp float (the CoreGraphics render target); 8 is
+    // 64bpp half-float, which is what the software backend produces on every
+    // platform — without this branch its pixels were written out as raw
+    // half-float bit patterns reinterpreted as 8-bit RGBA.
     std::vector<uint8_t> srgbBuf;
     int32_t  srgbBpr = bpr;
     uint8_t* pngData = data;
 
-    if (bpp == 16)
+    if (bpp == 16 || bpp == 8)
     {
+        const bool isHalf = (bpp == 8);
         srgbBpr = static_cast<int32_t>(size.width) * 4;
         srgbBuf.resize(srgbBpr * size.height);
         for (uint32_t y = 0; y < size.height; ++y)
         {
             for (uint32_t x = 0; x < size.width; ++x)
             {
-                const float* f = reinterpret_cast<const float*>(data + y * bpr + x * 16);
-                float fr = f[0], fg = f[1], fb = f[2], fa = f[3];
+                const uint8_t* srcPixel = data + y * bpr + x * bpp;
+                float fr, fg, fb, fa;
+                if (isHalf)
+                {
+                    const uint16_t* h = reinterpret_cast<const uint16_t*>(srcPixel);
+                    fr = detail::halfToFloat(h[0]);
+                    fg = detail::halfToFloat(h[1]);
+                    fb = detail::halfToFloat(h[2]);
+                    fa = detail::halfToFloat(h[3]);
+                }
+                else
+                {
+                    const float* f = reinterpret_cast<const float*>(srcPixel);
+                    fr = f[0]; fg = f[1]; fb = f[2]; fa = f[3];
+                }
+
                 uint8_t a = static_cast<uint8_t>(std::clamp(fa * 255.0f + 0.5f, 0.0f, 255.0f));
                 if (fa > 0.0f)
                 {
@@ -233,8 +243,11 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
                 else { fr = fg = fb = 0.0f; }
 
                 uint8_t* dst = srgbBuf.data() + y * srgbBpr + x * 4;
-                // Re-premultiply in sRGB for PNG.
-                float aNorm = a / 255.0f;
+                // Premultiplied, to match the kCGImageAlphaPremultipliedLast
+                // context below: CoreGraphics bitmap contexts have no straight
+                // (kCGImageAlphaLast) 8-bit RGBA form, so ImageIO does the
+                // conversion to PNG's straight alpha when encoding.
+                const float aNorm = a / 255.0f;
                 dst[0] = static_cast<uint8_t>(detail::linearToSRGB_f(fr) * aNorm + 0.5f);
                 dst[1] = static_cast<uint8_t>(detail::linearToSRGB_f(fg) * aNorm + 0.5f);
                 dst[2] = static_cast<uint8_t>(detail::linearToSRGB_f(fb) * aNorm + 0.5f);

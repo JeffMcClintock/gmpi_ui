@@ -18,10 +18,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <functional>
 #include <vector>
 
 #include "../Drawing.h"
-#include "../helpers/BitmapMask.h" // detail::floatToHalf / halfToFloat
+#include "../helpers/BitmapMask.h"    // detail::floatToHalf / halfToFloat
+#include "../helpers/DecodedImage.h"  // decoder interchange format (no platform code)
 #include "Gfx_base.h"
 
 namespace gmpi
@@ -248,6 +251,208 @@ public:
     {
         *returnInterface = {};
         GMPI_QUERYINTERFACE(drawing::api::ISolidColorBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+};
+
+// ---------------------------------------------------------------------------
+// Bitmap sampling. One sampler serves both drawBitmap and bitmap brushes; they
+// differ only in how local space maps to source pixels, and in the edge rule.
+// Sampling is done on premultiplied data, which is what makes bilinear
+// filtering correct across varying alpha.
+// ---------------------------------------------------------------------------
+class BitmapSource final : public CpuBrush
+{
+    Bitmap* bitmap{};                 // owned reference
+    drawing::Matrix3x2 localToSource;  // local space -> source pixel space
+    float opacity{ 1.0f };
+    bool wrap{ false };                // true = tile, false = clamp to sourceRect
+    bool bilinear{ false };
+    float clampLeft{}, clampTop{}, clampRight{}, clampBottom{}; // in source pixels
+
+public:
+    BitmapSource(Bitmap* pbitmap, const drawing::Matrix3x2& plocalToSource, float popacity,
+                 bool pwrap, bool pbilinear, drawing::Rect sourceBounds)
+        : bitmap(pbitmap), localToSource(plocalToSource), opacity(popacity)
+        , wrap(pwrap), bilinear(pbilinear)
+        // Normalise the clamp bounds. An inverted source rectangle is legal
+        // input (and mirrors the image, which the mapping matrix handles on its
+        // own), but feeding lo > hi to std::clamp is undefined behaviour — and
+        // fatal in an MSVC debug build.
+        , clampLeft((std::min)(sourceBounds.left, sourceBounds.right))
+        , clampTop((std::min)(sourceBounds.top, sourceBounds.bottom))
+        , clampRight((std::max)(sourceBounds.left, sourceBounds.right))
+        , clampBottom((std::max)(sourceBounds.top, sourceBounds.bottom))
+    {
+        bitmap->addRef();
+    }
+
+    ~BitmapSource() override
+    {
+        bitmap->release();
+    }
+
+    // Owns a reference, so copying would double-release.
+    BitmapSource(const BitmapSource&) = delete;
+    BitmapSource& operator=(const BitmapSource&) = delete;
+
+    bool isPaintable() const override
+    {
+        return bitmap && bitmap->surface.width > 0 && bitmap->surface.height > 0
+            && std::isfinite(opacity) && drawing::isFinite(localToSource);
+    }
+
+private:
+    // One texel, premultiplied linear, with the edge rule applied.
+    void texel(int x, int y, float* out) const
+    {
+        const auto& s = bitmap->surface;
+        if (wrap)
+        {
+            x %= s.width;  if (x < 0) x += s.width;
+            y %= s.height; if (y < 0) y += s.height;
+        }
+        else
+        {
+            x = std::clamp(x, 0, s.width - 1);
+            y = std::clamp(y, 0, s.height - 1);
+        }
+        const uint16_t* p = bitmap->surface.pixels + (size_t(y) * s.stridePixels + size_t(x)) * 4;
+        for (int c = 0; c < 4; ++c)
+            out[c] = drawing::detail::halfToFloat(p[c]);
+    }
+
+    void sample(float sx, float sy, float* out) const
+    {
+        if (!std::isfinite(sx) || !std::isfinite(sy))
+        {
+            out[0] = out[1] = out[2] = out[3] = 0.0f;
+            return;
+        }
+
+        if (wrap)
+        {
+            // Reduce into the bitmap in FLOAT before any int conversion: a
+            // brush transform with a tiny scale sends source coordinates far
+            // outside int range, and float-to-int is undefined there.
+            const float w = float(bitmap->surface.width);
+            const float h = float(bitmap->surface.height);
+            sx -= std::floor(sx / w) * w;
+            sy -= std::floor(sy / h) * h;
+            sx = std::clamp(sx, 0.0f, w); // guard the float division's rounding
+            sy = std::clamp(sy, 0.0f, h);
+        }
+        else
+        {
+            // Stay inside the requested source rectangle, so a cropped draw
+            // never bleeds in neighbouring texels.
+            sx = std::clamp(sx, clampLeft, clampRight);
+            sy = std::clamp(sy, clampTop, clampBottom);
+        }
+
+        if (!bilinear)
+        {
+            texel(int(std::floor(sx)), int(std::floor(sy)), out);
+            return;
+        }
+
+        // Texel centres sit at (i + 0.5), so shift before splitting.
+        const float fx = sx - 0.5f;
+        const float fy = sy - 0.5f;
+        const float x0f = std::floor(fx);
+        const float y0f = std::floor(fy);
+        const int x0 = int(x0f);
+        const int y0 = int(y0f);
+        const float tx = fx - x0f;
+        const float ty = fy - y0f;
+
+        float c00[4], c10[4], c01[4], c11[4];
+        texel(x0, y0, c00);
+        texel(x0 + 1, y0, c10);
+        texel(x0, y0 + 1, c01);
+        texel(x0 + 1, y0 + 1, c11);
+
+        for (int c = 0; c < 4; ++c)
+        {
+            const float top = c00[c] + (c10[c] - c00[c]) * tx;
+            const float bottom = c01[c] + (c11[c] - c01[c]) * tx;
+            out[c] = top + (bottom - top) * ty;
+        }
+    }
+
+    // A non-finite texel (only reachable if a caller wrote one through
+    // lockPixels) would otherwise reach the blend and poison even zero-coverage
+    // pixels, permanently — NaN * 0 is still NaN. Keep the sampler total.
+    static void sanitize(float* c)
+    {
+        for (int i = 0; i < 4; ++i)
+            if (!std::isfinite(c[i]))
+                c[i] = 0.0f;
+    }
+
+public:
+    void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const override
+    {
+        const auto m = deviceToLocal * localToSource;
+
+        // The mapping is affine, so step through source space incrementally.
+        const auto p0 = drawing::transformPoint(m, { float(x0) + 0.5f, float(y) + 0.5f });
+        const auto p1 = drawing::transformPoint(m, { float(x0) + 1.5f, float(y) + 0.5f });
+        const float stepX = p1.x - p0.x;
+        const float stepY = p1.y - p0.y;
+
+        float sx = p0.x, sy = p0.y;
+        for (int i = 0; i < count; ++i, dst += 4, sx += stepX, sy += stepY)
+        {
+            sample(sx, sy, dst);
+            sanitize(dst);
+            if (opacity != 1.0f)
+                for (int c = 0; c < 4; ++c)
+                    dst[c] *= opacity;
+        }
+    }
+};
+
+// A bitmap brush: tiles the bitmap over local space (WRAP + nearest, matching
+// what the Direct2D backend hard-codes for macOS parity).
+class BitmapBrush final : public drawing::api::IBitmapBrush, public CpuBrush
+{
+    drawing::api::IFactory* factory{};
+    BitmapSource source; // immutable: IBitmapBrush has no setters
+
+    static drawing::Matrix3x2 brushToSource(const drawing::BrushProperties* properties)
+    {
+        return properties ? drawing::invert(properties->transform) : drawing::Matrix3x2{};
+    }
+
+public:
+    BitmapBrush(drawing::api::IFactory* pfactory, Bitmap* pbitmap, const drawing::BrushProperties* properties)
+        : factory(pfactory)
+        , source(pbitmap, brushToSource(properties), properties ? properties->opacity : 1.0f,
+                 /*wrap*/ true, /*bilinear*/ false,
+                 drawing::Rect{ 0.0f, 0.0f, float(pbitmap->surface.width), float(pbitmap->surface.height) })
+    {
+    }
+
+    bool isPaintable() const override { return source.isPaintable(); }
+
+    void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const override
+    {
+        source.evalSpan(deviceToLocal, x0, y, count, dst);
+    }
+
+    ReturnCode getFactory(drawing::api::IFactory** returnFactory) override
+    {
+        *returnFactory = factory;
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(drawing::api::IBitmapBrush);
         GMPI_QUERYINTERFACE(drawing::api::IResource);
         return ReturnCode::NoSupport;
     }
@@ -669,8 +874,10 @@ inline void appendArc(std::vector<drawing::Point>& contour, drawing::Point c, fl
 
 // Append the join at vertex v (between incoming unit dir u0 and outgoing u1)
 // to the contour being traced along the +normal side.
+// innerLimit caps how far the inner corner may sit from the vertex — beyond
+// the adjoining segments it would spike, so the crossover fallback is used.
 inline void appendJoin(std::vector<drawing::Point>& contour, drawing::Point v, drawing::Point u0, drawing::Point u1,
-                       float hw, drawing::LineJoin join, float miterLimit)
+                       float hw, drawing::LineJoin join, float miterLimit, float innerLimit)
 {
     const drawing::Point n0{ -u0.y * hw, u0.x * hw };
     const drawing::Point n1{ -u1.y * hw, u1.x * hw };
@@ -689,8 +896,27 @@ inline void appendJoin(std::vector<drawing::Point>& contour, drawing::Point v, d
     const bool outer = (cross < 0.0f);
     if (!outer)
     {
-        // Inner side: both offset points. The little crossover loop this makes
-        // is interior to the stroke, and nonzero filling absorbs it.
+        // Inner side: the true corner is where the two offset lines meet, and
+        // using it leaves the correct notch. Falling back to both offset points
+        // instead closes a crossover loop over that notch, which nonzero fill
+        // then paints — an inner corner comes out fully covered where it should
+        // be partial (measured 1.0 against Direct2D's 0.75 on a stroked rect).
+        const drawing::Point bis{ n0.x + n1.x, n0.y + n1.y };
+        const float bisLen = length(bis);
+        if (bisLen > 1e-6f)
+        {
+            const float cosHalf = (bis.x * n0.x + bis.y * n0.y) / (bisLen * hw);
+            if (cosHalf > 1e-4f)
+            {
+                const float dist = hw / cosHalf;
+                if (dist <= innerLimit) // otherwise it would spike past the segments
+                {
+                    const float k = dist / bisLen;
+                    contour.push_back({ v.x + bis.x * k, v.y + bis.y * k });
+                    return;
+                }
+            }
+        }
         contour.push_back(a);
         contour.push_back(b);
         return;
@@ -790,7 +1016,11 @@ inline void appendOpenSide(std::vector<drawing::Point>& contour, const std::vect
     const size_t n = pts.size();
     contour.push_back({ pts[0].x - dirs[0].y * hw, pts[0].y + dirs[0].x * hw });
     for (size_t i = 1; i + 1 < n; ++i)
-        appendJoin(contour, pts[i], dirs[i - 1], dirs[i], hw, join, miterLimit);
+    {
+        const float innerLimit = (std::min)(length(sub(pts[i], pts[i - 1])),
+                                            length(sub(pts[i + 1], pts[i])));
+        appendJoin(contour, pts[i], dirs[i - 1], dirs[i], hw, join, miterLimit, innerLimit);
+    }
     const auto& uLast = dirs[n - 2];
     contour.push_back({ pts[n - 1].x - uLast.y * hw, pts[n - 1].y + uLast.x * hw });
 }
@@ -885,11 +1115,17 @@ inline void widenFigure(const Figure& fig, float halfWidth, drawing::CapStyle ca
 
     // Closed figure: an annulus — outer ring plus an oppositely wound inner
     // ring that punches the hole.
+    const auto innerLimitAt = [&](const std::vector<drawing::Point>& p, size_t i) {
+        const size_t count = p.size();
+        return (std::min)(length(sub(p[i], p[(i + count - 1) % count])),
+                          length(sub(p[(i + 1) % count], p[i])));
+    };
+
     std::vector<drawing::Point> ring0, ring1;
     for (size_t i = 0; i < n; ++i)
-        appendJoin(ring0, pts[i], dirs[(i + segCount - 1) % segCount], dirs[i % segCount], halfWidth, join, miterLimit);
+        appendJoin(ring0, pts[i], dirs[(i + segCount - 1) % segCount], dirs[i % segCount], halfWidth, join, miterLimit, innerLimitAt(pts, i));
     for (size_t i = 0; i < n; ++i)
-        appendJoin(ring1, reversedPts[i], reversedDirs[(i + segCount - 1) % segCount], reversedDirs[i % segCount], halfWidth, join, miterLimit);
+        appendJoin(ring1, reversedPts[i], reversedDirs[(i + segCount - 1) % segCount], reversedDirs[i % segCount], halfWidth, join, miterLimit, innerLimitAt(reversedPts, i));
 
     // When the pen is wider than the figure, the inward offset passes through
     // itself: the inner ring comes out inverted and punches a hole where the
@@ -1478,6 +1714,77 @@ public:
         return ReturnCode::Ok;
     }
 
+    ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+    {
+        *returnBitmapBrush = {};
+        auto* bm = dynamic_cast<Bitmap*>(bitmap);
+        if (!bm)
+            return ReturnCode::Fail;
+        *returnBitmapBrush = new BitmapBrush(factory, bm, brushProperties);
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
+    {
+        auto* bm = dynamic_cast<Bitmap*>(bitmap);
+        if (!bm || !destinationRectangle)
+            return ReturnCode::NoSupport;
+
+        const drawing::Rect fullSource{ 0.0f, 0.0f, float(bm->surface.width), float(bm->surface.height) };
+        const drawing::Rect src = sourceRectangle ? *sourceRectangle : fullSource;
+        const auto& dst = *destinationRectangle;
+
+        const float dstW = dst.right - dst.left;
+        const float dstH = dst.bottom - dst.top;
+        if (!(dstW != 0.0f) || !(dstH != 0.0f))
+            return ReturnCode::Ok;
+
+        // Map the destination rectangle onto the source rectangle. Everything
+        // else — transform, clipping, antialiasing — comes from the ordinary
+        // fill path, so drawBitmap needs no pixel-touching code of its own.
+        const float scaleX = (src.right - src.left) / dstW;
+        const float scaleY = (src.bottom - src.top) / dstH;
+        const drawing::Matrix3x2 localToSource{
+            scaleX, 0.0f,
+            0.0f, scaleY,
+            src.left - dst.left * scaleX,
+            src.top - dst.top * scaleY };
+
+        BitmapSource source(bm, localToSource, opacity, /*wrap*/ false,
+                            interpolationMode == drawing::BitmapInterpolationMode::Linear,
+                            src);
+
+        auto geometry = createRectangleGeometry(destinationRectangle, true);
+        auto* path = dynamic_cast<PathGeometry*>(drawing::AccessPtr::get(geometry));
+        if (!path)
+            return ReturnCode::Fail;
+        return fillFigures(path->figures, drawing::FillMode::Winding, source);
+    }
+
+    ReturnCode createCompatibleRenderTarget(drawing::Size desiredSize, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget) override
+    {
+        *returnBitmapRenderTarget = {};
+
+        // Only the default fp16 target for now, same as the factory entry point.
+        constexpr int32_t unsupported =
+            int32_t(drawing::BitmapRenderTargetFlags::Mask) | int32_t(drawing::BitmapRenderTargetFlags::SRGBPixels);
+        if (flags & unsupported)
+            return ReturnCode::NoSupport;
+
+        const drawing::SizeU size{
+            uint32_t((std::max)(0.0f, std::ceil(desiredSize.width))),
+            uint32_t((std::max)(0.0f, std::ceil(desiredSize.height))) };
+        try
+        {
+            *returnBitmapRenderTarget = new RenderTarget(factory, size);
+        }
+        catch (...)
+        {
+            return ReturnCode::Fail;
+        }
+        return ReturnCode::Ok;
+    }
+
     ReturnCode createGradientstopCollection(const drawing::Gradientstop* gradientstops, uint32_t gradientstopsCount, drawing::ExtendMode extendMode, drawing::api::IGradientstopCollection** returnCollection) override
     {
         *returnCollection = {};
@@ -1842,6 +2149,17 @@ private:
 class Factory final : public drawing::api::IFactory
 {
 public:
+    // Decoding image files is the one job with no portable answer, so this
+    // header stays free of platform code and takes a decoder instead. Wire it
+    // up with helpers/DecodeImage.h:
+    //
+    //     factory.imageDecoder = gmpi::drawing::decodeImageFile;
+    //
+    // A host can equally supply its own (asset pipeline, in-memory cache, a
+    // format we don't cover). Without one, loadImageU reports NoSupport.
+    // Must return 8-bit sRGB RGBA with straight (non-premultiplied) alpha.
+    std::function<bool(const std::filesystem::path&, drawing::DecodedImage&)> imageDecoder;
+
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override
     {
         *returnPathGeometry = new PathGeometry(this);
@@ -1868,10 +2186,47 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode loadImageU(const char*, drawing::api::IBitmap** returnBitmap) override
+    ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override
     {
         *returnBitmap = {};
-        return ReturnCode::NoSupport; // milestone 6 (bitmaps)
+        if (!imageDecoder || !uri)
+            return ReturnCode::NoSupport;
+
+        // The decoder is caller-supplied, so contain it: an exception must not
+        // cross this C ABI boundary.
+        drawing::DecodedImage decoded;
+        gmpi::shared_ptr<Bitmap> bitmap;
+        try
+        {
+            if (!imageDecoder(std::filesystem::path(uri), decoded) || !decoded)
+                return ReturnCode::Fail;
+            bitmap.attach(new Bitmap(this, int32_t(decoded.width), int32_t(decoded.height)));
+        }
+        catch (...)
+        {
+            return ReturnCode::Fail;
+        }
+
+        // 8-bit sRGB straight -> fp16 linear premultiplied, the one format the
+        // renderer works in.
+        auto& s = bitmap->surface;
+        for (uint32_t y = 0; y < decoded.height; ++y)
+        {
+            const uint8_t* src = decoded.pixels.data() + size_t(y) * decoded.width * 4;
+            uint16_t* dst = s.row(int32_t(y));
+            for (uint32_t x = 0; x < decoded.width; ++x, src += 4, dst += 4)
+            {
+                const float a = src[3] * (1.0f / 255.0f);
+                dst[0] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(src[0]) * a);
+                dst[1] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(src[1]) * a);
+                dst[2] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(src[2]) * a);
+                dst[3] = drawing::detail::floatToHalf(a);
+            }
+        }
+
+        *returnBitmap = bitmap.get();
+        bitmap->addRef();
+        return ReturnCode::Ok;
     }
 
     ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override

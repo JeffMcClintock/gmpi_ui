@@ -194,8 +194,33 @@ fp16 pixels via `lockPixels`.
    `tryInvert()` reports failure for callers that care. The test is on the
    finiteness of the *result*, not `det != 0`, because a determinant small
    enough that `1/det` overflows is equally unusable.
-6. **Bitmaps & offscreens**: `drawBitmap` (bilinear), `createCompatibleRenderTarget`,
-   `createImage`/`loadImageU` (PNG → premul linear fp16) — unblocks `CachedBlur`.
+6. **Bitmaps & offscreens** — DONE (Aug 2026): `drawBitmap` (both interpolation
+   modes, source-rect cropping, opacity), bitmap brushes (wrap + nearest,
+   matching what the D2D backend hard-codes), `createCompatibleRenderTarget`
+   (unblocks `CachedBlur`), and `loadImageU`.
+
+   **One internal format, still.** Everything is fp16 premultiplied linear
+   RGBA; decoded files convert once on load. One sampler serves both
+   `drawBitmap` and bitmap brushes — they differ only in how local space maps
+   to source pixels and in the edge rule (clamp-to-source-rect vs wrap).
+   `drawBitmap` builds a rect geometry and goes through the ordinary fill path,
+   so transform, clipping and antialiasing all come for free and it adds no
+   pixel-touching code of its own.
+
+   **Platform code is isolated to one file.** `backends/CpuGfx.h` contains
+   none: it takes a decoder callback, and `helpers/DecodeImage.h` supplies one
+   (WIC on Windows, ImageIO on macOS, JUCE elsewhere — the same arrangement
+   `SavePng.h` uses). They meet at `helpers/DecodedImage.h`, which is just the
+   interchange struct: 8-bit sRGB RGBA, straight alpha. A host can substitute
+   its own decoder for an asset pipeline or a format we don't cover.
+
+   Two fixes fell out of testing this. Inner stroke joins now use the true
+   corner (where the two offset lines meet) rather than pushing both offset
+   points: the crossover loop that made closed the notch, so an inner corner
+   came out fully covered where D2D measures 0.75. And `SavePng.h` was writing
+   premultiplied bytes into PNG, which has no premultiplied form — every
+   translucent pixel was saved too dark (50%-alpha white round-tripped as 50%
+   grey).
 7. **Present path**: dithered sRGB encode + X11/Wayland blit.
 8. **Text**: FreeType glyph coverage feeds the same span blender as path coverage.
 

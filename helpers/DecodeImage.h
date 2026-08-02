@@ -59,6 +59,14 @@ namespace gmpi { namespace drawing {
 #endif
 
 #ifdef _WIN32
+namespace detail {
+
+// Shared tail of both Windows decoders: normalise whatever the decoder found
+// into the one interchange format.
+inline bool convertWicFrame(IWICImagingFactory* wic, IWICBitmapFrameDecode* frame, DecodedImage& returnImage);
+
+} // namespace detail
+
 inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& returnImage)
 {
     returnImage = {};
@@ -78,6 +86,44 @@ inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& ret
     if (FAILED(decoder->GetFrame(0, frame.put())) || !frame)
         return false;
 
+    return detail::convertWicFrame(wic.get(), frame.get(), returnImage);
+}
+
+// Decode from memory. Colour-emoji glyphs arrive as PNG blobs from the font,
+// never as files.
+inline bool decodeImageMemory(const uint8_t* data, size_t size, DecodedImage& returnImage)
+{
+    returnImage = {};
+    if (!data || size == 0)
+        return false;
+
+    gmpi::directx::ComPtr<IWICImagingFactory> wic;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                __uuidof(IWICImagingFactory), wic.put_void())) || !wic)
+        return false;
+
+    gmpi::directx::ComPtr<IWICStream> stream;
+    if (FAILED(wic->CreateStream(stream.put())) || !stream)
+        return false;
+    if (FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(data), static_cast<DWORD>(size))))
+        return false;
+
+    gmpi::directx::ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(wic->CreateDecoderFromStream(stream.get(), nullptr, WICDecodeMetadataCacheOnLoad,
+                                            decoder.put())) || !decoder)
+        return false;
+
+    gmpi::directx::ComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(0, frame.put())) || !frame)
+        return false;
+
+    return detail::convertWicFrame(wic.get(), frame.get(), returnImage);
+}
+
+namespace detail {
+
+inline bool convertWicFrame(IWICImagingFactory* wic, IWICBitmapFrameDecode* frame, DecodedImage& returnImage)
+{
     // Normalise whatever the file held into our one interchange format.
     gmpi::directx::ComPtr<IWICFormatConverter> converter;
     if (FAILED(wic->CreateFormatConverter(converter.put())) || !converter)
@@ -100,9 +146,15 @@ inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& ret
     returnImage.pixels = std::move(pixels);
     return true;
 }
+
+} // namespace detail
 #endif // _WIN32
 
 #ifdef __APPLE__
+namespace detail {
+bool convertCgImage(CGImageRef image, DecodedImage& returnImage);
+} // namespace detail
+
 inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& returnImage)
 {
     returnImage = {};
@@ -125,6 +177,40 @@ inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& ret
     if (!image)
         return false;
 
+    return detail::convertCgImage(image, returnImage); // takes ownership of image
+}
+
+// Decode from memory. Colour-emoji glyphs arrive as PNG blobs from the font,
+// never as files.
+inline bool decodeImageMemory(const uint8_t* data, size_t size, DecodedImage& returnImage)
+{
+    returnImage = {};
+    if (!data || size == 0)
+        return false;
+
+    CFDataRef cfData = CFDataCreateWithBytesNoCopy(kCFAllocatorDefault, data, CFIndex(size), kCFAllocatorNull);
+    if (!cfData)
+        return false;
+
+    CGImageSourceRef sourceRef = CGImageSourceCreateWithData(cfData, nullptr);
+    CFRelease(cfData);
+    if (!sourceRef)
+        return false;
+
+    CGImageRef image = CGImageSourceCreateImageAtIndex(sourceRef, 0, nullptr);
+    CFRelease(sourceRef);
+    if (!image)
+        return false;
+
+    return detail::convertCgImage(image, returnImage);
+}
+
+namespace detail {
+
+// Draws into a known layout and un-premultiplies, since CoreGraphics has no
+// straight-alpha 8-bit RGBA context. Releases `image`.
+inline bool convertCgImage(CGImageRef image, DecodedImage& returnImage)
+{
     const size_t w = CGImageGetWidth(image);
     const size_t h = CGImageGetHeight(image);
     if (w == 0 || h == 0)
@@ -166,15 +252,36 @@ inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& ret
     returnImage.pixels = std::move(pixels);
     return true;
 }
+
+} // namespace detail
 #endif // __APPLE__
 
 #if GMPI_UI_DECODE_IMAGE_JUCE
+namespace detail {
+bool convertJuceImage(juce::Image image, DecodedImage& returnImage);
+} // namespace detail
+
 inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& returnImage)
 {
     returnImage = {};
-
     const juce::File file(juce::String::fromUTF8(std::filesystem::absolute(path).c_str()));
-    auto image = juce::ImageFileFormat::loadFrom(file);
+    return detail::convertJuceImage(juce::ImageFileFormat::loadFrom(file), returnImage);
+}
+
+// Decode from memory. Colour-emoji glyphs arrive as PNG blobs from the font,
+// never as files.
+inline bool decodeImageMemory(const uint8_t* data, size_t size, DecodedImage& returnImage)
+{
+    returnImage = {};
+    if (!data || size == 0)
+        return false;
+    return detail::convertJuceImage(juce::ImageFileFormat::loadFrom(data, size), returnImage);
+}
+
+namespace detail {
+
+inline bool convertJuceImage(juce::Image image, DecodedImage& returnImage)
+{
     if (image.isNull())
         return false;
 
@@ -206,6 +313,8 @@ inline bool decodeImageFile(const std::filesystem::path& path, DecodedImage& ret
     returnImage.pixels = std::move(pixels);
     return true;
 }
+
+} // namespace detail
 #endif // GMPI_UI_DECODE_IMAGE_JUCE
 
 }} // namespace gmpi::drawing

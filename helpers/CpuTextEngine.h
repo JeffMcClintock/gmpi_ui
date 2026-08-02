@@ -35,6 +35,7 @@
 
 #include "../Drawing.h"
 #include "../backends/CpuGfx.h"
+#include "DecodedImage.h"
 #include "FontFile.h"
 #include "TextSegmentation.h"
 
@@ -76,6 +77,8 @@ struct FontFace
     HbFont unscaledFont;        // font at units-per-em, for metrics and outlines
     unsigned unitsPerEm{ 1000 };
 
+    bool hasColorPng{}; // CBDT/sbix: Apple Color Emoji, Noto Color Emoji
+
     bool init(FontData&& data)
     {
         bytes = std::move(data.bytes);
@@ -96,6 +99,8 @@ struct FontFace
         if (!unscaledFont)
             return false;
         hb_font_set_scale(unscaledFont.get(), int(unitsPerEm), int(unitsPerEm));
+
+        hasColorPng = hb_ot_color_has_png(face.get()) != 0;
         return true;
     }
 };
@@ -566,6 +571,8 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     // repeat per character; cache the answer per codepoint (null included, so a
     // character nothing covers is only looked up once).
     std::map<uint32_t, std::shared_ptr<detail::FontFace>> fallbackCache;
+    // Decoded colour-glyph images, keyed by face and glyph.
+    std::map<std::pair<const detail::FontFace*, uint32_t>, gmpi::shared_ptr<api::IBitmap>> colorGlyphCache;
 
     static std::string cacheKey(const char* family, FontWeight weight, FontStyle style, FontStretch stretch)
     {
@@ -636,11 +643,88 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         return result;
     }
 
+    // --- colour glyphs (CBDT/sbix) -----------------------------------------
+
+    static bool hasColorImage(const detail::FontFace& face, uint32_t glyph)
+    {
+        detail::HbBlob png(hb_ot_color_glyph_reference_png(face.unscaledFont.get(), glyph));
+        return png && hb_blob_get_length(png.get()) > 0;
+    }
+
+    // Decode a colour glyph's PNG into a bitmap, once. Decoding per frame would
+    // be far too slow, and these images are large (often 128px square).
+    gmpi::shared_ptr<api::IBitmap> colorGlyphBitmap(api::IFactory* factory,
+                                                    const std::shared_ptr<detail::FontFace>& face,
+                                                    uint32_t glyph)
+    {
+        const auto key = std::make_pair(face.get(), glyph);
+        if (auto it = colorGlyphCache.find(key); it != colorGlyphCache.end())
+            return it->second;
+
+        gmpi::shared_ptr<api::IBitmap> bitmap;
+        detail::HbBlob png(hb_ot_color_glyph_reference_png(face->unscaledFont.get(), glyph));
+        unsigned length{};
+        const char* data = png ? hb_blob_get_data(png.get(), &length) : nullptr;
+
+        DecodedImage decoded;
+        if (data && length > 0 && imageDecoder &&
+            imageDecoder(reinterpret_cast<const uint8_t*>(data), size_t(length), decoded) && decoded)
+        {
+            api::IBitmap* raw{};
+            if (factory->createImage(int32_t(decoded.width), int32_t(decoded.height), 0, &raw) == ReturnCode::Ok && raw)
+            {
+                bitmap.attach(raw);
+                writeDecodedImage(*bitmap.get(), decoded);
+            }
+        }
+
+        colorGlyphCache[key] = bitmap;
+        return bitmap;
+    }
+
+    // 8-bit sRGB straight -> the surface's own premultiplied linear format,
+    // through the public pixel-locking API.
+    static void writeDecodedImage(api::IBitmap& bitmap, const DecodedImage& decoded)
+    {
+        api::IBitmapPixels* rawPixels{};
+        if (bitmap.lockPixels(&rawPixels, int32_t(BitmapLockFlags::Write)) != ReturnCode::Ok || !rawPixels)
+            return;
+        gmpi::shared_ptr<api::IBitmapPixels> pixels;
+        pixels.attach(rawPixels);
+
+        uint8_t* address{};
+        int32_t bytesPerRow{};
+        int32_t pixelFormat{};
+        pixels->getAddress(&address);
+        pixels->getBytesPerRow(&bytesPerRow);
+        pixels->getPixelFormat(&pixelFormat);
+        if (!address || pixelFormat != api::IBitmapPixels::RGBA_16f)
+            return; // only the software backend's format is written here
+
+        for (uint32_t y = 0; y < decoded.height; ++y)
+        {
+            const uint8_t* src = decoded.pixels.data() + size_t(y) * decoded.width * 4;
+            uint16_t* dst = reinterpret_cast<uint16_t*>(address + size_t(y) * bytesPerRow);
+            for (uint32_t x = 0; x < decoded.width; ++x, src += 4, dst += 4)
+            {
+                const float a = src[3] * (1.0f / 255.0f);
+                dst[0] = detail::floatToHalf(SRGBPixelToLinear(src[0]) * a);
+                dst[1] = detail::floatToHalf(SRGBPixelToLinear(src[1]) * a);
+                dst[2] = detail::floatToHalf(SRGBPixelToLinear(src[2]) * a);
+                dst[3] = detail::floatToHalf(a);
+            }
+        }
+    }
+
 public:
     explicit CpuTextEngine(std::function<bool(const FontRequest&, FontData&)> provider)
         : fontProvider(std::move(provider))
     {
     }
+
+    // Needed for colour emoji, whose glyphs are PNG blobs inside the font.
+    // helpers/DecodeImage.h supplies one: engine.imageDecoder = decodeImageMemory;
+    std::function<bool(const uint8_t*, size_t, DecodedImage&)> imageDecoder;
 
     ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle,
                                 FontStretch fontStretch, float fontHeight, int32_t fontFlags,
@@ -681,19 +765,22 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode getTextGeometry(api::ITextFormat* textFormat, const char* utf8, int32_t length,
-                               const Rect& layoutRect, int32_t options,
-                               api::IFactory* factory, api::IPathGeometry** returnGeometry) override
+    ReturnCode drawText(api::IDeviceContext* context, api::ITextFormat* textFormat,
+                        const char* utf8, int32_t length, const Rect& layoutRect,
+                        api::IBrush* brush, int32_t options) override
     {
-        *returnGeometry = {};
         auto* format = dynamic_cast<CpuTextFormat*>(textFormat);
-        if (!format || !factory)
+        if (!format || !context)
             return ReturnCode::NoSupport;
+
+        api::IFactory* factory{};
+        if (context->getFactory(&factory) != ReturnCode::Ok || !factory)
+            return ReturnCode::Fail;
 
         std::vector<CpuTextFormat::Line> lines;
         format->layout(utf8, length, layoutRect.right - layoutRect.left, lines);
         if (lines.empty())
-            return ReturnCode::Fail;
+            return ReturnCode::Ok;
 
         api::IPathGeometry* rawGeometry{};
         if (factory->createPathGeometry(&rawGeometry) != ReturnCode::Ok || !rawGeometry)
@@ -710,6 +797,13 @@ public:
         // Glyph outlines wind the opposite way to this API's default fill rule,
         // so ask for nonzero: counters (the hole in an 'o') come out right.
         sink->setFillMode(FillMode::Winding);
+
+        // Colour glyphs cannot go in the outline path, so they are collected
+        // and drawn afterwards. Outlines and emoji do not overlap in ordinary
+        // text, so the two passes are not visually distinguishable from
+        // strictly interleaved drawing.
+        struct ColorGlyphDraw { std::shared_ptr<detail::FontFace> face; uint32_t glyph; Rect dest; };
+        std::vector<ColorGlyphDraw> colorGlyphs;
 
         const float lineHeight = format->lineHeight();
         const float blockHeight = float(lines.size()) * lineHeight;
@@ -747,8 +841,29 @@ public:
                 outline.scale = run.scale;
                 for (size_t i = 0; i < run.glyphs.size(); ++i)
                 {
-                    outline.originX = x + run.offsetsX[i];
-                    outline.originY = baselineY - run.offsetsY[i];
+                    const float penX = x + run.offsetsX[i];
+                    const float penY = baselineY - run.offsetsY[i];
+
+                    if (run.face->hasColorPng && hasColorImage(*run.face, run.glyphs[i]))
+                    {
+                        // A bitmap colour glyph. Its extents give the box to
+                        // place the image in, relative to the pen.
+                        hb_glyph_extents_t extents{};
+                        if (hb_font_get_glyph_extents(run.face->unscaledFont.get(), run.glyphs[i], &extents))
+                        {
+                            const Rect dest{
+                                penX + float(extents.x_bearing) * run.scale,
+                                penY - float(extents.y_bearing) * run.scale,
+                                penX + float(extents.x_bearing + extents.width) * run.scale,
+                                penY - float(extents.y_bearing + extents.height) * run.scale };
+                            colorGlyphs.push_back({ run.face, run.glyphs[i], dest });
+                        }
+                        x += run.advances[i];
+                        continue;
+                    }
+
+                    outline.originX = penX;
+                    outline.originY = penY;
                     outline.figureOpen = false;
                     hb_font_draw_glyph(run.face->unscaledFont.get(), run.glyphs[i],
                                        detail::glyphDrawFuncs(), &outline);
@@ -761,8 +876,21 @@ public:
         }
 
         sink->close();
-        *returnGeometry = geometry.get();
-        geometry.get()->addRef();
+
+        if (brush)
+            context->fillGeometry(geometry.get(), brush, nullptr);
+
+        for (const auto& item : colorGlyphs)
+        {
+            if (auto bitmap = colorGlyphBitmap(factory, item.face, item.glyph))
+            {
+                SizeU size{};
+                bitmap->getSizeU(&size);
+                const Rect source{ 0.0f, 0.0f, float(size.width), float(size.height) };
+                context->drawBitmap(bitmap.get(), &item.dest, 1.0f,
+                                    BitmapInterpolationMode::Linear, &source);
+            }
+        }
         return ReturnCode::Ok;
     }
 };

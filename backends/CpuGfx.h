@@ -202,12 +202,13 @@ public:
                                         drawing::FontStretch, float fontHeight, int32_t fontFlags,
                                         drawing::api::ITextFormat** returnTextFormat) = 0;
 
-    // Lay out `text` inside `layoutRect` and emit the glyph outlines as a
-    // filled path geometry, in the same coordinate space the caller draws in.
-    virtual ReturnCode getTextGeometry(drawing::api::ITextFormat* textFormat, const char* utf8, int32_t length,
-                                       const drawing::Rect& layoutRect, int32_t options,
-                                       drawing::api::IFactory* factory,
-                                       drawing::api::IPathGeometry** returnGeometry) = 0;
+    // Lay out `utf8` inside `layoutRect` and draw it into `context` using the
+    // ordinary public draw calls: glyph outlines are filled as path geometry,
+    // and colour emoji are drawn as bitmaps. Colour glyphs ignore the brush and
+    // carry their own colour, exactly as on the platform backends.
+    virtual ReturnCode drawText(drawing::api::IDeviceContext* context, drawing::api::ITextFormat* textFormat,
+                                const char* utf8, int32_t length, const drawing::Rect& layoutRect,
+                                drawing::api::IBrush* brush, int32_t options) = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -2118,25 +2119,14 @@ public:
     ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat,
                          const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options) override
     {
-        auto* cpuBrush = dynamic_cast<CpuBrush*>(brush);
         auto* engine = textEngine();
-        if (!engine || !cpuBrush || !textFormat || !layoutRect)
+        if (!engine || !textFormat || !layoutRect)
             return ReturnCode::NoSupport;
 
-        // Text becomes geometry, then goes through the ordinary fill path.
-        drawing::api::IPathGeometry* rawGeometry{};
-        const auto r = engine->getTextGeometry(textFormat, string, int32_t(stringLength),
-                                               *layoutRect, options, factory, &rawGeometry);
-        if (r != ReturnCode::Ok || !rawGeometry)
-            return r == ReturnCode::Ok ? ReturnCode::Fail : r;
-
-        gmpi::shared_ptr<drawing::api::IPathGeometry> geometry;
-        geometry.attach(rawGeometry);
-
-        auto* path = dynamic_cast<PathGeometry*>(rawGeometry);
-        if (!path)
-            return ReturnCode::Fail;
-        return fillFigures(path->figures, path->fillMode, *cpuBrush);
+        // The engine draws through this context's own public methods, so text
+        // needs no special path to pixels.
+        return engine->drawText(this, textFormat, string, int32_t(stringLength),
+                                *layoutRect, brush, options);
     }
 
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat*, const drawing::Rect*, drawing::api::IBrush*, int32_t) override

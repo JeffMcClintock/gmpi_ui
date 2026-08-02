@@ -273,7 +273,8 @@ fp16 pixels via `lockPixels`.
 
    Stages: **A** shaping + font discovery + monochrome glyphs (this alone gets
    Latin *and* CJK) — **DONE (Aug 2026)**; **B** line breaking + grapheme
-   clusters + font fallback — **DONE (Aug 2026)**; **C** bitmap emoji;
+   clusters + font fallback — **DONE (Aug 2026)**; **C** bitmap emoji —
+   **DONE (Aug 2026), but see the platform note below**;
    **D** COLRv1 emoji; and a glyph atlas for performance — cached coverage
    masks feed the same blender, since it already consumes a coverage array and
    does not care where it came from.
@@ -297,6 +298,24 @@ fp16 pixels via `lockPixels`.
    are offered between ideographs with kinsoku rules keeping closing
    punctuation off the start of a line. Not covered: Indic and other complex
    scripts, whose clusters need script-specific tables.
+
+   Stage C draws bitmap colour glyphs (CBDT/sbix) — the PNG blobs a font hands
+   back from `hb_ot_color_glyph_reference_png`. They are decoded once and
+   cached per (face, glyph), then drawn through the ordinary public
+   `drawBitmap`, so colour emoji still add no pixel-touching code. The text
+   seam changed shape to allow it: the engine no longer returns geometry, it
+   *draws* into the device context through public calls, which is what lets one
+   string mix filled outlines and bitmaps. `helpers/DecodeImage.h` gained a
+   memory decoder, since a font carries PNGs as blobs rather than files.
+
+   **Platform note, measured rather than assumed.** Which stage lights up emoji
+   depends on the font's colour table, and a probe test reports it:
+   Windows' *Segoe UI Emoji* has **no PNG glyphs at all** — it is COLRv0 layers
+   plus COLRv1 paint — so stage C renders nothing there and **emoji on Windows
+   need stage D**. Stage C is what serves Apple Color Emoji (sbix) and older
+   Noto Color Emoji (CBDT). The emoji drawing test skips with that reason
+   rather than pretending to pass; the memory decoder it depends on is tested
+   directly and unconditionally.
 
    Stage A shipped as `helpers/CpuTextEngine.h` (the only file that includes
    `hb.h`) plus `helpers/FontProvider.h` / `helpers/FontFile.h` for discovery.

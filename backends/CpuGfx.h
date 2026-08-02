@@ -2044,19 +2044,51 @@ public:
             return ReturnCode::Ok;
 
         const float a = clearColor->a;
+        const float premultiplied[4] = { clearColor->r * a, clearColor->g * a, clearColor->b * a, a };
         const uint16_t pat[4] = {
-            drawing::detail::floatToHalf(clearColor->r * a),
-            drawing::detail::floatToHalf(clearColor->g * a),
-            drawing::detail::floatToHalf(clearColor->b * a),
-            drawing::detail::floatToHalf(a) };
+            drawing::detail::floatToHalf(premultiplied[0]),
+            drawing::detail::floatToHalf(premultiplied[1]),
+            drawing::detail::floatToHalf(premultiplied[2]),
+            drawing::detail::floatToHalf(premultiplied[3]) };
         uint64_t pat64;
         std::memcpy(&pat64, pat, 8);
 
+        const auto* mask = activeClipMask();
+        if (!mask)
+        {
+            for (int y = y0; y < y1; ++y)
+            {
+                uint16_t* row = s.row(y);
+                for (int x = x0; x < x1; ++x)
+                    std::memcpy(row + size_t(x) * 4, &pat64, 8);
+            }
+            return ReturnCode::Ok;
+        }
+
+        // Under a shaped clip, clear only replaces what the clip admits. It is
+        // still a REPLACE rather than a blend — the clip's partial coverage is
+        // what gets interpolated, so the shape's antialiased edge is preserved
+        // instead of being squared off to its bounding box.
         for (int y = y0; y < y1; ++y)
         {
             uint16_t* row = s.row(y);
             for (int x = x0; x < x1; ++x)
-                std::memcpy(row + size_t(x) * 4, &pat64, 8);
+            {
+                const float m = mask->at(x, y);
+                if (m <= 0.0f)
+                    continue;
+                uint16_t* p = row + size_t(x) * 4;
+                if (m >= 1.0f)
+                {
+                    std::memcpy(p, &pat64, 8);
+                    continue;
+                }
+                for (int c = 0; c < 4; ++c)
+                {
+                    const float dst = drawing::detail::halfToFloat(p[c]);
+                    p[c] = drawing::detail::floatToHalf(dst + (premultiplied[c] - dst) * m);
+                }
+            }
         }
         return ReturnCode::Ok;
     }

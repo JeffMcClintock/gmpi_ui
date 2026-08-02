@@ -335,6 +335,11 @@ fp16 pixels via `lockPixels`.
    they cannot disagree about what nonzero means. It matches D2D (which uses
    PushLayer) within antialiasing jitter.
 
+   `clear()` respects the shaped clip too. It is still a REPLACE rather than a
+   blend — what gets interpolated is the clip's partial coverage, so the
+   shape's antialiased edge survives instead of being squared off to its
+   bounding box.
+
    Worth remembering: the y-flip from font space (y-up) belongs in the glyph's
    base transform, NOT at the leaves. Flipping in the outline sink and in the
    gradient coordinates puts it on the wrong side of HarfBuzz's own paint

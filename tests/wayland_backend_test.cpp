@@ -1,0 +1,128 @@
+// Headless checks for the Wayland backend: the flat addItem stream -> menu tree,
+// and the popup teardown registry that keeps us from dropping the connection
+// while a popup grab is live.
+//
+// Items reach IPopupMenu flat, with SubMenuBegin/SubMenuEnd markers delimiting
+// nesting, so rebuilding the tree is the part most likely to be wrong - and the
+// part that needs no display server to verify.
+//
+// build:  ./tests/run.sh     (no compositor or display required)
+#include "backends/DrawingFrameWayland.h"
+#include <cstdio>
+#include <vector>
+
+using F = gmpi::api::PopupMenuFlags;
+static int failures = 0;
+
+static void check(const char* what, bool ok)
+{
+    if (!ok) ++failures;
+    printf("%-58s %s\n", what, ok ? "ok" : "FAIL");
+}
+
+int main()
+{
+    gmpi::wayland::Connection connection;   // never opened: the model needs nothing
+    gmpi::wayland::InputDispatch input;
+    gmpi::cpugfx::Factory factory;
+
+    gmpi::wayland::WaylandPopupMenu menu(connection, input, nullptr, factory, nullptr, {});
+
+    menu.addItem("", 0, (int32_t)F::Separator, nullptr);        // leading: dropped
+    menu.addItem("&Insert Module", 1, 0, nullptr);
+    menu.addItem("", 0, (int32_t)F::Separator, nullptr);
+    menu.addItem("", 0, (int32_t)F::Separator, nullptr);        // doubled: one only
+    menu.addItem("Paste", 2, (int32_t)F::Grayed, nullptr);
+    menu.addItem("Show Grid", 3, (int32_t)F::Ticked, nullptr);
+    menu.addItem("Arrange", 0, (int32_t)F::SubMenuBegin, nullptr);
+    menu.addItem("Align Left", 10, 0, nullptr);
+    menu.addItem("Align Top", 11, 0, nullptr);
+    menu.addItem("", 0, (int32_t)F::SubMenuEnd, nullptr);
+    menu.addItem("Properties...", 4, 0, nullptr);
+    menu.addItem("", 0, (int32_t)F::Separator, nullptr);        // trailing: dropped
+
+    const auto& items = menu.items();
+
+    check("leading and trailing separators dropped",
+          !items.empty() && !items.front().separator && !items.back().separator);
+
+    int separators = 0;
+    for (const auto& i : items) if (i.separator) ++separators;
+    check("doubled separator collapsed to one", separators == 1);
+
+    check("mnemonic '&' stripped", !items.empty() && items[0].label == "Insert Module");
+
+    const auto* paste = items.size() > 2 ? &items[2] : nullptr;
+    check("grayed flag carried", paste && paste->grayed && paste->label == "Paste");
+
+    const auto* grid = items.size() > 3 ? &items[3] : nullptr;
+    check("ticked flag carried", grid && grid->ticked);
+
+    const auto* arrange = items.size() > 4 ? &items[4] : nullptr;
+    check("submenu rebuilt from Begin/End markers",
+          arrange && arrange->label == "Arrange" && arrange->submenu.size() == 2);
+    check("submenu children in order",
+          arrange && arrange->submenu.size() == 2
+                  && arrange->submenu[0].id == 10 && arrange->submenu[1].id == 11);
+
+    check("items after the submenu land back at top level",
+          items.size() == 6 && items.back().label == "Properties..." && items.back().id == 4);
+
+    // --- popup teardown registry ------------------------------------------
+    // A client that drops its connection while a popup grab is live makes mutter
+    // crash or hang, taking the user's session with it. Connection must close any
+    // survivors, topmost-first, before disconnecting.
+    {
+        struct FakePopup : gmpi::wayland::IPopupTeardown
+        {
+            std::vector<int>* order; int id;
+            FakePopup(std::vector<int>* o, int i) : order(o), id(i) {}
+            void closeSurfaces() override { order->push_back(id); }
+        };
+
+        std::vector<int> closed;
+        {
+            gmpi::wayland::Connection c;   // no display: roundtrip is skipped
+            FakePopup a(&closed, 1), b(&closed, 2), d(&closed, 3);
+            c.registerPopup(&a); c.registerPopup(&b); c.registerPopup(&d);
+            c.closeLivePopups();
+        }
+        check("live popups are closed topmost-first",
+              closed.size() == 3 && closed[0] == 3 && closed[1] == 2 && closed[2] == 1);
+    }
+    {
+        struct FakePopup : gmpi::wayland::IPopupTeardown
+        {
+            bool* flag;
+            explicit FakePopup(bool* f) : flag(f) {}
+            void closeSurfaces() override { *flag = true; }
+        };
+
+        bool closedOnDestruct = false;
+        {
+            gmpi::wayland::Connection c;
+            FakePopup p(&closedOnDestruct);
+            c.registerPopup(&p);
+        }   // ~Connection must not leave a grabbing popup behind
+        check("~Connection closes a still-open popup", closedOnDestruct);
+    }
+    {
+        struct FakePopup : gmpi::wayland::IPopupTeardown
+        {
+            int* n;
+            explicit FakePopup(int* c) : n(c) {}
+            void closeSurfaces() override { ++*n; }
+        };
+
+        int closes = 0;
+        gmpi::wayland::Connection c;
+        FakePopup p(&closes);
+        c.registerPopup(&p);
+        c.unregisterPopup(&p);      // popup tore itself down first
+        c.closeLivePopups();
+        check("an unregistered popup is not closed twice", closes == 0);
+    }
+
+    printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");
+    return failures != 0;
+}

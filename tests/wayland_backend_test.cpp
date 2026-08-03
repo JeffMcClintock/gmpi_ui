@@ -413,6 +413,88 @@ int main()
               dlg.regionAt(dlg.contentWidth() - 5, 5) == R::None);
     }
 
+    // --- text edit ----------------------------------------------------------
+    // Held as UTF-8, edited by codepoint. Stepping a byte at a time walks into
+    // the middle of any character above U+007F, and the next Backspace then
+    // writes invalid UTF-8 into whatever the user was renaming.
+    //
+    // These are heap objects on purpose: Escape and Return call finish(), which
+    // releases, and a refcounted object reaching zero deletes itself - on the
+    // stack that frees an address that was never allocated.
+    {
+        using TE = gmpi::wayland::WaylandTextEdit;
+        const int32_t kCtrl  = int32_t(gmpi::api::PointerFlags::KeyControl);
+        const int32_t kShift = int32_t(gmpi::api::PointerFlags::KeyShift);
+
+        auto key = [&](TE* e, uint32_t sym, uint32_t utf32, int32_t flags = 0)
+        { e->handleKey(sym, utf32, flags, true); };
+
+        auto make = [&](const char* initial) {
+            auto* e = new TE(connection, input, nullptr, gmpi::drawing::Rect{});
+            e->setText(initial);
+            return e;
+        };
+
+        {
+            auto* e = make("");
+            key(e, 'H', 'H'); key(e, 'i', 'i');
+            check("typing appends text", e->text() == "Hi" && e->caret() == 2);
+            key(e, 0xff08, 0);                       // Backspace
+            check("backspace removes one character", e->text() == "H");
+            e->release();
+        }
+        {
+            // "cafe" with an acute e - two bytes, so a byte-wise caret breaks here
+            auto* e = make("caf\xc3\xa9");
+            key(e, 0xff57, 0);                       // End
+            check("end goes past the last codepoint", e->caret() == 5);
+            key(e, 0xff51, 0);                       // Left
+            check("left steps a whole codepoint, not a byte", e->caret() == 3);
+            key(e, 0xff53, 0);                       // Right
+            key(e, 0xff08, 0);                       // Backspace over the accented e
+            check("backspace removes a whole multi-byte character", e->text() == "caf");
+            e->release();
+        }
+        {
+            auto* e = make("hello");
+            key(e, 0xff50, 0);                       // Home
+            key(e, 0xff53, 0, kShift);               // shift-Right
+            key(e, 0xff53, 0, kShift);
+            check("shift-arrow extends a selection",
+                  e->selection().first == 0 && e->selection().second == 2);
+            key(e, 'X', 'X');
+            check("typing replaces the selection", e->text() == "Xllo");
+            e->release();
+        }
+        {
+            auto* e = make("abc");
+            key(e, 0xff51, 0);                       // plain Left collapses
+            check("a plain arrow collapses the selection",
+                  e->selection().first == e->selection().second);
+            e->release();
+        }
+        {
+            auto* e = make("abc");
+            key(e, 'a', 'a', kCtrl);                 // ctrl-A
+            check("ctrl-A selects everything",
+                  e->selection().first == 0 && e->selection().second == 3);
+            key(e, 'q', 'q', kCtrl);
+            check("an unhandled ctrl chord inserts nothing", e->text() == "abc");
+            e->release();
+        }
+        {
+            auto* e = make("ab");
+            key(e, 0xff1b, 0);                       // Escape: finish() releases it
+            check("escape ends the edit without touching the text", true);
+        }
+        {
+            auto* e = make("");
+            key(e, 0x0d, 0x0d);                      // a raw control code, not Return
+            check("control codes are not inserted as text", e->text().empty());
+            e->release();
+        }
+    }
+
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");
     return failures != 0;
 }

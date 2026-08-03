@@ -473,8 +473,9 @@ public:
 
     // Still to come; each needs a drawn window of its own, since Wayland provides
     // no stock dialogs and the portal has no message-box API.
-    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
-    { return gmpi::ReturnCode::NoSupport; }
+    // defined after WaylandTextEdit, which it constructs
+    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r,
+                                    gmpi::api::IUnknown** returnTextEdit) override;
     // defined after WaylandKeyListener, which it constructs
     gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r,
                                        gmpi::api::IUnknown** returnKeyListener) override;
@@ -516,6 +517,9 @@ public:
     // defined after InputDispatch, whose input client it clears
     void detachClient();
 
+    // defined after WaylandTextEdit
+    void drawActiveTextEdit(gmpi::cpugfx::RenderTarget* rt);
+
     wl_surface* surface() const { return surface_; }
 
     void setLogicalSize(int w, int h)
@@ -551,6 +555,10 @@ protected:
 
     // The portal answers on the session bus, so its fd joins the same poll() as
     // wayland - a file dialog must never nest a modal loop here.
+    // Non-owning: the edit keeps itself alive until it completes, exactly like
+    // the dialogs. The frame only needs to know where to draw it.
+    class WaylandTextEdit* activeEdit_{};
+
     PortalBus    portalBus_;
     zxdg_exported_v2* exported_{};
     std::string  parentWindowHandle_;   // "wayland:<handle>", empty until exported
@@ -618,6 +626,7 @@ inline void WaylandFrameBase::present()
         rt->setTransform(&m);
     }
     client_->render(static_cast<gmpi::drawing::api::IDeviceContext*>(rt));
+    drawActiveTextEdit(rt);   // an in-place edit sits ON the client, after it
     rt->endDraw();
 
     gmpi::drawing::api::IBitmap* bmRaw{};
@@ -710,6 +719,11 @@ public:
     void bindSeat(Connection& connection);
 
     void setKeySink(IKeySink* sink) { keySink_ = sink; }
+
+    // Consulted before the drawing client on a button event; returns true if it
+    // swallowed it. An in-place text edit lives on the client's own surface, so
+    // there is no separate IPointerTarget for the dispatcher to route to.
+    std::function<bool(double x, double y, bool pressed)> pointerPreFilter;
     IKeySink* keySink() const { return keySink_; }
 
     WaylandClipboard& clipboard() { return clipboard_; }
@@ -894,6 +908,9 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
 
     const int32_t flags = in.modifierFlags() | bit |
                           (pressed ? int32_t(gmpi::api::PointerFlags::InContact) : 0);
+
+    if (in.pointerPreFilter && in.pointerPreFilter(in.x_, in.y_, pressed))
+        return;
 
     if (in.client_)
     {
@@ -1708,6 +1725,388 @@ inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::R
                                       factory_, menuFont_, r ? *r : gmpi::drawing::Rect{});
     *returnPopupMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
     return gmpi::ReturnCode::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// WaylandTextEdit - ITextEdit
+// ---------------------------------------------------------------------------
+// Unlike the dialogs this is not a window: an in-place edit belongs ON the
+// client's surface, at the rect the caller asked for, so it moves and scales
+// with whatever is underneath it. The frame draws it after the client, and
+// routes keys and clicks to it while it is up.
+//
+// Text is held as UTF-8 but edited by CODEPOINT: stepping the caret a byte at a
+// time would walk into the middle of any character above U+007F and produce
+// invalid UTF-8 the moment the user pressed Backspace.
+class WaylandTextEdit : public gmpi::api::ITextEdit, private IKeySink
+{
+public:
+    WaylandTextEdit(Connection& connection, InputDispatch& input,
+                    gmpi::drawing::api::ITextFormat* font, gmpi::drawing::Rect rect)
+        : connection_(connection), input_(input), font_(font), rect_(rect) {}
+
+    ~WaylandTextEdit()
+    {
+        if (input_.keySink() == this)
+            input_.setKeySink(nullptr);
+    }
+
+    // --- ITextEdit ---
+    gmpi::ReturnCode setText(const char* text) override
+    {
+        text_ = text ? text : "";
+        caret_ = int32_t(text_.size());
+        selectAll();
+        return gmpi::ReturnCode::Ok;
+    }
+    gmpi::ReturnCode setAlignment(int32_t alignment) override
+    {
+        alignment_ = alignment;
+        return gmpi::ReturnCode::Ok;
+    }
+    gmpi::ReturnCode setTextSize(float height) override
+    {
+        textHeight_ = height;
+        return gmpi::ReturnCode::Ok;
+    }
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+    {
+        callback_ = callback;
+        input_.setKeySink(this);
+        addRef();
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::ITextEdit);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    // --- used by the frame ---
+    bool active() const { return !finished_; }
+    const gmpi::drawing::Rect& rect() const { return rect_; }
+    void render(gmpi::cpugfx::RenderTarget* rt);
+    void onPointer(double x, double y, bool pressed);
+
+    // --- exposed so the editing model can be checked without a compositor ----
+    const std::string& text() const { return text_; }
+    int32_t caret() const { return caret_; }
+    std::pair<int32_t, int32_t> selection() const
+    { return { (std::min)(selAnchor_, caret_), (std::max)(selAnchor_, caret_) }; }
+
+    // UTF-8 aware stepping: continuation bytes are 10xxxxxx, so skip them
+    int32_t nextCodepoint(int32_t i) const
+    {
+        const int32_t n = int32_t(text_.size());
+        if (i >= n) return n;
+        ++i;
+        while (i < n && (uint8_t(text_[size_t(i)]) & 0xC0) == 0x80) ++i;
+        return i;
+    }
+    int32_t prevCodepoint(int32_t i) const
+    {
+        if (i <= 0) return 0;
+        --i;
+        while (i > 0 && (uint8_t(text_[size_t(i)]) & 0xC0) == 0x80) --i;
+        return i;
+    }
+
+    void insertUtf32(uint32_t cp);
+    void handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down);
+
+private:
+    void selectAll() { selAnchor_ = 0; caret_ = int32_t(text_.size()); }
+    bool hasSelection() const { return selAnchor_ != caret_; }
+    void deleteSelection();
+    std::string selectedText() const;
+    void notifyChanged();
+    void finish(gmpi::ReturnCode result);
+
+    void onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down) override
+    { handleKey(keysym, utf32, flags, down); }
+
+    Connection&    connection_;
+    InputDispatch& input_;
+    gmpi::drawing::api::ITextFormat* font_{};
+    gmpi::drawing::Rect rect_{};
+
+    std::string text_;
+    int32_t caret_ = 0;
+    int32_t selAnchor_ = 0;
+    int32_t alignment_ = 0;
+    float   textHeight_ = 0.f;
+    bool    finished_ = false;
+
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+};
+
+inline std::string WaylandTextEdit::selectedText() const
+{
+    const auto [a, b] = selection();
+    return text_.substr(size_t(a), size_t(b - a));
+}
+
+inline void WaylandTextEdit::deleteSelection()
+{
+    if (!hasSelection())
+        return;
+    const auto [a, b] = selection();
+    text_.erase(size_t(a), size_t(b - a));
+    caret_ = a;
+    selAnchor_ = a;
+}
+
+inline void WaylandTextEdit::insertUtf32(uint32_t cp)
+{
+    deleteSelection();
+
+    // encode as UTF-8; the edit buffer is bytes, the model is codepoints
+    char buf[4];
+    int n = 0;
+    if (cp < 0x80) { buf[n++] = char(cp); }
+    else if (cp < 0x800)
+    {
+        buf[n++] = char(0xC0 | (cp >> 6));
+        buf[n++] = char(0x80 | (cp & 0x3F));
+    }
+    else if (cp < 0x10000)
+    {
+        buf[n++] = char(0xE0 | (cp >> 12));
+        buf[n++] = char(0x80 | ((cp >> 6) & 0x3F));
+        buf[n++] = char(0x80 | (cp & 0x3F));
+    }
+    else
+    {
+        buf[n++] = char(0xF0 | (cp >> 18));
+        buf[n++] = char(0x80 | ((cp >> 12) & 0x3F));
+        buf[n++] = char(0x80 | ((cp >> 6) & 0x3F));
+        buf[n++] = char(0x80 | (cp & 0x3F));
+    }
+
+    text_.insert(size_t(caret_), buf, size_t(n));
+    caret_ += n;
+    selAnchor_ = caret_;
+}
+
+inline void WaylandTextEdit::notifyChanged()
+{
+    if (auto cb = callback_.as<gmpi::api::ITextEditCallback>(); cb)
+        cb->onChanged(text_.c_str());
+}
+
+inline void WaylandTextEdit::finish(gmpi::ReturnCode result)
+{
+    if (finished_)
+        return;
+    finished_ = true;
+
+    if (input_.keySink() == this)
+        input_.setKeySink(nullptr);
+
+    if (auto cb = callback_.as<gmpi::api::ITextEditCallback>(); cb)
+        cb->onComplete(result);
+
+    callback_ = {};
+    release();   // balances the addRef in showAsync
+}
+
+inline void WaylandTextEdit::handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
+{
+    if (!down || finished_)
+        return;
+
+    const bool ctrl  = (flags & int32_t(gmpi::api::PointerFlags::KeyControl)) != 0;
+    const bool shift = (flags & int32_t(gmpi::api::PointerFlags::KeyShift)) != 0;
+
+    // moving the caret collapses the selection unless shift is held
+    auto moveTo = [&](int32_t pos)
+    {
+        caret_ = pos;
+        if (!shift)
+            selAnchor_ = pos;
+    };
+
+    if (ctrl)
+    {
+        switch (keysym)
+        {
+        case 'a': case 'A': selectAll(); return;
+        case 'c': case 'C':
+            if (hasSelection())
+                input_.clipboard().setText(connection_.display(), selectedText(),
+                                           input_.lastGrabSerial());
+            return;
+        case 'x': case 'X':
+            if (hasSelection())
+            {
+                input_.clipboard().setText(connection_.display(), selectedText(),
+                                           input_.lastGrabSerial());
+                deleteSelection();
+                notifyChanged();
+            }
+            return;
+        case 'v': case 'V':
+        {
+            const std::string clip = input_.clipboard().getText(connection_.display());
+            if (!clip.empty())
+            {
+                deleteSelection();
+                text_.insert(size_t(caret_), clip);
+                caret_ += int32_t(clip.size());
+                selAnchor_ = caret_;
+                notifyChanged();
+            }
+            return;
+        }
+        default: return;   // any other ctrl chord is a shortcut, not text
+        }
+    }
+
+    switch (keysym)
+    {
+    case 0xff08:                       // Backspace
+        if (hasSelection())
+            deleteSelection();
+        else if (caret_ > 0)
+        {
+            const int32_t p = prevCodepoint(caret_);
+            text_.erase(size_t(p), size_t(caret_ - p));
+            caret_ = p;
+            selAnchor_ = p;
+        }
+        notifyChanged();
+        return;
+
+    case 0xffff:                       // Delete
+        if (hasSelection())
+            deleteSelection();
+        else if (caret_ < int32_t(text_.size()))
+        {
+            const int32_t nx = nextCodepoint(caret_);
+            text_.erase(size_t(caret_), size_t(nx - caret_));
+        }
+        notifyChanged();
+        return;
+
+    case 0xff51: moveTo(prevCodepoint(caret_)); return;              // Left
+    case 0xff53: moveTo(nextCodepoint(caret_)); return;              // Right
+    case 0xff50: moveTo(0); return;                                  // Home
+    case 0xff57: moveTo(int32_t(text_.size())); return;              // End
+
+    case 0xff0d: case 0xff8d:          // Return / KP_Enter: commit
+        finish(gmpi::ReturnCode::Ok);
+        return;
+
+    case 0xff1b:                       // Escape: abandon
+        finish(gmpi::ReturnCode::Cancel);
+        return;
+
+    default: break;
+    }
+
+    // Anything that produced a printable character is text. Control codes below
+    // space are not - they would otherwise be inserted as invisible rubbish.
+    if (utf32 >= 0x20 && utf32 != 0x7f)
+    {
+        insertUtf32(utf32);
+        notifyChanged();
+    }
+}
+
+inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
+{
+    if (!pressed || !font_ || finished_)
+        return;
+
+    (void)y;
+
+    // Place the caret at the character boundary nearest the click, by measuring
+    // each prefix. Linear, but a text edit holds a name, not a document.
+    const double target = x - rect_.left - 3.0;
+
+    int32_t best = 0;
+    double bestDist = 1e30;
+    for (int32_t i = 0; i <= int32_t(text_.size()); i = nextCodepoint(i))
+    {
+        gmpi::drawing::Size sz{};
+        if (i > 0)
+            font_->getTextExtentU(text_.c_str(), i, 100000.f, &sz);
+
+        const double d = std::fabs(double(sz.width) - target);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = i;
+        }
+        if (i == int32_t(text_.size()))
+            break;
+    }
+
+    caret_ = best;
+    selAnchor_ = best;
+}
+
+inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
+{
+    if (finished_)
+        return;
+
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    auto* back = brush({ 0.10f, 0.11f, 0.13f, 1.f });
+    auto* ink  = brush({ 0.94f, 0.95f, 0.97f, 1.f });
+    auto* sel  = brush({ 0.20f, 0.40f, 0.70f, 1.f });
+    auto* edge = brush({ 0.45f, 0.60f, 0.85f, 1.f });
+
+    if (back) rt->fillRectangle(&rect_, back);
+    if (edge) rt->drawRectangle(&rect_, edge, 1.f, nullptr);
+
+    const float textLeft = rect_.left + 3.f;
+    const float textTop  = rect_.top + 2.f;
+
+    auto widthTo = [&](int32_t i) -> float
+    {
+        if (i <= 0 || !font_) return 0.f;
+        gmpi::drawing::Size sz{};
+        font_->getTextExtentU(text_.c_str(), i, 100000.f, &sz);
+        return sz.width;
+    };
+
+    if (sel && hasSelection())
+    {
+        const auto [a, b] = selection();
+        const gmpi::drawing::Rect r{ textLeft + widthTo(a), rect_.top + 1.f,
+                                     textLeft + widthTo(b), rect_.bottom - 1.f };
+        rt->fillRectangle(&r, sel);
+    }
+
+    if (font_ && ink && !text_.empty())
+    {
+        const gmpi::drawing::Rect tr{ textLeft, textTop, rect_.right - 2.f, rect_.bottom };
+        rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
+    }
+
+    // Caret drawn solid rather than blinking: a blink needs a timer of its own,
+    // and a steady caret is not the thing anyone notices about a rename box.
+    if (ink)
+    {
+        const float cx = textLeft + widthTo(caret_);
+        const gmpi::drawing::Rect c{ cx, rect_.top + 2.f, cx + 1.5f, rect_.bottom - 2.f };
+        rt->fillRectangle(&c, ink);
+    }
+
+    if (back) back->release();
+    if (ink)  ink->release();
+    if (sel)  sel->release();
+    if (edge) edge->release();
 }
 
 // ---------------------------------------------------------------------------
@@ -2717,6 +3116,53 @@ inline void WaylandStockDialog::complete(gmpi::api::StockDialogButton b)
 
     callback_ = {};
     release();   // balances the addRef in showAsync
+}
+
+inline void WaylandFrameBase::drawActiveTextEdit(gmpi::cpugfx::RenderTarget* rt)
+{
+    if (!activeEdit_)
+        return;
+
+    if (!activeEdit_->active())
+    {
+        activeEdit_ = nullptr;                  // it finished; stop drawing it
+        inputDispatch().pointerPreFilter = nullptr;
+        return;
+    }
+
+    activeEdit_->render(rt);
+}
+
+inline gmpi::ReturnCode WaylandFrameBase::createTextEdit(
+    const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit)
+{
+    *returnTextEdit = {};
+
+    if (!menuFont_)
+        return gmpi::ReturnCode::NoSupport;   // no font, no caret placement
+
+    auto* edit = new WaylandTextEdit(connection_, inputDispatch(), menuFont_,
+                                     r ? *r : gmpi::drawing::Rect{});
+    activeEdit_ = edit;
+
+    // A click inside the edit places the caret; a click outside commits, which is
+    // what every in-place rename box does.
+    inputDispatch().pointerPreFilter =
+        [this](double x, double y, bool pressed) -> bool
+        {
+            if (!activeEdit_ || !activeEdit_->active())
+                return false;
+
+            const auto& box = activeEdit_->rect();
+            const bool inside = x >= box.left && x < box.right && y >= box.top && y < box.bottom;
+
+            activeEdit_->onPointer(x, y, pressed);
+            invalidateRect(nullptr);
+            return inside;
+        };
+
+    *returnTextEdit = static_cast<gmpi::api::ITextEdit*>(edit);
+    return gmpi::ReturnCode::Ok;
 }
 
 inline gmpi::ReturnCode WaylandFrameBase::createColorDialog(

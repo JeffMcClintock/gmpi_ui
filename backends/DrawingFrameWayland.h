@@ -418,6 +418,7 @@ protected:
 
     gmpi::api::IDrawingClient* client_{};
     gmpi::drawing::api::ITextFormat* menuFont_{};
+    bool surfaceConfigured_ = false;
 
     int logicalW_ = 0, logicalH_ = 0;
 };
@@ -432,7 +433,9 @@ inline void WaylandFrameBase::createSurface()
 
 inline void WaylandFrameBase::present()
 {
-    if (!surface_ || !client_ || logicalW_ <= 0 || logicalH_ <= 0)
+    // see WaylandPopupMenu::present - attaching before the first configure is a
+    // protocol error and the compositor disconnects us for it
+    if (!surfaceConfigured_ || !surface_ || !client_ || logicalW_ <= 0 || logicalH_ <= 0)
         return;
 
     const int pw = static_cast<int>(logicalW_ * scale_ + 0.5f);
@@ -959,8 +962,9 @@ private:
     xdg_surface* xdgSurface_{};
     xdg_popup*   popup_{};
     ShmBuffer    buffer_;
-    int hovered_ = -1;
+    int  hovered_ = -1;
     bool dismissed_ = false;
+    bool configured_ = false;   // no buffer may be attached before the first configure
 };
 
 constexpr int kMenuItemHeight = 24;
@@ -1073,6 +1077,18 @@ inline int WaylandPopupMenu::measuredWidth() const
 
 inline void WaylandPopupMenu::present()
 {
+    // Attaching a buffer to an xdg_surface that has not been configured is
+    // xdg_surface.error.unconfigured_buffer - a PROTOCOL ERROR, for which the
+    // compositor disconnects the client. That is fatal in the worst way here,
+    // because the client dies holding a popup grab and mutter can leak it, which
+    // looks to the user like the whole desktop has frozen.
+    //
+    // The race is real and easy to lose: a popup appears under the cursor, so the
+    // compositor may deliver pointer enter before the configure arrives, and enter
+    // wants to repaint the hover highlight.
+    if (!configured_)
+        return;
+
     const int w = measuredWidth();
     const int h = measuredHeight();
     if (w <= 0 || h <= 0 || !surface_)
@@ -1177,6 +1193,7 @@ inline void WaylandPopupMenu::surfaceConfigure(void* data, xdg_surface* s, uint3
 {
     auto& self = *static_cast<WaylandPopupMenu*>(data);
     xdg_surface_ack_configure(s, serial);
+    self.configured_ = true;
     self.present();
 }
 
@@ -1403,6 +1420,7 @@ inline void WaylandToplevel::configure(libdecor_frame* frame,
 
     const bool first = !self.configured_;
     self.configured_ = true;
+    self.surfaceConfigured_ = true;   // buffers are legal from here on
 
     self.present();
     if (first)
@@ -1520,6 +1538,25 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
         // so it can size the decorations.
         if (libdecor_dispatch(decor_, 0) < 0)
             break;
+
+        // A protocol error disconnects us with no other symptom, so say which one.
+        // Worth the two lines: the failure it diagnoses (attaching to an
+        // unconfigured surface) presents as the whole desktop hanging, because the
+        // client dies holding a popup grab.
+        if (const int err = wl_display_get_error(connection_.display()); err != 0)
+        {
+            uint32_t id = 0;
+            const wl_interface* iface = nullptr;
+            const uint32_t code = wl_display_get_protocol_error(connection_.display(), &iface, &id);
+
+            if (iface)
+                fprintf(stderr, "wayland protocol error: %s id=%u code=%u\n", iface->name, id, code);
+            else
+                fprintf(stderr, "wayland connection error: %d (%s)\n", err, strerror(err));
+
+            running_ = false;
+            break;
+        }
 
         if (timerFd >= 0 && (fds[1].revents & POLLIN))
         {

@@ -979,9 +979,17 @@ public:
     // exposed for headless tests: the tree rebuilt from the flat stream
     const std::vector<Item>& items() const { return root_; }
 
+    // True once the menu has completed or been dismissed. The distinction that
+    // matters: clicking a submenu header must NOT dismiss, clicking an item must.
+    bool isDismissed() const { return dismissed_; }
+
 private:
     void  present();
     void  destroySurfaces();
+    void  closeChild();
+    void  openChildFor(int index);
+    void  onChildDismissed(WaylandPopupMenu* c);
+    WaylandPopupMenu* rootMenu();
     void  choose(Item& item);
     void  dismiss();
     int   itemAt(double y) const;
@@ -1010,6 +1018,13 @@ private:
     xdg_popup*   popup_{};
     ShmBuffer    buffer_;
     int  hovered_ = -1;
+    // A submenu is a child xdg_popup anchored to its parent item. The chain is
+    // non-owning in both directions: a shown popup keeps itself alive (showAsync
+    // takes a reference it drops in dismiss), so these are links, not ownership.
+    WaylandPopupMenu* child_{};
+    WaylandPopupMenu* parentMenu_{};
+    int  childItem_ = -1;
+    bool isSubmenu_ = false;
     bool dismissed_ = false;
     bool configured_ = false;   // no buffer may be attached before the first configure
 };
@@ -1275,7 +1290,9 @@ inline gmpi::ReturnCode WaylandPopupMenu::showAsync()
     xdg_positioner_set_anchor_rect(pos, int32_t(anchor_.left), int32_t(anchor_.top),
                                    (std::max)(1, int32_t(anchor_.right - anchor_.left)),
                                    (std::max)(1, int32_t(anchor_.bottom - anchor_.top)));
-    xdg_positioner_set_anchor(pos, XDG_POSITIONER_ANCHOR_BOTTOM_LEFT);
+    // a context menu drops from the click; a submenu flies out beside its item
+    xdg_positioner_set_anchor(pos, isSubmenu_ ? XDG_POSITIONER_ANCHOR_TOP_RIGHT
+                                              : XDG_POSITIONER_ANCHOR_BOTTOM_LEFT);
     xdg_positioner_set_gravity(pos, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
     // the compositor keeps it on screen; a client cannot, having no idea where its
     // own window is
@@ -1311,6 +1328,11 @@ inline void WaylandPopupMenu::onEnter(double, double y, uint32_t)
 
 inline void WaylandPopupMenu::onLeave()
 {
+    // The pointer leaving us for our own submenu is not "no item hovered" - the
+    // parent item stays highlighted for as long as its child is up.
+    if (child_)
+        return;
+
     hovered_ = -1;
     present();
 }
@@ -1319,8 +1341,15 @@ inline void WaylandPopupMenu::onMotion(double, double y, int32_t)
 {
     const int was = hovered_;
     hovered_ = itemAt(y);
-    if (hovered_ != was)
-        present();
+    if (hovered_ == was)
+        return;
+
+    // moving onto a different item closes the old submenu and opens the new one;
+    // openChildFor() closes any existing child first, including for a plain item
+    if (hovered_ != childItem_)
+        openChildFor(hovered_);
+
+    present();
 }
 
 inline void WaylandPopupMenu::onButton(double, double y, uint32_t, bool pressed, uint32_t)
@@ -1329,6 +1358,16 @@ inline void WaylandPopupMenu::onButton(double, double y, uint32_t, bool pressed,
         return;
 
     const int index = itemAt(y);
+
+    // A submenu header has no id of its own: clicking it opens (or keeps) the
+    // child rather than completing the menu with a meaningless value.
+    if (index >= 0 && !root_[index].submenu.empty())
+    {
+        if (childItem_ != index)
+            openChildFor(index);
+        return;
+    }
+
     if (index >= 0 && !root_[index].grayed)
         choose(root_[index]);
     else
@@ -1338,7 +1377,13 @@ inline void WaylandPopupMenu::onButton(double, double y, uint32_t, bool pressed,
 inline void WaylandPopupMenu::onKey(uint32_t keysym, uint32_t)
 {
     if (keysym == 0xff1b) // XKB_KEY_Escape
-        dismiss();
+    {
+        // close the innermost level first, as every other menu on every platform does
+        if (child_)
+            closeChild();
+        else
+            dismiss();
+    }
 }
 
 inline void WaylandPopupMenu::choose(Item& item)
@@ -1346,7 +1391,72 @@ inline void WaylandPopupMenu::choose(Item& item)
     if (auto cb = item.callback.as<gmpi::api::IPopupMenuCallback>(); cb)
         cb->onComplete(gmpi::ReturnCode::Ok, item.id);
 
-    dismiss();
+    // Picking from a submenu closes the entire menu, not just that level. Dismiss
+    // from the root so teardown runs top-down; `this` may be gone after it, so
+    // touch nothing below.
+    rootMenu()->dismiss();
+}
+
+inline WaylandPopupMenu* WaylandPopupMenu::rootMenu()
+{
+    auto* m = this;
+    while (m->parentMenu_)
+        m = m->parentMenu_;
+    return m;
+}
+
+inline void WaylandPopupMenu::closeChild()
+{
+    // Copy the pointer and clear the link BEFORE dismissing: dismiss() can run
+    // this object's destructor via release(), and a callback back into us must
+    // not find a dangling child_.
+    auto* c = child_;
+    child_ = nullptr;
+    childItem_ = -1;
+
+    if (c)
+        c->dismiss();       // recurses: the deepest popup goes first
+}
+
+inline void WaylandPopupMenu::onChildDismissed(WaylandPopupMenu* c)
+{
+    if (child_ == c)
+    {
+        child_ = nullptr;
+        childItem_ = -1;
+    }
+}
+
+inline void WaylandPopupMenu::openChildFor(int index)
+{
+    closeChild();
+
+    if (index < 0 || index >= (int)root_.size() || root_[index].submenu.empty())
+        return;
+    if (!xdgSurface_)
+        return;   // we are not mapped; a popup parent must be a live xdg_surface
+
+    // anchor rect is in OUR surface coordinates: the right edge of the item
+    const int w   = measuredWidth();
+    const int top = itemTop(index);
+    const gmpi::drawing::Rect itemRect{ float(w - 6), float(top),
+                                        float(w),     float(top + kMenuItemHeight) };
+
+    auto* c = new WaylandPopupMenu(connection_, input_, xdgSurface_, factory_, font_, itemRect);
+    c->root_       = root_[index].submenu;
+    c->parentMenu_ = this;
+    c->isSubmenu_  = true;
+
+    child_     = c;
+    childItem_ = index;
+
+    if (c->showAsync() != gmpi::ReturnCode::Ok)
+    {
+        child_ = nullptr;
+        childItem_ = -1;
+    }
+
+    c->release();   // showAsync took its own reference; drop the construction one
 }
 
 inline void WaylandPopupMenu::dismiss()
@@ -1354,6 +1464,14 @@ inline void WaylandPopupMenu::dismiss()
     if (dismissed_)
         return;
     dismissed_ = true;
+
+    closeChild();               // nested popups must be destroyed topmost-first
+
+    if (parentMenu_)
+    {
+        parentMenu_->onChildDismissed(this);
+        parentMenu_ = nullptr;
+    }
 
     destroySurfaces();
     release();   // balances the addRef in showAsync

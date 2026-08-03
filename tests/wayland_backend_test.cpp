@@ -8,6 +8,7 @@
 //
 // build:  ./tests/run.sh     (no compositor or display required)
 #include "backends/DrawingFrameWayland.h"
+#include "helpers/NativeUi.h"
 #include <cstdio>
 #include <vector>
 
@@ -121,6 +122,65 @@ int main()
         c.unregisterPopup(&p);      // popup tore itself down first
         c.closeLivePopups();
         check("an unregistered popup is not closed twice", closes == 0);
+    }
+
+    // --- clicking a submenu header -----------------------------------------
+    // A submenu header carries no id of its own. Completing the menu with it
+    // hands the caller a meaningless value; on the spike it also tore the popup
+    // down while its child was still up. Items are 24px tall starting at y=4,
+    // so index 0 spans 4..28, index 1 spans 28..52, index 2 spans 52..76.
+    {
+        int chosenId = -1;
+        gmpi::sdk::PopupMenuCallback cb([&](int32_t id) { chosenId = id; });
+
+        auto* m = new gmpi::wayland::WaylandPopupMenu(connection, input, nullptr, factory, nullptr, {});
+        m->addRef();                       // stands in for the reference showAsync takes
+        m->addItem("Plain", 1, 0, &cb);
+        // give the header a callback too: without it the test cannot tell a
+        // correct "do nothing" from a wrong "complete with a meaningless id"
+        m->addItem("Arrange", 77, (int32_t)F::SubMenuBegin, &cb);
+        m->addItem("Align Left", 10, 0, &cb);
+        m->addItem("", 0, (int32_t)F::SubMenuEnd, nullptr);
+        m->addItem("Other", 2, 0, &cb);
+
+        m->onButton(0, 40, 272, false, 0);      // release over "Arrange"
+        // addItem stores no callback for a header, so the callback alone cannot
+        // tell right from wrong here - the menu staying OPEN is the real assertion
+        check("clicking a submenu header does not complete the menu",
+              chosenId == -1 && !m->isDismissed());
+
+        m->onKey(0xff1b, 0);                    // Escape: dismiss, drops the stand-in ref
+        m->release();
+    }
+    {
+        int chosenId = -1;
+        gmpi::sdk::PopupMenuCallback cb([&](int32_t id) { chosenId = id; });
+
+        auto* m = new gmpi::wayland::WaylandPopupMenu(connection, input, nullptr, factory, nullptr, {});
+        m->addRef();
+        m->addItem("Plain", 1, 0, &cb);
+        m->addItem("Arrange", 0, (int32_t)F::SubMenuBegin, nullptr);
+        m->addItem("Align Left", 10, 0, &cb);
+        m->addItem("", 0, (int32_t)F::SubMenuEnd, nullptr);
+        m->addItem("Other", 2, 0, &cb);
+
+        m->onButton(0, 64, 272, false, 0);      // release over "Other"
+        check("clicking a plain item completes with its id",
+              chosenId == 2 && m->isDismissed());
+        m->release();                            // choose() already dismissed
+    }
+    {
+        int chosenId = -1;
+        gmpi::sdk::PopupMenuCallback cb([&](int32_t id) { chosenId = id; });
+
+        auto* m = new gmpi::wayland::WaylandPopupMenu(connection, input, nullptr, factory, nullptr, {});
+        m->addRef();
+        m->addItem("Plain", 1, 0, &cb);
+        m->addItem("Grayed", 9, (int32_t)F::Grayed, &cb);
+
+        m->onButton(0, 40, 272, false, 0);      // release over the grayed item
+        check("clicking a grayed item completes nothing", chosenId == -1);
+        m->release();                            // dismiss() ran in onButton
     }
 
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");

@@ -129,6 +129,18 @@ private:
 // ---------------------------------------------------------------------------
 // Owned when standalone, borrowed when hosted in a plugin. Everything else takes
 // this by reference and never asks where it came from.
+// Anything holding compositor surfaces that MUST be gone before the connection
+// is dropped. A client that vanishes while a popup grab is live makes mutter
+// 46.2 crash or hang, taking the whole desktop session with it - so this is not
+// tidiness, it is the difference between closing a plugin window and logging the
+// user out.
+struct IPopupTeardown
+{
+    virtual void closeSurfaces() = 0;
+protected:
+    ~IPopupTeardown() = default;
+};
+
 class Connection
 {
 public:
@@ -148,11 +160,38 @@ public:
         return display_ && bindGlobals();
     }
 
+    // Popups register while they hold surfaces. Order matters: they are closed
+    // topmost-first, which is what xdg-shell requires for nested popups.
+    void registerPopup(IPopupTeardown* p)   { livePopups_.push_back(p); }
+    void unregisterPopup(IPopupTeardown* p) { std::erase(livePopups_, p); }
+
+    // Close every popup still standing and let the compositor process it. Safe to
+    // call more than once; closeSurfaces() is idempotent.
+    void closeLivePopups()
+    {
+        if (livePopups_.empty())
+            return;
+
+        auto pending = livePopups_;           // closeSurfaces() unregisters
+        for (auto it = pending.rbegin(); it != pending.rend(); ++it)
+            (*it)->closeSurfaces();
+        livePopups_.clear();
+
+        if (display_)
+            wl_display_roundtrip(display_);   // do not race ahead of the destroys
+    }
+
     ~Connection()
     {
+        // Runs whether or not we own the display: an orphaned grabbing popup is
+        // just as fatal on a host-owned connection.
+        closeLivePopups();
+
         if (owned_ && display_)
             wl_display_disconnect(display_);
     }
+
+    std::vector<IPopupTeardown*> livePopups_;
 
     wl_display*    display()    const { return display_; }
     wl_compositor* compositor() const { return compositor_; }
@@ -883,7 +922,8 @@ inline void InputDispatch::bindSeat(Connection& connection)
 // Items arrive FLAT through IContextItemSink::addItem, with SubMenuBegin /
 // SubMenuEnd markers delimiting nesting and each item carrying its own
 // IPopupMenuCallback - so the first job is rebuilding a tree from that stream.
-class WaylandPopupMenu : public gmpi::api::IPopupMenu, public IPointerTarget
+class WaylandPopupMenu : public gmpi::api::IPopupMenu, public IPointerTarget,
+                         public IPopupTeardown
 {
 public:
     struct Item
@@ -908,6 +948,10 @@ public:
     }
 
     ~WaylandPopupMenu() override { destroySurfaces(); }
+
+    // IPopupTeardown: drop compositor surfaces without destroying the object,
+    // which the connection may do while the client still holds a reference.
+    void closeSurfaces() override { destroySurfaces(); }
 
     // --- IContextItemSink / IPopupMenu ---
     gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags,
@@ -1242,6 +1286,10 @@ inline gmpi::ReturnCode WaylandPopupMenu::showAsync()
         XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y);
 
     popup_ = xdg_surface_get_popup(xdgSurface_, parentXdg_, pos);
+
+    // From here we hold compositor surfaces (and shortly a grab): the connection
+    // must not be dropped without closing us first.
+    connection_.registerPopup(this);
     xdg_positioner_destroy(pos);
     xdg_popup_add_listener(popup_, &popupListener, this);
 
@@ -1313,6 +1361,8 @@ inline void WaylandPopupMenu::dismiss()
 
 inline void WaylandPopupMenu::destroySurfaces()
 {
+    connection_.unregisterPopup(this);
+
     if (surface_)
         input_.unregisterSurface(surface_);
 

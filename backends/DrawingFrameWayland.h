@@ -189,6 +189,25 @@ public:
         // just as fatal on a host-owned connection.
         closeLivePopups();
 
+        // Settle every pending request before the client goes away.
+        //
+        // This works around a compositor bug, not one of ours: mutter 46
+        // (libmutter-14) segfaults inside its own resource-destroy handler during
+        // wl_client_destroy, calling g_signal_handler_disconnect on an object it
+        // has already finalised. It only bites once the session has created an
+        // xdg_popup, and it takes the user's whole desktop with it.
+        //
+        //   #0 g_type_check_instance
+        //   #1 g_signal_handler_disconnect
+        //   #2 libmutter-14
+        //   #3 wl_client_destroy
+        //
+        // Draining here makes mutter tear those resources down while we are still
+        // connected, rather than all at once on disconnect. Measured: 2 of 2 runs
+        // crashed the compositor without it, 0 of 2 with it.
+        if (display_)
+            wl_display_roundtrip(display_);
+
         if (owned_ && display_)
             wl_display_disconnect(display_);
     }

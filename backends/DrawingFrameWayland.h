@@ -233,6 +233,18 @@ class WaylandHostBase : public gmpi::api::IDrawingHost, public gmpi::api::IInput
 public:
     virtual ~WaylandHostBase() = default;
 
+    // The CPU backend deliberately contains no font, shaping or image-decode code,
+    // so the host cannot supply them either without dragging fontconfig, HarfBuzz and
+    // libpng into gmpi_ui's Wayland layer. The application wires them, exactly as
+    // DrawingFrame2_cpu.h and the test fixtures do:
+    //
+    //     host.drawingFactory().textEngine   = &textEngine;
+    //     host.drawingFactory().imageDecoder = gmpi::drawing::decodeImageFile;
+    //
+    // Without a text engine the backend draws geometry fine and text not at all,
+    // which is a silent and confusing failure - hence saying so here.
+    gmpi::cpugfx::Factory& drawingFactory() { return factory_; }
+
     // --- IDrawingHost ---
     gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
     {

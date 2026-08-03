@@ -214,6 +214,60 @@ int main()
               PortalBus::uriToPath("file:///caf%C3%A9.se") == "/caf\xc3\xa9.se");
     }
 
+    // --- stock dialogs ------------------------------------------------------
+    // Wayland has no message box, so we draw one. Which buttons a type offers and
+    // what Escape means are the parts a caller depends on being right.
+    {
+        using T = gmpi::api::StockDialogType;
+        using B = gmpi::api::StockDialogButton;
+        using Dlg = gmpi::wayland::WaylandStockDialog;
+
+        auto make = [&](T t) {
+            return Dlg(connection, input, nullptr, factory, nullptr,
+                       int32_t(t), "Title", "A message that the user has to read.");
+        };
+
+        auto ok = make(T::Ok);
+        check("Ok dialog offers one button",
+              ok.buttons().size() == 1 && ok.buttons()[0].id == B::Ok);
+        check("Ok dialog: Escape means Ok", ok.escapeButton() == B::Ok);
+
+        auto okc = make(T::OkCancel);
+        check("OkCancel offers Ok then Cancel",
+              okc.buttons().size() == 2 && okc.buttons()[0].id == B::Ok
+                                        && okc.buttons()[1].id == B::Cancel);
+        check("OkCancel: Escape means Cancel", okc.escapeButton() == B::Cancel);
+
+        auto yn = make(T::YesNo);
+        check("YesNo offers Yes then No",
+              yn.buttons().size() == 2 && yn.buttons()[0].id == B::Yes
+                                       && yn.buttons()[1].id == B::No);
+        // Escape must NOT mean Yes: dismissing a "discard changes?" box by
+        // accident should never be the destructive answer.
+        check("YesNo: Escape means No", yn.escapeButton() == B::No);
+
+        auto ync = make(T::YesNoCancel);
+        check("YesNoCancel offers three buttons",
+              ync.buttons().size() == 3 && ync.buttons()[2].id == B::Cancel);
+        check("YesNoCancel: Escape means Cancel", ync.escapeButton() == B::Cancel);
+
+        // geometry: laid out before mapping, inside the window, non-overlapping
+        bool inside = true, ordered = true;
+        const auto& bs = ync.buttons();
+        for (size_t i = 0; i < bs.size(); ++i)
+        {
+            if (bs[i].rect.left < 0 || bs[i].rect.right > float(ync.contentWidth())
+                || bs[i].rect.bottom > float(ync.contentHeight()))
+                inside = false;
+            if (i && bs[i].rect.right > bs[i - 1].rect.left)
+                ordered = false;      // laid out right to left, no overlap
+        }
+        check("dialog buttons sit inside the window", inside);
+        check("dialog buttons do not overlap", ordered);
+        check("default button is rightmost",
+              bs.size() > 1 && bs[0].rect.left > bs[1].rect.left);
+    }
+
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");
     return failures != 0;
 }

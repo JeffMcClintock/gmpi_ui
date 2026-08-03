@@ -376,6 +376,10 @@ public:
     // why this is asked for rather than assumed.
     virtual xdg_surface* popupParent() const { return nullptr; }
 
+    // Message boxes are windows of our own, so they need the app's libdecor
+    // context: one context, many frames, one dispatch loop servicing them all.
+    virtual libdecor* decorContext() const { return nullptr; }
+
     static void onExported(void* data, zxdg_exported_v2*, const char* handle)
     {
         auto& f = *static_cast<WaylandFrameBase*>(data);
@@ -428,8 +432,9 @@ public:
     { return gmpi::ReturnCode::NoSupport; }
     gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
     { return gmpi::ReturnCode::NoSupport; }
-    gmpi::ReturnCode createStockDialog(int32_t, const char*, const char*, gmpi::api::IUnknown**) override
-    { return gmpi::ReturnCode::NoSupport; }
+    // defined after WaylandStockDialog, which it constructs
+    gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
+                                       gmpi::api::IUnknown** returnDialog) override;
     gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown**) override
     { return gmpi::ReturnCode::NoSupport; }
 
@@ -1557,6 +1562,365 @@ inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::R
 }
 
 // ---------------------------------------------------------------------------
+// WaylandStockDialog - IStockDialog, drawn by us
+// ---------------------------------------------------------------------------
+// There is nothing to call. Wayland has no stock dialogs, and the FileChooser
+// portal - which is how we get a file picker - has no message-box equivalent.
+// So a message box is a real toplevel of our own, drawn with the same cpugfx
+// path as the menus, sharing the app's libdecor context so one dispatch loop
+// services every window.
+class WaylandStockDialog : public gmpi::api::IStockDialog, public IPointerTarget
+{
+public:
+    WaylandStockDialog(Connection& connection, InputDispatch& input, libdecor* decor,
+                       gmpi::cpugfx::Factory& factory, gmpi::drawing::api::ITextFormat* font,
+                       int32_t dialogType, std::string title, std::string text)
+        : connection_(connection), input_(input), decor_(decor), factory_(factory),
+          font_(font), title_(std::move(title)), text_(std::move(text))
+    {
+        using T = gmpi::api::StockDialogType;
+        using B = gmpi::api::StockDialogButton;
+
+        switch (static_cast<T>(dialogType))
+        {
+        case T::OkCancel:    buttons_ = { { "OK", B::Ok }, { "Cancel", B::Cancel } };
+                             escape_ = B::Cancel; break;
+        case T::YesNo:       buttons_ = { { "Yes", B::Yes }, { "No", B::No } };
+                             escape_ = B::No; break;
+        case T::YesNoCancel: buttons_ = { { "Yes", B::Yes }, { "No", B::No }, { "Cancel", B::Cancel } };
+                             escape_ = B::Cancel; break;
+        case T::Ok:
+        default:             buttons_ = { { "OK", B::Ok } };
+                             escape_ = B::Ok; break;
+        }
+
+        layout();   // geometry up front, so it is valid (and inspectable) before mapping
+    }
+
+    ~WaylandStockDialog() override { destroySurfaces(); }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+
+    // --- IPointerTarget ---
+    void onEnter(double x, double y, uint32_t) override { hovered_ = buttonAt(x, y); present(); }
+    void onLeave() override { hovered_ = -1; present(); }
+    void onMotion(double x, double y, int32_t) override
+    {
+        const int was = hovered_;
+        hovered_ = buttonAt(x, y);
+        if (hovered_ != was)
+            present();
+    }
+    void onButton(double x, double y, uint32_t, bool pressed, uint32_t) override
+    {
+        if (pressed)
+            return;
+        const int i = buttonAt(x, y);
+        if (i >= 0)
+            complete(buttons_[size_t(i)].id);
+    }
+    void onWheel(double, double, int32_t, double) override {}
+    void onKey(uint32_t keysym, uint32_t) override
+    {
+        if (keysym == 0xff1b)                              // Escape
+            complete(escape_);
+        else if (keysym == 0xff0d || keysym == 0xff8d)     // Return, KP_Enter
+            complete(buttons_.empty() ? gmpi::api::StockDialogButton::Ok : buttons_.front().id);
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IStockDialog);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    struct Button
+    {
+        std::string label;
+        gmpi::api::StockDialogButton id;
+        gmpi::drawing::Rect rect{};
+    };
+
+    // exposed for headless tests: which buttons this dialog type offers, where
+    // they sit, and what Escape maps to
+    const std::vector<Button>& buttons() const { return buttons_; }
+    gmpi::api::StockDialogButton escapeButton() const { return escape_; }
+    int contentWidth()  const { return w_; }
+    int contentHeight() const { return h_; }
+
+private:
+    void layout();
+    void present();
+    void complete(gmpi::api::StockDialogButton b);
+    void destroySurfaces();
+    int  buttonAt(double x, double y) const;
+
+    static void configure(libdecor_frame* frame, libdecor_configuration* configuration, void* data);
+    static void closed(libdecor_frame*, void* data)
+    {
+        // the window manager's close button is a cancel, not a silent disappearance
+        auto& d = *static_cast<WaylandStockDialog*>(data);
+        d.complete(d.escape_);
+    }
+    static void commitCb(libdecor_frame*, void* data)
+    {
+        wl_surface_commit(static_cast<WaylandStockDialog*>(data)->surface_);
+    }
+    static void dismissPopup(libdecor_frame*, const char*, void*) {}
+
+    Connection&    connection_;
+    InputDispatch& input_;
+    libdecor*      decor_{};
+    gmpi::cpugfx::Factory& factory_;
+    gmpi::drawing::api::ITextFormat* font_{};
+
+    std::string title_, text_;
+    std::vector<Button> buttons_;
+    gmpi::api::StockDialogButton escape_ = gmpi::api::StockDialogButton::Ok;
+
+    wl_surface*     surface_{};
+    libdecor_frame* frame_{};
+    ShmBuffer       buffer_;
+
+    int  w_ = 420, h_ = 150;
+    int  hovered_ = -1;
+    bool configured_ = false;
+    bool completed_  = false;
+
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+};
+
+constexpr int kDialogMargin     = 20;
+constexpr int kDialogButtonW    = 92;
+constexpr int kDialogButtonH    = 30;
+constexpr int kDialogButtonGap  = 10;
+constexpr int kDialogTextWidth  = 380;   // content width before margins
+
+inline void WaylandStockDialog::layout()
+{
+    // Measure the message so a long one gets a taller box rather than a clipped
+    // one. Without a font we cannot measure, so fall back to a fixed height.
+    float textH = 40.0f;
+    if (font_)
+    {
+        gmpi::drawing::Size sz{};
+        if (font_->getTextExtentU(text_.c_str(), int32_t(text_.size()),
+                                  float(kDialogTextWidth), &sz) == gmpi::ReturnCode::Ok)
+            textH = (std::max)(20.0f, sz.height);
+    }
+
+    w_ = kDialogTextWidth + 2 * kDialogMargin;
+    h_ = kDialogMargin + int(textH) + 24 + kDialogButtonH + kDialogMargin;
+
+    // buttons right-aligned along the bottom, first one rightmost so the default
+    // sits where the eye lands
+    int x = w_ - kDialogMargin;
+    const int y = h_ - kDialogMargin - kDialogButtonH;
+    for (auto& b : buttons_)
+    {
+        x -= kDialogButtonW;
+        b.rect = { float(x), float(y), float(x + kDialogButtonW), float(y + kDialogButtonH) };
+        x -= kDialogButtonGap;
+    }
+}
+
+inline int WaylandStockDialog::buttonAt(double x, double y) const
+{
+    for (size_t i = 0; i < buttons_.size(); ++i)
+    {
+        const auto& r = buttons_[i].rect;
+        if (x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+            return int(i);
+    }
+    return -1;
+}
+
+inline gmpi::ReturnCode WaylandStockDialog::showAsync(gmpi::api::IUnknown* callback)
+{
+    static libdecor_frame_interface frameInterface = { configure, closed, commitCb, dismissPopup };
+
+    if (!decor_ || !connection_.compositor())
+        return gmpi::ReturnCode::Fail;
+
+    // A message box takes the keyboard; leaving a popup grab up while it does
+    // strands the compositor with a grab nobody services.
+    connection_.closeLivePopups();
+
+    layout();
+
+    surface_ = wl_compositor_create_surface(connection_.compositor());
+    if (!surface_)
+        return gmpi::ReturnCode::Fail;
+
+    frame_ = libdecor_decorate(decor_, surface_, &frameInterface, this);
+    if (!frame_)
+    {
+        wl_surface_destroy(surface_);
+        surface_ = nullptr;
+        return gmpi::ReturnCode::Fail;
+    }
+
+    libdecor_frame_set_title(frame_, title_.c_str());
+    libdecor_frame_map(frame_);
+
+    input_.registerSurface(surface_, this);
+    callback_ = callback;
+
+    // stay alive until the user answers, independent of the caller's reference
+    addRef();
+    return gmpi::ReturnCode::Ok;
+}
+
+inline void WaylandStockDialog::configure(libdecor_frame* frame,
+                                          libdecor_configuration* configuration, void* data)
+{
+    auto& d = *static_cast<WaylandStockDialog*>(data);
+
+    int w = 0, h = 0;
+    if (!libdecor_configuration_get_content_size(configuration, frame, &w, &h) || w <= 0 || h <= 0)
+    {
+        w = d.w_;
+        h = d.h_;
+    }
+
+    libdecor_state* state = libdecor_state_new(w, h);
+    libdecor_frame_commit(frame, state, configuration);
+    libdecor_state_free(state);
+
+    d.configured_ = true;   // only now may a buffer be attached
+    d.present();
+    wl_surface_commit(d.surface_);
+}
+
+inline void WaylandStockDialog::present()
+{
+    // attaching before the first configure is a protocol error that disconnects us
+    if (!configured_ || !surface_ || w_ <= 0 || h_ <= 0)
+        return;
+
+    if (!buffer_.matches(w_, h_) && !buffer_.create(connection_.shm(), w_, h_))
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_.createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt) { if (rtRaw) rtRaw->release(); return; }
+
+    rt->beginDraw();
+
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
+    rt->clear(&bg);
+
+    auto* ink      = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
+    auto* face     = brush({ 0.24f, 0.25f, 0.28f, 1.0f });
+    auto* faceHot  = brush({ 0.30f, 0.44f, 0.68f, 1.0f });
+    auto* edge     = brush({ 0.38f, 0.39f, 0.43f, 1.0f });
+
+    if (font_ && ink)
+    {
+        const gmpi::drawing::Rect tr{ float(kDialogMargin), float(kDialogMargin),
+                                      float(kDialogMargin + kDialogTextWidth),
+                                      float(h_ - kDialogMargin - kDialogButtonH - 12) };
+        rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
+    }
+
+    for (size_t i = 0; i < buttons_.size(); ++i)
+    {
+        const auto& b = buttons_[i];
+        if (auto* fill = (int(i) == hovered_) ? faceHot : face; fill)
+            rt->fillRectangle(&b.rect, fill);
+        if (edge)
+            rt->drawRectangle(&b.rect, edge, 1.0f, nullptr);
+
+        if (font_ && ink)
+        {
+            // nudged down so the glyphs sit optically centred in the button
+            const gmpi::drawing::Rect lr{ b.rect.left, b.rect.top + 6.f,
+                                          b.rect.right, b.rect.bottom };
+            rt->drawTextU(b.label.c_str(), uint32_t(b.label.size()), font_, &lr, ink, 0);
+        }
+    }
+
+    if (ink)     ink->release();
+    if (face)    face->release();
+    if (faceHot) faceHot->release();
+    if (edge)    edge->release();
+
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        const auto& s = bm->surface;
+        const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+        const gmpi::cpugfx::DestSurface   dst{ buffer_.pixels(), buffer_.stride(), w_, h_,
+                                               gmpi::cpugfx::PixelEncoding::Bgra8888 };
+        gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
+    }
+    if (bmRaw) bmRaw->release();
+    if (rtRaw) rtRaw->release();
+
+    wl_surface_attach(surface_, buffer_.buffer(), 0, 0);
+    wl_surface_damage_buffer(surface_, 0, 0, w_, h_);
+    wl_surface_commit(surface_);
+}
+
+inline void WaylandStockDialog::destroySurfaces()
+{
+    if (surface_)
+        input_.unregisterSurface(surface_);
+
+    buffer_.release();
+
+    if (frame_)   { libdecor_frame_unref(frame_); frame_ = nullptr; }
+    if (surface_) { wl_surface_destroy(surface_); surface_ = nullptr; }
+}
+
+inline void WaylandStockDialog::complete(gmpi::api::StockDialogButton b)
+{
+    if (completed_)
+        return;
+    completed_ = true;
+
+    // Tear the window down BEFORE the callback: it commonly opens the next dialog,
+    // and leaving this one on screen behind it reads as the click not registering.
+    destroySurfaces();
+
+    if (auto cb = callback_.as<gmpi::api::IStockDialogCallback>(); cb)
+        cb->onComplete(b);
+
+    callback_ = {};
+    release();   // balances the addRef in showAsync
+}
+
+inline gmpi::ReturnCode WaylandFrameBase::createStockDialog(
+    int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog)
+{
+    *returnDialog = {};
+
+    // Without a libdecor context there is no way to put a decorated window on
+    // screen; better to say so than to map an undecorated, unclosable box.
+    if (!decorContext())
+        return gmpi::ReturnCode::NoSupport;
+
+    auto* dlg = new WaylandStockDialog(connection_, inputDispatch(), decorContext(),
+                                       factory_, menuFont_, dialogType,
+                                       title ? title : "", text ? text : "");
+    *returnDialog = static_cast<gmpi::api::IStockDialog*>(dlg);
+    return gmpi::ReturnCode::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // WaylandToplevel - a decorated window of our own
 // ---------------------------------------------------------------------------
 // The standalone case. A plugin view is a SIBLING of this, not a mode inside it:
@@ -1581,6 +1945,9 @@ public:
     {
         return frame_ ? libdecor_frame_get_xdg_surface(frame_) : nullptr;
     }
+
+    // share our context so a message box is dispatched by this window's loop
+    libdecor* decorContext() const override { return decor_; }
 
     InputDispatch& input() { return input_; }
     InputDispatch& inputDispatch() override { return input_; }

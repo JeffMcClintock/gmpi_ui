@@ -481,8 +481,9 @@ public:
     // defined after WaylandStockDialog, which it constructs
     gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
                                        gmpi::api::IUnknown** returnDialog) override;
-    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown**) override
-    { return gmpi::ReturnCode::NoSupport; }
+    // defined after WaylandColorDialog, which it constructs
+    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color initialColor,
+                                       gmpi::api::IUnknown** returnDialog) override;
 
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
@@ -1710,6 +1711,540 @@ inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::R
 }
 
 // ---------------------------------------------------------------------------
+// WaylandColorDialog - IColorDialog, drawn by us
+// ---------------------------------------------------------------------------
+// No portal offers a colour chooser (Screenshot.PickColor picks a pixel off the
+// screen, which is a different thing), so this is drawn like the message box.
+//
+// The colour space is the part worth getting right. Every surface in this
+// library is LINEAR - the sRGB curve is applied once, on the way out to an
+// 8-bit consumer. But hue/saturation/value are perceptual: a user dragging
+// halfway down expects half brightness as their eye judges it, and a hex code
+// means sRGB. So the model here is sRGB throughout and converts on both
+// boundaries - in from initialColor, out to the callback and to every brush.
+class WaylandColorDialog : public gmpi::api::IColorDialog, public IPointerTarget
+{
+public:
+    WaylandColorDialog(Connection& connection, InputDispatch& input, libdecor* decor,
+                       gmpi::cpugfx::Factory& factory, gmpi::drawing::api::ITextFormat* font,
+                       gmpi::drawing::Color initialColor)
+        : connection_(connection), input_(input), decor_(decor), factory_(factory), font_(font)
+    {
+        setFromLinear(initialColor);
+        layout();
+    }
+
+    ~WaylandColorDialog() override { destroySurfaces(); }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+
+    // --- IPointerTarget ---
+    void onEnter(double x, double y, uint32_t) override { (void)x; (void)y; }
+    void onLeave() override { hoveredButton_ = -1; present(); }
+    void onMotion(double x, double y, int32_t) override;
+    void onButton(double x, double y, uint32_t, bool pressed, uint32_t) override;
+    void onWheel(double, double, int32_t, double) override {}
+    void onKey(uint32_t keysym, uint32_t) override
+    {
+        if (keysym == 0xff1b)                            // Escape
+            complete(gmpi::ReturnCode::Cancel);
+        else if (keysym == 0xff0d || keysym == 0xff8d)   // Return
+            complete(gmpi::ReturnCode::Ok);
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IColorDialog);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    // --- colour maths, exposed so it can be checked without a compositor ------
+
+    // sRGB transfer function, decode direction. linearToSRGB01 is its inverse and
+    // lives in GmpiApiDrawing.h; this is the only other copy in the library.
+    static float srgbToLinear01(float c)
+    {
+        c = c < 0.f ? 0.f : (c > 1.f ? 1.f : c);
+        return (c <= 0.04045f) ? c / 12.92f
+                               : std::pow((c + 0.055f) / 1.055f, 2.4f);
+    }
+
+    struct Hsv { float h{}, s{}, v{}, a{ 1.f }; };   // h in [0,360), rest [0,1]
+
+    static void hsvToSrgb(const Hsv& in, float& r, float& g, float& b)
+    {
+        const float h = std::fmod(std::fmod(in.h, 360.f) + 360.f, 360.f) / 60.f;
+        const float c = in.v * in.s;
+        const float x = c * (1.f - std::fabs(std::fmod(h, 2.f) - 1.f));
+        const float m = in.v - c;
+
+        float rr = 0, gg = 0, bb = 0;
+        switch (int(h))
+        {
+        case 0: rr = c; gg = x; break;
+        case 1: rr = x; gg = c; break;
+        case 2: gg = c; bb = x; break;
+        case 3: gg = x; bb = c; break;
+        case 4: rr = x; bb = c; break;
+        default: rr = c; bb = x; break;
+        }
+        r = rr + m; g = gg + m; b = bb + m;
+    }
+
+    static Hsv srgbToHsv(float r, float g, float b, float a)
+    {
+        const float mx = (std::max)(r, (std::max)(g, b));
+        const float mn = (std::min)(r, (std::min)(g, b));
+        const float d  = mx - mn;
+
+        Hsv out;
+        out.v = mx;
+        out.s = (mx <= 0.f) ? 0.f : d / mx;
+        out.a = a;
+
+        if (d <= 0.f)
+            out.h = 0.f;                       // grey: hue is arbitrary, keep it stable
+        else if (mx == r) out.h = 60.f * std::fmod((g - b) / d, 6.f);
+        else if (mx == g) out.h = 60.f * (((b - r) / d) + 2.f);
+        else              out.h = 60.f * (((r - g) / d) + 4.f);
+
+        if (out.h < 0.f) out.h += 360.f;
+        return out;
+    }
+
+    // the picked colour, converted back to the linear space the library uses
+    gmpi::drawing::Color color() const
+    {
+        float r, g, b;
+        hsvToSrgb(hsv_, r, g, b);
+        return { srgbToLinear01(r), srgbToLinear01(g), srgbToLinear01(b), hsv_.a };
+    }
+
+    void setFromLinear(gmpi::drawing::Color c)
+    {
+        hsv_ = srgbToHsv(gmpi::drawing::linearToSRGB01(c.r),
+                         gmpi::drawing::linearToSRGB01(c.g),
+                         gmpi::drawing::linearToSRGB01(c.b), c.a);
+    }
+
+    const Hsv& hsv() const { return hsv_; }
+    int contentWidth()  const { return w_; }
+    int contentHeight() const { return h_; }
+
+    // which control a point lands on; exposed so hit-testing is checkable
+    enum class Region { None, SatVal, Hue, Alpha, Ok, Cancel };
+    Region regionAt(double x, double y) const;
+
+private:
+    struct Button { std::string label; bool ok; gmpi::drawing::Rect rect{}; };
+
+    void layout();
+    void present();
+    void destroySurfaces();
+    void complete(gmpi::ReturnCode result);
+    void applyDrag(Region r, double x, double y);
+
+    // a brush in the library's linear space, from an sRGB colour
+    gmpi::drawing::api::ISolidColorBrush* srgbBrush(gmpi::cpugfx::RenderTarget* rt,
+                                                    float r, float g, float b, float a = 1.f) const
+    {
+        gmpi::drawing::api::ISolidColorBrush* br{};
+        const gmpi::drawing::Color c{ srgbToLinear01(r), srgbToLinear01(g), srgbToLinear01(b), a };
+        rt->createSolidColorBrush(&c, nullptr, &br);
+        return br;
+    }
+
+    static void configure(libdecor_frame* frame, libdecor_configuration* configuration, void* data);
+    static void closed(libdecor_frame*, void* data)
+    {
+        static_cast<WaylandColorDialog*>(data)->complete(gmpi::ReturnCode::Cancel);
+    }
+    static void commitCb(libdecor_frame*, void* data)
+    {
+        wl_surface_commit(static_cast<WaylandColorDialog*>(data)->surface_);
+    }
+    static void dismissPopup(libdecor_frame*, const char*, void*) {}
+
+    Connection&    connection_;
+    InputDispatch& input_;
+    libdecor*      decor_{};
+    gmpi::cpugfx::Factory& factory_;
+    gmpi::drawing::api::ITextFormat* font_{};
+
+    Hsv hsv_;
+    std::vector<Button> buttons_;
+    gmpi::drawing::Rect svRect_{}, hueRect_{}, alphaRect_{}, previewRect_{};
+
+    wl_surface*     surface_{};
+    libdecor_frame* frame_{};
+    ShmBuffer       buffer_;
+
+    int  w_ = 430, h_ = 300;
+    int  hoveredButton_ = -1;
+    Region dragging_ = Region::None;
+    bool configured_ = false;
+    bool completed_  = false;
+
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+};
+
+constexpr int kColorMargin  = 20;
+constexpr int kColorSquare  = 200;
+constexpr int kColorStripW  = 26;
+
+inline void WaylandColorDialog::layout()
+{
+    const float m = float(kColorMargin);
+
+    svRect_    = { m, m, m + kColorSquare, m + kColorSquare };
+    hueRect_   = { svRect_.right + 12.f, m, svRect_.right + 12.f + kColorStripW, m + kColorSquare };
+    alphaRect_ = { hueRect_.right + 12.f, m, hueRect_.right + 12.f + kColorStripW, m + kColorSquare };
+
+    w_ = int(alphaRect_.right + m);
+    h_ = int(svRect_.bottom + m + 34 + m);
+
+    previewRect_ = { m, svRect_.bottom + 10.f, m + 90.f, svRect_.bottom + 10.f + 24.f };
+
+    buttons_ = { { "OK", true }, { "Cancel", false } };
+    int x = w_ - kColorMargin;
+    const int y = h_ - kColorMargin - 30;
+    for (auto& b : buttons_)
+    {
+        x -= 92;
+        b.rect = { float(x), float(y), float(x + 92), float(y + 30) };
+        x -= 10;
+    }
+}
+
+inline WaylandColorDialog::Region WaylandColorDialog::regionAt(double x, double y) const
+{
+    auto in = [&](const gmpi::drawing::Rect& r)
+    { return x >= r.left && x < r.right && y >= r.top && y < r.bottom; };
+
+    for (const auto& b : buttons_)
+        if (in(b.rect))
+            return b.ok ? Region::Ok : Region::Cancel;
+
+    if (in(svRect_))    return Region::SatVal;
+    if (in(hueRect_))   return Region::Hue;
+    if (in(alphaRect_)) return Region::Alpha;
+    return Region::None;
+}
+
+inline void WaylandColorDialog::applyDrag(Region r, double x, double y)
+{
+    auto clamp01 = [](double v) { return float(v < 0 ? 0 : (v > 1 ? 1 : v)); };
+
+    switch (r)
+    {
+    case Region::SatVal:
+        hsv_.s = clamp01((x - svRect_.left) / (svRect_.right - svRect_.left));
+        hsv_.v = 1.f - clamp01((y - svRect_.top) / (svRect_.bottom - svRect_.top));
+        break;
+    case Region::Hue:
+        hsv_.h = clamp01((y - hueRect_.top) / (hueRect_.bottom - hueRect_.top)) * 359.99f;
+        break;
+    case Region::Alpha:
+        hsv_.a = 1.f - clamp01((y - alphaRect_.top) / (alphaRect_.bottom - alphaRect_.top));
+        break;
+    default: return;
+    }
+    present();
+}
+
+inline void WaylandColorDialog::onMotion(double x, double y, int32_t)
+{
+    if (dragging_ != Region::None)
+    {
+        // keep tracking outside the control: releasing the pointer is what ends a
+        // drag, not wandering off the edge of the square
+        applyDrag(dragging_, x, y);
+        return;
+    }
+
+    int hit = -1;
+    for (size_t i = 0; i < buttons_.size(); ++i)
+        if (x >= buttons_[i].rect.left && x < buttons_[i].rect.right &&
+            y >= buttons_[i].rect.top  && y < buttons_[i].rect.bottom)
+            hit = int(i);
+
+    if (hit != hoveredButton_)
+    {
+        hoveredButton_ = hit;
+        present();
+    }
+}
+
+inline void WaylandColorDialog::onButton(double x, double y, uint32_t, bool pressed, uint32_t)
+{
+    const Region r = regionAt(x, y);
+
+    if (pressed)
+    {
+        if (r == Region::SatVal || r == Region::Hue || r == Region::Alpha)
+        {
+            dragging_ = r;
+            applyDrag(r, x, y);
+        }
+        return;
+    }
+
+    if (dragging_ != Region::None)
+    {
+        dragging_ = Region::None;
+        return;
+    }
+
+    if (r == Region::Ok)     complete(gmpi::ReturnCode::Ok);
+    else if (r == Region::Cancel) complete(gmpi::ReturnCode::Cancel);
+}
+
+inline gmpi::ReturnCode WaylandColorDialog::showAsync(gmpi::api::IUnknown* callback)
+{
+    static libdecor_frame_interface frameInterface = { configure, closed, commitCb, dismissPopup };
+
+    if (!decor_ || !connection_.compositor())
+        return gmpi::ReturnCode::Fail;
+
+    connection_.closeLivePopups();   // it takes the keyboard; see the stock dialog
+
+    surface_ = wl_compositor_create_surface(connection_.compositor());
+    if (!surface_)
+        return gmpi::ReturnCode::Fail;
+
+    frame_ = libdecor_decorate(decor_, surface_, &frameInterface, this);
+    if (!frame_)
+    {
+        wl_surface_destroy(surface_);
+        surface_ = nullptr;
+        return gmpi::ReturnCode::Fail;
+    }
+
+    libdecor_frame_set_title(frame_, "Choose a Colour");
+    libdecor_frame_map(frame_);
+
+    input_.registerSurface(surface_, this);
+    callback_ = callback;
+
+    addRef();
+    return gmpi::ReturnCode::Ok;
+}
+
+inline void WaylandColorDialog::configure(libdecor_frame* frame,
+                                          libdecor_configuration* configuration, void* data)
+{
+    auto& d = *static_cast<WaylandColorDialog*>(data);
+
+    int w = 0, h = 0;
+    if (!libdecor_configuration_get_content_size(configuration, frame, &w, &h) || w <= 0 || h <= 0)
+    {
+        w = d.w_;
+        h = d.h_;
+    }
+
+    libdecor_state* state = libdecor_state_new(w, h);
+    libdecor_frame_commit(frame, state, configuration);
+    libdecor_state_free(state);
+
+    d.configured_ = true;
+    d.present();
+    wl_surface_commit(d.surface_);
+}
+
+inline void WaylandColorDialog::present()
+{
+    if (!configured_ || !surface_ || w_ <= 0 || h_ <= 0)
+        return;
+    if (!buffer_.matches(w_, h_) && !buffer_.create(connection_.shm(), w_, h_))
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_.createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt) { if (rtRaw) rtRaw->release(); return; }
+
+    rt->beginDraw();
+    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
+    rt->clear(&bg);
+
+    // --- saturation / value square -----------------------------------------
+    // Banded rather than per-pixel: 40000 one-pixel fills per repaint is not a
+    // thing to do on a CPU renderer, and at this size the seams are invisible.
+    constexpr int kBands = 48;
+    const float bw = (svRect_.right - svRect_.left) / kBands;
+    const float bh = (svRect_.bottom - svRect_.top) / kBands;
+    for (int iy = 0; iy < kBands; ++iy)
+    {
+        for (int ix = 0; ix < kBands; ++ix)
+        {
+            float r, g, b;
+            hsvToSrgb({ hsv_.h, (ix + 0.5f) / kBands, 1.f - (iy + 0.5f) / kBands }, r, g, b);
+            if (auto* br = srgbBrush(rt, r, g, b))
+            {
+                const gmpi::drawing::Rect cell{ svRect_.left + ix * bw, svRect_.top + iy * bh,
+                                                svRect_.left + (ix + 1) * bw + 1.f,
+                                                svRect_.top + (iy + 1) * bh + 1.f };
+                rt->fillRectangle(&cell, br);
+                br->release();
+            }
+        }
+    }
+
+    // --- hue strip ----------------------------------------------------------
+    for (int iy = 0; iy < kBands; ++iy)
+    {
+        float r, g, b;
+        hsvToSrgb({ (iy + 0.5f) / kBands * 359.99f, 1.f, 1.f }, r, g, b);
+        if (auto* br = srgbBrush(rt, r, g, b))
+        {
+            const gmpi::drawing::Rect cell{ hueRect_.left, hueRect_.top + iy * bh,
+                                            hueRect_.right, hueRect_.top + (iy + 1) * bh + 1.f };
+            rt->fillRectangle(&cell, br);
+            br->release();
+        }
+    }
+
+    // --- alpha strip: the colour over a chequer, so transparency reads -------
+    {
+        float r, g, b;
+        hsvToSrgb(hsv_, r, g, b);
+        for (int iy = 0; iy < kBands; ++iy)
+        {
+            const float a = 1.f - (iy + 0.5f) / kBands;
+            const float chequer = ((iy / 4) % 2) ? 0.55f : 0.75f;
+            const float mr = r * a + chequer * (1.f - a);
+            const float mg = g * a + chequer * (1.f - a);
+            const float mb = b * a + chequer * (1.f - a);
+            if (auto* br = srgbBrush(rt, mr, mg, mb))
+            {
+                const gmpi::drawing::Rect cell{ alphaRect_.left, alphaRect_.top + iy * bh,
+                                                alphaRect_.right, alphaRect_.top + (iy + 1) * bh + 1.f };
+                rt->fillRectangle(&cell, br);
+                br->release();
+            }
+        }
+    }
+
+    // --- preview + chrome ---------------------------------------------------
+    {
+        float r, g, b;
+        hsvToSrgb(hsv_, r, g, b);
+        if (auto* br = srgbBrush(rt, r, g, b, hsv_.a))
+        {
+            rt->fillRectangle(&previewRect_, br);
+            br->release();
+        }
+    }
+
+    gmpi::drawing::api::ISolidColorBrush* ink{};
+    const gmpi::drawing::Color inkC{ 0.92f, 0.93f, 0.95f, 1.f };
+    rt->createSolidColorBrush(&inkC, nullptr, &ink);
+
+    gmpi::drawing::api::ISolidColorBrush* edge{};
+    const gmpi::drawing::Color edgeC{ 0.38f, 0.39f, 0.43f, 1.f };
+    rt->createSolidColorBrush(&edgeC, nullptr, &edge);
+
+    if (edge)
+    {
+        rt->drawRectangle(&svRect_, edge, 1.f, nullptr);
+        rt->drawRectangle(&hueRect_, edge, 1.f, nullptr);
+        rt->drawRectangle(&alphaRect_, edge, 1.f, nullptr);
+        rt->drawRectangle(&previewRect_, edge, 1.f, nullptr);
+    }
+
+    // markers for the current position in each control
+    if (ink)
+    {
+        const float mx = svRect_.left + hsv_.s * (svRect_.right - svRect_.left);
+        const float my = svRect_.top + (1.f - hsv_.v) * (svRect_.bottom - svRect_.top);
+        const gmpi::drawing::Rect cross{ mx - 5.f, my - 5.f, mx + 5.f, my + 5.f };
+        rt->drawRectangle(&cross, ink, 2.f, nullptr);
+
+        const float hy = hueRect_.top + (hsv_.h / 360.f) * (hueRect_.bottom - hueRect_.top);
+        const gmpi::drawing::Rect hmark{ hueRect_.left - 2.f, hy - 2.f, hueRect_.right + 2.f, hy + 2.f };
+        rt->drawRectangle(&hmark, ink, 2.f, nullptr);
+
+        const float ay = alphaRect_.top + (1.f - hsv_.a) * (alphaRect_.bottom - alphaRect_.top);
+        const gmpi::drawing::Rect amark{ alphaRect_.left - 2.f, ay - 2.f, alphaRect_.right + 2.f, ay + 2.f };
+        rt->drawRectangle(&amark, ink, 2.f, nullptr);
+    }
+
+    // --- buttons ------------------------------------------------------------
+    gmpi::drawing::api::ISolidColorBrush* face{};
+    const gmpi::drawing::Color faceC{ 0.24f, 0.25f, 0.28f, 1.f };
+    rt->createSolidColorBrush(&faceC, nullptr, &face);
+    gmpi::drawing::api::ISolidColorBrush* faceHot{};
+    const gmpi::drawing::Color hotC{ 0.30f, 0.44f, 0.68f, 1.f };
+    rt->createSolidColorBrush(&hotC, nullptr, &faceHot);
+
+    for (size_t i = 0; i < buttons_.size(); ++i)
+    {
+        const auto& b = buttons_[i];
+        if (auto* fill = (int(i) == hoveredButton_) ? faceHot : face; fill)
+            rt->fillRectangle(&b.rect, fill);
+        if (edge)
+            rt->drawRectangle(&b.rect, edge, 1.f, nullptr);
+        if (font_ && ink)
+        {
+            const gmpi::drawing::Rect lr{ b.rect.left, b.rect.top + 6.f, b.rect.right, b.rect.bottom };
+            rt->drawTextU(b.label.c_str(), uint32_t(b.label.size()), font_, &lr, ink, 0);
+        }
+    }
+
+    if (ink)     ink->release();
+    if (edge)    edge->release();
+    if (face)    face->release();
+    if (faceHot) faceHot->release();
+
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        const auto& sf = bm->surface;
+        const gmpi::cpugfx::SourceSurface src{ sf.pixels, sf.stridePixels, sf.width, sf.height };
+        const gmpi::cpugfx::DestSurface   dst{ buffer_.pixels(), buffer_.stride(), w_, h_,
+                                               gmpi::cpugfx::PixelEncoding::Bgra8888 };
+        gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
+    }
+    if (bmRaw) bmRaw->release();
+    if (rtRaw) rtRaw->release();
+
+    wl_surface_attach(surface_, buffer_.buffer(), 0, 0);
+    wl_surface_damage_buffer(surface_, 0, 0, w_, h_);
+    wl_surface_commit(surface_);
+}
+
+inline void WaylandColorDialog::destroySurfaces()
+{
+    if (surface_)
+        input_.unregisterSurface(surface_);
+
+    buffer_.release();
+
+    if (frame_)   { libdecor_frame_unref(frame_); frame_ = nullptr; }
+    if (surface_) { wl_surface_destroy(surface_); surface_ = nullptr; }
+}
+
+inline void WaylandColorDialog::complete(gmpi::ReturnCode result)
+{
+    if (completed_)
+        return;
+    completed_ = true;
+
+    destroySurfaces();   // before the callback, as with the stock dialog
+
+    if (auto cb = callback_.as<gmpi::api::IColorDialogCallback>(); cb)
+        cb->onComplete(result, color());
+
+    callback_ = {};
+    release();
+}
+
+// ---------------------------------------------------------------------------
 // WaylandKeyListener - IKeyListener
 // ---------------------------------------------------------------------------
 // "Effectively an invisible text-edit": it takes the keyboard while it is up and
@@ -2182,6 +2717,20 @@ inline void WaylandStockDialog::complete(gmpi::api::StockDialogButton b)
 
     callback_ = {};
     release();   // balances the addRef in showAsync
+}
+
+inline gmpi::ReturnCode WaylandFrameBase::createColorDialog(
+    gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog)
+{
+    *returnDialog = {};
+
+    if (!decorContext())
+        return gmpi::ReturnCode::NoSupport;
+
+    auto* dlg = new WaylandColorDialog(connection_, inputDispatch(), decorContext(),
+                                       factory_, menuFont_, initialColor);
+    *returnDialog = static_cast<gmpi::api::IColorDialog*>(dlg);
+    return gmpi::ReturnCode::Ok;
 }
 
 inline gmpi::ReturnCode WaylandFrameBase::createKeyListener(

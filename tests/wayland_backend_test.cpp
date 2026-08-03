@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 using F = gmpi::api::PopupMenuFlags;
 static int failures = 0;
@@ -345,6 +346,71 @@ int main()
             kl->showAsync(nullptr);   // detach path without a callback
             kl->release();
         }
+    }
+
+    // --- colour dialog ------------------------------------------------------
+    // Every surface in this library is LINEAR, but hue/saturation/value are
+    // perceptual and a hex code means sRGB. Getting that boundary backwards
+    // gives colours that are wrong but plausible, which is the worst kind.
+    {
+        using CD = gmpi::wayland::WaylandColorDialog;
+        auto close = [](float a, float b) { return std::fabs(a - b) < 0.01f; };
+
+        // the transfer function itself, against the published constant
+        check("sRGB 0.5 decodes to linear 0.214",  close(CD::srgbToLinear01(0.5f), 0.2140f));
+        check("sRGB 0 and 1 are fixed points",
+              close(CD::srgbToLinear01(0.f), 0.f) && close(CD::srgbToLinear01(1.f), 1.f));
+        check("decode is the inverse of encode",
+              close(CD::srgbToLinear01(gmpi::drawing::linearToSRGB01(0.3f)), 0.3f));
+
+        float r, g, b;
+        CD::hsvToSrgb({ 0.f, 1.f, 1.f }, r, g, b);
+        check("hue 0 is pure red", close(r, 1.f) && close(g, 0.f) && close(b, 0.f));
+        CD::hsvToSrgb({ 120.f, 1.f, 1.f }, r, g, b);
+        check("hue 120 is pure green", close(r, 0.f) && close(g, 1.f) && close(b, 0.f));
+        CD::hsvToSrgb({ 240.f, 1.f, 1.f }, r, g, b);
+        check("hue 240 is pure blue", close(r, 0.f) && close(g, 0.f) && close(b, 1.f));
+
+        // round trip through the hex-like sRGB representation
+        bool roundTrips = true;
+        for (float h : { 15.f, 100.f, 200.f, 300.f })
+            for (float sat : { 0.3f, 1.f })
+                for (float val : { 0.4f, 1.f })
+                {
+                    CD::hsvToSrgb({ h, sat, val }, r, g, b);
+                    const auto back = CD::srgbToHsv(r, g, b, 1.f);
+                    if (!close(back.h, h) || !close(back.s, sat) || !close(back.v, val))
+                        roundTrips = false;
+                }
+        check("hsv survives a round trip through sRGB", roundTrips);
+
+        check("grey keeps a stable hue rather than a random one",
+              CD::srgbToHsv(0.5f, 0.5f, 0.5f, 1.f).h == 0.f
+              && CD::srgbToHsv(0.5f, 0.5f, 0.5f, 1.f).s == 0.f);
+
+        // the boundary that matters: what goes in linear comes back linear
+        gmpi::wayland::WaylandColorDialog dlg(connection, input, nullptr, factory, nullptr,
+                                              gmpi::drawing::Color{ 0.216f, 0.216f, 0.216f, 1.f });
+        const auto out = dlg.color();
+        // NB this round trip alone proves nothing: drop BOTH conversions and it
+        // still passes, because it is only self-consistent. The absolute check
+        // below is the one that fails when the boundary is wrong.
+        check("a linear colour survives the trip through HSV",
+              close(out.r, 0.216f) && close(out.g, 0.216f) && close(out.b, 0.216f));
+        check("mid-linear grey is NOT treated as mid-sRGB",
+              dlg.hsv().v > 0.4f && dlg.hsv().v < 0.6f);   // linear .216 IS sRGB ~.5
+
+        dlg.setFromLinear(gmpi::drawing::Color{ 1.f, 0.f, 0.f, 0.5f });
+        check("alpha is carried through unchanged", close(dlg.hsv().a, 0.5f));
+        check("pure linear red reads as hue 0", close(dlg.hsv().h, 0.f));
+
+        // hit-testing: the three controls and the buttons must not overlap
+        using R = gmpi::wayland::WaylandColorDialog::Region;
+        check("saturation square hit-tests", dlg.regionAt(40, 40) == R::SatVal);
+        check("hue strip hit-tests",  dlg.regionAt(245, 40) == R::Hue);
+        check("alpha strip hit-tests", dlg.regionAt(283, 40) == R::Alpha);
+        check("empty space hits nothing",
+              dlg.regionAt(dlg.contentWidth() - 5, 5) == R::None);
     }
 
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");

@@ -44,6 +44,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "backends/CpuGfx.h"
@@ -220,6 +222,9 @@ inline bool Connection::bindGlobals()
     return compositor_ && shm_;
 }
 
+class InputDispatch;      // defined below; the frame only needs the name here
+class WaylandPopupMenu;
+
 inline bool isEmpty(const gmpi::drawing::Rect& r)
 {
     return r.right <= r.left || r.bottom <= r.top;
@@ -314,10 +319,46 @@ protected:
 // ---------------------------------------------------------------------------
 // Owns a wl_surface and paints an IDrawingClient into it. Knows nothing about
 // where the surface sits: a toplevel and a plugin's subsurface both land here.
-class WaylandFrameBase : public WaylandHostBase
+class WaylandFrameBase : public WaylandHostBase, public gmpi::api::IDialogHost
 {
 public:
     explicit WaylandFrameBase(Connection& connection) : connection_(connection) {}
+
+    // The xdg_surface popups hang off. A toplevel returns libdecor's; a plugin view
+    // returns the HOST's, from VST3's IWaylandFrame::getParentSurface() - which is
+    // why this is asked for rather than assumed.
+    virtual xdg_surface* popupParent() const { return nullptr; }
+
+    // Menus draw their own text, so the host needs a format. The app supplies it for
+    // the same reason it supplies the text engine: no font code in this layer.
+    void setMenuFont(gmpi::drawing::api::ITextFormat* font) { menuFont_ = font; }
+
+    virtual InputDispatch& inputDispatch() = 0;
+
+    // --- IDialogHost ---
+    // defined after WaylandPopupMenu, which it constructs
+    gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnPopupMenu) override;
+
+    // Not yet: the file dialog is xdg-desktop-portal over D-Bus and still lives in
+    // the spike pending a compositor-hang investigation; the rest follow it.
+    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
+    { return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
+    { return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createFileDialog(int32_t, gmpi::api::IUnknown**) override
+    { return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createStockDialog(int32_t, const char*, const char*, gmpi::api::IUnknown**) override
+    { return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown**) override
+    { return gmpi::ReturnCode::NoSupport; }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IDialogHost);
+        return WaylandHostBase::queryInterface(iid, returnInterface);
+    }
+    GMPI_REFCOUNT_NO_DELETE;
 
     ~WaylandFrameBase() override
     {
@@ -376,6 +417,7 @@ protected:
     ShmBuffer    buffer_;
 
     gmpi::api::IDrawingClient* client_{};
+    gmpi::drawing::api::ITextFormat* menuFont_{};
 
     int logicalW_ = 0, logicalH_ = 0;
 };
@@ -477,6 +519,19 @@ inline void WaylandFrameBase::present()
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
+// There is exactly one wl_pointer and one wl_keyboard per seat, no matter how many
+// surfaces a client owns, so events must be routed by the wl_surface they name.
+// A popup registers itself and takes over while it is up.
+struct IPointerTarget
+{
+    virtual ~IPointerTarget() = default;
+    virtual void onEnter(double x, double y, uint32_t serial) = 0;
+    virtual void onLeave() = 0;
+    virtual void onMotion(double x, double y, int32_t modifiers) = 0;
+    virtual void onButton(double x, double y, uint32_t button, bool pressed, uint32_t serial) = 0;
+    virtual void onWheel(double x, double y, int32_t modifiers, double delta) = 0;
+    virtual void onKey(uint32_t keysym, uint32_t utf32) = 0;
+};
 // Turns seat events into IInputClient calls. Pointer coordinates arrive in
 // LOGICAL units and are handed on unscaled, because that is the space the client
 // laid itself out in - scaling happens in the render transform, not here.
@@ -485,8 +540,21 @@ class InputDispatch
 public:
     void attachInputClient(gmpi::api::IInputClient* client) { client_ = client; }
 
-    // the surface these events belong to; a popup has its own dispatcher
+    // the frame's own surface; events naming it go to the IInputClient
     void setSurface(wl_surface* s) { surface_ = s; }
+
+    void registerSurface(wl_surface* s, IPointerTarget* target)
+    {
+        if (s && target)
+            targets_.emplace_back(s, target);
+    }
+
+    void unregisterSurface(wl_surface* s)
+    {
+        std::erase_if(targets_, [s](const auto& e) { return e.first == s; });
+        if (focus_ == s)
+            focus_ = nullptr;
+    }
 
     void bindSeat(Connection& connection);
 
@@ -534,7 +602,17 @@ private:
     static void seatCapabilities(void*, wl_seat*, uint32_t);
     static void seatName(void*, wl_seat*, const char*) {}
 
+    IPointerTarget* targetFor(wl_surface* s) const
+    {
+        for (const auto& e : targets_)
+            if (e.first == s)
+                return e.second;
+        return nullptr;
+    }
+
     gmpi::api::IInputClient* client_{};
+    std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
+    wl_surface*  focus_{};   // surface the last enter named
     wl_surface*  surface_{};
     wl_pointer*  pointer_{};
     wl_keyboard* keyboard_{};
@@ -555,6 +633,15 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
                                         wl_surface* surf, wl_fixed_t sx, wl_fixed_t sy)
 {
     auto& in = *static_cast<InputDispatch*>(data);
+    in.focus_ = surf;
+    in.lastSerial_ = serial;
+
+    if (auto* t = in.targetFor(surf))
+    {
+        t->onEnter(wl_fixed_to_double(sx), wl_fixed_to_double(sy), serial);
+        return;
+    }
+
     if (surf != in.surface_)
         return;
 
@@ -579,6 +666,15 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
 inline void InputDispatch::pointerLeave(void* data, wl_pointer*, uint32_t serial, wl_surface* surf)
 {
     auto& in = *static_cast<InputDispatch*>(data);
+
+    if (auto* t = in.targetFor(surf))
+    {
+        t->onLeave();
+        if (in.focus_ == surf)
+            in.focus_ = nullptr;
+        return;
+    }
+
     if (surf != in.surface_)
         return;
 
@@ -595,6 +691,13 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
                                          wl_fixed_t sx, wl_fixed_t sy)
 {
     auto& in = *static_cast<InputDispatch*>(data);
+
+    if (auto* t = in.targetFor(in.focus_))
+    {
+        t->onMotion(wl_fixed_to_double(sx), wl_fixed_to_double(sy), in.modifierFlags());
+        return;
+    }
+
     in.x_ = wl_fixed_to_double(sx);
     in.y_ = wl_fixed_to_double(sy);
 
@@ -607,6 +710,12 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
 {
     auto& in = *static_cast<InputDispatch*>(data);
     in.lastSerial_ = serial;
+
+    if (auto* t = in.targetFor(in.focus_))
+    {
+        t->onButton(in.x_, in.y_, button, state == WL_POINTER_BUTTON_STATE_PRESSED, serial);
+        return;
+    }
 
     // evdev button codes; there is no wl_pointer enum for them
     int32_t bit = 0;
@@ -680,18 +789,33 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
     auto& in = *static_cast<InputDispatch*>(data);
     in.lastSerial_ = serial;
 
-    if (!in.xkbState_ || !in.client_ || state != WL_KEYBOARD_KEY_STATE_PRESSED)
+    if (!in.xkbState_ || state != WL_KEYBOARD_KEY_STATE_PRESSED)
+        return;
+    if (!in.client_ && !in.targetFor(in.focus_))
         return;
 
     // wayland reports evdev keycodes; xkb numbers them 8 higher
     const xkb_keycode_t code = key + 8;
+    const uint32_t utf32 = xkb_state_key_get_utf32(in.xkbState_, code);
 
-    uint32_t utf32 = xkb_state_key_get_utf32(in.xkbState_, code);
+    // a popup holds the grab while it is up, so it sees the keys
+    if (auto* t = in.targetFor(in.focus_))
+    {
+        t->onKey(xkb_state_key_get_one_sym(in.xkbState_, code), utf32);
+        return;
+    }
+
     if (utf32)
         in.client_->onKeyPress(static_cast<wchar_t>(utf32));
 }
 
-inline void InputDispatch::keyboardEnter(void*, wl_keyboard*, uint32_t, wl_surface*, wl_array*) {}
+inline void InputDispatch::keyboardEnter(void* data, wl_keyboard*, uint32_t, wl_surface* surf, wl_array*)
+{
+    // a grabbing popup gets keyboard focus; remember which surface so keys route there
+    auto& in = *static_cast<InputDispatch*>(data);
+    if (in.targetFor(surf))
+        in.focus_ = surf;
+}
 inline void InputDispatch::keyboardLeave(void*, wl_keyboard*, uint32_t, wl_surface*) {}
 
 inline void InputDispatch::keyboardModifiers(void* data, wl_keyboard*, uint32_t,
@@ -745,6 +869,457 @@ inline void InputDispatch::bindSeat(Connection& connection)
 }
 
 // ---------------------------------------------------------------------------
+// WaylandPopupMenu - IPopupMenu on xdg_popup
+// ---------------------------------------------------------------------------
+// Wayland supplies a positioned, grabbing surface and nothing else: there is no
+// menu widget, so the items are drawn here. GTK and Qt do the same.
+//
+// Items arrive FLAT through IContextItemSink::addItem, with SubMenuBegin /
+// SubMenuEnd markers delimiting nesting and each item carrying its own
+// IPopupMenuCallback - so the first job is rebuilding a tree from that stream.
+class WaylandPopupMenu : public gmpi::api::IPopupMenu, public IPointerTarget
+{
+public:
+    struct Item
+    {
+        std::string label;
+        int32_t     id{};
+        bool        separator{};
+        bool        ticked{};
+        bool        grayed{};
+        std::vector<Item> submenu;              // non-empty => opens a child popup
+        gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+    };
+
+    WaylandPopupMenu(Connection& connection, InputDispatch& input,
+                     xdg_surface* parentXdg, gmpi::cpugfx::Factory& factory,
+                     gmpi::drawing::api::ITextFormat* font,
+                     gmpi::drawing::Rect anchor)
+        : connection_(connection), input_(input), parentXdg_(parentXdg),
+          factory_(factory), font_(font), anchor_(anchor)
+    {
+        stack_.push_back(&root_);
+    }
+
+    ~WaylandPopupMenu() override { destroySurfaces(); }
+
+    // --- IContextItemSink / IPopupMenu ---
+    gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags,
+                             gmpi::api::IUnknown* itemCallback) override;
+    gmpi::ReturnCode setAlignment(int32_t) override { return gmpi::ReturnCode::Ok; }
+    gmpi::ReturnCode showAsync() override;
+
+    // --- IPointerTarget (the popup's own surface) ---
+    void onEnter(double x, double y, uint32_t serial) override;
+    void onLeave() override;
+    void onMotion(double x, double y, int32_t modifiers) override;
+    void onButton(double x, double y, uint32_t button, bool pressed, uint32_t serial) override;
+    void onWheel(double, double, int32_t, double) override {}
+    void onKey(uint32_t keysym, uint32_t) override;
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IPopupMenu);
+        GMPI_QUERYINTERFACE(gmpi::api::IContextItemSink);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    // exposed for headless tests: the tree rebuilt from the flat stream
+    const std::vector<Item>& items() const { return root_; }
+
+private:
+    void  present();
+    void  destroySurfaces();
+    void  choose(Item& item);
+    void  dismiss();
+    int   itemAt(double y) const;
+    int   itemTop(int index) const;
+    int   measuredWidth() const;
+    int   measuredHeight() const;
+
+    static void popupConfigure(void*, xdg_popup*, int32_t, int32_t, int32_t, int32_t) {}
+    static void popupDone(void* data, xdg_popup*);
+    static void popupRepositioned(void*, xdg_popup*, uint32_t) {}
+    static void surfaceConfigure(void* data, xdg_surface* s, uint32_t serial);
+
+    Connection&    connection_;
+    InputDispatch& input_;
+    xdg_surface*   parentXdg_{};
+    gmpi::cpugfx::Factory& factory_;
+    gmpi::drawing::api::ITextFormat* font_{};
+    gmpi::drawing::Rect anchor_{};
+
+    std::vector<Item>   root_;
+    std::vector<std::vector<Item>*> stack_;
+    bool pendingSeparator_ = false;   // deferred, so leading/doubled ones vanish
+
+    wl_surface*  surface_{};
+    xdg_surface* xdgSurface_{};
+    xdg_popup*   popup_{};
+    ShmBuffer    buffer_;
+    int hovered_ = -1;
+    bool dismissed_ = false;
+};
+
+constexpr int kMenuItemHeight = 24;
+constexpr int kMenuSeparatorHeight = 9;
+constexpr int kMenuTickGutter = 26;
+constexpr int kMenuArrowGutter = 22;
+
+inline gmpi::ReturnCode WaylandPopupMenu::addItem(const char* text, int32_t id, int32_t flags,
+                                                  gmpi::api::IUnknown* itemCallback)
+{
+    using F = gmpi::api::PopupMenuFlags;
+
+    const bool subBegin = (flags & int32_t(F::SubMenuBegin)) != 0;
+    const bool subEnd   = (flags & int32_t(F::SubMenuEnd)) != 0;
+    const bool separator = (flags & (int32_t(F::Separator) | int32_t(F::Break))) != 0;
+
+    auto strip = [](const char* s)
+    {
+        // '&' marks a mnemonic; no platform here renders one, so drop it as the
+        // Win32, Cocoa and JUCE backends all do
+        std::string r;
+        for (const char* p = s ? s : ""; *p; ++p)
+            if (*p != '&') r += *p;
+        return r;
+    };
+
+    if (subBegin)
+    {
+        stack_.back()->push_back(Item{ strip(text), id });
+        stack_.push_back(&stack_.back()->back().submenu);
+        pendingSeparator_ = false;
+        return gmpi::ReturnCode::Ok;
+    }
+
+    if (subEnd)
+    {
+        if (stack_.size() > 1)
+            stack_.pop_back();
+        pendingSeparator_ = false;
+        return gmpi::ReturnCode::Ok;
+    }
+
+    if (separator)
+    {
+        pendingSeparator_ = true;   // committed only if a real item follows
+        return gmpi::ReturnCode::Ok;
+    }
+
+    if (pendingSeparator_)
+    {
+        if (!stack_.back()->empty())
+            stack_.back()->push_back(Item{ {}, 0, true });
+        pendingSeparator_ = false;
+    }
+
+    Item item{ strip(text), id };
+    item.ticked = (flags & int32_t(F::Ticked)) != 0;
+    item.grayed = (flags & int32_t(F::Grayed)) != 0;
+    item.callback = itemCallback;   // operator= addRefs; the T* ctor does not
+
+    stack_.back()->push_back(std::move(item));
+    return gmpi::ReturnCode::Ok;
+}
+
+inline int WaylandPopupMenu::itemTop(int index) const
+{
+    int top = 4;
+    for (int i = 0; i < index && i < (int)root_.size(); ++i)
+        top += root_[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+    return top;
+}
+
+inline int WaylandPopupMenu::itemAt(double y) const
+{
+    int top = 4;
+    for (size_t i = 0; i < root_.size(); ++i)
+    {
+        const int h = root_[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+        if (y >= top && y < top + h)
+            return root_[i].separator ? -1 : int(i);
+        top += h;
+    }
+    return -1;
+}
+
+inline int WaylandPopupMenu::measuredHeight() const
+{
+    int h = 8;
+    for (const auto& i : root_)
+        h += i.separator ? kMenuSeparatorHeight : kMenuItemHeight;
+    return h;
+}
+
+inline int WaylandPopupMenu::measuredWidth() const
+{
+    float widest = 90.0f;
+
+    for (const auto& i : root_)
+    {
+        if (i.separator || !font_)
+            continue;
+
+        gmpi::drawing::Size sz{};
+        font_->getTextExtentU(i.label.c_str(), int32_t(i.label.size()), 10000.0f, &sz);
+        widest = (std::max)(widest, sz.width);
+    }
+
+    return int(widest) + kMenuTickGutter + kMenuArrowGutter;
+}
+
+inline void WaylandPopupMenu::present()
+{
+    const int w = measuredWidth();
+    const int h = measuredHeight();
+    if (w <= 0 || h <= 0 || !surface_)
+        return;
+
+    if (!buffer_.matches(w, h) && !buffer_.create(connection_.shm(), w, h))
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_.createCpuRenderTarget({ uint32_t(w), uint32_t(h) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt) { if (rtRaw) rtRaw->release(); return; }
+
+    rt->beginDraw();
+
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
+    rt->clear(&bg);
+
+    auto* ink    = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
+    auto* grey   = brush({ 0.45f, 0.46f, 0.50f, 1.0f });
+    auto* hilite = brush({ 0.16f, 0.42f, 0.75f, 1.0f });
+    auto* rule   = brush({ 0.28f, 0.29f, 0.32f, 1.0f });
+
+    for (size_t i = 0; i < root_.size(); ++i)
+    {
+        const auto& item = root_[i];
+        const float top = float(itemTop(int(i)));
+
+        if (item.separator)
+        {
+            if (rule)
+            {
+                const gmpi::drawing::Rect r{ 6.f, top + kMenuSeparatorHeight * 0.5f,
+                                             float(w) - 6.f, top + kMenuSeparatorHeight * 0.5f + 1.f };
+                rt->fillRectangle(&r, rule);
+            }
+            continue;
+        }
+
+        if (int(i) == hovered_ && !item.grayed && hilite)
+        {
+            const gmpi::drawing::Rect r{ 3.f, top, float(w) - 3.f, top + kMenuItemHeight };
+            rt->fillRectangle(&r, hilite);
+        }
+
+        auto* fg = item.grayed ? grey : ink;
+        if (!fg || !font_)
+            continue;
+
+        if (item.ticked)
+        {
+            const char* tick = "\xe2\x9c\x93";
+            const gmpi::drawing::Rect r{ 8.f, top + 3.f, 26.f, top + kMenuItemHeight };
+            rt->drawTextU(tick, 3, font_, &r, fg, 0);
+        }
+
+        const gmpi::drawing::Rect r{ float(kMenuTickGutter) + 2.f, top + 3.f,
+                                     float(w) - kMenuArrowGutter, top + kMenuItemHeight };
+        rt->drawTextU(item.label.c_str(), uint32_t(item.label.size()), font_, &r, fg, 0);
+
+        if (!item.submenu.empty())
+        {
+            const char* arrow = "\xe2\x80\xba";
+            const gmpi::drawing::Rect a{ float(w) - 20.f, top + 3.f, float(w) - 6.f, top + kMenuItemHeight };
+            rt->drawTextU(arrow, 3, font_, &a, fg, 0);
+        }
+    }
+
+    if (ink)    ink->release();
+    if (grey)   grey->release();
+    if (hilite) hilite->release();
+    if (rule)   rule->release();
+
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        const auto& s = bm->surface;
+        const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+        const gmpi::cpugfx::DestSurface   dst{ buffer_.pixels(), buffer_.stride(), w, h,
+                                               gmpi::cpugfx::PixelEncoding::Bgra8888 };
+        gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w, h });
+    }
+    if (bmRaw) bmRaw->release();
+    if (rtRaw) rtRaw->release();
+
+    wl_surface_attach(surface_, buffer_.buffer(), 0, 0);
+    wl_surface_damage_buffer(surface_, 0, 0, w, h);
+    wl_surface_commit(surface_);
+}
+
+inline void WaylandPopupMenu::surfaceConfigure(void* data, xdg_surface* s, uint32_t serial)
+{
+    auto& self = *static_cast<WaylandPopupMenu*>(data);
+    xdg_surface_ack_configure(s, serial);
+    self.present();
+}
+
+inline void WaylandPopupMenu::popupDone(void* data, xdg_popup*)
+{
+    // dismissed by the compositor: clicked away, Escape, focus lost
+    static_cast<WaylandPopupMenu*>(data)->dismiss();
+}
+
+inline gmpi::ReturnCode WaylandPopupMenu::showAsync()
+{
+    static const xdg_popup_listener popupListener = { popupConfigure, popupDone, popupRepositioned };
+    static const xdg_surface_listener surfaceListener = { surfaceConfigure };
+
+    if (!parentXdg_ || !connection_.wmBase() || !connection_.compositor())
+        return gmpi::ReturnCode::Fail;
+
+    // Stay alive until the menu completes, independent of the caller's reference -
+    // same contract as the JUCE backend.
+    addRef();
+
+    surface_    = wl_compositor_create_surface(connection_.compositor());
+    xdgSurface_ = xdg_wm_base_get_xdg_surface(connection_.wmBase(), surface_);
+    xdg_surface_add_listener(xdgSurface_, &surfaceListener, this);
+
+    const int w = measuredWidth();
+    const int h = measuredHeight();
+
+    xdg_positioner* pos = xdg_wm_base_create_positioner(connection_.wmBase());
+    xdg_positioner_set_size(pos, w, h);
+    // anchor rect in the PARENT surface's coordinates
+    xdg_positioner_set_anchor_rect(pos, int32_t(anchor_.left), int32_t(anchor_.top),
+                                   (std::max)(1, int32_t(anchor_.right - anchor_.left)),
+                                   (std::max)(1, int32_t(anchor_.bottom - anchor_.top)));
+    xdg_positioner_set_anchor(pos, XDG_POSITIONER_ANCHOR_BOTTOM_LEFT);
+    xdg_positioner_set_gravity(pos, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
+    // the compositor keeps it on screen; a client cannot, having no idea where its
+    // own window is
+    xdg_positioner_set_constraint_adjustment(pos,
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_X |
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y |
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X |
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y);
+
+    popup_ = xdg_surface_get_popup(xdgSurface_, parentXdg_, pos);
+    xdg_positioner_destroy(pos);
+    xdg_popup_add_listener(popup_, &popupListener, this);
+
+    // Must be a real user-action serial: the compositor refuses the grab otherwise
+    // and dismisses the popup immediately.
+    xdg_popup_grab(popup_, connection_.seat(), input_.lastSerial());
+
+    input_.registerSurface(surface_, this);
+    wl_surface_commit(surface_);
+
+    return gmpi::ReturnCode::Ok;
+}
+
+inline void WaylandPopupMenu::onEnter(double, double y, uint32_t)
+{
+    hovered_ = itemAt(y);
+    present();
+}
+
+inline void WaylandPopupMenu::onLeave()
+{
+    hovered_ = -1;
+    present();
+}
+
+inline void WaylandPopupMenu::onMotion(double, double y, int32_t)
+{
+    const int was = hovered_;
+    hovered_ = itemAt(y);
+    if (hovered_ != was)
+        present();
+}
+
+inline void WaylandPopupMenu::onButton(double, double y, uint32_t, bool pressed, uint32_t)
+{
+    if (pressed)
+        return;
+
+    const int index = itemAt(y);
+    if (index >= 0 && !root_[index].grayed)
+        choose(root_[index]);
+    else
+        dismiss();
+}
+
+inline void WaylandPopupMenu::onKey(uint32_t keysym, uint32_t)
+{
+    if (keysym == 0xff1b) // XKB_KEY_Escape
+        dismiss();
+}
+
+inline void WaylandPopupMenu::choose(Item& item)
+{
+    if (auto cb = item.callback.as<gmpi::api::IPopupMenuCallback>(); cb)
+        cb->onComplete(gmpi::ReturnCode::Ok, item.id);
+
+    dismiss();
+}
+
+inline void WaylandPopupMenu::dismiss()
+{
+    if (dismissed_)
+        return;
+    dismissed_ = true;
+
+    destroySurfaces();
+    release();   // balances the addRef in showAsync
+}
+
+inline void WaylandPopupMenu::destroySurfaces()
+{
+    if (surface_)
+        input_.unregisterSurface(surface_);
+
+    buffer_.release();
+
+    // nested popups must go topmost-first; this class owns only its own
+    if (popup_)      { xdg_popup_destroy(popup_);      popup_ = nullptr; }
+    if (xdgSurface_) { xdg_surface_destroy(xdgSurface_); xdgSurface_ = nullptr; }
+    if (surface_)    { wl_surface_destroy(surface_);   surface_ = nullptr; }
+}
+
+
+inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::Rect* r,
+                                                          gmpi::api::IUnknown** returnPopupMenu)
+{
+    *returnPopupMenu = {};
+
+    if (!popupParent())
+        return gmpi::ReturnCode::Fail;
+
+    auto* menu = new WaylandPopupMenu(connection_, inputDispatch(), popupParent(),
+                                      factory_, menuFont_, r ? *r : gmpi::drawing::Rect{});
+    *returnPopupMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
+    return gmpi::ReturnCode::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // WaylandToplevel - a decorated window of our own
 // ---------------------------------------------------------------------------
 // The standalone case. A plugin view is a SIBLING of this, not a mode inside it:
@@ -765,12 +1340,13 @@ public:
     // The parent an xdg_popup must be given. In a plugin this is the host's,
     // from IWaylandFrame::getParentSurface() - which is why menus take it as an
     // argument instead of reaching for a global.
-    xdg_surface* popupParent() const
+    xdg_surface* popupParent() const override
     {
         return frame_ ? libdecor_frame_get_xdg_surface(frame_) : nullptr;
     }
 
     InputDispatch& input() { return input_; }
+    InputDispatch& inputDispatch() override { return input_; }
 
     bool running() const { return running_; }
     void close() { running_ = false; }

@@ -20,5 +20,5 @@ cd "$HERE"
 
 g++ -std=c++20 -O2 -I"$ROOT" -I"$GMPI" -I"$HERE/gen" -o "$HERE/wayland_backend_test" \
     "$HERE/wayland_backend_test.cpp" "$HERE"/gen/*-protocol.o \
-    $(pkg-config --cflags --libs wayland-client xkbcommon libdecor-0) -lpng
+    $(pkg-config --cflags --libs wayland-client xkbcommon libdecor-0 dbus-1) -lpng
 exec "$HERE/wayland_backend_test"

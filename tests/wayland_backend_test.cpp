@@ -9,6 +9,7 @@
 // build:  ./tests/run.sh     (no compositor or display required)
 #include "backends/DrawingFrameWayland.h"
 #include "helpers/NativeUi.h"
+#include "backends/PortalFileDialog.h"
 #include <cstdio>
 #include <vector>
 
@@ -181,6 +182,36 @@ int main()
         m->onButton(0, 40, 272, false, 0);      // release over the grayed item
         check("clicking a grayed item completes nothing", chosenId == -1);
         m->release();                            // dismiss() ran in onButton
+    }
+
+    // --- portal URI decoding ------------------------------------------------
+    // The portal answers with URIs, not paths. Getting this wrong means opening
+    // or overwriting the wrong file, so it is worth pinning down precisely.
+    {
+        using gmpi::wayland::PortalBus;
+
+        check("plain file URI becomes a path",
+              PortalBus::uriToPath("file:///home/x/song.se") == "/home/x/song.se");
+
+        check("percent-escaped spaces decoded",
+              PortalBus::uriToPath("file:///home/x/My%20Song.se") == "/home/x/My Song.se");
+
+        check("lower and upper case hex both decoded",
+              PortalBus::uriToPath("file:///%41%2f%2Fb") == "/A//b");
+
+        check("non-file URI yields no path",
+              PortalBus::uriToPath("http://example.com/song.se").empty());
+
+        // A truncated escape is data we do not understand; passing the raw bytes
+        // through beats inventing a byte or silently dropping one.
+        check("truncated escape left alone",
+              PortalBus::uriToPath("file:///a%2") == "/a%2");
+
+        check("non-hex escape left alone",
+              PortalBus::uriToPath("file:///a%zz") == "/a%zz");
+
+        check("multibyte utf-8 round-trips",
+              PortalBus::uriToPath("file:///caf%C3%A9.se") == "/caf\xc3\xa9.se");
     }
 
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");

@@ -52,11 +52,13 @@
 #include "backends/CpuEncode.h"
 #include "helpers/NativeUi.h"
 #include "RefCountMacros.h"
+#include "backends/PortalFileDialog.h"
 
 #include "xdg-shell-client-protocol.h"
 #include "viewporter-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "cursor-shape-v1-client-protocol.h"
+#include "xdg-foreign-unstable-v2-client-protocol.h"
 
 namespace gmpi
 {
@@ -201,6 +203,7 @@ public:
     wp_viewporter* viewporter() const { return viewporter_; }
     wp_fractional_scale_manager_v1* fractionalScale() const { return fracMgr_; }
     wp_cursor_shape_manager_v1*     cursorShape()     const { return cursorMgr_; }
+    zxdg_exporter_v2*               exporter()        const { return exporter_; }
 
     bool ownsDisplay() const { return owned_; }
 
@@ -216,6 +219,7 @@ private:
     wp_viewporter* viewporter_{};
     wp_fractional_scale_manager_v1* fracMgr_{};
     wp_cursor_shape_manager_v1*     cursorMgr_{};
+    zxdg_exporter_v2*               exporter_{};
     bool owned_{};
 
     static void globalAdd(void* data, wl_registry* reg, uint32_t name,
@@ -243,6 +247,10 @@ inline void Connection::globalAdd(void* data, wl_registry* reg, uint32_t name,
         c.fracMgr_ = static_cast<wp_fractional_scale_manager_v1*>(wl_registry_bind(reg, name, &wp_fractional_scale_manager_v1_interface, 1));
     else if (!strcmp(iface, wp_cursor_shape_manager_v1_interface.name))
         c.cursorMgr_ = static_cast<wp_cursor_shape_manager_v1*>(wl_registry_bind(reg, name, &wp_cursor_shape_manager_v1_interface, 1));
+    // xdg_foreign: exports a handle the portal can use as parent_window, so its
+    // file chooser is modal to OUR window instead of floating unattached
+    else if (!strcmp(iface, zxdg_exporter_v2_interface.name))
+        c.exporter_ = static_cast<zxdg_exporter_v2*>(wl_registry_bind(reg, name, &zxdg_exporter_v2_interface, 1));
 }
 
 inline bool Connection::bindGlobals()
@@ -368,23 +376,57 @@ public:
     // why this is asked for rather than assumed.
     virtual xdg_surface* popupParent() const { return nullptr; }
 
+    static void onExported(void* data, zxdg_exported_v2*, const char* handle)
+    {
+        auto& f = *static_cast<WaylandFrameBase*>(data);
+        f.parentWindowHandle_ = std::string("wayland:") + (handle ? handle : "");
+    }
+
     // Menus draw their own text, so the host needs a format. The app supplies it for
     // the same reason it supplies the text engine: no font code in this layer.
     void setMenuFont(gmpi::drawing::api::ITextFormat* font) { menuFont_ = font; }
 
     virtual InputDispatch& inputDispatch() = 0;
 
+    PortalBus& portalBus() { return portalBus_; }
+
+    // Hand the compositor's exported handle to the portal so its dialog is parented
+    // to our window. Without it the chooser floats unattached and is not modal.
+    void exportWindowHandle()
+    {
+        static const zxdg_exported_v2_listener listener = { onExported };
+        if (exported_ || !connection_.exporter() || !surface_)
+            return;
+        exported_ = zxdg_exporter_v2_export_toplevel(connection_.exporter(), surface_);
+        if (exported_)
+            zxdg_exported_v2_add_listener(exported_, &listener, this);
+    }
+
     // --- IDialogHost ---
     // defined after WaylandPopupMenu, which it constructs
     gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnPopupMenu) override;
 
-    // Not yet: the file dialog is xdg-desktop-portal over D-Bus and still lives in
-    // the spike pending a compositor-hang investigation; the rest follow it.
+    // dialogType: 0 = open, 1 = save. Runs in the portal process over D-Bus;
+    // Wayland has no file chooser of its own and a client may not place a window.
+    gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override
+    {
+        *returnDialog = {};
+
+        // A portal dialog takes the keyboard. Doing that while we hold a popup
+        // grab leaves the compositor with a grab nobody is servicing, which looks
+        // exactly like the desktop having frozen.
+        connection_.closeLivePopups();
+
+        auto* dlg = new PortalFileDialog(portalBus_, dialogType, parentWindowHandle_);
+        *returnDialog = static_cast<gmpi::api::IFileDialog*>(dlg);
+        return gmpi::ReturnCode::Ok;
+    }
+
+    // Still to come; each needs a drawn window of its own, since Wayland provides
+    // no stock dialogs and the portal has no message-box API.
     gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
     { return gmpi::ReturnCode::NoSupport; }
     gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
-    { return gmpi::ReturnCode::NoSupport; }
-    gmpi::ReturnCode createFileDialog(int32_t, gmpi::api::IUnknown**) override
     { return gmpi::ReturnCode::NoSupport; }
     gmpi::ReturnCode createStockDialog(int32_t, const char*, const char*, gmpi::api::IUnknown**) override
     { return gmpi::ReturnCode::NoSupport; }
@@ -402,6 +444,7 @@ public:
     ~WaylandFrameBase() override
     {
         detachClient();
+        if (exported_) zxdg_exported_v2_destroy(exported_);
         buffer_.release();
         if (viewport_) wp_viewport_destroy(viewport_);
         if (surface_)  wl_surface_destroy(surface_);
@@ -454,6 +497,12 @@ protected:
     wl_surface*  surface_{};
     wp_viewport* viewport_{};
     ShmBuffer    buffer_;
+
+    // The portal answers on the session bus, so its fd joins the same poll() as
+    // wayland - a file dialog must never nest a modal loop here.
+    PortalBus    portalBus_;
+    zxdg_exported_v2* exported_{};
+    std::string  parentWindowHandle_;   // "wayland:<handle>", empty until exported
 
     gmpi::api::IDrawingClient* client_{};
     gmpi::drawing::api::ITextFormat* menuFont_{};
@@ -1669,6 +1718,10 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
     libdecor_frame_set_title(frame_, title);
     libdecor_frame_map(frame_);
 
+    // Ask for the handle now: the compositor answers asynchronously, so it is
+    // ready long before the user reaches a File menu.
+    exportWindowHandle();
+
     if (connection_.fractionalScale())
     {
         fracScale_ = wp_fractional_scale_manager_v1_get_fractional_scale(
@@ -1723,14 +1776,35 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
     {
         wl_display_flush(connection_.display());
 
-        pollfd fds[2]{};
+        // The portal replies on the session bus. It joins the same poll() rather
+        // than getting a nested loop of its own: blocking here while a popup grab
+        // is up wedges the compositor.
+        const int busFd = portalBus().fd();
+
+        pollfd fds[3]{};
+        int nfds = 1;
         fds[0].fd = displayFd();
         fds[0].events = POLLIN;
-        fds[1].fd = timerFd;
-        fds[1].events = POLLIN;
+        if (timerFd >= 0)
+        {
+            fds[nfds].fd = timerFd;
+            fds[nfds].events = POLLIN;
+            ++nfds;
+        }
+        if (busFd >= 0)
+        {
+            fds[nfds].fd = busFd;
+            fds[nfds].events = POLLIN;
+            ++nfds;
+        }
 
-        if (poll(fds, timerFd >= 0 ? 2 : 1, 100) < 0 && errno != EINTR)
+        if (poll(fds, nfds, 100) < 0 && errno != EINTR)
             break;
+
+        // Pump unconditionally: libdbus may already hold a decoded message, in
+        // which case the fd never becomes readable again and a revents check
+        // would wait forever.
+        portalBus().pump();
 
         // libdecor owns the dispatch: it must see configure events before we do,
         // so it can size the decorations.

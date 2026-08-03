@@ -1,2 +1,6 @@
 gen/
 wayland_backend_test
+wayland_demo
+wayland_demo_asan
+autotest_asan.sh
+autotest_gdb.sh

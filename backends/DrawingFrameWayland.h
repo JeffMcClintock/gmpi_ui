@@ -205,6 +205,21 @@ public:
     wp_cursor_shape_manager_v1*     cursorShape()     const { return cursorMgr_; }
     zxdg_exporter_v2*               exporter()        const { return exporter_; }
 
+    // Bind a FRESH wl_seat proxy for a caller that wants its own listener.
+    //
+    // wl_seat.capabilities is sent once, right after the bind. bindGlobals()
+    // round-trips to discover the globals, so by the time anything else could add
+    // a listener that event has already been dispatched and dropped - and without
+    // capabilities we never call get_pointer, so no input arrives at all. Binding
+    // again is legal and produces a fresh capabilities event for the new proxy.
+    wl_seat* bindSeatProxy()
+    {
+        if (!registry_ || !seatName_)
+            return nullptr;
+        return static_cast<wl_seat*>(
+            wl_registry_bind(registry_, seatName_, &wl_seat_interface, seatVersion_));
+    }
+
     bool ownsDisplay() const { return owned_; }
 
 private:
@@ -220,6 +235,8 @@ private:
     wp_fractional_scale_manager_v1* fracMgr_{};
     wp_cursor_shape_manager_v1*     cursorMgr_{};
     zxdg_exporter_v2*               exporter_{};
+    uint32_t seatName_{};      // registry name, so a listener-owning proxy can be bound
+    uint32_t seatVersion_ = 5;
     bool owned_{};
 
     static void globalAdd(void* data, wl_registry* reg, uint32_t name,
@@ -240,7 +257,10 @@ inline void Connection::globalAdd(void* data, wl_registry* reg, uint32_t name,
     else if (!strcmp(iface, xdg_wm_base_interface.name))
         c.wmBase_ = static_cast<xdg_wm_base*>(wl_registry_bind(reg, name, &xdg_wm_base_interface, 1));
     else if (!strcmp(iface, wl_seat_interface.name))
-        c.seat_ = static_cast<wl_seat*>(wl_registry_bind(reg, name, &wl_seat_interface, 5));
+    {
+        c.seatName_ = name;
+        c.seat_ = static_cast<wl_seat*>(wl_registry_bind(reg, name, &wl_seat_interface, c.seatVersion_));
+    }
     else if (!strcmp(iface, wp_viewporter_interface.name))
         c.viewporter_ = static_cast<wp_viewporter*>(wl_registry_bind(reg, name, &wp_viewporter_interface, 1));
     else if (!strcmp(iface, wp_fractional_scale_manager_v1_interface.name))
@@ -448,27 +468,26 @@ public:
 
     ~WaylandFrameBase() override
     {
-        detachClient();
+        // NOT detachClient(): it reaches inputDispatch(), which is pure virtual.
+        // By the time a base destructor runs the derived override is gone, so
+        // that call lands on __cxa_pure_virtual and aborts. Derived classes
+        // detach in their own destructor, while they are still whole; all that
+        // is left here is the part that needs no virtual.
+        if (client_)
+            client_->setHost(nullptr);
+        client_ = {};
+
         if (exported_) zxdg_exported_v2_destroy(exported_);
         buffer_.release();
         if (viewport_) wp_viewport_destroy(viewport_);
         if (surface_)  wl_surface_destroy(surface_);
     }
 
-    void attachClient(gmpi::api::IDrawingClient* client)
-    {
-        detachClient();
-        client_ = client;
-        if (client_)
-            client_->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
-    }
+    // defined after InputDispatch, whose context-menu hook it installs
+    void attachClient(gmpi::api::IDrawingClient* client);
 
-    void detachClient()
-    {
-        if (client_)
-            client_->setHost(nullptr);
-        client_ = {};
-    }
+    // defined after InputDispatch, whose input client it clears
+    void detachClient();
 
     wl_surface* surface() const { return surface_; }
 
@@ -714,6 +733,7 @@ private:
     std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
     wl_surface*  focus_{};   // surface the last enter named
     wl_surface*  surface_{};
+    wl_seat*     seat_{};      // our own proxy: see bindSeat
     wl_pointer*  pointer_{};
     wl_keyboard* keyboard_{};
     wp_cursor_shape_device_v1* cursorShape_{};
@@ -963,8 +983,13 @@ inline void InputDispatch::bindSeat(Connection& connection)
     connection_ = &connection;
     xkb_ = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
-    if (connection.seat())
-        wl_seat_add_listener(connection.seat(), &seatListener, this);
+    // Our own proxy, so the listener is in place BEFORE capabilities is sent.
+    // Adding a listener to the connection's seat instead is too late: that event
+    // was already dispatched during bindGlobals' roundtrip and dropped, leaving us
+    // with no pointer and no keyboard.
+    seat_ = connection.bindSeatProxy();
+    if (seat_)
+        wl_seat_add_listener(seat_, &seatListener, this);
 }
 
 // ---------------------------------------------------------------------------
@@ -1547,6 +1572,74 @@ inline void WaylandPopupMenu::destroySurfaces()
 }
 
 
+inline void WaylandFrameBase::detachClient()
+{
+    if (client_)
+        client_->setHost(nullptr);
+    client_ = {};
+    inputDispatch().attachInputClient(nullptr);
+}
+
+inline void WaylandFrameBase::attachClient(gmpi::api::IDrawingClient* client)
+{
+    detachClient();
+    client_ = client;
+    if (client_)
+        client_->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+
+    // One object almost always implements both halves - the interfaces even share
+    // a single setHost for that reason - so wire input here rather than making
+    // every app remember a second call. Without this the client draws but never
+    // hears a click.
+    // NB queryInterface, not shared_ptr(raw): that constructor ATTACHES - it takes
+    // ownership without addRef - so wrapping a borrowed pointer steals a reference
+    // and frees the object early.
+    gmpi::api::IInputClient* inputClient{};
+    if (client_)
+        client_->queryInterface(&gmpi::api::IInputClient::guid,
+                                reinterpret_cast<void**>(&inputClient));
+    inputDispatch().attachInputClient(inputClient);
+    if (inputClient)
+        inputClient->release();   // we keep a borrowed link, exactly as with client_
+
+    // Right-click -> ask the client what belongs on the menu -> show it. The
+    // seat reports the press serial, which has to travel all the way to
+    // xdg_popup.grab: mutter grants the grab only for the serial of the event
+    // that started it, so it cannot be looked up later.
+    inputDispatch().onContextMenu =
+        [this](gmpi::drawing::Point pt, uint32_t)
+        {
+            gmpi::api::IInputClient* rawInput{};
+            if (client_)
+                client_->queryInterface(&gmpi::api::IInputClient::guid,
+                                        reinterpret_cast<void**>(&rawInput));
+            if (!rawInput)
+                return;
+
+            gmpi::shared_ptr<gmpi::api::IInputClient> inputClient;
+            inputClient.attach(rawInput);   // queryInterface already addRef'd
+
+            gmpi::api::IUnknown* raw{};
+            const gmpi::drawing::Rect anchor{ pt.x, pt.y, pt.x + 1.f, pt.y + 1.f };
+            if (createPopupMenu(&anchor, &raw) != gmpi::ReturnCode::Ok || !raw)
+                return;
+
+            auto menu = gmpi::shared_ptr<gmpi::api::IUnknown>();
+            menu.attach(raw);
+
+            auto popup = menu.as<gmpi::api::IPopupMenu>();
+            if (!popup)
+                return;
+
+            // The client fills the menu; an empty one is a client saying "not
+            // here", so put nothing on screen rather than an empty box.
+            if (inputClient->populateContextMenu(pt, popup.get()) != gmpi::ReturnCode::Ok)
+                return;
+
+            popup->showAsync();
+        };
+}
+
 inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::Rect* r,
                                                           gmpi::api::IUnknown** returnPopupMenu)
 {
@@ -1932,6 +2025,19 @@ public:
 
     ~WaylandToplevel() override
     {
+        // while this object is still complete, so inputDispatch() resolves
+        detachClient();
+
+        // Everything created ON the surface has to go BEFORE the surface does -
+        // and the base destructor, which runs next, is what destroys it. Leaving
+        // a wp_fractional_scale_v1 pointing at a destroyed wl_surface is enough
+        // to segfault mutter 46.2 as the client disconnects, which the user sees
+        // as their whole session dying.
+        if (fracScale_) { wp_fractional_scale_v1_destroy(fracScale_); fracScale_ = nullptr; }
+
+        // a frame callback still in flight would fire against a dead surface
+        if (frameCb_) { wl_callback_destroy(frameCb_); frameCb_ = nullptr; }
+
         if (frame_) libdecor_frame_unref(frame_);
         if (decor_) libdecor_unref(decor_);
     }
@@ -1981,6 +2087,7 @@ private:
     libdecor*       decor_{};
     libdecor_frame* frame_{};
     wp_fractional_scale_v1* fracScale_{};
+    wl_callback*            frameCb_{};   // tracked so teardown can cancel it
     InputDispatch   input_;
     bool            running_ = true;
     bool            configured_ = false;
@@ -2040,6 +2147,7 @@ inline void WaylandToplevel::frameDone(void* data, wl_callback* cb, uint32_t)
 {
     auto& self = *static_cast<WaylandToplevel*>(data);
     wl_callback_destroy(cb);
+    self.frameCb_ = nullptr;   // requestFrameCallback below installs the next one
 
     if (self.hasPendingPaint())
         self.present();
@@ -2054,8 +2162,8 @@ inline void WaylandToplevel::frameDone(void* data, wl_callback* cb, uint32_t)
 inline void WaylandToplevel::requestFrameCallback()
 {
     static const wl_callback_listener listener = { frameDone };
-    wl_callback* cb = wl_surface_frame(surface_);
-    wl_callback_add_listener(cb, &listener, this);
+    frameCb_ = wl_surface_frame(surface_);
+    wl_callback_add_listener(frameCb_, &listener, this);
 }
 
 inline bool WaylandToplevel::create(const char* title, const char* appId, int w, int h)

@@ -18,7 +18,21 @@ done
 [ -f protocols.o ] || { gcc -c -O2 *.c && ld -r *.o -o protocols.o 2>/dev/null || true; }
 cd "$HERE"
 
-g++ -std=c++20 -O2 -I"$ROOT" -I"$GMPI" -I"$HERE/gen" -o "$HERE/wayland_backend_test" \
-    "$HERE/wayland_backend_test.cpp" "$HERE"/gen/*-protocol.o \
-    $(pkg-config --cflags --libs wayland-client xkbcommon libdecor-0 dbus-1) -lpng
+CXXFLAGS="-std=c++20 -O2 -I$ROOT -I$GMPI -I$HERE/gen"
+LIBS=$(pkg-config --cflags --libs wayland-client xkbcommon libdecor-0 dbus-1)
+
+# --demo builds the interactive app instead: the same backend, but driven by a
+# real compositor so menus, grabs and dialogs are actually exercised.
+if [ "${1:-}" = "--demo" ]; then
+    # the demo draws text, so it needs the font stack the CPU backend leaves to
+    # the app: fontconfig to find faces, freetype to rasterise, harfbuzz to shape
+    TEXTLIBS=$(pkg-config --cflags --libs fontconfig harfbuzz freetype2)
+    g++ $CXXFLAGS -o "$HERE/wayland_demo" "$HERE/wayland_demo.cpp" \
+        "$HERE"/gen/*-protocol.o $LIBS $TEXTLIBS -lpng
+    echo "built $HERE/wayland_demo"
+    exit 0
+fi
+
+g++ $CXXFLAGS -o "$HERE/wayland_backend_test" \
+    "$HERE/wayland_backend_test.cpp" "$HERE"/gen/*-protocol.o $LIBS -lpng
 exec "$HERE/wayland_backend_test"

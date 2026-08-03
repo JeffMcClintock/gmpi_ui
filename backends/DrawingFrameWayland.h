@@ -561,9 +561,13 @@ public:
 
     void bindSeat(Connection& connection);
 
-    // last serial from a real user action - popup grabs and cursor changes are
-    // only valid with one of these, and the compositor rejects anything else
-    uint32_t lastSerial() const { return lastSerial_; }
+    // Serial of the last event that can START a grab - button press, key press,
+    // touch down. NOT merely "the most recent serial": mutter grants
+    // xdg_popup.grab only when the serial is exactly the seat's current implicit
+    // grab serial, so enter/leave/motion/release serials are all rejected and the
+    // popup is dismissed the instant it maps. Cursor-shape requests want the
+    // enter serial instead and take it directly from the event.
+    uint32_t lastGrabSerial() const { return lastGrabSerial_; }
 
     bool pointerInside() const { return inside_; }
     gmpi::drawing::Point pointerPos() const { return { float(x_), float(y_) }; }
@@ -629,7 +633,7 @@ private:
     double   x_ = 0, y_ = 0;
     bool     inside_ = false;
     uint32_t buttons_ = 0;
-    uint32_t lastSerial_ = 0;
+    uint32_t lastGrabSerial_ = 0;
 };
 
 inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial,
@@ -637,7 +641,6 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
 {
     auto& in = *static_cast<InputDispatch*>(data);
     in.focus_ = surf;
-    in.lastSerial_ = serial;
 
     if (auto* t = in.targetFor(surf))
     {
@@ -649,7 +652,6 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
         return;
 
     in.inside_ = true;
-    in.lastSerial_ = serial;
     in.x_ = wl_fixed_to_double(sx);
     in.y_ = wl_fixed_to_double(sy);
 
@@ -682,7 +684,6 @@ inline void InputDispatch::pointerLeave(void* data, wl_pointer*, uint32_t serial
         return;
 
     in.inside_ = false;
-    in.lastSerial_ = serial;
 
     if (in.client_)
         in.client_->setHover(false);
@@ -712,7 +713,8 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
                                          uint32_t, uint32_t button, uint32_t state)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    in.lastSerial_ = serial;
+    if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+        in.lastGrabSerial_ = serial;
 
     if (auto* t = in.targetFor(in.focus_))
     {
@@ -790,7 +792,8 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
                                        uint32_t, uint32_t key, uint32_t state)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    in.lastSerial_ = serial;
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
+        in.lastGrabSerial_ = serial;
 
     if (!in.xkbState_ || state != WL_KEYBOARD_KEY_STATE_PRESSED)
         return;
@@ -1244,7 +1247,7 @@ inline gmpi::ReturnCode WaylandPopupMenu::showAsync()
 
     // Must be a real user-action serial: the compositor refuses the grab otherwise
     // and dismisses the popup immediately.
-    xdg_popup_grab(popup_, connection_.seat(), input_.lastSerial());
+    xdg_popup_grab(popup_, connection_.seat(), input_.lastGrabSerial());
 
     input_.registerSurface(surface_, this);
     wl_surface_commit(surface_);

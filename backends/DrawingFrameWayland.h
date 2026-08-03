@@ -1375,6 +1375,10 @@ public:
 
     void runEventLoop(int tickMs, const std::function<void(int)>& onTick);
 
+    // True if the connection has died. Prints the offending interface and opcode -
+    // wayland reports these once and then the connection is unusable.
+    bool reportProtocolError();
+
 private:
     static void configure(libdecor_frame*, libdecor_configuration*, void*);
     static void closed(libdecor_frame*, void*);
@@ -1508,6 +1512,29 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
     return true;
 }
 
+inline bool WaylandToplevel::reportProtocolError()
+{
+    const int err = wl_display_get_error(connection_.display());
+    if (!err)
+        return false;
+
+    if (err == EPROTO)
+    {
+        const wl_interface* iface{};
+        uint32_t id = 0;
+        const uint32_t code = wl_display_get_protocol_error(connection_.display(), &iface, &id);
+        fprintf(stderr, "wayland protocol error: %s.%u on object %u\n",
+                iface && iface->name ? iface->name : "?", code, id);
+    }
+    else
+    {
+        fprintf(stderr, "wayland connection error: %s\n", strerror(err));
+    }
+
+    running_ = false;
+    return true;
+}
+
 inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(int)>& onTick)
 {
     // Both of SynthEdit's timer frameworks are host-pumped, so the loop owes them a
@@ -1537,6 +1564,12 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
         // libdecor owns the dispatch: it must see configure events before we do,
         // so it can size the decorations.
         if (libdecor_dispatch(decor_, 0) < 0)
+            break;
+
+        // A protocol error disconnects us, and if it happens while a popup grab is
+        // up, a compositor that leaks the grab takes the desktop's input with it.
+        // Silence here means guessing later, so say exactly what was violated.
+        if (reportProtocolError())
             break;
 
         // A protocol error disconnects us with no other symptom, so say which one.

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "FontFile.h"
+#include "BundledFonts.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -180,6 +181,12 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
 
+    // A font the product ships beats whatever the OS happens to have installed,
+    // so text measures the same on every platform. Fallback probes (those
+    // carrying mustCoverCodepoint) are declined and reach the system database.
+    if (findBundledFont(request, returnFont))
+        return true;
+
     gmpi::directx::ComPtr<IDWriteFactory> writeFactory;
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                                    reinterpret_cast<IUnknown**>(writeFactory.put()))) || !writeFactory)
@@ -323,6 +330,12 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
+
+    // A font the product ships beats whatever the OS happens to have installed,
+    // so text measures the same on every platform. Fallback probes (those
+    // carrying mustCoverCodepoint) are declined and reach the system database.
+    if (findBundledFont(request, returnFont))
+        return true;
 
     std::string family = request.familyName;
     if (family == "system-ui")
@@ -505,6 +518,12 @@ inline bool matchFontFile(const FontRequest& request, const std::string& family,
 inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
+
+    // A font the product ships beats whatever the OS happens to have installed,
+    // so text measures the same on every platform. Fallback probes (those
+    // carrying mustCoverCodepoint) are declined and reach the system database.
+    if (findBundledFont(request, returnFont))
+        return true;
 
     if (!FcInit())
         return false;

@@ -53,6 +53,7 @@
 #include "helpers/NativeUi.h"
 #include "RefCountMacros.h"
 #include "backends/PortalFileDialog.h"
+#include "backends/WaylandClipboard.h"
 
 #include "xdg-shell-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -223,6 +224,7 @@ public:
     wp_fractional_scale_manager_v1* fractionalScale() const { return fracMgr_; }
     wp_cursor_shape_manager_v1*     cursorShape()     const { return cursorMgr_; }
     zxdg_exporter_v2*               exporter()        const { return exporter_; }
+    wl_data_device_manager*         dataDeviceManager() const { return dataDeviceMgr_; }
 
     // Bind a FRESH wl_seat proxy for a caller that wants its own listener.
     //
@@ -254,6 +256,7 @@ private:
     wp_fractional_scale_manager_v1* fracMgr_{};
     wp_cursor_shape_manager_v1*     cursorMgr_{};
     zxdg_exporter_v2*               exporter_{};
+    wl_data_device_manager*         dataDeviceMgr_{};
     uint32_t seatName_{};      // registry name, so a listener-owning proxy can be bound
     uint32_t seatVersion_ = 5;
     bool owned_{};
@@ -288,6 +291,9 @@ inline void Connection::globalAdd(void* data, wl_registry* reg, uint32_t name,
         c.cursorMgr_ = static_cast<wp_cursor_shape_manager_v1*>(wl_registry_bind(reg, name, &wp_cursor_shape_manager_v1_interface, 1));
     // xdg_foreign: exports a handle the portal can use as parent_window, so its
     // file chooser is modal to OUR window instead of floating unattached
+    else if (!strcmp(iface, wl_data_device_manager_interface.name))
+        c.dataDeviceMgr_ = static_cast<wl_data_device_manager*>(
+            wl_registry_bind(reg, name, &wl_data_device_manager_interface, 3));
     else if (!strcmp(iface, zxdg_exporter_v2_interface.name))
         c.exporter_ = static_cast<zxdg_exporter_v2*>(wl_registry_bind(reg, name, &zxdg_exporter_v2_interface, 1));
 }
@@ -469,8 +475,9 @@ public:
     // no stock dialogs and the portal has no message-box API.
     gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
     { return gmpi::ReturnCode::NoSupport; }
-    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown**) override
-    { return gmpi::ReturnCode::NoSupport; }
+    // defined after WaylandKeyListener, which it constructs
+    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r,
+                                       gmpi::api::IUnknown** returnKeyListener) override;
     // defined after WaylandStockDialog, which it constructs
     gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
                                        gmpi::api::IUnknown** returnDialog) override;
@@ -656,6 +663,15 @@ inline void WaylandFrameBase::present()
 // There is exactly one wl_pointer and one wl_keyboard per seat, no matter how many
 // surfaces a client owns, so events must be routed by the wl_surface they name.
 // A popup registers itself and takes over while it is up.
+// Something that wants raw keys before the drawing client sees them - an
+// IKeyListener, or a text edit. Popups still win: they hold the grab.
+struct IKeySink
+{
+    virtual void onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down) = 0;
+protected:
+    ~IKeySink() = default;
+};
+
 struct IPointerTarget
 {
     virtual ~IPointerTarget() = default;
@@ -691,6 +707,11 @@ public:
     }
 
     void bindSeat(Connection& connection);
+
+    void setKeySink(IKeySink* sink) { keySink_ = sink; }
+    IKeySink* keySink() const { return keySink_; }
+
+    WaylandClipboard& clipboard() { return clipboard_; }
 
     // Serial of the last event that can START a grab - button press, key press,
     // touch down. NOT merely "the most recent serial": mutter grants
@@ -752,6 +773,8 @@ private:
     std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
     wl_surface*  focus_{};   // surface the last enter named
     wl_surface*  surface_{};
+    IKeySink*        keySink_{};
+    WaylandClipboard clipboard_;
     wl_seat*     seat_{};      // our own proxy: see bindSeat
     wl_pointer*  pointer_{};
     wl_keyboard* keyboard_{};
@@ -927,23 +950,33 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
     if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
         in.lastGrabSerial_ = serial;
 
-    if (!in.xkbState_ || state != WL_KEYBOARD_KEY_STATE_PRESSED)
+    if (!in.xkbState_)
         return;
-    if (!in.client_ && !in.targetFor(in.focus_))
-        return;
+
+    const bool down = (state == WL_KEYBOARD_KEY_STATE_PRESSED);
 
     // wayland reports evdev keycodes; xkb numbers them 8 higher
     const xkb_keycode_t code = key + 8;
-    const uint32_t utf32 = xkb_state_key_get_utf32(in.xkbState_, code);
+    const uint32_t utf32  = xkb_state_key_get_utf32(in.xkbState_, code);
+    const uint32_t keysym = xkb_state_key_get_one_sym(in.xkbState_, code);
 
-    // a popup holds the grab while it is up, so it sees the keys
+    // a popup holds the grab while it is up, so it sees the keys first
     if (auto* t = in.targetFor(in.focus_))
     {
-        t->onKey(xkb_state_key_get_one_sym(in.xkbState_, code), utf32);
+        if (down)
+            t->onKey(keysym, utf32);
         return;
     }
 
-    if (utf32)
+    // a key listener or text edit takes them next, down AND up: it is the only
+    // thing here that needs key releases
+    if (in.keySink_)
+    {
+        in.keySink_->onRawKey(keysym, utf32, in.modifierFlags(), down);
+        return;
+    }
+
+    if (down && utf32 && in.client_)
         in.client_->onKeyPress(static_cast<wchar_t>(utf32));
 }
 
@@ -1008,7 +1041,10 @@ inline void InputDispatch::bindSeat(Connection& connection)
     // with no pointer and no keyboard.
     seat_ = connection.bindSeatProxy();
     if (seat_)
+    {
         wl_seat_add_listener(seat_, &seatListener, this);
+        clipboard_.bind(connection.dataDeviceManager(), seat_);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1674,6 +1710,139 @@ inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::R
 }
 
 // ---------------------------------------------------------------------------
+// WaylandKeyListener - IKeyListener
+// ---------------------------------------------------------------------------
+// "Effectively an invisible text-edit": it takes the keyboard while it is up and
+// hands every press and release to its callback, plus the clipboard operations,
+// which on Wayland the client has to implement itself.
+class WaylandKeyListener : public gmpi::api::IKeyListener, private IKeySink
+{
+public:
+    WaylandKeyListener(Connection& connection, InputDispatch& input)
+        : connection_(connection), input_(input) {}
+
+    ~WaylandKeyListener()
+    {
+        // Detach only. stop() calls release(), and by the time a destructor runs
+        // the refcount is already zero - decrementing it again is how a tidy
+        // teardown turns into a double free.
+        if (input_.keySink() == this)
+            input_.setKeySink(nullptr);
+    }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+    {
+        callback_ = callback;
+        input_.setKeySink(this);
+
+        addRef();   // alive until focus is lost, like every other dialog here
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IKeyListener);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+private:
+    static bool isClipboardKey(uint32_t keysym)
+    {
+        switch (keysym)
+        {
+        case 'c': case 'C': case 'x': case 'X': case 'v': case 'V': return true;
+        default: return false;
+        }
+    }
+
+    void onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down) override;
+    void stop(gmpi::ReturnCode result);
+
+    Connection&    connection_;
+    InputDispatch& input_;
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+    bool stopped_ = false;
+};
+
+inline void WaylandKeyListener::stop(gmpi::ReturnCode result)
+{
+    if (stopped_)
+        return;
+    stopped_ = true;
+
+    if (input_.keySink() == this)
+        input_.setKeySink(nullptr);
+
+    if (auto cb = callback_.as<gmpi::api::IKeyListenerCallback>(); cb)
+        cb->onLostFocus(result);
+
+    callback_ = {};
+    release();   // balances the addRef in showAsync
+}
+
+inline void WaylandKeyListener::onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
+{
+    auto cb = callback_.as<gmpi::api::IKeyListenerCallback>();
+    if (!cb)
+        return;
+
+    const bool ctrl = (flags & int32_t(gmpi::api::PointerFlags::KeyControl)) != 0;
+
+    // Clipboard first: the callback owns the text, we own the selection.
+    //
+    // Both edges are swallowed, but only the press acts. Acting on the release
+    // as well would copy twice; delivering the release as an ordinary keystroke
+    // would hand the caller an onKeyUp with no matching onKeyDown.
+    if (ctrl && isClipboardKey(keysym))
+    {
+        if (!down)
+            return;
+
+        switch (keysym)
+        {
+        case 'c': case 'C':
+        case 'x': case 'X':
+        {
+            gmpi::ReturnString text;
+            if (keysym == 'x' || keysym == 'X')
+                cb->cut(&text);
+            else
+                cb->copy(&text);
+
+            input_.clipboard().setText(connection_.display(),
+                                       std::string(text.getData(), size_t(text.getSize())),
+                                       input_.lastGrabSerial());
+            return;
+        }
+        case 'v': case 'V':
+        {
+            const std::string text = input_.clipboard().getText(connection_.display());
+            if (!text.empty())
+                cb->paste(text.c_str(), text.size());
+            return;
+        }
+        default: break;
+        }
+    }
+
+    // Escape gives the focus back rather than being delivered as a keystroke,
+    // which is what every caller of this expects to end an edit.
+    if (down && keysym == 0xff1b)
+    {
+        stop(gmpi::ReturnCode::Cancel);
+        return;
+    }
+
+    const int32_t key = utf32 ? int32_t(utf32) : int32_t(keysym);
+    if (down)
+        cb->onKeyDown(key, flags);
+    else
+        cb->onKeyUp(key, flags);
+}
+
+// ---------------------------------------------------------------------------
 // WaylandStockDialog - IStockDialog, drawn by us
 // ---------------------------------------------------------------------------
 // There is nothing to call. Wayland has no stock dialogs, and the FileChooser
@@ -2013,6 +2182,16 @@ inline void WaylandStockDialog::complete(gmpi::api::StockDialogButton b)
 
     callback_ = {};
     release();   // balances the addRef in showAsync
+}
+
+inline gmpi::ReturnCode WaylandFrameBase::createKeyListener(
+    const gmpi::drawing::Rect*, gmpi::api::IUnknown** returnKeyListener)
+{
+    *returnKeyListener = {};
+
+    auto* kl = new WaylandKeyListener(connection_, inputDispatch());
+    *returnKeyListener = static_cast<gmpi::api::IKeyListener*>(kl);
+    return gmpi::ReturnCode::Ok;
 }
 
 inline gmpi::ReturnCode WaylandFrameBase::createStockDialog(

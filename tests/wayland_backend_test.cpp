@@ -12,6 +12,7 @@
 #include "backends/PortalFileDialog.h"
 #include <cstdio>
 #include <vector>
+#include <algorithm>
 
 using F = gmpi::api::PopupMenuFlags;
 static int failures = 0;
@@ -266,6 +267,84 @@ int main()
         check("dialog buttons do not overlap", ordered);
         check("default button is rightmost",
               bs.size() > 1 && bs[0].rect.left > bs[1].rect.left);
+    }
+
+    // --- key listener -------------------------------------------------------
+    // Wayland has no "grab the keyboard for a widget", so the listener is a sink
+    // the dispatcher consults ahead of the drawing client. What matters to a
+    // caller: keys arrive with the right modifiers, Escape ends the edit, and
+    // the clipboard shortcuts ask the callback for its text.
+    {
+        using KL = gmpi::wayland::WaylandKeyListener;
+        struct Recorder : gmpi::api::IKeyListenerCallback
+        {
+            std::vector<std::string> events;
+            void onKeyDown(int32_t key, int32_t flags) override
+            { events.push_back("down " + std::to_string(key) + " f" + std::to_string(flags)); }
+            void onKeyUp(int32_t key, int32_t flags) override
+            { events.push_back("up " + std::to_string(key) + " f" + std::to_string(flags)); }
+            void onLostFocus(gmpi::ReturnCode r) override
+            { events.push_back("lostfocus " + std::to_string(int(r))); }
+            void cut(gmpi::api::IString* s) override
+            { events.push_back("cut"); s->setData("CUTTEXT", 7); }
+            void copy(gmpi::api::IString* s) override
+            { events.push_back("copy"); s->setData("COPYTEXT", 8); }
+            void paste(const char* t, size_t n) override
+            { events.push_back("paste " + std::string(t, n)); }
+            gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+            {
+                *returnInterface = {};
+                GMPI_QUERYINTERFACE(gmpi::api::IKeyListenerCallback);
+                return gmpi::ReturnCode::NoSupport;
+            }
+            GMPI_REFCOUNT_NO_DELETE;
+        };
+
+        const int32_t kCtrl  = int32_t(gmpi::api::PointerFlags::KeyControl);
+        const int32_t kShift = int32_t(gmpi::api::PointerFlags::KeyShift);
+
+        {
+            Recorder rec;
+            auto* kl = new KL(connection, input);
+            kl->showAsync(&rec);
+            check("showAsync installs the key sink", input.keySink() != nullptr);
+
+            input.keySink()->onRawKey('a', 'a', kShift, true);
+            input.keySink()->onRawKey('a', 'a', kShift, false);
+            check("key down and up both reported with modifiers",
+                  rec.events.size() == 2
+                  && rec.events[0] == "down 97 f" + std::to_string(kShift)
+                  && rec.events[1] == "up 97 f" + std::to_string(kShift));
+
+            // Escape ends the edit rather than arriving as a keystroke
+            input.keySink()->onRawKey(0xff1b, 0, 0, true);
+            check("Escape reports lost focus and detaches",
+                  rec.events.size() == 3
+                  && rec.events[2].rfind("lostfocus", 0) == 0
+                  && input.keySink() == nullptr);
+            kl->release();
+        }
+        {
+            Recorder rec;
+            auto* kl = new KL(connection, input);
+            kl->showAsync(&rec);
+            input.keySink()->onRawKey('c', 'c', kCtrl, true);
+            input.keySink()->onRawKey('x', 'x', kCtrl, true);
+            check("ctrl-C and ctrl-X ask the callback for its text",
+                  rec.events.size() == 2 && rec.events[0] == "copy" && rec.events[1] == "cut");
+
+            // and are not ALSO delivered as ordinary keystrokes
+            check("clipboard shortcuts are not delivered as keys",
+                  std::none_of(rec.events.begin(), rec.events.end(),
+                               [](const std::string& e){ return e.rfind("down", 0) == 0; }));
+
+            // acting on the release too would copy twice
+            input.keySink()->onRawKey('c', 'c', kCtrl, false);
+            check("clipboard shortcuts act once, on press only", rec.events.size() == 2);
+
+            kl->showAsync(nullptr);   // detach path without a callback
+            kl->release();
+        }
     }
 
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");

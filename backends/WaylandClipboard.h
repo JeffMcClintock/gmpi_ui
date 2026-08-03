@@ -106,17 +106,30 @@ public:
         char buf[4096];
         for (;;)
         {
-            pollfd p{ fds[0], POLLIN, 0 };
-            if (poll(&p, 1, 200) <= 0)
+            wl_display_flush(display);
+
+            // Poll the display too, and dispatch. On a paste from OUR OWN
+            // selection we are also the source: the bytes are only written when
+            // our wl_data_source.send handler runs, so waiting on the pipe alone
+            // waits for something that can never happen.
+            pollfd p[2]{ { fds[0], POLLIN, 0 },
+                         { wl_display_get_fd(display), POLLIN, 0 } };
+            if (poll(p, 2, 200) <= 0)
                 break;           // the other side went quiet; take what we have
 
-            const ssize_t n = read(fds[0], buf, sizeof(buf));
-            if (n <= 0)
-                break;
-            out.append(buf, size_t(n));
+            if (p[1].revents & POLLIN)
+                wl_display_dispatch(display);
 
-            if (out.size() > kMaxPaste)
-                break;           // a clipboard is not a file transfer
+            if (p[0].revents & (POLLIN | POLLHUP))
+            {
+                const ssize_t n = read(fds[0], buf, sizeof(buf));
+                if (n <= 0)
+                    break;
+                out.append(buf, size_t(n));
+
+                if (out.size() > kMaxPaste)
+                    break;       // a clipboard is not a file transfer
+            }
         }
 
         close(fds[0]);

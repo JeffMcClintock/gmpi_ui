@@ -1785,6 +1785,11 @@ public:
     }
     GMPI_REFCOUNT;
 
+    // Told when the edit completes, BEFORE it drops its own reference. Without
+    // this the frame is left holding a pointer to a deleted object and the next
+    // repaint reads freed memory.
+    std::function<void(WaylandTextEdit*)> onFinished;
+
     // --- used by the frame ---
     bool active() const { return !finished_; }
     const gmpi::drawing::Rect& rect() const { return rect_; }
@@ -1910,6 +1915,17 @@ inline void WaylandTextEdit::finish(gmpi::ReturnCode result)
         cb->onComplete(result);
 
     callback_ = {};
+
+    // The frame drops ITS reference first and stops pointing at us; ours goes
+    // last, so whichever release reaches zero does so after every observer has
+    // let go.
+    if (onFinished)
+    {
+        auto notify = onFinished;
+        onFinished = nullptr;
+        notify(this);
+    }
+
     release();   // balances the addRef in showAsync
 }
 
@@ -3123,13 +3139,6 @@ inline void WaylandFrameBase::drawActiveTextEdit(gmpi::cpugfx::RenderTarget* rt)
     if (!activeEdit_)
         return;
 
-    if (!activeEdit_->active())
-    {
-        activeEdit_ = nullptr;                  // it finished; stop drawing it
-        inputDispatch().pointerPreFilter = nullptr;
-        return;
-    }
-
     activeEdit_->render(rt);
 }
 
@@ -3143,7 +3152,20 @@ inline gmpi::ReturnCode WaylandFrameBase::createTextEdit(
 
     auto* edit = new WaylandTextEdit(connection_, inputDispatch(), menuFont_,
                                      r ? *r : gmpi::drawing::Rect{});
+
+    // The frame takes a reference of its own: the caller may release the edit the
+    // moment it has called showAsync, and the frame still has to draw it.
+    edit->addRef();
     activeEdit_ = edit;
+
+    edit->onFinished = [this](WaylandTextEdit* e)
+    {
+        if (activeEdit_ != e)
+            return;
+        activeEdit_ = nullptr;                      // clear BEFORE releasing
+        inputDispatch().pointerPreFilter = nullptr;
+        e->release();
+    };
 
     // A click inside the edit places the caret; a click outside commits, which is
     // what every in-place rename box does.

@@ -109,12 +109,14 @@ private:
 
     void showMessageBox();
     void showFileDialog(bool save);
+    void showColorDialog();
+    void showTextEdit();
 
     wayland::WaylandToplevel& frame_;
     api::IUnknown* host_{};
     drawing::api::ITextFormat* font_{};
     drawing::Rect bounds_{ 0, 0, 700, 460 };
-    std::string status_ = "right-click for a menu;  m = message box;  o/s = file dialog;  Esc = quit";
+    std::string status_ = "right-click = menu;  m = message box;  o/s = file;  k = colour;  t = edit;  Esc = quit";
 };
 
 ReturnCode DemoClient::render(drawing::api::IDeviceContext* dc)
@@ -178,6 +180,8 @@ ReturnCode DemoClient::onKeyPress(wchar_t c)
     case 'm': case 'M': showMessageBox();     break;
     case 'o': case 'O': showFileDialog(false); break;
     case 's': case 'S': showFileDialog(true);  break;
+    case 'k': case 'K': showColorDialog();     break;
+    case 't': case 'T': showTextEdit();        break;
     case 27:            frame_.close();        break;   // Escape
     default: return ReturnCode::Unhandled;
     }
@@ -246,6 +250,81 @@ void DemoClient::showFileDialog(bool save)
             invalidate();
         });
     dlg->showAsync(nullptr, &cb);
+}
+
+void DemoClient::showColorDialog()
+{
+    api::IUnknown* raw{};
+    if (frame_.createColorDialog(drawing::Color{ 0.216f, 0.05f, 0.05f, 1.f }, &raw)
+            != ReturnCode::Ok || !raw)
+    {
+        printf("colour dialog: not supported\n");
+        fflush(stdout);
+        return;
+    }
+
+    shared_ptr<api::IUnknown> owner;
+    owner.attach(raw);
+
+    auto dlg = owner.as<api::IColorDialog>();
+    if (!dlg)
+        return;
+
+    printf("colour dialog opened\n");
+    fflush(stdout);
+
+    static sdk::ColorDialogCallback cb([this](drawing::Color c)
+    {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "colour -> %.3f %.3f %.3f a%.2f", c.r, c.g, c.b, c.a);
+        status_ = buf;
+        printf("%s\n", status_.c_str());
+        fflush(stdout);
+        invalidate();
+    });
+    dlg->showAsync(&cb);
+}
+
+void DemoClient::showTextEdit()
+{
+    api::IUnknown* raw{};
+    const drawing::Rect box{ 40.f, 220.f, 320.f, 248.f };
+    if (frame_.createTextEdit(&box, &raw) != ReturnCode::Ok || !raw)
+    {
+        printf("text edit: not supported\n");
+        fflush(stdout);
+        return;
+    }
+
+    shared_ptr<api::IUnknown> owner;
+    owner.attach(raw);
+
+    auto edit = owner.as<api::ITextEdit>();
+    if (!edit)
+        return;
+
+    edit->setText("Oscillator 1");
+    edit->setTextSize(14.f);
+
+    printf("text edit opened\n");
+    fflush(stdout);
+
+    static sdk::TextEditCallback cb(
+        [this](const std::string& text)
+        {
+            status_ = "edit committed -> " + text;
+            printf("%s\n", status_.c_str());
+            fflush(stdout);
+            invalidate();
+        },
+        [this]()
+        {
+            status_ = "edit cancelled";
+            printf("%s\n", status_.c_str());
+            fflush(stdout);
+            invalidate();
+        });
+    edit->showAsync(&cb);
 }
 
 } // namespace

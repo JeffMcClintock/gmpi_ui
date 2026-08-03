@@ -107,6 +107,41 @@ kill -0 $DEMO 2>/dev/null || fail "demo died dismissing the menu"
 echo "submenu opened and menu dismissed"
 kill -0 $NEST 2>/dev/null || fail "compositor died DURING the test, before the app quit"
 
+# --- colour picker ----------------------------------------------------------
+# Driven by keyboard only: the picker is a window of its own, and the nested
+# compositor places it where it likes, so there are no coordinates to click.
+# Return accepts, which exercises the whole path including the sRGB conversion.
+xdo key k; sleep 2
+grep -q "colour dialog opened" "$LOG" || fail "colour dialog never opened"
+kill -0 $DEMO 2>/dev/null || fail "demo died opening the colour dialog"
+xdo key Return; sleep 2
+grep -q "colour ->" "$LOG" || fail "colour dialog never reported a colour"
+echo "colour picker: $(grep 'colour ->' "$LOG" | tail -1)"
+kill -0 $DEMO 2>/dev/null || fail "demo died closing the colour dialog"
+
+# --- in-place text edit -----------------------------------------------------
+# This one IS on the client's surface, so its rect is known: (40,220)-(320,248).
+xdo key t; sleep 1.5
+grep -q "text edit opened" "$LOG" || fail "text edit never opened"
+
+# setText selects everything, so typing replaces it
+xdo type --delay 60 "Filter"; sleep 1
+xdo key ctrl+a; sleep 0.4          # select all
+xdo key ctrl+c; sleep 0.4          # copy
+xdo key End;    sleep 0.4
+xdo key ctrl+v; sleep 0.6          # paste it back: "FilterFilter"
+xdo key Return; sleep 1.5
+
+grep -q "edit committed ->" "$LOG" || fail "text edit never committed"
+COMMITTED=$(grep "edit committed ->" "$LOG" | tail -1)
+echo "text edit: $COMMITTED"
+case "$COMMITTED" in
+  *"FilterFilter") echo "        clipboard round-tripped through the compositor" ;;
+  *"Filter")       echo "        WARNING: typing worked but the clipboard did not round-trip" ;;
+  *)               fail "text edit produced unexpected content: $COMMITTED" ;;
+esac
+kill -0 $DEMO 2>/dev/null || fail "demo died in the text edit"
+
 # --- quit -------------------------------------------------------------------
 echo "compositor alive before quit: yes"
 xdo key Escape; sleep 2

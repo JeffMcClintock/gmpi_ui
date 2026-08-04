@@ -1753,7 +1753,17 @@ inline void WaylandFrameBase::attachClient(gmpi::api::IDrawingClient* client)
     detachClient();
     client_ = client;
     if (client_)
+    {
         client_->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+
+        // A fresh client has never been measured or arranged; without this the
+        // frame keeps the previous layout's book-keeping, every child rect in
+        // the new tree stays zero, and the window paints black. Startup never
+        // shows it - the first configure sets these - so it bites the SECOND
+        // attach: a tab switch, a breadcrumb navigation, a pane toggle.
+        needsMeasure_ = true;
+        dirtyAll_ = true;
+    }
 
     // One object almost always implements both halves - the interfaces even share
     // a single setHost for that reason - so wire input here rather than making

@@ -40,6 +40,7 @@
 #include <cerrno>
 #include <cstdio>
 
+#include <cctype>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -423,6 +424,15 @@ public:
     // why this is asked for rather than assumed.
     virtual xdg_surface* popupParent() const { return nullptr; }
 
+    // Content coordinates -> the parent's WINDOW GEOMETRY, which is what
+    // xdg_positioner anchors against.
+    //
+    // With client-side decorations those are not the same origin: the frame
+    // includes the titlebar and borders, so an anchor handed straight through
+    // lands one titlebar too high. Every menu in the app was drawing over its
+    // own titlebar because of it. Default is a no-op for anything undecorated.
+    virtual gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const { return r; }
+
     // Message boxes are windows of our own, so they need the app's libdecor
     // context: one context, many frames, one dispatch loop servicing them all.
     virtual libdecor* decorContext() const { return nullptr; }
@@ -803,8 +813,42 @@ private:
         return nullptr;
     }
 
+    // Is the pointer over the surface the client actually draws into?
+    //
+    // A window is more surfaces than its content: libdecor's title bar, borders
+    // and shadow are subsurfaces of this same window, and their coordinates are
+    // measured from the FRAME's top-left, not the content's. Forwarding those
+    // unfiltered handed the client a position one title-bar too high - a click
+    // on the close button arrived as a click in the menu bar, which is why the
+    // window would not close and why the menu bar seemed to ignore the mouse.
+    // Anything that is neither a registered target nor the content surface is
+    // not ours to deliver.
+    bool overContent() const { return pointerFocus_ == surface_; }
+
     gmpi::api::IInputClient* client_{};
     std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
+
+public:
+    // The pointer's shape over the CONTENT surface. cursor-shape-v1 needs the
+    // enter serial, so a change while hovering re-applies with the stored one
+    // and every later enter re-asserts it - the compositor resets the cursor
+    // to whatever the pointer last showed elsewhere on each crossing.
+    // App-level keyboard shortcuts, tried after popups and text edits but
+    // BEFORE the client: Ctrl+Z must reach undo even while the canvas has the
+    // keys, yet must never fire while a rename edit or a menu is up - those
+    // own the keyboard outright. Return true to consume.
+    std::function<bool(uint32_t keysym, int32_t modifierFlags)> onShortcut;
+
+    void setCursorShape(uint32_t shape)
+    {
+        desiredCursor_ = shape;
+        if (cursorShape_ && inside_)
+            wp_cursor_shape_device_v1_set_shape(cursorShape_, enterSerial_, desiredCursor_);
+    }
+
+private:
+    uint32_t desiredCursor_ = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+    uint32_t enterSerial_{};
     // Pointer and keyboard focus are DIFFERENT surfaces and must not share a
     // variable: a popup or dialog takes the keyboard while the pointer is still
     // over the editor, and one overwriting the other sends mouse events to the
@@ -852,6 +896,7 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
         return;
 
     in.inside_ = true;
+    in.enterSerial_ = serial;
     in.x_ = wl_fixed_to_double(sx);
     in.y_ = wl_fixed_to_double(sy);
 
@@ -859,8 +904,7 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
     // route - load an XCursor theme, build a wl_surface, attach the image - is
     // about a hundred lines for the same result.
     if (in.cursorShape_)
-        wp_cursor_shape_device_v1_set_shape(in.cursorShape_, serial,
-            WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
+        wp_cursor_shape_device_v1_set_shape(in.cursorShape_, serial, in.desiredCursor_);
 
     if (in.client_)
         in.client_->setHover(true);
@@ -872,11 +916,12 @@ inline void InputDispatch::pointerLeave(void* data, wl_pointer*, uint32_t serial
 {
     auto& in = *static_cast<InputDispatch*>(data);
 
+    if (in.pointerFocus_ == surf)
+        in.pointerFocus_ = nullptr;
+
     if (auto* t = in.targetFor(surf))
     {
         t->onLeave();
-        if (in.pointerFocus_ == surf)
-            in.pointerFocus_ = nullptr;
         return;
     }
 
@@ -904,6 +949,9 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
         t->onMotion(in.x_, in.y_, in.modifierFlags());
         return;
     }
+
+    if (!in.overContent())
+        return;
 
     if (in.client_)
         in.client_->onPointerMove(in.pointerPos(), in.modifierFlags() | int32_t(in.buttons_));
@@ -935,6 +983,9 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
         in.connection_->closeLivePopups();
         return;                 // the click dismissed the menu; it is not also a click
     }
+
+    if (!in.overContent())
+        return;
 
     // evdev button codes; there is no wl_pointer enum for them
     int32_t bit = 0;
@@ -972,7 +1023,7 @@ inline void InputDispatch::pointerAxis(void* data, wl_pointer*, uint32_t,
                                        uint32_t axis, wl_fixed_t value)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    if (!in.client_)
+    if (!in.client_ || !in.overContent())
         return;
 
     int32_t flags = in.modifierFlags();
@@ -1037,6 +1088,9 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
         in.keySink_->onRawKey(keysym, utf32, in.modifierFlags(), down);
         return;
     }
+
+    if (down && in.onShortcut && in.onShortcut(keysym, in.modifierFlags()))
+        return;
 
     if (down && utf32 && in.client_)
         in.client_->onKeyPress(static_cast<wchar_t>(utf32));
@@ -1709,7 +1763,17 @@ inline void WaylandFrameBase::attachClient(gmpi::api::IDrawingClient* client)
     detachClient();
     client_ = client;
     if (client_)
+    {
         client_->setHost(static_cast<gmpi::api::IDrawingHost*>(this));
+
+        // A fresh client has never been measured or arranged; without this the
+        // frame keeps the previous layout's book-keeping, every child rect in
+        // the new tree stays zero, and the window paints black. Startup never
+        // shows it - the first configure sets these - so it bites the SECOND
+        // attach: a tab switch, a breadcrumb navigation, a pane toggle.
+        needsMeasure_ = true;
+        dirtyAll_ = true;
+    }
 
     // One object almost always implements both halves - the interfaces even share
     // a single setHost for that reason - so wire input here rather than making
@@ -1772,8 +1836,10 @@ inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::R
     if (!popupParent())
         return gmpi::ReturnCode::Fail;
 
+    const auto anchor = toFrameCoordinates(r ? *r : gmpi::drawing::Rect{});
+
     auto* menu = new WaylandPopupMenu(connection_, inputDispatch(), popupParent(),
-                                      factory_, menuFont_, r ? *r : gmpi::drawing::Rect{});
+                                      factory_, menuFont_, anchor);
     *returnPopupMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
     return gmpi::ReturnCode::Ok;
 }
@@ -1895,6 +1961,25 @@ private:
 
     std::string text_;
     int32_t caret_ = 0;
+    float   scrollX_ = 0.f;   // horizontal scroll so the caret stays visible
+
+public:
+    // The scroll policy, as arithmetic: given where the caret is, how wide the
+    // text is, and how wide the box is, where must the window start so the
+    // caret is visible, the tail is not over-scrolled, and short text never
+    // scrolls at all? Static and pure so the tests can pin the invariants
+    // without a font or a render target.
+    static float scrollFor(float caretX, float textWidth, float span, float current)
+    {
+        float sx = current;
+        if (caretX - sx > span) sx = caretX - span;
+        if (caretX < sx)        sx = caretX;
+        if (sx > 0.f && textWidth - sx < span)
+            sx = (std::max)(0.f, textWidth - span);
+        return sx;
+    }
+
+private:
     int32_t selAnchor_ = 0;
     int32_t alignment_ = 0;
     float   textHeight_ = 0.f;
@@ -2119,7 +2204,7 @@ inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
 
     // Place the caret at the character boundary nearest the click, by measuring
     // each prefix. Linear, but a text edit holds a name, not a document.
-    const double target = x - rect_.left - 3.0;
+    const double target = x - rect_.left - 3.0 + scrollX_;
 
     int32_t best = 0;
     double bestDist = 1e30;
@@ -2163,9 +2248,6 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
     if (back) rt->fillRectangle(&rect_, back);
     if (edge) rt->drawRectangle(&rect_, edge, 1.f, nullptr);
 
-    const float textLeft = rect_.left + 3.f;
-    const float textTop  = rect_.top + 2.f;
-
     auto widthTo = [&](int32_t i) -> float
     {
         if (i <= 0 || !font_) return 0.f;
@@ -2173,6 +2255,18 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
         font_->getTextExtentU(text_.c_str(), i, 100000.f, &sz);
         return sz.width;
     };
+
+    // Scroll so the caret is always in view: a name longer than the box used
+    // to keep painting rightwards over whatever lay beyond, with the caret
+    // marching out of sight. The window is [scrollX_, scrollX_ + span] in
+    // text coordinates, nudged only when the caret leaves it.
+    const float span = (rect_.right - 2.f) - (rect_.left + 3.f);
+    scrollX_ = scrollFor(widthTo(caret_), widthTo(int32_t(text_.size())), span, scrollX_);
+
+    const float textLeft = rect_.left + 3.f - scrollX_;
+    const float textTop  = rect_.top + 2.f;
+
+    rt->pushAxisAlignedClip(&rect_);
 
     if (sel && hasSelection())
     {
@@ -2184,7 +2278,9 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
 
     if (font_ && ink && !text_.empty())
     {
-        const gmpi::drawing::Rect tr{ textLeft, textTop, rect_.right - 2.f, rect_.bottom };
+        // The rect no longer limits the right edge - the clip does - so the
+        // scrolled-off tail cannot spill past the box.
+        const gmpi::drawing::Rect tr{ textLeft, textTop, textLeft + 100000.f, rect_.bottom };
         rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
     }
 
@@ -2196,6 +2292,8 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
         const gmpi::drawing::Rect c{ cx, rect_.top + 2.f, cx + 1.5f, rect_.bottom - 2.f };
         rt->fillRectangle(&c, ink);
     }
+
+    rt->popAxisAlignedClip();
 
     if (back) back->release();
     if (ink)  ink->release();
@@ -2396,13 +2494,17 @@ inline void WaylandColorDialog::layout()
     alphaRect_ = { hueRect_.right + 12.f, m, hueRect_.right + 12.f + kColorStripW, m + kColorSquare };
 
     w_ = int(alphaRect_.right + m);
-    h_ = int(svRect_.bottom + m + 34 + m);
 
+    // Preview and buttons on SEPARATE rows. Sharing one row read fine in the
+    // code and overlapped on screen: the preview's right edge (m + 90) sat
+    // under Cancel's left edge once the buttons packed in from the right.
     previewRect_ = { m, svRect_.bottom + 10.f, m + 90.f, svRect_.bottom + 10.f + 24.f };
+
+    h_ = int(previewRect_.bottom + 12.f + 30.f + m);
 
     buttons_ = { { "OK", true }, { "Cancel", false } };
     int x = w_ - kColorMargin;
-    const int y = h_ - kColorMargin - 30;
+    const int y = int(previewRect_.bottom + 12.f);
     for (auto& b : buttons_)
     {
         x -= 92;
@@ -2930,12 +3032,21 @@ public:
             complete(buttons_[size_t(i)].id);
     }
     void onWheel(double, double, int32_t, double) override {}
-    void onKey(uint32_t keysym, uint32_t) override
+    void onKey(uint32_t keysym, uint32_t utf32) override
     {
         if (keysym == 0xff1b)                              // Escape
+        {
             complete(escape_);
-        else if (keysym == 0xff0d || keysym == 0xff8d)     // Return, KP_Enter
+            return;
+        }
+        if (keysym == 0xff0d || keysym == 0xff8d)          // Return, KP_Enter
+        {
             complete(buttons_.empty() ? gmpi::api::StockDialogButton::Ok : buttons_.front().id);
+            return;
+        }
+
+        if (const auto* b = buttonForMnemonic(utf32))
+            complete(b->id);
     }
 
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -2957,6 +3068,29 @@ public:
     // they sit, and what Escape maps to
     const std::vector<Button>& buttons() const { return buttons_; }
     gmpi::api::StockDialogButton escapeButton() const { return escape_; }
+
+    // Which button a typed letter selects, or null for none.
+    //
+    // Mnemonics matter here beyond convenience: Return only ever reaches the
+    // default and Escape the cancel, which leaves "No" - the one answer a save
+    // prompt most needs - unreachable from the keyboard entirely. Matched
+    // against the LABEL so it follows the button set rather than a second list
+    // that could drift from it. Pure, so the tests can pin it without
+    // constructing a dialog that would delete itself on completion.
+    const Button* buttonForMnemonic(uint32_t utf32) const
+    {
+        if (utf32 >= 128 || !std::isalpha(int(utf32)))
+            return nullptr;
+
+        const auto typed = char(std::tolower(int(utf32)));
+        for (const auto& b : buttons_)
+        {
+            if (!b.label.empty() && char(std::tolower(int(b.label.front()))) == typed)
+                return &b;
+        }
+        return nullptr;
+    }
+
     int contentWidth()  const { return w_; }
     int contentHeight() const { return h_; }
 
@@ -3364,11 +3498,47 @@ public:
     // share our context so a message box is dispatched by this window's loop
     libdecor* decorContext() const override { return decor_; }
 
+    gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const override
+    {
+        if (!frame_)
+            return r;
+
+        int left = 0, top = 0, right = 0, bottom = 0;
+        libdecor_frame_translate_coordinate(frame_, int(r.left),  int(r.top),    &left,  &top);
+        libdecor_frame_translate_coordinate(frame_, int(r.right), int(r.bottom), &right, &bottom);
+
+        return { float(left), float(top), float(right), float(bottom) };
+    }
+
     InputDispatch& input() { return input_; }
     InputDispatch& inputDispatch() override { return input_; }
 
     bool running() const { return running_; }
     void close() { running_ = false; }
+
+    // Return false to VETO the close (typically while an async prompt is up).
+    // Unset means close immediately, which is the right default for a window
+    // with nothing to lose.
+    std::function<bool()> onCloseRequest;
+
+    // Pointer shape over the editor, compositor-themed via cursor-shape-v1.
+    // Deliberately a tiny enum rather than the protocol's full list: these are
+    // the shapes the editor actually asks for, and a caller should not need
+    // the Wayland headers to ask.
+    enum class Cursor { normal, crosshair, ibeam, pointingHand };
+    void setCursor(Cursor c)
+    {
+        const uint32_t shape = [c] {
+            switch (c)
+            {
+            case Cursor::crosshair:    return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CROSSHAIR;
+            case Cursor::ibeam:        return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT;
+            case Cursor::pointingHand: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER;
+            default:                   return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+            }
+        }();
+        inputDispatch().setCursorShape(shape);
+    }
 
     // Fds the host's loop should poll. Standalone, runEventLoop does it for you;
     // in a plugin the host owns the loop and just needs these.
@@ -3438,7 +3608,15 @@ inline void WaylandToplevel::configure(libdecor_frame* frame,
 
 inline void WaylandToplevel::closed(libdecor_frame*, void* data)
 {
-    static_cast<WaylandToplevel*>(data)->running_ = false;
+    auto& self = *static_cast<WaylandToplevel*>(data);
+
+    // The app may want to ask something first (unsaved changes). It answers
+    // asynchronously - a Wayland dialog cannot block - so a veto here means
+    // "not now"; the app calls close() itself once the user has decided.
+    if (self.onCloseRequest && !self.onCloseRequest())
+        return;
+
+    self.running_ = false;
 }
 
 inline void WaylandToplevel::commit(libdecor_frame*, void* data)

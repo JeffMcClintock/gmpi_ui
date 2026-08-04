@@ -12,7 +12,11 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 TOOLS=${WLTEST_TOOLS:-$HOME/.cache/wayland-testtools}
 LOG=${TMPDIR:-/tmp}/gmpi-autotest.log
 DISP=${WLTEST_XDISPLAY:-:5}
-SOCK=wayland-gmpitest
+# A NEW socket name per run, rather than reusing one and deleting the stale
+# file. Nothing to clean up means no rm against a path built from a variable -
+# which is both safer and stops tooling stopping to ask about it. The runtime
+# dir is cleared on logout, so these do not accumulate meaningfully.
+SOCK=wayland-gmpitest-$$
 
 [ -x "$HERE/wayland_demo" ] || { echo "no demo binary - run ./tests/run.sh --demo"; exit 1; }
 
@@ -27,7 +31,28 @@ export LD_LIBRARY_PATH=$TOOLS/usr/lib/x86_64-linux-gnu
 xdo() { env DISPLAY="$DISP" "$TOOLS/usr/bin/xdotool" "$@"; }
 
 XVFB=""; NEST=""; DEMO=""
-cleanup() { for p in "$DEMO" "$NEST" "$XVFB"; do [ -n "$p" ] && kill "$p" 2>/dev/null; done; }
+# Kill the nested session's whole PROCESS GROUP, not just the process we
+# started. dbus-run-session brings up a private bus, and gnome-shell then starts
+# a full set of session services off it - portals, gvfs, tracker, evolution,
+# goa. Killing only the one pid left every one of those behind: 37 runs leaked
+# about 800 processes, and eventually a run could not get a session bus at all
+# ("A connection to the bus can't be made"), which reads as a broken test.
+#
+# The $$ guard is not paranoia. Killing a group that turned out to be our own is
+# a mistake this harness has made before.
+kill_nested() {
+    [ -n "${NEST_PGID:-}" ] || return 0
+    [ "$NEST_PGID" != "$$" ] || return 0
+    kill -- -"$NEST_PGID" 2>/dev/null
+    sleep 1
+    kill -9 -- -"$NEST_PGID" 2>/dev/null
+}
+cleanup() {
+    [ -n "${DEMO:-}" ] && kill "$DEMO" 2>/dev/null
+    kill_nested
+    [ -n "${XVFB:-}" ] && kill "$XVFB" 2>/dev/null
+    return 0
+}
 trap cleanup EXIT
 
 fail() { echo "FAILED: $*"; echo "--- demo log ---"; cat "$LOG" 2>/dev/null; exit 1; }
@@ -40,12 +65,13 @@ fi
 xdo getdisplaygeometry >/dev/null 2>&1 || fail "Xvfb $DISP never came up"
 
 # --- nested mutter ----------------------------------------------------------
-# A stale socket satisfies the wait loop instantly and we then connect to a dead
-# compositor; and the desktop-icons extension crash-loops in a nested shell,
-# which destabilises it, so run without extensions.
-rm -f "$XDG_RUNTIME_DIR/$SOCK" "$XDG_RUNTIME_DIR/$SOCK.lock"
-env -u WAYLAND_DISPLAY DISPLAY="$DISP" GNOME_SHELL_DISABLE_EXTENSIONS=1 dbus-run-session -- \
+# The desktop-icons extension crash-loops in a nested shell and destabilises it,
+# so run without extensions. (A stale socket used to be a hazard here - it
+# satisfies the wait loop instantly and the client then connects to a dead
+# compositor - but a per-run socket name makes that impossible.)
+setsid env -u WAYLAND_DISPLAY DISPLAY="$DISP" GNOME_SHELL_DISABLE_EXTENSIONS=1 dbus-run-session -- \
     gnome-shell --nested --wayland --wayland-display="$SOCK" >"${TMPDIR:-/tmp}/gmpi-compositor.log" 2>&1 & NEST=$!
+NEST_PGID=$(ps -o pgid= -p "$NEST" 2>/dev/null | tr -d " ")
 for i in $(seq 1 80); do [ -S "$XDG_RUNTIME_DIR/$SOCK" ] && break; sleep 0.5; done
 [ -S "$XDG_RUNTIME_DIR/$SOCK" ] || fail "nested mutter never came up"
 sleep 3    # the socket appears slightly before clients are accepted

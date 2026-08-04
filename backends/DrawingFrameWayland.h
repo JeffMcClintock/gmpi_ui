@@ -826,6 +826,22 @@ private:
 
     gmpi::api::IInputClient* client_{};
     std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
+
+public:
+    // The pointer's shape over the CONTENT surface. cursor-shape-v1 needs the
+    // enter serial, so a change while hovering re-applies with the stored one
+    // and every later enter re-asserts it - the compositor resets the cursor
+    // to whatever the pointer last showed elsewhere on each crossing.
+    void setCursorShape(uint32_t shape)
+    {
+        desiredCursor_ = shape;
+        if (cursorShape_ && inside_)
+            wp_cursor_shape_device_v1_set_shape(cursorShape_, enterSerial_, desiredCursor_);
+    }
+
+private:
+    uint32_t desiredCursor_ = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+    uint32_t enterSerial_{};
     // Pointer and keyboard focus are DIFFERENT surfaces and must not share a
     // variable: a popup or dialog takes the keyboard while the pointer is still
     // over the editor, and one overwriting the other sends mouse events to the
@@ -873,6 +889,7 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
         return;
 
     in.inside_ = true;
+    in.enterSerial_ = serial;
     in.x_ = wl_fixed_to_double(sx);
     in.y_ = wl_fixed_to_double(sy);
 
@@ -880,8 +897,7 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
     // route - load an XCursor theme, build a wl_surface, attach the image - is
     // about a hundred lines for the same result.
     if (in.cursorShape_)
-        wp_cursor_shape_device_v1_set_shape(in.cursorShape_, serial,
-            WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
+        wp_cursor_shape_device_v1_set_shape(in.cursorShape_, serial, in.desiredCursor_);
 
     if (in.client_)
         in.client_->setHover(true);
@@ -3411,6 +3427,25 @@ public:
 
     bool running() const { return running_; }
     void close() { running_ = false; }
+
+    // Pointer shape over the editor, compositor-themed via cursor-shape-v1.
+    // Deliberately a tiny enum rather than the protocol's full list: these are
+    // the shapes the editor actually asks for, and a caller should not need
+    // the Wayland headers to ask.
+    enum class Cursor { normal, crosshair, ibeam, pointingHand };
+    void setCursor(Cursor c)
+    {
+        const uint32_t shape = [c] {
+            switch (c)
+            {
+            case Cursor::crosshair:    return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CROSSHAIR;
+            case Cursor::ibeam:        return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT;
+            case Cursor::pointingHand: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER;
+            default:                   return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+            }
+        }();
+        inputDispatch().setCursorShape(shape);
+    }
 
     // Fds the host's loop should poll. Standalone, runEventLoop does it for you;
     // in a plugin the host owns the loop and just needs these.

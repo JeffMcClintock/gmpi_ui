@@ -832,6 +832,12 @@ public:
     // enter serial, so a change while hovering re-applies with the stored one
     // and every later enter re-asserts it - the compositor resets the cursor
     // to whatever the pointer last showed elsewhere on each crossing.
+    // App-level keyboard shortcuts, tried after popups and text edits but
+    // BEFORE the client: Ctrl+Z must reach undo even while the canvas has the
+    // keys, yet must never fire while a rename edit or a menu is up - those
+    // own the keyboard outright. Return true to consume.
+    std::function<bool(uint32_t keysym, int32_t modifierFlags)> onShortcut;
+
     void setCursorShape(uint32_t shape)
     {
         desiredCursor_ = shape;
@@ -1081,6 +1087,9 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
         in.keySink_->onRawKey(keysym, utf32, in.modifierFlags(), down);
         return;
     }
+
+    if (down && in.onShortcut && in.onShortcut(keysym, in.modifierFlags()))
+        return;
 
     if (down && utf32 && in.client_)
         in.client_->onKeyPress(static_cast<wchar_t>(utf32));

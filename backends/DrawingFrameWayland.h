@@ -772,6 +772,20 @@ public:
     std::function<void(gmpi::drawing::Point, uint32_t serial)> onContextMenu;
 
 private:
+    // What every pointer event carries, whatever it is.
+    //
+    // Matches DrawingFrameWin.h's makePointerFlags: InContact, Primary and
+    // Confidence on EVERY event including plain moves. The editor is written
+    // against that Windows behaviour, so this is a case of following the
+    // reference rather than reasoning from the flags' names.
+    int32_t basePointerFlags() const
+    {
+        return modifierFlags()
+             | int32_t(gmpi::api::PointerFlags::InContact)
+             | int32_t(gmpi::api::PointerFlags::Primary)
+             | int32_t(gmpi::api::PointerFlags::Confidence);
+    }
+
     int32_t modifierFlags() const
     {
         int32_t f = 0;
@@ -954,7 +968,8 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
         return;
 
     if (in.client_)
-        in.client_->onPointerMove(in.pointerPos(), in.modifierFlags() | int32_t(in.buttons_));
+        in.client_->onPointerMove(in.pointerPos(),
+                                  in.basePointerFlags() | int32_t(in.buttons_));
 }
 
 inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t serial,
@@ -1001,8 +1016,13 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
     if (pressed) in.buttons_ |= uint32_t(bit);
     else         in.buttons_ &= ~uint32_t(bit);
 
-    const int32_t flags = in.modifierFlags() | bit |
-                          (pressed ? int32_t(gmpi::api::PointerFlags::InContact) : 0);
+    // New marks the START of a gesture, and the editor tests for it before it
+    // will drag a module - without it a press on a selected module selected it
+    // and nothing else, which is exactly how "the mouse works but dragging
+    // does not" presented. Windows sets it on every button-DOWN
+    // (makePointerFlags in DrawingFrameWin.h); this mirrors that.
+    const int32_t flags = in.basePointerFlags() | bit
+                        | (pressed ? int32_t(gmpi::api::PointerFlags::New) : 0);
 
     if (in.pointerPreFilter && in.pointerPreFilter(in.x_, in.y_, pressed))
         return;

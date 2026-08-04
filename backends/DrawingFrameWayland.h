@@ -1941,6 +1941,25 @@ private:
 
     std::string text_;
     int32_t caret_ = 0;
+    float   scrollX_ = 0.f;   // horizontal scroll so the caret stays visible
+
+public:
+    // The scroll policy, as arithmetic: given where the caret is, how wide the
+    // text is, and how wide the box is, where must the window start so the
+    // caret is visible, the tail is not over-scrolled, and short text never
+    // scrolls at all? Static and pure so the tests can pin the invariants
+    // without a font or a render target.
+    static float scrollFor(float caretX, float textWidth, float span, float current)
+    {
+        float sx = current;
+        if (caretX - sx > span) sx = caretX - span;
+        if (caretX < sx)        sx = caretX;
+        if (sx > 0.f && textWidth - sx < span)
+            sx = (std::max)(0.f, textWidth - span);
+        return sx;
+    }
+
+private:
     int32_t selAnchor_ = 0;
     int32_t alignment_ = 0;
     float   textHeight_ = 0.f;
@@ -2165,7 +2184,7 @@ inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
 
     // Place the caret at the character boundary nearest the click, by measuring
     // each prefix. Linear, but a text edit holds a name, not a document.
-    const double target = x - rect_.left - 3.0;
+    const double target = x - rect_.left - 3.0 + scrollX_;
 
     int32_t best = 0;
     double bestDist = 1e30;
@@ -2209,9 +2228,6 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
     if (back) rt->fillRectangle(&rect_, back);
     if (edge) rt->drawRectangle(&rect_, edge, 1.f, nullptr);
 
-    const float textLeft = rect_.left + 3.f;
-    const float textTop  = rect_.top + 2.f;
-
     auto widthTo = [&](int32_t i) -> float
     {
         if (i <= 0 || !font_) return 0.f;
@@ -2219,6 +2235,18 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
         font_->getTextExtentU(text_.c_str(), i, 100000.f, &sz);
         return sz.width;
     };
+
+    // Scroll so the caret is always in view: a name longer than the box used
+    // to keep painting rightwards over whatever lay beyond, with the caret
+    // marching out of sight. The window is [scrollX_, scrollX_ + span] in
+    // text coordinates, nudged only when the caret leaves it.
+    const float span = (rect_.right - 2.f) - (rect_.left + 3.f);
+    scrollX_ = scrollFor(widthTo(caret_), widthTo(int32_t(text_.size())), span, scrollX_);
+
+    const float textLeft = rect_.left + 3.f - scrollX_;
+    const float textTop  = rect_.top + 2.f;
+
+    rt->pushAxisAlignedClip(&rect_);
 
     if (sel && hasSelection())
     {
@@ -2230,7 +2258,9 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
 
     if (font_ && ink && !text_.empty())
     {
-        const gmpi::drawing::Rect tr{ textLeft, textTop, rect_.right - 2.f, rect_.bottom };
+        // The rect no longer limits the right edge - the clip does - so the
+        // scrolled-off tail cannot spill past the box.
+        const gmpi::drawing::Rect tr{ textLeft, textTop, textLeft + 100000.f, rect_.bottom };
         rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
     }
 
@@ -2242,6 +2272,8 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
         const gmpi::drawing::Rect c{ cx, rect_.top + 2.f, cx + 1.5f, rect_.bottom - 2.f };
         rt->fillRectangle(&c, ink);
     }
+
+    rt->popAxisAlignedClip();
 
     if (back) back->release();
     if (ink)  ink->release();
@@ -2442,13 +2474,17 @@ inline void WaylandColorDialog::layout()
     alphaRect_ = { hueRect_.right + 12.f, m, hueRect_.right + 12.f + kColorStripW, m + kColorSquare };
 
     w_ = int(alphaRect_.right + m);
-    h_ = int(svRect_.bottom + m + 34 + m);
 
+    // Preview and buttons on SEPARATE rows. Sharing one row read fine in the
+    // code and overlapped on screen: the preview's right edge (m + 90) sat
+    // under Cancel's left edge once the buttons packed in from the right.
     previewRect_ = { m, svRect_.bottom + 10.f, m + 90.f, svRect_.bottom + 10.f + 24.f };
+
+    h_ = int(previewRect_.bottom + 12.f + 30.f + m);
 
     buttons_ = { { "OK", true }, { "Cancel", false } };
     int x = w_ - kColorMargin;
-    const int y = h_ - kColorMargin - 30;
+    const int y = int(previewRect_.bottom + 12.f);
     for (auto& b : buttons_)
     {
         x -= 92;

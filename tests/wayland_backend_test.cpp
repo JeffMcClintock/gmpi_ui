@@ -483,6 +483,21 @@ int main()
             e->release();
         }
         {
+            // The scroll policy as arithmetic - these are the exact moves that
+            // used to paint outside the box or hide the caret.
+            using TE2 = gmpi::wayland::WaylandTextEdit;
+            check("short text never scrolls",
+                  TE2::scrollFor(/*caret*/ 30.f, /*text*/ 50.f, /*span*/ 100.f, 0.f) == 0.f);
+            check("caret past the right edge pulls the window right",
+                  TE2::scrollFor(250.f, 300.f, 100.f, 0.f) == 150.f);
+            check("caret before the window pulls it left",
+                  TE2::scrollFor(20.f, 300.f, 100.f, 150.f) == 20.f);
+            check("deleting the tail un-scrolls rather than showing a gap",
+                  TE2::scrollFor(120.f, 120.f, 100.f, 150.f) == 20.f);
+            check("home from a long tail lands at zero",
+                  TE2::scrollFor(0.f, 300.f, 100.f, 200.f) == 0.f);
+        }
+        {
             auto* e = make("ab");
             key(e, 0xff1b, 0);                       // Escape: finish() releases it
             check("escape ends the edit without touching the text", true);

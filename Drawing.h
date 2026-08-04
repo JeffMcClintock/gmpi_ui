@@ -992,6 +992,24 @@ public:
 	{
 		return isSRGBFromFormat(getPixelFormat());
 	}
+	// Packs r,g,b,a into a dword pixel using this bitmap's actual channel layout
+	// (as reported by getPixelFormat()), unlike the compile-time gmpi::drawing::rgBytesToPixel().
+	// Backends such as JuceGfx.h may use the same channel layout on every platform, so the
+	// layout must be queried at runtime rather than assumed from #ifdef _WIN32.
+	static constexpr uint32_t rgBytesToPixel(int32_t channelLayout, uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xff)
+	{
+		switch (channelLayout)
+		{
+			case 1: return (a << 24) | (b << 16) | (g << 8) | r; // RGBA
+			case 2: return (b << 24) | (g << 16) | (r << 8) | a; // ARGB
+			case 3: return (r << 24) | (g << 16) | (b << 8) | a; // ABGR
+			default: return (a << 24) | (r << 16) | (g << 8) | b; // BGRA
+		}
+	}
+	uint32_t rgBytesToPixel(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xff)
+	{
+		return rgBytesToPixel(channelLayout(), r, g, b, a);
+	}
  	SizeU getSize() const
 	{
 		return bitmapSize;

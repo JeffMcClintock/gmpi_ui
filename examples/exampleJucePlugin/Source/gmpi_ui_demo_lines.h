@@ -159,27 +159,6 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 		x1 += width + margin;
 
 		// tiled image fill
-        auto tartan = [](int x, int y) -> uint32_t
-        {
-            uint32_t col{gmpi::drawing::rgBytesToPixel(0x42,0x73,0x9e)}; //  0xFF42739Eu }; // Blue
-
-            int index = (x & 1) ^ (y & 1) ? x : y;
-
-            if ((index >> 3) % 2 == 0)
-            {
-                col = gmpi::drawing::rgBytesToPixel(0,0,0); // 0xFF000000u; // Black
-            }
-            else
-            {
-                if ((index >> 1) % 4 == 2)
-                {
-                    col = gmpi::drawing::rgBytesToPixel(0xff,0xff,0xff); // 0xFFffffffu; // White
-                }
-            }
-
-            return col;
-        };
-        
 		{
 			uint32_t sz = 128;
 			auto bitmap = g.getFactory().createImage({ sz, sz }, (int32_t)gmpi::drawing::BitmapRenderTargetFlags::SRGBPixels);
@@ -187,6 +166,30 @@ void drawLinesDemo(gmpi::drawing::Graphics& g, gmpi::drawing::SizeL size)
 
 			{
 				auto pixels = bitmap.lockPixels(gmpi::drawing::BitmapLockFlags::Write); // TODO no cast
+
+				// Use the bitmap's actual (runtime) channel layout rather than assuming one from
+				// #ifdef _WIN32, since e.g. the JUCE graphics backend uses the same layout on all platforms.
+				auto tartan = [&pixels](int x, int y) -> uint32_t
+				{
+					uint32_t col{pixels.rgBytesToPixel(0x42,0x73,0x9e)}; //  0xFF42739Eu }; // Blue
+
+					int index = (x & 1) ^ (y & 1) ? x : y;
+
+					if ((index >> 3) % 2 == 0)
+					{
+						col = pixels.rgBytesToPixel(0,0,0); // 0xFF000000u; // Black
+					}
+					else
+					{
+						if ((index >> 1) % 4 == 2)
+						{
+							col = pixels.rgBytesToPixel(0xff,0xff,0xff); // 0xFFffffffu; // White
+						}
+					}
+
+					return col;
+				};
+
 				for (uint32_t py = 0; py < sz; ++py)
 				{
 					for (uint32_t px = 0; px < sz; ++px)

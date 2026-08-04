@@ -12,7 +12,11 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 TOOLS=${WLTEST_TOOLS:-$HOME/.cache/wayland-testtools}
 LOG=${TMPDIR:-/tmp}/gmpi-autotest.log
 DISP=${WLTEST_XDISPLAY:-:5}
-SOCK=wayland-gmpitest
+# A NEW socket name per run, rather than reusing one and deleting the stale
+# file. Nothing to clean up means no rm against a path built from a variable -
+# which is both safer and stops tooling stopping to ask about it. The runtime
+# dir is cleared on logout, so these do not accumulate meaningfully.
+SOCK=wayland-gmpitest-$$
 
 [ -x "$HERE/wayland_demo" ] || { echo "no demo binary - run ./tests/run.sh --demo"; exit 1; }
 
@@ -40,10 +44,10 @@ fi
 xdo getdisplaygeometry >/dev/null 2>&1 || fail "Xvfb $DISP never came up"
 
 # --- nested mutter ----------------------------------------------------------
-# A stale socket satisfies the wait loop instantly and we then connect to a dead
-# compositor; and the desktop-icons extension crash-loops in a nested shell,
-# which destabilises it, so run without extensions.
-rm -f "$XDG_RUNTIME_DIR/$SOCK" "$XDG_RUNTIME_DIR/$SOCK.lock"
+# The desktop-icons extension crash-loops in a nested shell and destabilises it,
+# so run without extensions. (A stale socket used to be a hazard here - it
+# satisfies the wait loop instantly and the client then connects to a dead
+# compositor - but a per-run socket name makes that impossible.)
 env -u WAYLAND_DISPLAY DISPLAY="$DISP" GNOME_SHELL_DISABLE_EXTENSIONS=1 dbus-run-session -- \
     gnome-shell --nested --wayland --wayland-display="$SOCK" >"${TMPDIR:-/tmp}/gmpi-compositor.log" 2>&1 & NEST=$!
 for i in $(seq 1 80); do [ -S "$XDG_RUNTIME_DIR/$SOCK" ] && break; sleep 0.5; done

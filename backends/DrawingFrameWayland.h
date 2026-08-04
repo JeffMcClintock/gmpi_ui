@@ -423,6 +423,15 @@ public:
     // why this is asked for rather than assumed.
     virtual xdg_surface* popupParent() const { return nullptr; }
 
+    // Content coordinates -> the parent's WINDOW GEOMETRY, which is what
+    // xdg_positioner anchors against.
+    //
+    // With client-side decorations those are not the same origin: the frame
+    // includes the titlebar and borders, so an anchor handed straight through
+    // lands one titlebar too high. Every menu in the app was drawing over its
+    // own titlebar because of it. Default is a no-op for anything undecorated.
+    virtual gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const { return r; }
+
     // Message boxes are windows of our own, so they need the app's libdecor
     // context: one context, many frames, one dispatch loop servicing them all.
     virtual libdecor* decorContext() const { return nullptr; }
@@ -1772,8 +1781,10 @@ inline gmpi::ReturnCode WaylandFrameBase::createPopupMenu(const gmpi::drawing::R
     if (!popupParent())
         return gmpi::ReturnCode::Fail;
 
+    const auto anchor = toFrameCoordinates(r ? *r : gmpi::drawing::Rect{});
+
     auto* menu = new WaylandPopupMenu(connection_, inputDispatch(), popupParent(),
-                                      factory_, menuFont_, r ? *r : gmpi::drawing::Rect{});
+                                      factory_, menuFont_, anchor);
     *returnPopupMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
     return gmpi::ReturnCode::Ok;
 }
@@ -3363,6 +3374,18 @@ public:
 
     // share our context so a message box is dispatched by this window's loop
     libdecor* decorContext() const override { return decor_; }
+
+    gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const override
+    {
+        if (!frame_)
+            return r;
+
+        int left = 0, top = 0, right = 0, bottom = 0;
+        libdecor_frame_translate_coordinate(frame_, int(r.left),  int(r.top),    &left,  &top);
+        libdecor_frame_translate_coordinate(frame_, int(r.right), int(r.bottom), &right, &bottom);
+
+        return { float(left), float(top), float(right), float(bottom) };
+    }
 
     InputDispatch& input() { return input_; }
     InputDispatch& inputDispatch() override { return input_; }

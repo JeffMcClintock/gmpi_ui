@@ -1575,7 +1575,14 @@ public:
 			AccessPtr::put(returnFormat)
 		);
 
-		assert(AccessPtr::get(returnFormat));
+		// No assert on the result, unlike createTextFormat: rich text is an
+		// OPTIONAL capability. A backend that does not implement it declines
+		// every family including the fallback (the software backend does
+		// exactly that), and null is the documented way it says so — callers
+		// test the returned format rather than assuming one. Asserting here
+		// turned that legitimate answer into an abort in any build without
+		// NDEBUG, which is how the drawing tests' own "does this backend do
+		// rich text?" probe crashed instead of skipping.
 		return returnFormat;
 	}
 

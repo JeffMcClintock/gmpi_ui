@@ -448,7 +448,7 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 			{
 				// creat file-browser
 				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-				env->dialogHost->createFileDialog((int32_t)gmpi::api::FileDialogType::Open, unknown.put());
+				env->dialogHost->createFileDialog((int32_t)gmpi::api::FileDialogType::Save, unknown.put());
 				fileDialog = unknown.as<gmpi::api::IFileDialog>();
 
 				if (!fileDialog)

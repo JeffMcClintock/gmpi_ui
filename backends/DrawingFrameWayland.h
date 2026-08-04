@@ -812,6 +812,18 @@ private:
         return nullptr;
     }
 
+    // Is the pointer over the surface the client actually draws into?
+    //
+    // A window is more surfaces than its content: libdecor's title bar, borders
+    // and shadow are subsurfaces of this same window, and their coordinates are
+    // measured from the FRAME's top-left, not the content's. Forwarding those
+    // unfiltered handed the client a position one title-bar too high - a click
+    // on the close button arrived as a click in the menu bar, which is why the
+    // window would not close and why the menu bar seemed to ignore the mouse.
+    // Anything that is neither a registered target nor the content surface is
+    // not ours to deliver.
+    bool overContent() const { return pointerFocus_ == surface_; }
+
     gmpi::api::IInputClient* client_{};
     std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
     // Pointer and keyboard focus are DIFFERENT surfaces and must not share a
@@ -881,11 +893,12 @@ inline void InputDispatch::pointerLeave(void* data, wl_pointer*, uint32_t serial
 {
     auto& in = *static_cast<InputDispatch*>(data);
 
+    if (in.pointerFocus_ == surf)
+        in.pointerFocus_ = nullptr;
+
     if (auto* t = in.targetFor(surf))
     {
         t->onLeave();
-        if (in.pointerFocus_ == surf)
-            in.pointerFocus_ = nullptr;
         return;
     }
 
@@ -913,6 +926,9 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
         t->onMotion(in.x_, in.y_, in.modifierFlags());
         return;
     }
+
+    if (!in.overContent())
+        return;
 
     if (in.client_)
         in.client_->onPointerMove(in.pointerPos(), in.modifierFlags() | int32_t(in.buttons_));
@@ -944,6 +960,9 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
         in.connection_->closeLivePopups();
         return;                 // the click dismissed the menu; it is not also a click
     }
+
+    if (!in.overContent())
+        return;
 
     // evdev button codes; there is no wl_pointer enum for them
     int32_t bit = 0;
@@ -981,7 +1000,7 @@ inline void InputDispatch::pointerAxis(void* data, wl_pointer*, uint32_t,
                                        uint32_t axis, wl_fixed_t value)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    if (!in.client_)
+    if (!in.client_ || !in.overContent())
         return;
 
     int32_t flags = in.modifierFlags();

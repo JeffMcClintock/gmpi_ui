@@ -253,6 +253,25 @@ int main()
               ync.buttons().size() == 3 && ync.buttons()[2].id == B::Cancel);
         check("YesNoCancel: Escape means Cancel", ync.escapeButton() == B::Cancel);
 
+        // Mnemonics: the first letter of a label picks that button. Without
+        // them "No" is unreachable from the keyboard - Return takes the
+        // default and Escape the cancel - which is the one answer a save
+        // prompt most needs.
+        {
+            auto dlg = make(T::YesNoCancel);
+            const auto* n = dlg.buttonForMnemonic('n');
+            check("a save prompt answers 'n' with No", n && n->id == B::No);
+
+            const auto* y = dlg.buttonForMnemonic('Y');
+            check("mnemonics are case-insensitive", y && y->id == B::Yes);
+
+            const auto* c = dlg.buttonForMnemonic('c');
+            check("'c' picks Cancel", c && c->id == B::Cancel);
+
+            check("an unmatched letter picks nothing", dlg.buttonForMnemonic('q') == nullptr);
+            check("a digit picks nothing", dlg.buttonForMnemonic('7') == nullptr);
+        }
+
         // geometry: laid out before mapping, inside the window, non-overlapping
         bool inside = true, ordered = true;
         const auto& bs = ync.buttons();

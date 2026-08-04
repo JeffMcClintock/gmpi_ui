@@ -40,6 +40,7 @@
 #include <cerrno>
 #include <cstdio>
 
+#include <cctype>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -3031,12 +3032,21 @@ public:
             complete(buttons_[size_t(i)].id);
     }
     void onWheel(double, double, int32_t, double) override {}
-    void onKey(uint32_t keysym, uint32_t) override
+    void onKey(uint32_t keysym, uint32_t utf32) override
     {
         if (keysym == 0xff1b)                              // Escape
+        {
             complete(escape_);
-        else if (keysym == 0xff0d || keysym == 0xff8d)     // Return, KP_Enter
+            return;
+        }
+        if (keysym == 0xff0d || keysym == 0xff8d)          // Return, KP_Enter
+        {
             complete(buttons_.empty() ? gmpi::api::StockDialogButton::Ok : buttons_.front().id);
+            return;
+        }
+
+        if (const auto* b = buttonForMnemonic(utf32))
+            complete(b->id);
     }
 
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -3058,6 +3068,29 @@ public:
     // they sit, and what Escape maps to
     const std::vector<Button>& buttons() const { return buttons_; }
     gmpi::api::StockDialogButton escapeButton() const { return escape_; }
+
+    // Which button a typed letter selects, or null for none.
+    //
+    // Mnemonics matter here beyond convenience: Return only ever reaches the
+    // default and Escape the cancel, which leaves "No" - the one answer a save
+    // prompt most needs - unreachable from the keyboard entirely. Matched
+    // against the LABEL so it follows the button set rather than a second list
+    // that could drift from it. Pure, so the tests can pin it without
+    // constructing a dialog that would delete itself on completion.
+    const Button* buttonForMnemonic(uint32_t utf32) const
+    {
+        if (utf32 >= 128 || !std::isalpha(int(utf32)))
+            return nullptr;
+
+        const auto typed = char(std::tolower(int(utf32)));
+        for (const auto& b : buttons_)
+        {
+            if (!b.label.empty() && char(std::tolower(int(b.label.front()))) == typed)
+                return &b;
+        }
+        return nullptr;
+    }
+
     int contentWidth()  const { return w_; }
     int contentHeight() const { return h_; }
 
@@ -3483,6 +3516,11 @@ public:
     bool running() const { return running_; }
     void close() { running_ = false; }
 
+    // Return false to VETO the close (typically while an async prompt is up).
+    // Unset means close immediately, which is the right default for a window
+    // with nothing to lose.
+    std::function<bool()> onCloseRequest;
+
     // Pointer shape over the editor, compositor-themed via cursor-shape-v1.
     // Deliberately a tiny enum rather than the protocol's full list: these are
     // the shapes the editor actually asks for, and a caller should not need
@@ -3570,7 +3608,15 @@ inline void WaylandToplevel::configure(libdecor_frame* frame,
 
 inline void WaylandToplevel::closed(libdecor_frame*, void* data)
 {
-    static_cast<WaylandToplevel*>(data)->running_ = false;
+    auto& self = *static_cast<WaylandToplevel*>(data);
+
+    // The app may want to ask something first (unsaved changes). It answers
+    // asynchronously - a Wayland dialog cannot block - so a veto here means
+    // "not now"; the app calls close() itself once the user has decided.
+    if (self.onCloseRequest && !self.onCloseRequest())
+        return;
+
+    self.running_ = false;
 }
 
 inline void WaylandToplevel::commit(libdecor_frame*, void* data)

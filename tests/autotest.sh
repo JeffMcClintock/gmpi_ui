@@ -129,7 +129,15 @@ kill -0 $DEMO 2>/dev/null || fail "demo died cancelling a file dialog"
 if grep -q "file dialog cancelled\|file ->" "$LOG"; then
     echo "file dialog: $(grep -E 'file dialog cancelled|file ->' "$LOG" | tail -1)"
 else
-    echo "        NOTE: portal never answered (no xdg-desktop-portal in this session)"
+    # Do NOT read this as "the portal is broken". Pressing o as the first key, or
+    # straight after a message box, reaches the client and sends the request every
+    # time - verified in isolation. It is only after a context menu in this
+    # sequence that the keypress does not arrive, which is unexplained and worth
+    # chasing before anyone relies on the file dialog.
+    echo "        NOTE: no portal response - the o keypress did not reach the client"
+    grep -q "file dialog requested" "$LOG" \
+        && echo "              (the request WAS sent, so this is the portal not answering)" \
+        || echo "              (no request was sent, so the key was swallowed - see above)"
 fi
 
 # --- colour picker ----------------------------------------------------------

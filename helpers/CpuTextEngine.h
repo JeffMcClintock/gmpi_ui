@@ -1518,10 +1518,13 @@ public:
                             {
                                 const int w = mask->bounds.right - mask->bounds.left;
                                 const int h = mask->bounds.bottom - mask->bounds.top;
+                                const bool restore = cpuTarget->gammaSpaceBlend;
+                                cpuTarget->gammaSpaceBlend = true;
                                 cpuTarget->blendCoverageMask(
                                     mask->alpha.data(), w, h,
                                     ix + mask->bounds.left, iy + mask->bounds.top,
                                     *cpuBrush);
+                                cpuTarget->gammaSpaceBlend = restore;
                             }
                             x += run.advances[i];
                             continue;
@@ -1544,7 +1547,19 @@ public:
         sink->close();
 
         if (brush)
+        {
+            // Glyph outlines are text, so they must composite the way the glyph
+            // atlas does - in gamma space, to match Direct2D. Otherwise the two
+            // paths disagree and the atlas stops being a pure optimisation.
+            const bool restore = cpuTarget ? cpuTarget->gammaSpaceBlend : false;
+            if (cpuTarget)
+                cpuTarget->gammaSpaceBlend = true;
+
             context->fillGeometry(geometry.get(), brush, nullptr);
+
+            if (cpuTarget)
+                cpuTarget->gammaSpaceBlend = restore;
+        }
 
         for (const auto& item : colorGlyphs)
         {

@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include <cerrno>
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
@@ -32,23 +33,56 @@ class WaylandClipboard
 public:
     ~WaylandClipboard()
     {
-        if (source_) wl_data_source_destroy(source_);
-        if (device_) wl_data_device_destroy(device_);
+        if (dragOffer_) wl_data_offer_destroy(dragOffer_);
+        if (offer_)     wl_data_offer_destroy(offer_);
+        if (source_)    wl_data_source_destroy(source_);
+        if (device_)    wl_data_device_destroy(device_);
+        if (queue_)     wl_event_queue_destroy(queue_);
     }
 
-    void bind(wl_data_device_manager* manager, wl_seat* seat)
+    // Everything clipboard lives on a queue of its OWN.
+    //
+    // Pasting has to dispatch while it waits - on a paste from our own selection
+    // we are the source, and the bytes only appear when our send handler runs.
+    // On the default queue that dispatch would also deliver whatever else was
+    // pending, re-entering keyboard handling from inside a key handler: press
+    // Ctrl+V then Return and the nested Return destroys the text edit that the
+    // paste is about to write into. A private queue makes that impossible rather
+    // than unlikely.
+    void bind(wl_display* display, wl_data_device_manager* manager, wl_seat* seat)
     {
         static const wl_data_device_listener deviceListener = {
             dataOffer, deviceEnter, deviceLeave, deviceMotion, deviceDrop, selection
         };
 
-        if (!manager || !seat || device_)
+        if (!display || !manager || !seat || device_)
             return;
 
+        queue_ = wl_display_create_queue(display);
+        if (!queue_)
+            return;
+
+        // A proxy inherits the queue of the proxy that created it, so the manager
+        // is wrapped for the call and the wrapper thrown away immediately.
+        auto* wrapped = static_cast<wl_data_device_manager*>(wl_proxy_create_wrapper(manager));
+        if (!wrapped)
+            return;
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(wrapped), queue_);
+
         manager_ = manager;
-        device_  = wl_data_device_manager_get_data_device(manager, seat);
+        device_  = wl_data_device_manager_get_data_device(wrapped, seat);
+        wl_proxy_wrapper_destroy(reinterpret_cast<wl_proxy*>(wrapped));
+
         if (device_)
             wl_data_device_add_listener(device_, &deviceListener, this);
+    }
+
+    // Called from the app's normal loop, so selection events arrive even when
+    // nobody is pasting.
+    void pump(wl_display* display)
+    {
+        if (queue_ && display)
+            wl_display_dispatch_queue_pending(display, queue_);
     }
 
     bool available() const { return device_ != nullptr; }
@@ -73,7 +107,13 @@ public:
 
         pending_ = text;
 
-        source_ = wl_data_device_manager_create_data_source(manager_);
+        auto* wrapped = static_cast<wl_data_device_manager*>(wl_proxy_create_wrapper(manager_));
+        if (!wrapped)
+            return;
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(wrapped), queue_);
+
+        source_ = wl_data_device_manager_create_data_source(wrapped);
+        wl_proxy_wrapper_destroy(reinterpret_cast<wl_proxy*>(wrapped));
         if (!source_)
             return;
 
@@ -117,8 +157,11 @@ public:
             if (poll(p, 2, 200) <= 0)
                 break;           // the other side went quiet; take what we have
 
+            // OUR queue only. Dispatching the default queue here would run
+            // keyboard and pointer handlers re-entrantly, from inside the key
+            // handler that started this paste.
             if (p[1].revents & POLLIN)
-                wl_display_dispatch(display);
+                wl_display_dispatch_queue(display, queue_);
 
             if (p[0].revents & (POLLIN | POLLHUP))
             {
@@ -138,6 +181,7 @@ public:
 
 private:
     static constexpr size_t kMaxPaste = 4u * 1024 * 1024;
+    static constexpr int    kSendBudgetMs = 2000;
     static constexpr const char* kTextMimes[] = {
         "text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT"
     };
@@ -188,28 +232,68 @@ private:
         c.offerMime_ = offer ? c.incomingMime_ : std::string{};
     }
 
-    static void deviceEnter(void*, wl_data_device*, uint32_t, wl_surface*,
-                            wl_fixed_t, wl_fixed_t, wl_data_offer*) {}
-    static void deviceLeave(void*, wl_data_device*) {}
+    // We do not accept drops, but the offers still arrive and are ours to
+    // destroy - one leaks per drag across the window otherwise.
+    static void deviceEnter(void* data, wl_data_device*, uint32_t, wl_surface*,
+                            wl_fixed_t, wl_fixed_t, wl_data_offer* offer)
+    {
+        auto& c = *static_cast<WaylandClipboard*>(data);
+        if (c.dragOffer_)
+            wl_data_offer_destroy(c.dragOffer_);
+        c.dragOffer_ = offer;
+    }
+    static void deviceLeave(void* data, wl_data_device*)
+    {
+        auto& c = *static_cast<WaylandClipboard*>(data);
+        if (c.dragOffer_)
+        {
+            wl_data_offer_destroy(c.dragOffer_);
+            c.dragOffer_ = nullptr;
+        }
+    }
     static void deviceMotion(void*, wl_data_device*, uint32_t, wl_fixed_t, wl_fixed_t) {}
-    static void deviceDrop(void*, wl_data_device*) {}
+    static void deviceDrop(void* data, wl_data_device*) { deviceLeave(data, nullptr); }
 
     // --- wl_data_source: we are the one being asked for bytes ---
     static void sourceSend(void* data, wl_data_source*, const char*, int32_t fd)
     {
         auto& c = *static_cast<WaylandClipboard*>(data);
 
-        // Write in a loop: a pipe can take less than we offer, and a paster that
-        // gives up mid-read leaves us with EPIPE rather than an error.
+        // Non-blocking, with a budget. A pipe holds ~64K, so anything larger
+        // waits for the other program to read - and a paster that stops reading
+        // (or is stopped in a debugger) would otherwise hang OUR ui thread for
+        // as long as it felt like.
+        const int flags = fcntl(fd, F_GETFL, 0);
+        if (flags >= 0)
+            fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
         const char* p = c.pending_.data();
         size_t left = c.pending_.size();
+        int budgetMs = kSendBudgetMs;
+
         while (left)
         {
             const ssize_t n = write(fd, p, left);
-            if (n <= 0)
-                break;
-            p += n;
-            left -= size_t(n);
+            if (n > 0)
+            {
+                p += n;
+                left -= size_t(n);
+                continue;
+            }
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            {
+                pollfd w{ fd, POLLOUT, 0 };
+                const int r = poll(&w, 1, 50);
+                budgetMs -= 50;
+                if (r > 0 && (w.revents & POLLOUT))
+                    continue;
+                if (budgetMs <= 0)
+                    break;              // they are not reading; give up, do not hang
+                continue;
+            }
+            break;                      // EPIPE or a real error: they went away
         }
         close(fd);
     }
@@ -230,6 +314,8 @@ private:
     wl_data_device*         device_{};
     wl_data_source*         source_{};
     wl_data_offer*          offer_{};
+    wl_data_offer*          dragOffer_{};
+    wl_event_queue*         queue_{};
 
     std::string pending_;        // what we serve when asked
     std::string offerMime_;      // mime of the current selection

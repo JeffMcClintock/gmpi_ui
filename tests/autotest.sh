@@ -107,6 +107,31 @@ kill -0 $DEMO 2>/dev/null || fail "demo died dismissing the menu"
 echo "submenu opened and menu dismissed"
 kill -0 $NEST 2>/dev/null || fail "compositor died DURING the test, before the app quit"
 
+# --- choosing from inside a submenu -----------------------------------------
+# Opening a submenu is one thing; picking from it unwinds the whole chain, which
+# is the path that has to destroy nested popups topmost-first.
+xdo mousemove "$(X 150)" "$(Y 150)"; sleep 0.5; xdo click 3; sleep 1.5
+for dy in 30 55 80 100 120; do xdo mousemove "$(X 190)" "$(Y $((150 + dy)))"; sleep 0.5; done
+# step right, into the submenu that just opened, and click its first item
+xdo mousemove "$(X 300)" "$(Y 280)"; sleep 1
+xdo click 1; sleep 1.5
+kill -0 $DEMO 2>/dev/null || fail "demo died choosing from a submenu"
+echo "chose from inside a submenu"
+
+# --- portal file dialog -----------------------------------------------------
+# Runs in xdg-desktop-portal, a different process entirely. We only check that
+# asking for one does not take us down and that cancelling comes back - the
+# chooser's own UI belongs to GTK and is not ours to drive.
+xdo key o; sleep 5
+kill -0 $DEMO 2>/dev/null || fail "demo died opening a file dialog"
+xdo key Escape; sleep 3
+kill -0 $DEMO 2>/dev/null || fail "demo died cancelling a file dialog"
+if grep -q "file dialog cancelled\|file ->" "$LOG"; then
+    echo "file dialog: $(grep -E 'file dialog cancelled|file ->' "$LOG" | tail -1)"
+else
+    echo "        NOTE: portal never answered (no xdg-desktop-portal in this session)"
+fi
+
 # --- colour picker ----------------------------------------------------------
 # Driven by keyboard only: the picker is a window of its own, and the nested
 # compositor places it where it likes, so there are no coordinates to click.

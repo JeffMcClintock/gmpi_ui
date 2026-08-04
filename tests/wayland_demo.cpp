@@ -236,6 +236,9 @@ void DemoClient::showFileDialog(bool save)
     dlg->addExtension("se1", "SynthEdit Project");
     dlg->setInitialFilename(save ? "Untitled.se1" : "");
 
+    printf("file dialog requested (%s)\n", save ? "save" : "open");
+    fflush(stdout);
+
     static sdk::FileDialogCallback cb(
         [this](const std::string& path)
         {
@@ -249,7 +252,11 @@ void DemoClient::showFileDialog(bool save)
             printf("%s\n", status_.c_str());
             invalidate();
         });
-    dlg->showAsync(nullptr, &cb);
+    if (dlg->showAsync(nullptr, &cb) != ReturnCode::Ok)
+    {
+        printf("file dialog: showAsync failed (no session bus or no portal)\n");
+        fflush(stdout);
+    }
 }
 
 void DemoClient::showColorDialog()

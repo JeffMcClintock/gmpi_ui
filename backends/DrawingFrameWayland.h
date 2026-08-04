@@ -678,6 +678,9 @@ inline void WaylandFrameBase::present()
 struct IKeySink
 {
     virtual void onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down) = 0;
+
+    // Another sink has taken the keyboard. Whatever this was doing is over.
+    virtual void onSinkReplaced() = 0;
 protected:
     ~IKeySink() = default;
 };
@@ -712,13 +715,27 @@ public:
     void unregisterSurface(wl_surface* s)
     {
         std::erase_if(targets_, [s](const auto& e) { return e.first == s; });
-        if (focus_ == s)
-            focus_ = nullptr;
+        if (pointerFocus_ == s)
+            pointerFocus_ = nullptr;
+        if (keyboardFocus_ == s)
+            keyboardFocus_ = nullptr;
     }
 
     void bindSeat(Connection& connection);
 
-    void setKeySink(IKeySink* sink) { keySink_ = sink; }
+    // Replacing a sink ENDS the old one. Silently overwriting it leaves an edit
+    // that can never be finished: nothing routes keys to it any more, so the
+    // reference it took in showAsync is never dropped.
+    void setKeySink(IKeySink* sink)
+    {
+        if (keySink_ == sink)
+            return;
+
+        auto* old = keySink_;
+        keySink_ = sink;          // clear first: onSinkReplaced may destroy `old`
+        if (old)
+            old->onSinkReplaced();
+    }
 
     // Consulted before the drawing client on a button event; returns true if it
     // swallowed it. An in-place text edit lives on the client's own surface, so
@@ -786,7 +803,12 @@ private:
 
     gmpi::api::IInputClient* client_{};
     std::vector<std::pair<wl_surface*, IPointerTarget*>> targets_;
-    wl_surface*  focus_{};   // surface the last enter named
+    // Pointer and keyboard focus are DIFFERENT surfaces and must not share a
+    // variable: a popup or dialog takes the keyboard while the pointer is still
+    // over the editor, and one overwriting the other sends mouse events to the
+    // dialog and keystrokes to whatever was hovered.
+    wl_surface*  pointerFocus_{};
+    wl_surface*  keyboardFocus_{};
     wl_surface*  surface_{};
     IKeySink*        keySink_{};
     WaylandClipboard clipboard_;
@@ -810,11 +832,17 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
                                         wl_surface* surf, wl_fixed_t sx, wl_fixed_t sy)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    in.focus_ = surf;
+    in.pointerFocus_ = surf;
+
+    // Track the position for EVERY surface, before routing. onButton carries no
+    // coordinates of its own, so a popup or dialog would otherwise be handed the
+    // last position seen over the main window and hit-test against the wrong point.
+    in.x_ = wl_fixed_to_double(sx);
+    in.y_ = wl_fixed_to_double(sy);
 
     if (auto* t = in.targetFor(surf))
     {
-        t->onEnter(wl_fixed_to_double(sx), wl_fixed_to_double(sy), serial);
+        t->onEnter(in.x_, in.y_, serial);
         return;
     }
 
@@ -845,8 +873,8 @@ inline void InputDispatch::pointerLeave(void* data, wl_pointer*, uint32_t serial
     if (auto* t = in.targetFor(surf))
     {
         t->onLeave();
-        if (in.focus_ == surf)
-            in.focus_ = nullptr;
+        if (in.pointerFocus_ == surf)
+            in.pointerFocus_ = nullptr;
         return;
     }
 
@@ -866,14 +894,14 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
 {
     auto& in = *static_cast<InputDispatch*>(data);
 
-    if (auto* t = in.targetFor(in.focus_))
-    {
-        t->onMotion(wl_fixed_to_double(sx), wl_fixed_to_double(sy), in.modifierFlags());
-        return;
-    }
-
     in.x_ = wl_fixed_to_double(sx);
     in.y_ = wl_fixed_to_double(sy);
+
+    if (auto* t = in.targetFor(in.pointerFocus_))
+    {
+        t->onMotion(in.x_, in.y_, in.modifierFlags());
+        return;
+    }
 
     if (in.client_)
         in.client_->onPointerMove(in.pointerPos(), in.modifierFlags() | int32_t(in.buttons_));
@@ -886,7 +914,7 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
     if (state == WL_POINTER_BUTTON_STATE_PRESSED)
         in.lastGrabSerial_ = serial;
 
-    if (auto* t = in.targetFor(in.focus_))
+    if (auto* t = in.targetFor(in.pointerFocus_))
     {
         t->onButton(in.x_, in.y_, button, state == WL_POINTER_BUTTON_STATE_PRESSED, serial);
         return;
@@ -979,7 +1007,7 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
     const uint32_t keysym = xkb_state_key_get_one_sym(in.xkbState_, code);
 
     // a popup holds the grab while it is up, so it sees the keys first
-    if (auto* t = in.targetFor(in.focus_))
+    if (auto* t = in.targetFor(in.keyboardFocus_))
     {
         if (down)
             t->onKey(keysym, utf32);
@@ -1003,9 +1031,16 @@ inline void InputDispatch::keyboardEnter(void* data, wl_keyboard*, uint32_t, wl_
     // a grabbing popup gets keyboard focus; remember which surface so keys route there
     auto& in = *static_cast<InputDispatch*>(data);
     if (in.targetFor(surf))
-        in.focus_ = surf;
+        in.keyboardFocus_ = surf;
 }
-inline void InputDispatch::keyboardLeave(void*, wl_keyboard*, uint32_t, wl_surface*) {}
+inline void InputDispatch::keyboardLeave(void* data, wl_keyboard*, uint32_t, wl_surface* surf)
+{
+    // Leaving it set means keys keep being routed at a surface that no longer has
+    // the keyboard - and once that surface is destroyed, at nothing at all.
+    auto& in = *static_cast<InputDispatch*>(data);
+    if (in.keyboardFocus_ == surf || !surf)
+        in.keyboardFocus_ = nullptr;
+}
 
 inline void InputDispatch::keyboardModifiers(void* data, wl_keyboard*, uint32_t,
                                              uint32_t depressed, uint32_t latched,
@@ -1061,7 +1096,7 @@ inline void InputDispatch::bindSeat(Connection& connection)
     if (seat_)
     {
         wl_seat_add_listener(seat_, &seatListener, this);
-        clipboard_.bind(connection.dataDeviceManager(), seat_);
+        clipboard_.bind(connection.display(), connection.dataDeviceManager(), seat_);
     }
 }
 
@@ -1792,6 +1827,7 @@ public:
 
     // --- used by the frame ---
     bool active() const { return !finished_; }
+    void commit() { finish(gmpi::ReturnCode::Ok); }
     const gmpi::drawing::Rect& rect() const { return rect_; }
     void render(gmpi::cpugfx::RenderTarget* rt);
     void onPointer(double x, double y, bool pressed);
@@ -1832,6 +1868,9 @@ private:
 
     void onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down) override
     { handleKey(keysym, utf32, flags, down); }
+
+    // losing the keyboard commits, exactly as clicking away does
+    void onSinkReplaced() override { finish(gmpi::ReturnCode::Ok); }
 
     Connection&    connection_;
     InputDispatch& input_;
@@ -1966,7 +2005,22 @@ inline void WaylandTextEdit::handleKey(uint32_t keysym, uint32_t utf32, int32_t 
             return;
         case 'v': case 'V':
         {
-            const std::string clip = input_.clipboard().getText(connection_.display());
+            const std::string raw = input_.clipboard().getText(connection_.display());
+
+            // Clipboard content is whatever some other program put there. A
+            // newline or NUL in a single-line value corrupts both the display and
+            // the string handed to the host, so apply the same filter as typing.
+            std::string clip;
+            clip.reserve(raw.size());
+            for (const char ch : raw)
+            {
+                const auto byte = uint8_t(ch);
+                if (byte == 0)
+                    break;                       // NUL ends it; the rest is not text
+                if (byte >= 0x20 && byte != 0x7f)
+                    clip += ch;
+            }
+
             if (!clip.empty())
             {
                 deleteSelection();
@@ -2007,8 +2061,16 @@ inline void WaylandTextEdit::handleKey(uint32_t keysym, uint32_t utf32, int32_t 
         notifyChanged();
         return;
 
-    case 0xff51: moveTo(prevCodepoint(caret_)); return;              // Left
-    case 0xff53: moveTo(nextCodepoint(caret_)); return;              // Right
+    // With a selection and no shift, an arrow collapses to that EDGE - it does
+    // not step from the caret, which would drop a character off the end.
+    case 0xff51:                                                     // Left
+        if (!shift && hasSelection()) moveTo(selection().first);
+        else                          moveTo(prevCodepoint(caret_));
+        return;
+    case 0xff53:                                                     // Right
+        if (!shift && hasSelection()) moveTo(selection().second);
+        else                          moveTo(nextCodepoint(caret_));
+        return;
     case 0xff50: moveTo(0); return;                                  // Home
     case 0xff57: moveTo(int32_t(text_.size())); return;              // End
 
@@ -2708,6 +2770,7 @@ private:
     }
 
     void onRawKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down) override;
+    void onSinkReplaced() override { stop(gmpi::ReturnCode::Cancel); }
     void stop(gmpi::ReturnCode result);
 
     Connection&    connection_;
@@ -3153,6 +3216,11 @@ inline gmpi::ReturnCode WaylandFrameBase::createTextEdit(
     auto* edit = new WaylandTextEdit(connection_, inputDispatch(), menuFont_,
                                      r ? *r : gmpi::drawing::Rect{});
 
+    // Only one in-place edit at a time. Opening a second while the first is up
+    // would strand it: nothing would draw it, route to it, or ever finish it.
+    if (activeEdit_)
+        activeEdit_->commit();
+
     // The frame takes a reference of its own: the caller may release the edit the
     // moment it has called showAsync, and the frame still has to draw it.
     edit->addRef();
@@ -3178,9 +3246,19 @@ inline gmpi::ReturnCode WaylandFrameBase::createTextEdit(
             const auto& box = activeEdit_->rect();
             const bool inside = x >= box.left && x < box.right && y >= box.top && y < box.bottom;
 
+            if (!inside)
+            {
+                // Clicking away commits, as every in-place rename box does.
+                // Without this the edit is never finished: the typed value is
+                // discarded and its references are stranded.
+                if (pressed)
+                    activeEdit_->commit();
+                return false;          // and the click still reaches the client
+            }
+
             activeEdit_->onPointer(x, y, pressed);
             invalidateRect(nullptr);
-            return inside;
+            return true;
         };
 
     *returnTextEdit = static_cast<gmpi::api::ITextEdit*>(edit);
@@ -3495,6 +3573,7 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
         // which case the fd never becomes readable again and a revents check
         // would wait forever.
         portalBus().pump();
+        inputDispatch().clipboard().pump(connection_.display());
 
         // libdecor owns the dispatch: it must see configure events before we do,
         // so it can size the decorations.

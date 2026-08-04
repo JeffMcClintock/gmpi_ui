@@ -257,8 +257,15 @@ public:
 		// Convert bezier to line segments.
 		se::agg::curve4_div bezierToLines;
 		bezierToLines.geometrySink = this;
+		bezierToLines.approximation_scale(curveApproximationScale);
 		bezierToLines.init(lastPoint.x, lastPoint.y, bezier->point1.x, bezier->point1.y, bezier->point2.x, bezier->point2.y, bezier->point3.x, bezier->point3.y);
 	}
+
+	// Flattening precision multiplier for curves fed through this sink. 1 is
+	// the AGG default and right for ordinary geometry; glyph rasterization
+	// raises it (see CpuTextEngine) because its 4x4-per-pixel sampling can see
+	// flattening error that ordinary antialiasing averages away.
+	float curveApproximationScale = 1.0f;
 
 	void endFigure(gmpi::drawing::FigureEnd figureEnd) override
 	{

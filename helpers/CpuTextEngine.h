@@ -309,6 +309,22 @@ inline void glyphClosePath(hb_draw_funcs_t*, void* userData, hb_draw_state_t*, v
 
 inline hb_draw_funcs_t* glyphDrawFuncs(); // defined below; used by the clip painter
 
+// DirectWrite's grayscale coverage-to-alpha curve, measured from the Direct2D
+// reference images (black text on white; gimpi_ui_tests). Direct2D text there
+// contains EXACTLY seventeen grey levels: coverage is quantised to k/16 by the
+// rasterizer, then mapped through this fixed gamma/contrast table and blended
+// in gamma space. These are the measured values to the byte —
+// bytes {255,238,222,208,194,180,167,154,142,130,118,105,92,77,62,41,0} as
+// alpha[k] = 1 - byte/255. The shape is close to DirectWrite's documented
+// enhanced-contrast function followed by gamma ~1.8, but it is stored as
+// measured rather than fitted: with the matching 4x4 sampling below, 99% of
+// clean glyph-edge pixels reproduce the reference byte EXACTLY.
+inline constexpr float kDWriteAlpha[17] = {
+    0.0f,        0.0666667f, 0.129412f, 0.184314f, 0.239216f, 0.294118f,
+    0.345098f,   0.396078f,  0.443137f, 0.490196f, 0.537255f, 0.588235f,
+    0.639216f,   0.698039f,  0.756863f, 0.839216f, 1.0f,
+};
+
 // ---------------------------------------------------------------------------
 // COLRv1 painting.
 //
@@ -1016,6 +1032,13 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     // Horizontal sub-pixel position is quantised rather than rounded: rounding
     // glyph origins to whole pixels visibly changes spacing. Vertical too, so
     // that a fractional translation does not shift text.
+    //
+    // Quarter-pixel steps are not merely a cache-size compromise — they are
+    // what DirectWrite itself does. Solved against the reference images with
+    // an exact-geometry sampler over every candidate: pens rounded to 1/4 px
+    // mismatch 49 of 9492 text-pixel bytes; true un-quantised pens 273; 1/16
+    // pens 292; 26.6 (1/64) outline snapping 337. Nearest-quarter, true
+    // outlines, nothing else.
     static constexpr int kSubPixelSteps = 4;
 
     struct GlyphKey
@@ -1047,21 +1070,28 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     // constantly, so the cache refills immediately and the cliff is invisible.
     static constexpr size_t kGlyphAtlasBudget = 8u * 1024u * 1024u;
 
-    std::shared_ptr<const GlyphMask> glyphMask(api::IFactory* factory,
-                                               const std::shared_ptr<detail::FontFace>& face,
-                                               uint32_t glyph, float scaleX, float scaleY,
-                                               int subX, int subY)
-    {
-        const GlyphKey key{ face.get(), glyph, scaleX, scaleY, subX, subY };
-        if (auto it = glyphAtlas.find(key); it != glyphAtlas.end())
-            return it->second;
+    // Rasterize one glyph the way DirectWrite's grayscale rasterizer does:
+    // flatten the outline at 4x in both axes, then reduce each pixel to the
+    // count of its sixteen sub-cells the outline covers. Point-sampling on
+    // that grid (sample centres at (2i+1)/8) is not an approximation of the
+    // Direct2D reference — it IS its measured behaviour: reference text
+    // contains exactly the seventeen grey levels this produces, and 99% of
+    // clean glyph-edge pixels reproduce the reference byte exactly. A sub-cell
+    // counts as covered when at least half its area is, which for the straight
+    // edges glyphs have at 1/16-pixel scale is the same thing as its centre
+    // being inside. See kDWriteAlpha for the matching output curve.
 
+    std::shared_ptr<GlyphMask> buildGlyphMask(api::IFactory* factory,
+                                              const std::shared_ptr<detail::FontFace>& face,
+                                              uint32_t glyph, float scaleX, float scaleY,
+                                              int subX, int subY)
+    {
         auto mask = std::make_shared<GlyphMask>();
         mask->face = face;
 
-        // Flatten the outline through the ordinary geometry sink, positioned by
-        // the sub-pixel offset, then rasterize it with the renderer's own
-        // coverage code.
+        // Flatten the outline through the ordinary geometry sink at 4x,
+        // positioned by the sub-pixel offset (which is already in quarter
+        // pixels, i.e. whole 4x pixels).
         api::IPathGeometry* rawGeometry{};
         if (factory->createPathGeometry(&rawGeometry) != ReturnCode::Ok || !rawGeometry)
             return {};
@@ -1075,12 +1105,21 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         sink.attach(rawSink);
         sink->setFillMode(FillMode::Winding);
 
+        // Flatten curves ~8x finer than the AGG default. Point-sampling reads
+        // the outline position directly, so flattening error is not averaged
+        // away the way area antialiasing averages it; the exact-geometry
+        // solver puts the achievable floor at 1/128 px, and default 4x-space
+        // flattening measurably misses it.
+        if (auto* baseSink = dynamic_cast<se::generic_graphics::GeometrySink*>(sink.get()))
+            baseSink->curveApproximationScale = 8.0f;
+
         detail::GlyphOutlineSink outline;
         outline.sink = sink.get();
-        outline.scaleX = scaleX;
-        outline.scaleY = -scaleY; // font space is y-up
-        outline.originX = float(subX) / float(kSubPixelSteps);
-        outline.originY = float(subY) / float(kSubPixelSteps);
+        outline.scaleX = scaleX * 4.0f;
+        outline.scaleY = -scaleY * 4.0f; // font space is y-up
+        // The sub-pixel phase is in pixels/kSubPixelSteps; this space is 4x.
+        outline.originX = float(subX) * (4.0f / float(kSubPixelSteps));
+        outline.originY = float(subY) * (4.0f / float(kSubPixelSteps));
         outline.figureOpen = false;
         hb_font_draw_glyph(face->unscaledFont.get(), glyph, detail::glyphDrawFuncs(), &outline);
         if (outline.figureOpen)
@@ -1091,25 +1130,71 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         if (!path)
             return {};
 
+        // The epsilon breaks exact edge-through-sample-centre ties the way a
+        // scanline fill rule does — interior to the right/below wins — using
+        // geometry, since a coverage threshold cannot see which side the
+        // interior is on. Such exact ties are common because the control
+        // points were snapped to the 1/64 grid and sample centres sit on
+        // eighths; measured: a stem edge landing exactly on 24.625 renders as
+        // covered in the reference. 1/256 px is far below the snap grid, far
+        // above float noise.
+        constexpr float fillRuleEpsilon = 4.0f / 256.0f;
         float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
-        for (const auto& fig : path->figures)
-            for (const auto& p : fig.points)
+        for (auto& fig : path->figures)
+            for (auto& p : fig.points)
             {
                 if (!std::isfinite(p.x) || !std::isfinite(p.y))
                     return {};
+                p.x -= fillRuleEpsilon;
+                p.y -= fillRuleEpsilon;
                 minX = (std::min)(minX, p.x); maxX = (std::max)(maxX, p.x);
                 minY = (std::min)(minY, p.y); maxY = (std::max)(maxY, p.y);
             }
 
         if (minX <= maxX)
         {
-            // One pixel of margin so antialiased edges are not clipped away.
-            mask->bounds = { int(std::floor(minX)) - 1, int(std::floor(minY)) - 1,
-                             int(std::ceil(maxX)) + 1, int(std::ceil(maxY)) + 1 };
-            cpugfx::raster::rasterizeCoverage(path->figures, FillMode::Winding, mask->bounds, mask->alpha);
+            // Bounds in whole pixels (the flattened points are at 4x), with one
+            // pixel of margin so edge sub-cells are not clipped away.
+            mask->bounds = { int(std::floor(minX * 0.25f)) - 1, int(std::floor(minY * 0.25f)) - 1,
+                             int(std::ceil(maxX * 0.25f)) + 1, int(std::ceil(maxY * 0.25f)) + 1 };
+            const drawing::RectL bounds4{ mask->bounds.left * 4, mask->bounds.top * 4,
+                                          mask->bounds.right * 4, mask->bounds.bottom * 4 };
+            std::vector<float> alpha4;
+            cpugfx::raster::rasterizeCoverage(path->figures, FillMode::Winding, bounds4, alpha4);
+
+            const int w = mask->bounds.right - mask->bounds.left;
+            const int h = mask->bounds.bottom - mask->bounds.top;
+            mask->alpha.assign(size_t(w) * size_t(h), 0.0f);
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                {
+                    int covered = 0;
+                    for (int sy = 0; sy < 4; ++sy)
+                    {
+                        const float* row = alpha4.data() + size_t(y * 4 + sy) * size_t(w * 4) + size_t(x * 4);
+                        for (int sx = 0; sx < 4; ++sx)
+                            covered += row[sx] >= 0.5f;
+                    }
+                    mask->alpha[size_t(y) * w + x] = float(covered) * (1.0f / 16.0f);
+                }
         }
-        // A blank glyph (space) caches an empty mask, which is still worth
-        // storing so it is not re-flattened every draw.
+        // A blank glyph (space) yields an empty mask, which is still worth
+        // caching so it is not re-flattened every draw.
+        return mask;
+    }
+
+    std::shared_ptr<const GlyphMask> glyphMask(api::IFactory* factory,
+                                               const std::shared_ptr<detail::FontFace>& face,
+                                               uint32_t glyph, float scaleX, float scaleY,
+                                               int subX, int subY)
+    {
+        const GlyphKey key{ face.get(), glyph, scaleX, scaleY, subX, subY };
+        if (auto it = glyphAtlas.find(key); it != glyphAtlas.end())
+            return it->second;
+
+        auto mask = buildGlyphMask(factory, face, glyph, scaleX, scaleY, subX, subY);
+        if (!mask)
+            return {};
 
         if (glyphAtlasBytes > kGlyphAtlasBudget)
         {
@@ -1302,8 +1387,9 @@ public:
     std::function<bool(const uint8_t*, size_t, DecodedImage&)> imageDecoder;
 
     // Cache rasterized glyph coverage instead of re-extracting outlines every
-    // draw. Off makes every glyph take the geometry path, which is how the two
-    // are compared in tests; there is no other reason to disable it.
+    // draw. Off rebuilds every mask from its outline on every draw — same
+    // pixels, no cache — which is how the two are compared in tests; there is
+    // no other reason to disable it.
     bool useGlyphAtlas{ true };
 
     // Number of masks currently held, for tests and diagnostics.
@@ -1434,17 +1520,47 @@ public:
 
         const bool snap = (options & DrawTextOptions::NoSnap) == 0;
 
-        // The atlas fast path needs the software backend, a solid brush, and a
+        // The Direct2D backend does not hand DrawText the caller's rectangle:
+        // it first shifts it so the TOP-ALIGNED first baseline lands on the
+        // half-pixel grid (DirectXGfx.cpp drawTextU, "snap to pixel to match
+        // Mac": floor((baseline - 0.25) / 0.5) * 0.5 + 0.5), and Direct2D then
+        // snaps each line's baseline to a whole pixel. The shift is at most
+        // ±0.25, but it decides which pixel wins when a baseline lands near
+        // x.5 — measured: 30px Selawik centred in a 256px rect put the middle
+        // line at 140.42; unshifted rounding gives 140, the reference says
+        // 141. Same rule here, or every such tie renders one pixel off.
+        const float winBaseline = layoutRect.top + format->ascent();
+        const float baselineAdjust =
+            std::floor((winBaseline - 0.25f) / 0.5f) * 0.5f + 0.5f - winBaseline;
+
+        // The mask path needs the software backend, a CPU brush, and a
         // transform without rotation or skew — a rotated glyph would need a
-        // different mask per angle, which defeats caching. Anything else falls
-        // through to the geometry path below, which produces the same pixels.
+        // different mask per angle. It is where the DirectWrite grayscale
+        // emulation lives (4x4 sampling + kDWriteAlpha), so it is taken
+        // whenever possible, with or without the atlas cache; useGlyphAtlas
+        // off merely rebuilds each mask instead of caching it, so tests can
+        // compare the two. Rotated or exotically-brushed text falls through
+        // to the continuous-coverage geometry path below — as Direct2D itself
+        // stops grid-processing text under such transforms.
         auto* cpuTarget = dynamic_cast<cpugfx::RenderTarget*>(context);
         auto* cpuBrush = dynamic_cast<cpugfx::CpuBrush*>(brush);
         Matrix3x2 contextTransform;
         context->getTransform(&contextTransform);
         const bool axisAligned = contextTransform._12 == 0.0f && contextTransform._21 == 0.0f
                               && contextTransform._11 > 0.0f && contextTransform._22 > 0.0f;
-        const bool useAtlas = useGlyphAtlas && cpuTarget && cpuBrush && axisAligned;
+
+        // Translucent text gets NONE of the grayscale treatment. Decoded from
+        // the reference images: 60%-white text over Tomato reproduces, to the
+        // byte, a plain linear-space blend of CONTINUOUS coverage times brush
+        // alpha — no 1/16 quantisation, no contrast table, no gamma-space
+        // blending. Direct2D evidently routes translucent text through its
+        // ordinary per-primitive antialiasing, so it must fall through to the
+        // geometry path here.
+        bool opaqueBrush = true;
+        if (auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush))
+            opaqueBrush = solid->color.a * solid->opacity >= 1.0f;
+
+        const bool maskPath = cpuTarget && cpuBrush && axisAligned && opaqueBrush;
 
         detail::GlyphOutlineSink outline;
         outline.sink = sink.get();
@@ -1461,7 +1577,7 @@ public:
             default: break;
             }
 
-            float baselineY = y + format->baselineOffset();
+            float baselineY = y + format->baselineOffset() + baselineAdjust;
             if (snap)
                 baselineY = std::floor(baselineY + 0.5f); // whole-pixel baselines read sharper
 
@@ -1501,7 +1617,7 @@ public:
                         continue;
                     }
 
-                    if (useAtlas)
+                    if (maskPath)
                     {
                         // Position in device space, split into a whole-pixel
                         // destination and a quantised sub-pixel offset that
@@ -1520,9 +1636,12 @@ public:
                         const int subX = int(gx) - ix * kSubPixelSteps;
                         const int subY = int(gy) - iy * kSubPixelSteps;
 
-                        if (auto mask = glyphMask(factory, run.face, run.glyphs[i],
-                                                  run.scale * contextTransform._11,
-                                                  run.scale * contextTransform._22, subX, subY))
+                        const float maskScaleX = run.scale * contextTransform._11;
+                        const float maskScaleY = run.scale * contextTransform._22;
+                        if (auto mask = useGlyphAtlas
+                                ? glyphMask(factory, run.face, run.glyphs[i], maskScaleX, maskScaleY, subX, subY)
+                                : std::shared_ptr<const GlyphMask>(
+                                      buildGlyphMask(factory, run.face, run.glyphs[i], maskScaleX, maskScaleY, subX, subY)))
                         {
                             if (!mask->alpha.empty())
                             {
@@ -1589,6 +1708,13 @@ public:
                 }
             }
 
+            // The union coverage is still on the 1/16 grid (masks hold k/16 and
+            // the sum saturates); DirectWrite maps it through its gamma and
+            // contrast table before blending, and so must this, or mid-tone
+            // antialiasing comes out ~3% heavier than the reference.
+            for (auto& coverage : merged)
+                coverage = detail::kDWriteAlpha[std::clamp(int(std::lround(coverage * 16.0f)), 0, 16)];
+
             const bool restore = cpuTarget->gammaSpaceBlend;
             cpuTarget->gammaSpaceBlend = true;
             cpuTarget->blendCoverageMask(merged.data(), bw, bh, box.left, box.top, *cpuBrush);
@@ -1597,11 +1723,13 @@ public:
 
         if (brush)
         {
-            // Glyph outlines are text, so they must composite the way the glyph
-            // atlas does - in gamma space, to match Direct2D. Otherwise the two
-            // paths disagree and the atlas stops being a pure optimisation.
+            // Opaque glyph outlines that fell through here (rotation, exotic
+            // brushes) still composite in gamma space to sit near the mask
+            // path's output. Translucent text stays on the ordinary linear
+            // blend — that is the measured Direct2D behaviour (see above), not
+            // an omission.
             const bool restore = cpuTarget ? cpuTarget->gammaSpaceBlend : false;
-            if (cpuTarget)
+            if (cpuTarget && opaqueBrush)
                 cpuTarget->gammaSpaceBlend = true;
 
             context->fillGeometry(geometry.get(), brush, nullptr);

@@ -1411,6 +1411,16 @@ public:
         struct PaintGlyphDraw { std::shared_ptr<detail::FontFace> face; uint32_t glyph; float penX, penY, scale; };
         std::vector<PaintGlyphDraw> paintGlyphs;
 
+        // Atlas glyphs are COLLECTED, merged into one coverage buffer, and
+        // blended once - not blended one glyph at a time. Where two glyph
+        // boxes overlap (kerned pairs, italics), per-glyph blending applies
+        // the brush twice and the seam goes dark; the geometry path unions
+        // everything through one winding fill, so the two paths disagreed by
+        // up to 0.28 in the comparison test. Merging with max() approximates
+        // the union the way Direct2D's glyph-run rasterisation does.
+        struct AtlasGlyphDraw { std::shared_ptr<const GlyphMask> mask; int x, y; };
+        std::vector<AtlasGlyphDraw> atlasGlyphs;
+
         const float lineHeight = format->lineAdvance();
         const float blockHeight = float(lines.size()) * lineHeight;
 
@@ -1516,15 +1526,9 @@ public:
                         {
                             if (!mask->alpha.empty())
                             {
-                                const int w = mask->bounds.right - mask->bounds.left;
-                                const int h = mask->bounds.bottom - mask->bounds.top;
-                                const bool restore = cpuTarget->gammaSpaceBlend;
-                                cpuTarget->gammaSpaceBlend = true;
-                                cpuTarget->blendCoverageMask(
-                                    mask->alpha.data(), w, h,
-                                    ix + mask->bounds.left, iy + mask->bounds.top,
-                                    *cpuBrush);
-                                cpuTarget->gammaSpaceBlend = restore;
+                                const int mx = ix + mask->bounds.left;
+                                const int my = iy + mask->bounds.top;
+                                atlasGlyphs.push_back({ std::move(mask), mx, my });
                             }
                             x += run.advances[i];
                             continue;
@@ -1545,6 +1549,51 @@ public:
         }
 
         sink->close();
+
+        if (!atlasGlyphs.empty())
+        {
+            // Merge every collected mask into one coverage buffer and blend
+            // once, with a SATURATING SUM. Where a pixel straddles two
+            // glyphs, each mask holds the fraction that glyph covers; the
+            // regions are disjoint within the pixel for ordinary text (one
+            // shape ends, the next begins), so the union's coverage is their
+            // sum - which is exactly what the geometry path computes when its
+            // winding fill crosses both outlines in one scan. max() was tried
+            // first and measured worse (0.22 vs 0.13 against the geometry
+            // path): it under-counts every straddled pixel, not just the rare
+            // genuinely-overlapping ones that a sum over-counts.
+            drawing::RectL box{ INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN };
+            for (const auto& g : atlasGlyphs)
+            {
+                box.left   = (std::min)(box.left,   g.x);
+                box.top    = (std::min)(box.top,    g.y);
+                box.right  = (std::max)(box.right,  g.x + (g.mask->bounds.right - g.mask->bounds.left));
+                box.bottom = (std::max)(box.bottom, g.y + (g.mask->bounds.bottom - g.mask->bounds.top));
+            }
+
+            const int bw = box.right - box.left;
+            const int bh = box.bottom - box.top;
+
+            std::vector<float> merged(size_t(bw) * size_t(bh), 0.0f);
+            for (const auto& g : atlasGlyphs)
+            {
+                const int w = g.mask->bounds.right - g.mask->bounds.left;
+                const int h = g.mask->bounds.bottom - g.mask->bounds.top;
+                for (int row = 0; row < h; ++row)
+                {
+                    const float* src = g.mask->alpha.data() + size_t(row) * size_t(w);
+                    float* dst = merged.data()
+                        + size_t(g.y - box.top + row) * size_t(bw) + size_t(g.x - box.left);
+                    for (int col = 0; col < w; ++col)
+                        dst[col] = (std::min)(1.0f, dst[col] + src[col]);
+                }
+            }
+
+            const bool restore = cpuTarget->gammaSpaceBlend;
+            cpuTarget->gammaSpaceBlend = true;
+            cpuTarget->blendCoverageMask(merged.data(), bw, bh, box.left, box.top, *cpuBrush);
+            cpuTarget->gammaSpaceBlend = restore;
+        }
 
         if (brush)
         {

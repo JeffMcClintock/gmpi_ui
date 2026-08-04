@@ -8,7 +8,7 @@
 //     right click        context menu, with a submenu on "Arrange"
 //     m                  message box (Yes/No/Cancel)
 //     o / s              file dialog, open / save
-//     Escape             quit
+//     q                  quit  (Escape is left free to cancel dialogs)
 //
 // build: ./tests/run.sh --demo
 
@@ -116,7 +116,7 @@ private:
     api::IUnknown* host_{};
     drawing::api::ITextFormat* font_{};
     drawing::Rect bounds_{ 0, 0, 700, 460 };
-    std::string status_ = "right-click = menu;  m = message box;  o/s = file;  k = colour;  t = edit;  Esc = quit";
+    std::string status_ = "right-click = menu;  m = msgbox;  o/s = file;  k = colour;  t = edit;  q = quit";
 };
 
 ReturnCode DemoClient::render(drawing::api::IDeviceContext* dc)
@@ -182,7 +182,10 @@ ReturnCode DemoClient::onKeyPress(wchar_t c)
     case 's': case 'S': showFileDialog(true);  break;
     case 'k': case 'K': showColorDialog();     break;
     case 't': case 'T': showTextEdit();        break;
-    case 27:            frame_.close();        break;   // Escape
+    // 'q' quits, NOT Escape. Escape has to stay free to mean "cancel this
+    // dialog": binding it to quit made every dialog test ambiguous, and quietly
+    // shut the app down whenever a dialog failed to take the keypress.
+    case 'q': case 'Q': frame_.close();        break;
     default: return ReturnCode::Unhandled;
     }
     return ReturnCode::Ok;

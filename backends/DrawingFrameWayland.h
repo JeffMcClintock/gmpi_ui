@@ -165,6 +165,8 @@ public:
 
     // Popups register while they hold surfaces. Order matters: they are closed
     // topmost-first, which is what xdg-shell requires for nested popups.
+    bool hasLivePopups() const { return !livePopups_.empty(); }
+
     void registerPopup(IPopupTeardown* p)   { livePopups_.push_back(p); }
     void unregisterPopup(IPopupTeardown* p) { std::erase(livePopups_, p); }
 
@@ -918,6 +920,20 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
     {
         t->onButton(in.x_, in.y_, button, state == WL_POINTER_BUTTON_STATE_PRESSED, serial);
         return;
+    }
+
+    // The click landed on our own window while a menu is up, so dismiss it.
+    //
+    // The compositor does NOT send popup_done for a click on another surface of
+    // the SAME client - it just delivers the click. Without this the menu stays
+    // up holding the keyboard grab, and every keystroke after it silently
+    // disappears into a popup nobody can see. It took a harness run to notice,
+    // because the symptom is a key doing nothing rather than anything visible.
+    if (state == WL_POINTER_BUTTON_STATE_PRESSED &&
+        in.connection_ && in.connection_->hasLivePopups())
+    {
+        in.connection_->closeLivePopups();
+        return;                 // the click dismissed the menu; it is not also a click
     }
 
     // evdev button codes; there is no wl_pointer enum for them

@@ -124,20 +124,28 @@ echo "chose from inside a submenu"
 # chooser's own UI belongs to GTK and is not ours to drive.
 xdo key o; sleep 5
 kill -0 $DEMO 2>/dev/null || fail "demo died opening a file dialog"
-xdo key Escape; sleep 3
-kill -0 $DEMO 2>/dev/null || fail "demo died cancelling a file dialog"
+
+# Only cancel if a dialog was actually asked for. Sending Escape blind meant
+# that when the keypress went missing, the Escape reached the APP instead and
+# quit it - so every later step failed for a reason that had nothing to do with
+# what it was testing. A known-flaky step must not take the rest down with it.
+if grep -q "file dialog requested" "$LOG"; then
+    xdo key Escape; sleep 3
+    kill -0 $DEMO 2>/dev/null || fail "demo died cancelling a file dialog"
+fi
 if grep -q "file dialog cancelled\|file ->" "$LOG"; then
     echo "file dialog: $(grep -E 'file dialog cancelled|file ->' "$LOG" | tail -1)"
 else
-    # Do NOT read this as "the portal is broken". Pressing o as the first key, or
-    # straight after a message box, reaches the client and sends the request every
-    # time - verified in isolation. It is only after a context menu in this
-    # sequence that the keypress does not arrive, which is unexplained and worth
-    # chasing before anyone relies on the file dialog.
-    echo "        NOTE: no portal response - the o keypress did not reach the client"
-    grep -q "file dialog requested" "$LOG" \
-        && echo "              (the request WAS sent, so this is the portal not answering)" \
-        || echo "              (no request was sent, so the key was swallowed - see above)"
+    # The request going out is what this step verifies. The chooser itself
+    # belongs to xdg-desktop-portal, which talks to the session bus this process
+    # inherited - the REAL one, not the nested compositor's - so its window would
+    # appear on the developer's actual desktop and no answer arrives here. That
+    # is expected, not a failure.
+    if grep -q "file dialog requested" "$LOG"; then
+        echo "file dialog: request sent; no answer (the portal serves the outer session)"
+    else
+        fail "the file dialog keypress never reached the client"
+    fi
 fi
 
 # --- colour picker ----------------------------------------------------------
@@ -177,7 +185,7 @@ kill -0 $DEMO 2>/dev/null || fail "demo died in the text edit"
 
 # --- quit -------------------------------------------------------------------
 echo "compositor alive before quit: yes"
-xdo key Escape; sleep 2
+xdo key q; sleep 2
 for i in $(seq 1 20); do kill -0 $DEMO 2>/dev/null || break; sleep 0.25; done
 
 RC=0

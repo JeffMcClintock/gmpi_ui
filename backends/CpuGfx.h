@@ -395,6 +395,27 @@ public:
     virtual ReturnCode drawText(drawing::api::IDeviceContext* context, drawing::api::ITextFormat* textFormat,
                                 const char* utf8, int32_t length, const drawing::Rect& layoutRect,
                                 drawing::api::IBrush* brush, int32_t options) = 0;
+
+    // Markdown. Optional: an engine that declines these still satisfies the
+    // interface, and the backend reports NoSupport upward, which is how a
+    // caller is expected to discover that rich text is unavailable.
+    virtual ReturnCode createRichTextFormat(const char* /*markdownText*/, float /*fontHeight*/,
+                                            const char* /*fontFamilyName*/, int32_t /*fontFlags*/,
+                                            drawing::TextAlignment, drawing::ParagraphAlignment,
+                                            drawing::WordWrapping, float /*lineSpacing*/, float /*baseline*/,
+                                            drawing::api::IRichTextFormat** returnRichTextFormat)
+    {
+        *returnRichTextFormat = {};
+        return ReturnCode::NoSupport;
+    }
+
+    virtual ReturnCode drawRichText(drawing::api::IDeviceContext* /*context*/,
+                                    drawing::api::IRichTextFormat* /*richTextFormat*/,
+                                    const drawing::Rect& /*layoutRect*/, drawing::api::IBrush* /*brush*/,
+                                    int32_t /*options*/)
+    {
+        return ReturnCode::NoSupport;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -2620,9 +2641,14 @@ public:
                                 *layoutRect, brush, options);
     }
 
-    ReturnCode drawRichTextU(drawing::api::IRichTextFormat*, const drawing::Rect*, drawing::api::IBrush*, int32_t) override
+    ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect,
+                             drawing::api::IBrush* brush, int32_t options) override
     {
-        return ReturnCode::NoSupport; // text stage E (rich text)
+        auto* engine = textEngine();
+        if (!engine || !richTextFormat || !layoutRect)
+            return ReturnCode::NoSupport;
+
+        return engine->drawRichText(this, richTextFormat, *layoutRect, brush, options);
     }
 
     // ---- target ------------------------------------------------------------
@@ -2793,10 +2819,19 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode createRichTextFormat(const char*, float, const char*, int32_t, drawing::TextAlignment, drawing::ParagraphAlignment, drawing::WordWrapping, float, float, drawing::api::IRichTextFormat** returnRichTextFormat) override
+    ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName,
+                                    int32_t fontFlags, drawing::TextAlignment textAlignment,
+                                    drawing::ParagraphAlignment paragraphAlignment,
+                                    drawing::WordWrapping wordWrapping, float lineSpacing, float baseline,
+                                    drawing::api::IRichTextFormat** returnRichTextFormat) override
     {
         *returnRichTextFormat = {};
-        return ReturnCode::NoSupport; // milestone 8 (text)
+        if (!textEngine)
+            return ReturnCode::NoSupport;
+
+        return textEngine->createRichTextFormat(markdownText, fontHeight, fontFamilyName, fontFlags,
+                                                textAlignment, paragraphAlignment, wordWrapping,
+                                                lineSpacing, baseline, returnRichTextFormat);
     }
 
     ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float /*dpi*/) override

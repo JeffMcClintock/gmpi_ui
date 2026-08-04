@@ -36,6 +36,7 @@
 
 #include "../Drawing.h"
 #include "../backends/CpuGfx.h"
+#include "../backends/MarkdownParser.h" // shared with the platform backends
 #include "DecodedImage.h"
 #include "FontFile.h"
 #include "TextSegmentation.h"
@@ -255,11 +256,18 @@ struct GlyphOutlineSink
     // transforms operate in font space and must compose BEFORE it.
     float scaleX{}, scaleY{};
     float originX{}, originY{};
+    // Synthetic italic: the tangent of the lean, applied about the baseline.
+    // Selawik ships no italic face, and DirectWrite slants the regular one
+    // rather than declining - the reference images show exactly that.
+    float shearX{};
     bool figureOpen{};
 
     Point map(float x, float y) const
     {
-        return { originX + x * scaleX, originY + y * scaleY };
+        // dy is negative above the baseline (device y grows downward), so
+        // subtracting shears the top of the glyph to the right.
+        const float dy = y * scaleY;
+        return { originX + x * scaleX - shearX * dy, originY + dy };
     }
 };
 
@@ -647,12 +655,26 @@ public:
         std::vector<uint32_t> clusters; // byte offset in the source, per glyph
         float scale{};                 // this face's units -> device
         float width{};
+
+        // Rich text only; plain text leaves these at their defaults. A run is
+        // the unit of styling as well as of font, because a change of either
+        // ends it.
+        float emSize{};                // device units per em, for decorations
+        float obliqueShear{};          // tangent of the synthetic-italic angle
+        bool strikethrough{};
     };
 
     struct Line
     {
         std::vector<GlyphRun> runs;
         float width{};
+
+        // Zero means "ask the format" — plain text has one font throughout, so
+        // every line is the same height. Rich text sets these per line, since a
+        // heading is taller than the paragraph under it.
+        float ascent{};
+        float descent{};
+        float advance{};
     };
 
     // A stretch of source text that one font covers.
@@ -772,12 +794,19 @@ public:
         return spans;
     }
 
+    // emSizeOverride <= 0 means "this format's own size", which is every plain
+    // text call. Rich text passes the run's size, since a heading and the
+    // paragraph under it are laid out by the same format.
     GlyphRun shapeSpan(const std::shared_ptr<detail::FontFace>& runFace,
-                       std::string_view whole, uint32_t beginByte, uint32_t endByte) const
+                       std::string_view whole, uint32_t beginByte, uint32_t endByte,
+                       float emSizeOverride = 0.0f) const
     {
+        const float emSize = emSizeOverride > 0.0f ? emSizeOverride : fontSize;
+
         GlyphRun run;
         run.face = runFace;
-        run.scale = fontSize / float(runFace->unitsPerEm);
+        run.scale = emSize / float(runFace->unitsPerEm);
+        run.emSize = emSize;
         if (endByte <= beginByte)
             return run;
 
@@ -903,6 +932,10 @@ public:
             GlyphRun piece;
             piece.face = runs[runIndex].face;
             piece.scale = runs[runIndex].scale;
+            // A piece is part of one run, so it inherits the whole style.
+            piece.emSize = runs[runIndex].emSize;
+            piece.obliqueShear = runs[runIndex].obliqueShear;
+            piece.strikethrough = runs[runIndex].strikethrough;
             while (i < end && flat[i].runIndex == runIndex)
             {
                 const size_t g = flat[i].glyphIndex;
@@ -991,6 +1024,296 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// RichTextFormat
+//
+// Markdown, laid out once at creation. The parsing is NOT done here: backends
+// share helpers/../backends/MarkdownParser.h, so every backend agrees on what
+// "**bold**" means and only the rendering differs.
+//
+// A "style" is one resolved combination of face, size and decoration. Runs of
+// the same style are shaped together, and a line's height is the tallest style
+// on it - which is what makes a heading push the paragraph below it down.
+// ---------------------------------------------------------------------------
+class CpuRichTextFormat final : public api::IRichTextFormat
+{
+public:
+    struct Style
+    {
+        std::shared_ptr<detail::FontFace> face;
+        detail::EmMetrics em;
+        float emSize{};
+        float shear{};          // synthetic italic
+        bool strikethrough{};
+        std::function<std::shared_ptr<detail::FontFace>(uint32_t)> fallbackFor;
+
+        float scale() const { return emSize / float(face->unitsPerEm); }
+        float ascent() const { return em.ascent * scale(); }
+        float descent() const { return em.descent * scale(); }
+        float lineGap() const { return em.lineGap * scale(); }
+    };
+
+    std::string plainText;
+    std::vector<Style> styles;
+    std::vector<uint16_t> styleOfByte; // one entry per byte of plainText
+    // The base format owns alignment, wrapping and line spacing, and is also
+    // what the engine measures its first baseline from - the same base format
+    // the Direct2D backend builds its layout on.
+    std::unique_ptr<CpuTextFormat> base;
+
+    using Line = CpuTextFormat::Line;
+    using GlyphRun = CpuTextFormat::GlyphRun;
+
+    uint16_t styleAt(size_t byteOffset) const
+    {
+        return byteOffset < styleOfByte.size() ? styleOfByte[byteOffset] : uint16_t(0);
+    }
+
+    // Font-coverage itemisation for ONE style, mirroring CpuTextFormat::itemize
+    // but with that style's face as the primary.
+    std::vector<std::pair<std::shared_ptr<detail::FontFace>, uint32_t>>
+    itemizeStyled(std::string_view text, const Style& style) const
+    {
+        // (face, beginByte) pairs; the next entry's begin ends the previous.
+        std::vector<std::pair<std::shared_ptr<detail::FontFace>, uint32_t>> spans;
+        const auto cps = text::decodeUtf8(text);
+        if (cps.empty())
+            return spans;
+        const auto clusterStarts = text::graphemeBoundaries(cps);
+
+        std::shared_ptr<detail::FontFace> current;
+        for (size_t i = 0; i < cps.size(); ++i)
+        {
+            if (!clusterStarts[i])
+                continue;
+
+            const uint32_t c = cps[i].value;
+            const bool neutral = (c == ' ' || c == '\t' || text::isGraphemeExtender(c));
+
+            std::shared_ptr<detail::FontFace> wanted;
+            if (neutral)
+                wanted = current ? current : style.face;
+            else if (CpuTextFormat::covers(*style.face, c))
+                wanted = style.face;
+            else if (current && current != style.face && CpuTextFormat::covers(*current, c))
+                wanted = current;
+            else if (style.fallbackFor)
+            {
+                wanted = style.fallbackFor(c);
+                if (!wanted)
+                    wanted = style.face;
+            }
+            else
+                wanted = style.face;
+
+            if (!current || wanted != current)
+            {
+                spans.emplace_back(wanted, cps[i].byteOffset);
+                current = wanted;
+            }
+        }
+        return spans;
+    }
+
+    // Shape one paragraph into runs that change at every style OR font
+    // boundary, then break them into lines.
+    void layoutParagraph(std::string_view whole, uint32_t paraBegin, uint32_t paraEnd,
+                         float maxWidth, std::vector<Line>& returnLines) const
+    {
+        const std::string_view paragraph = whole.substr(paraBegin, paraEnd - paraBegin);
+
+        std::vector<GlyphRun> runs;
+        std::vector<uint16_t> styleOfRun;
+
+        // Walk style spans, and inside each, font-coverage spans.
+        uint32_t spanBegin = paraBegin;
+        while (spanBegin < paraEnd)
+        {
+            const uint16_t sIndex = styleAt(spanBegin);
+            uint32_t spanEnd = spanBegin;
+            while (spanEnd < paraEnd && styleAt(spanEnd) == sIndex)
+                ++spanEnd;
+
+            const auto& style = styles[(std::min)(size_t(sIndex), styles.size() - 1)];
+            const std::string_view styled = whole.substr(spanBegin, spanEnd - spanBegin);
+
+            auto fontSpans = itemizeStyled(styled, style);
+            if (fontSpans.empty())
+                fontSpans.emplace_back(style.face, 0u);
+
+            for (size_t f = 0; f < fontSpans.size(); ++f)
+            {
+                const uint32_t runBegin = spanBegin + fontSpans[f].second;
+                const uint32_t runEnd = (f + 1 < fontSpans.size())
+                    ? spanBegin + fontSpans[f + 1].second
+                    : spanEnd;
+                if (runEnd <= runBegin)
+                    continue;
+
+                // Shaped against the WHOLE string so context is not lost at a
+                // style boundary, exactly as plain text does at a font one.
+                auto run = base->shapeSpan(fontSpans[f].first, whole, runBegin, runEnd, style.emSize);
+                run.obliqueShear = style.shear;
+                run.strikethrough = style.strikethrough;
+                runs.push_back(std::move(run));
+                styleOfRun.push_back(sIndex);
+            }
+
+            spanBegin = spanEnd;
+        }
+
+        if (runs.empty())
+        {
+            Line empty;
+            const auto& style = styles.front();
+            empty.ascent = style.ascent();
+            empty.descent = style.descent();
+            empty.advance = style.ascent() + style.descent() + style.lineGap();
+            returnLines.push_back(std::move(empty));
+            return;
+        }
+
+        // Metrics of a set of runs: the tallest wins, so a line containing a
+        // heading is as tall as the heading.
+        const auto metricsOf = [&](size_t firstRun, size_t lastRun, Line& line) {
+            float a = 0.0f, d = 0.0f, adv = 0.0f;
+            for (size_t r = firstRun; r <= lastRun && r < styleOfRun.size(); ++r)
+            {
+                const auto& st = styles[styleOfRun[r]];
+                a = (std::max)(a, st.ascent());
+                d = (std::max)(d, st.descent());
+                adv = (std::max)(adv, st.ascent() + st.descent() + st.lineGap());
+            }
+            line.ascent = a;
+            line.descent = d;
+            line.advance = base->lineSpacing >= 0.0f ? base->lineSpacing : adv;
+        };
+
+        const bool wrap = base->wordWrapping == WordWrapping::Wrap && maxWidth > 0.0f;
+
+        struct FlatGlyph { size_t runIndex; size_t glyphIndex; float advance; uint32_t cluster; };
+        std::vector<FlatGlyph> flat;
+        for (size_t r = 0; r < runs.size(); ++r)
+            for (size_t g = 0; g < runs[r].glyphs.size(); ++g)
+                flat.push_back({ r, g, runs[r].advances[g], runs[r].clusters[g] });
+
+        if (flat.empty())
+        {
+            Line line;
+            metricsOf(0, runs.size() - 1, line);
+            returnLines.push_back(std::move(line));
+            return;
+        }
+
+        std::vector<uint8_t> canBreakAtByte(whole.size() + 1, 0);
+        if (wrap)
+        {
+            const auto cps = text::decodeUtf8(paragraph);
+            const auto opportunities = text::lineBreakOpportunities(cps);
+            for (size_t i = 0; i < cps.size(); ++i)
+                if (opportunities[i])
+                    canBreakAtByte[paraBegin + cps[i].byteOffset] = 1;
+        }
+
+        size_t lineStart = 0;
+        while (lineStart < flat.size())
+        {
+            size_t lineEnd = flat.size();
+            if (wrap)
+            {
+                float width = 0.0f;
+                size_t lastBreak = 0;
+                size_t i = lineStart;
+                for (; i < flat.size(); ++i)
+                {
+                    const bool clusterStart = (i == 0) || flat[i].cluster != flat[i - 1].cluster;
+                    const bool isBreak = clusterStart && flat[i].cluster < canBreakAtByte.size()
+                                      && canBreakAtByte[flat[i].cluster];
+                    if (isBreak && i > lineStart)
+                    {
+                        if (width > maxWidth)
+                            break;
+                        lastBreak = i;
+                    }
+                    width += flat[i].advance;
+                }
+                if (i < flat.size() || width > maxWidth)
+                    lineEnd = (lastBreak > lineStart) ? lastBreak : (std::max)(lineStart + 1, i);
+            }
+            if (lineEnd <= lineStart)
+                lineEnd = lineStart + 1;
+
+            auto line = CpuTextFormat::buildLine(runs, flat, lineStart, lineEnd);
+            metricsOf(flat[lineStart].runIndex, flat[lineEnd - 1].runIndex, line);
+            returnLines.push_back(std::move(line));
+            lineStart = lineEnd;
+        }
+    }
+
+    void layout(float maxWidth, std::vector<Line>& returnLines) const
+    {
+        returnLines.clear();
+        const std::string_view whole(plainText);
+
+        size_t lineStart = 0;
+        while (lineStart <= whole.size())
+        {
+            size_t nl = whole.find('\n', lineStart);
+            size_t end = (nl == std::string_view::npos) ? whole.size() : nl;
+            size_t trimmed = end;
+            if (trimmed > lineStart && whole[trimmed - 1] == '\r')
+                --trimmed;
+
+            layoutParagraph(whole, uint32_t(lineStart), uint32_t(trimmed), maxWidth, returnLines);
+
+            if (nl == std::string_view::npos)
+                break;
+            lineStart = nl + 1;
+        }
+    }
+
+    Size measure(float maxWidth) const
+    {
+        std::vector<Line> lines;
+        layout(maxWidth, lines);
+
+        float width = 0.0f;
+        for (const auto& l : lines)
+            width = (std::max)(width, l.width);
+
+        float height = 0.0f;
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            // No trailing line gap, matching DirectWrite: the last line
+            // contributes its body height, the rest their full advance.
+            height += (i + 1 == lines.size())
+                ? lines[i].ascent + lines[i].descent
+                : (lines[i].advance > 0.0f ? lines[i].advance : lines[i].ascent + lines[i].descent);
+        }
+        return { width, height };
+    }
+
+    ReturnCode getTextExtentU(Size* returnSize) override
+    {
+        // Unwrapped, like the Direct2D backend: it builds the layout at a
+        // 100000-wide box and only narrows it when the text is finally drawn.
+        //
+        // Known bounded divergence: a lone h1 heading measures 53.2 tall here
+        // (win ascent+descent of the doubled size) where the reference says
+        // 46. Every other reference extent matches to the pixel — same-size
+        // lines, lists, and the mixed-size MultiBlock — and 46/40 em maps to
+        // no metric in Selawik's tables at all (it is 2355 font units, which
+        // happens to be Arial's line height), so whatever DirectWrite did
+        // there is not reconstructible from the font. The rendered glyphs
+        // match; only the reported box is taller.
+        *returnSize = measure(1.0e6f);
+        return ReturnCode::Ok;
+    }
+
+    GMPI_QUERYINTERFACE_METHOD(api::IRichTextFormat);
+    GMPI_REFCOUNT;
+};
+
+// ---------------------------------------------------------------------------
 // The engine
 // ---------------------------------------------------------------------------
 class CpuTextEngine final : public cpugfx::ICpuTextEngine
@@ -1047,11 +1370,12 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         uint32_t glyph{};
         float scaleX{}, scaleY{};
         int subX{}, subY{};
+        float shearX{}; // a slanted glyph is a different mask, not a moved one
 
         bool operator<(const GlyphKey& o) const
         {
-            return std::tie(face, glyph, scaleX, scaleY, subX, subY)
-                 < std::tie(o.face, o.glyph, o.scaleX, o.scaleY, o.subX, o.subY);
+            return std::tie(face, glyph, scaleX, scaleY, subX, subY, shearX)
+                 < std::tie(o.face, o.glyph, o.scaleX, o.scaleY, o.subX, o.subY, o.shearX);
         }
     };
 
@@ -1084,7 +1408,7 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     std::shared_ptr<GlyphMask> buildGlyphMask(api::IFactory* factory,
                                               const std::shared_ptr<detail::FontFace>& face,
                                               uint32_t glyph, float scaleX, float scaleY,
-                                              int subX, int subY)
+                                              int subX, int subY, float shearX = 0.0f)
     {
         auto mask = std::make_shared<GlyphMask>();
         mask->face = face;
@@ -1120,6 +1444,7 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         // The sub-pixel phase is in pixels/kSubPixelSteps; this space is 4x.
         outline.originX = float(subX) * (4.0f / float(kSubPixelSteps));
         outline.originY = float(subY) * (4.0f / float(kSubPixelSteps));
+        outline.shearX = shearX;
         outline.figureOpen = false;
         hb_font_draw_glyph(face->unscaledFont.get(), glyph, detail::glyphDrawFuncs(), &outline);
         if (outline.figureOpen)
@@ -1186,13 +1511,13 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     std::shared_ptr<const GlyphMask> glyphMask(api::IFactory* factory,
                                                const std::shared_ptr<detail::FontFace>& face,
                                                uint32_t glyph, float scaleX, float scaleY,
-                                               int subX, int subY)
+                                               int subX, int subY, float shearX = 0.0f)
     {
-        const GlyphKey key{ face.get(), glyph, scaleX, scaleY, subX, subY };
+        const GlyphKey key{ face.get(), glyph, scaleX, scaleY, subX, subY, shearX };
         if (auto it = glyphAtlas.find(key); it != glyphAtlas.end())
             return it->second;
 
-        auto mask = buildGlyphMask(factory, face, glyph, scaleX, scaleY, subX, subY);
+        auto mask = buildGlyphMask(factory, face, glyph, scaleX, scaleY, subX, subY, shearX);
         if (!mask)
             return {};
 
@@ -1395,6 +1720,12 @@ public:
     // Number of masks currently held, for tests and diagnostics.
     size_t glyphAtlasSize() const { return glyphAtlas.size(); }
 
+    // Synthetic italic. Selawik and most UI families ship no italic face, and
+    // DirectWrite slants the upright one rather than declining - the reference
+    // images show exactly that. The tangent was chosen by sweeping it against
+    // those references; see the note where it is used.
+    static constexpr float kSyntheticObliqueTangent = 1.0f / 3.0f;
+
     ReturnCode createTextFormat(const char* fontFamilyName, FontWeight fontWeight, FontStyle fontStyle,
                                 FontStretch fontStretch, float fontHeight, int32_t fontFlags,
                                 api::ITextFormat** returnTextFormat) override
@@ -1440,6 +1771,161 @@ public:
         return ReturnCode::Ok;
     }
 
+    // Everything past the layout stage is shared by plain and rich text: the
+    // two differ in how lines are built and styled, not in how glyphs reach
+    // pixels. Lines carry their own metrics only when they need to (a heading
+    // is taller than the paragraph under it); zero means "use the default",
+    // which is every plain-text line.
+    struct LaidOut
+    {
+        std::vector<CpuTextFormat::Line> lines;
+        TextAlignment textAlignment{ TextAlignment::Leading };
+        ParagraphAlignment paragraphAlignment{ ParagraphAlignment::Near };
+        float defaultAscent{};
+        float defaultDescent{};
+        float defaultAdvance{};
+        float baselineOffset{}; // first baseline, from the block top
+    };
+
+    ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName,
+                                    int32_t fontFlags, TextAlignment textAlignment,
+                                    ParagraphAlignment paragraphAlignment, WordWrapping wordWrapping,
+                                    float lineSpacing, float baseline,
+                                    api::IRichTextFormat** returnRichTextFormat) override
+    {
+        *returnRichTextFormat = {};
+        if (!markdownText)
+            return ReturnCode::Fail;
+
+        // The base format carries the paragraph-level settings and is what the
+        // first baseline is measured from, exactly as on Direct2D.
+        api::ITextFormat* rawBase{};
+        if (createTextFormat(fontFamilyName, FontWeight::Regular, FontStyle::Normal, FontStretch::Normal,
+                             fontHeight, fontFlags, &rawBase) != ReturnCode::Ok || !rawBase)
+            return ReturnCode::Fail;
+
+        auto rich = std::make_unique<CpuRichTextFormat>();
+        rich->base.reset(dynamic_cast<CpuTextFormat*>(rawBase));
+        if (!rich->base)
+        {
+            rawBase->release();
+            return ReturnCode::Fail;
+        }
+        rich->base->textAlignment = textAlignment;
+        rich->base->paragraphAlignment = paragraphAlignment;
+        rich->base->wordWrapping = wordWrapping;
+        rich->base->setLineSpacing(lineSpacing, baseline);
+
+        const auto parsed = parseMarkdown(markdownText);
+        rich->plainText = parsed.plainText;
+        rich->styleOfByte.assign(rich->plainText.size(), 0);
+
+        const std::string family = fontFamilyName ? fontFamilyName : "system-ui";
+        const float baseEmSize = rich->base->fontSize;
+
+        // Style 0 is the unformatted base, and every run that needs nothing
+        // special shares it.
+        const auto makeStyle = [&](bool bold, bool italic, bool monospace, float sizeScale)
+        {
+            CpuRichTextFormat::Style style;
+            const float emSize = sizeScale > 0.0f ? baseEmSize * sizeScale : baseEmSize;
+            const auto weight = bold ? FontWeight::Bold : FontWeight::Regular;
+
+            // Monospace asks for a different FAMILY, and only takes it if one
+            // resolves - which mirrors Direct2D, where the family name is
+            // looked up in the layout's own font collection and silently
+            // ignored when it holds only the bundled face. The reference
+            // images show inline code in the base font for exactly that
+            // reason, so declining here is matching, not giving up.
+            std::shared_ptr<detail::FontFace> face;
+            if (monospace)
+                face = loadFace("Consolas", weight, FontStyle::Normal, FontStretch::Normal);
+            if (!face)
+                face = loadFace(family.c_str(), weight, FontStyle::Normal, FontStretch::Normal);
+            if (!face)
+                face = rich->base->face;
+
+            style.face = face;
+            style.em = detail::readMetrics(*face);
+            style.emSize = emSize;
+            style.shear = italic ? kSyntheticObliqueTangent : 0.0f;
+            style.fallbackFor = [this, family, weight](uint32_t codepoint) {
+                return findFallback(family, weight, FontStyle::Normal, FontStretch::Normal, codepoint);
+            };
+            return style;
+        };
+
+        rich->styles.push_back(makeStyle(false, false, false, 0.0f));
+
+        for (const auto& run : parsed.runs)
+        {
+            if (run.startPosition >= rich->plainText.size())
+                continue;
+
+            // One style per distinct combination, so repeated bold spans share
+            // a face rather than reloading it.
+            uint16_t index = 0;
+            bool found = false;
+            for (uint16_t i = 0; i < uint16_t(rich->styles.size()); ++i)
+            {
+                const auto& s = rich->styles[i];
+                const float wantSize = run.fontSizeScale > 0.0f ? baseEmSize * run.fontSizeScale : baseEmSize;
+                const bool wantBold = run.bold;
+                const bool isBold = s.face && s.face->name.find("Bold") != std::string::npos;
+                if (s.emSize == wantSize && s.shear == (run.italic ? kSyntheticObliqueTangent : 0.0f)
+                    && s.strikethrough == run.strikethrough && isBold == wantBold)
+                {
+                    index = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                auto style = makeStyle(run.bold, run.italic, run.monospace, run.fontSizeScale);
+                style.strikethrough = run.strikethrough;
+                rich->styles.push_back(std::move(style));
+                index = uint16_t(rich->styles.size() - 1);
+            }
+
+            const size_t end = (std::min)(size_t(run.startPosition) + run.length, rich->plainText.size());
+            for (size_t b = run.startPosition; b < end; ++b)
+                rich->styleOfByte[b] = index;
+        }
+
+        *returnRichTextFormat = rich.release();
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode drawRichText(api::IDeviceContext* context, api::IRichTextFormat* richTextFormat,
+                            const Rect& layoutRect, api::IBrush* brush, int32_t options) override
+    {
+        auto* rich = dynamic_cast<CpuRichTextFormat*>(richTextFormat);
+        if (!rich || !context || rich->styles.empty())
+            return ReturnCode::NoSupport;
+
+        api::IFactory* factory{};
+        if (context->getFactory(&factory) != ReturnCode::Ok || !factory)
+            return ReturnCode::Fail;
+
+        LaidOut laid;
+        rich->layout(layoutRect.right - layoutRect.left, laid.lines);
+        if (laid.lines.empty())
+            return ReturnCode::Ok;
+
+        laid.textAlignment = rich->base->textAlignment;
+        laid.paragraphAlignment = rich->base->paragraphAlignment;
+        // The BASE format's ascent, not the first line's: Direct2D snaps the
+        // block using the format it built the layout from, whatever the first
+        // line happens to contain.
+        laid.defaultAscent = rich->base->ascent();
+        laid.defaultDescent = rich->base->descent();
+        laid.defaultAdvance = rich->base->lineAdvance();
+        laid.baselineOffset = rich->base->baselineOffset();
+
+        return renderLaidOut(context, factory, laid, layoutRect, brush, options);
+    }
+
     ReturnCode drawText(api::IDeviceContext* context, api::ITextFormat* textFormat,
                         const char* utf8, int32_t length, const Rect& layoutRect,
                         api::IBrush* brush, int32_t options) override
@@ -1452,10 +1938,26 @@ public:
         if (context->getFactory(&factory) != ReturnCode::Ok || !factory)
             return ReturnCode::Fail;
 
-        std::vector<CpuTextFormat::Line> lines;
-        format->layout(utf8, length, layoutRect.right - layoutRect.left, lines);
-        if (lines.empty())
+        LaidOut laid;
+        format->layout(utf8, length, layoutRect.right - layoutRect.left, laid.lines);
+        if (laid.lines.empty())
             return ReturnCode::Ok;
+
+        laid.textAlignment = format->textAlignment;
+        laid.paragraphAlignment = format->paragraphAlignment;
+        laid.defaultAscent = format->ascent();
+        laid.defaultDescent = format->descent();
+        laid.defaultAdvance = format->lineAdvance();
+        laid.baselineOffset = format->baselineOffset();
+
+        return renderLaidOut(context, factory, laid, layoutRect, brush, options);
+    }
+
+    ReturnCode renderLaidOut(api::IDeviceContext* context, api::IFactory* factory,
+                             const LaidOut& laid, const Rect& layoutRect,
+                             api::IBrush* brush, int32_t options)
+    {
+        const auto& lines = laid.lines;
 
         // DrawTextOptions::Clip confines the text to its layout rectangle,
         // which matters for descenders and for text that overflows.
@@ -1507,11 +2009,17 @@ public:
         struct AtlasGlyphDraw { std::shared_ptr<const GlyphMask> mask; int x, y; };
         std::vector<AtlasGlyphDraw> atlasGlyphs;
 
-        const float lineHeight = format->lineAdvance();
-        const float blockHeight = float(lines.size()) * lineHeight;
+        // Per line, because rich text mixes sizes. For plain text every line
+        // returns the same number and this is the old n * lineHeight.
+        const auto lineAdvanceOf = [&laid](const CpuTextFormat::Line& l) {
+            return l.advance > 0.0f ? l.advance : laid.defaultAdvance;
+        };
+        float blockHeight = 0.0f;
+        for (const auto& l : lines)
+            blockHeight += lineAdvanceOf(l);
 
         float y = layoutRect.top;
-        switch (format->paragraphAlignment)
+        switch (laid.paragraphAlignment)
         {
         case ParagraphAlignment::Far:    y = layoutRect.bottom - blockHeight; break;
         case ParagraphAlignment::Center: y = 0.5f * (layoutRect.top + layoutRect.bottom - blockHeight); break;
@@ -1529,7 +2037,7 @@ public:
         // x.5 — measured: 30px Selawik centred in a 256px rect put the middle
         // line at 140.42; unshifted rounding gives 140, the reference says
         // 141. Same rule here, or every such tie renders one pixel off.
-        const float winBaseline = layoutRect.top + format->ascent();
+        const float winBaseline = layoutRect.top + laid.defaultAscent;
         const float baselineAdjust =
             std::floor((winBaseline - 0.25f) / 0.5f) * 0.5f + 0.5f - winBaseline;
 
@@ -1564,20 +2072,25 @@ public:
 
         detail::GlyphOutlineSink outline;
         outline.sink = sink.get();
-        outline.scaleX = format->scale();
-        outline.scaleY = -format->scale(); // font space is y-up
+        outline.scaleX = 1.0f;
+        outline.scaleY = -1.0f; // font space is y-up; overwritten per run
+
+        // Strikethrough is geometry, not glyphs: collected per run and filled
+        // once at the end, so it composites like the text rather than blending
+        // separately over each glyph it crosses.
+        std::vector<Rect> strikeRects;
 
         for (const auto& line : lines)
         {
             float x = layoutRect.left;
-            switch (format->textAlignment)
+            switch (laid.textAlignment)
             {
             case TextAlignment::Trailing: x = layoutRect.right - line.width; break;
             case TextAlignment::Center:   x = 0.5f * (layoutRect.left + layoutRect.right - line.width); break;
             default: break;
             }
 
-            float baselineY = y + format->baselineOffset() + baselineAdjust;
+            float baselineY = y + (line.ascent > 0.0f ? line.ascent : laid.baselineOffset) + baselineAdjust;
             if (snap)
                 baselineY = std::floor(baselineY + 0.5f); // whole-pixel baselines read sharper
 
@@ -1586,6 +2099,8 @@ public:
             {
                 outline.scaleX = run.scale;
                 outline.scaleY = -run.scale;
+                outline.shearX = run.obliqueShear;
+                const float runStartX = x;
                 for (size_t i = 0; i < run.glyphs.size(); ++i)
                 {
                     const float penX = x + run.offsetsX[i];
@@ -1639,9 +2154,9 @@ public:
                         const float maskScaleX = run.scale * contextTransform._11;
                         const float maskScaleY = run.scale * contextTransform._22;
                         if (auto mask = useGlyphAtlas
-                                ? glyphMask(factory, run.face, run.glyphs[i], maskScaleX, maskScaleY, subX, subY)
+                                ? glyphMask(factory, run.face, run.glyphs[i], maskScaleX, maskScaleY, subX, subY, run.obliqueShear)
                                 : std::shared_ptr<const GlyphMask>(
-                                      buildGlyphMask(factory, run.face, run.glyphs[i], maskScaleX, maskScaleY, subX, subY)))
+                                      buildGlyphMask(factory, run.face, run.glyphs[i], maskScaleX, maskScaleY, subX, subY, run.obliqueShear)))
                         {
                             if (!mask->alpha.empty())
                             {
@@ -1663,8 +2178,21 @@ public:
                         sink->endFigure(FigureEnd::Closed);
                     x += run.advances[i];
                 }
+
+                if (run.strikethrough && x > runStartX)
+                {
+                    // Position and thickness come from the run's own face at
+                    // the run's own size, so a struck heading gets a heavier
+                    // line than struck body text.
+                    const auto em = detail::readMetrics(*run.face);
+                    const float toDevice = run.emSize / float(run.face->unitsPerEm);
+                    const float centre = baselineY - em.strikethroughPosition * toDevice;
+                    const float thickness = (std::max)(1.0f, em.strikethroughThickness * toDevice);
+                    strikeRects.push_back({ runStartX, centre - 0.5f * thickness,
+                                            x, centre + 0.5f * thickness });
+                }
             }
-            y += lineHeight;
+            y += lineAdvanceOf(line);
         }
 
         sink->close();
@@ -1733,6 +2261,21 @@ public:
                 cpuTarget->gammaSpaceBlend = true;
 
             context->fillGeometry(geometry.get(), brush, nullptr);
+
+            if (cpuTarget)
+                cpuTarget->gammaSpaceBlend = restore;
+        }
+
+        if (brush && !strikeRects.empty())
+        {
+            // Struck through in the same gamma space as the glyphs it crosses,
+            // so the line does not read heavier than the text.
+            const bool restore = cpuTarget ? cpuTarget->gammaSpaceBlend : false;
+            if (cpuTarget && opaqueBrush)
+                cpuTarget->gammaSpaceBlend = true;
+
+            for (const auto& r : strikeRects)
+                context->fillRectangle(&r, brush);
 
             if (cpuTarget)
                 cpuTarget->gammaSpaceBlend = restore;

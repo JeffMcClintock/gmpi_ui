@@ -189,9 +189,12 @@ struct DECLSPEC_NOVTABLE IPopupMenu : IContextItemSink
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
 	virtual ReturnCode showAsync() = 0;
 
-	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
+	// Was a copy of IDialogHost's GUID, so queryInterface could not tell the two apart:
+	// asking a dialog host for IPopupMenu succeeded and handed back the dialog host.
+	// Latent until a host implements both on one object - which is easy to do by accident.
+	// {55CABEE7-4F81-412D-8FB1-0DEDF2A7E53D}
 	inline static const gmpi::api::Guid guid =
-	{ 0x7bb86e70, 0x88cb, 0x44b5, { 0x80, 0x59, 0x7d, 0x3d, 0x1c, 0xbe, 0x9f, 0x56 } };
+	{ 0x55cabee7, 0x4f81, 0x412d, { 0x8f, 0xb1, 0x0d, 0xed, 0xf2, 0xa7, 0xe5, 0x3d } };
 };
 
 struct DECLSPEC_NOVTABLE IPopupMenuCallback : gmpi::api::IUnknown

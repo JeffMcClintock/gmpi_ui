@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "FontFile.h"
+#include "BundledFonts.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -173,12 +174,37 @@ inline bool readWholeFile(const std::string& path, std::vector<uint8_t>& returnB
     return static_cast<bool>(file.read(reinterpret_cast<char*>(returnBytes.data()), size));
 }
 
+// A registered bundled font always wins over the system font database, so a
+// caller can pin exactly which bytes render regardless of what happens to be
+// installed. Fallback-coverage requests (mustCoverCodepoint != 0) still go to
+// the system: a bundled font is registered for one family, not for covering
+// arbitrary CJK/emoji codepoints.
+inline bool tryBundledFont(const FontRequest& request, FontData& returnFont)
+{
+    if (request.mustCoverCodepoint != 0)
+        return false;
+
+    const auto* bundled = findBundledFont(request.familyName, request.weight, request.style);
+    if (!bundled)
+        return false;
+
+    if (!readWholeFile(bundled->filePath, returnFont.bytes))
+        return false;
+
+    returnFont.faceIndex = 0;
+    returnFont.resolvedName = bundled->filePath;
+    return true;
+}
+
 } // namespace detail
 
 #ifdef _WIN32
 inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
+
+    if (detail::tryBundledFont(request, returnFont))
+        return true;
 
     gmpi::directx::ComPtr<IDWriteFactory> writeFactory;
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
@@ -323,6 +349,9 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
+
+    if (detail::tryBundledFont(request, returnFont))
+        return true;
 
     std::string family = request.familyName;
     if (family == "system-ui")
@@ -505,6 +534,9 @@ inline bool matchFontFile(const FontRequest& request, const std::string& family,
 inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
+
+    if (detail::tryBundledFont(request, returnFont))
+        return true;
 
     if (!FcInit())
         return false;

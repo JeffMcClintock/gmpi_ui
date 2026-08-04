@@ -257,6 +257,68 @@ void initFactoryHelper(DxFactoryInfo& info)
 			}
 		}
 	}
+
+	// Bundled fonts (e.g. test-fixture fonts registered via
+	// gmpi::drawing::registerBundledFont) get their own private DirectWrite
+	// collection, built from the files directly rather than relying on
+	// anything being installed system-wide. Families found here overwrite
+	// same-named entries above, so a bundled font always wins.
+	if (auto& registry = gmpi::drawing::bundledFontRegistry(); !registry.empty())
+	{
+		auto factory5 = info.writeFactory.as<IDWriteFactory5>();
+		if (factory5)
+		{
+			gmpi::directx::ComPtr<IDWriteFontSetBuilder1> setBuilder;
+			if (SUCCEEDED(factory5->CreateFontSetBuilder(setBuilder.put())) && setBuilder)
+			{
+				for (const auto& entry : registry)
+				{
+					gmpi::directx::ComPtr<IDWriteFontFile> fontFile;
+					const auto pathW = Utf8ToWstring(entry.filePath);
+					if (FAILED(info.writeFactory->CreateFontFileReference(pathW.c_str(), nullptr, fontFile.put())) || !fontFile)
+						continue;
+					setBuilder->AddFontFile(fontFile.get());
+				}
+
+				gmpi::directx::ComPtr<IDWriteFontSet> fontSet;
+				if (SUCCEEDED(setBuilder->CreateFontSet(fontSet.put())) && fontSet)
+				{
+					factory5->CreateFontCollectionFromFontSet(fontSet.get(), info.privateFontCollection.put());
+				}
+			}
+		}
+
+		if (info.privateFontCollection)
+		{
+			const auto count = info.privateFontCollection->GetFontFamilyCount();
+			for (int index = 0; index < (int)count; ++index)
+			{
+				gmpi::directx::ComPtr<IDWriteFontFamily> family;
+				info.privateFontCollection->GetFontFamily(index, family.put());
+
+				gmpi::directx::ComPtr<IDWriteLocalizedStrings> names;
+				family->GetFamilyNames(names.put());
+
+				BOOL exists{};
+				unsigned int nameIndex{};
+				names->FindLocaleName(L"en-us", &nameIndex, &exists);
+				if (!exists)
+					names->FindLocaleName(L"en", &nameIndex, &exists);
+				if (exists)
+				{
+					wchar_t name[64];
+					names->GetString(nameIndex, name, std::size(name));
+
+					const std::wstring CaseSensitiveFontName(name);
+					std::transform(name, name + wcslen(name), name, [](wchar_t c) { return static_cast<wchar_t>(std::tolower(c)); });
+
+					auto scaling = fontScaling{ CaseSensitiveFontName, 0.0f, 0.0f };
+					scaling.collection = info.privateFontCollection.get();
+					info.availableFonts[WStringToUtf8(name)] = scaling;
+				}
+			}
+		}
+	}
 }
 
 Factory::Factory() : Factory_base(concreteInfo)
@@ -359,7 +421,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 
 		[[maybe_unused]] auto hr = info.writeFactory->CreateTextFormat(
 			fontScalingInfo.systemFontName.c_str(),
-			nullptr,
+			fontScalingInfo.collection,
 			(DWRITE_FONT_WEIGHT)fontWeight,
 			(DWRITE_FONT_STYLE)fontStyle,
 			(DWRITE_FONT_STRETCH)fontStretch,
@@ -410,7 +472,7 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 
 	auto hr = info.writeFactory->CreateTextFormat(
 		fontScalingInfo.systemFontName.c_str(),
-		nullptr,
+		fontScalingInfo.collection,
 		(DWRITE_FONT_WEIGHT)fontWeight,
 		(DWRITE_FONT_STYLE)fontStyle,
 		(DWRITE_FONT_STRETCH)fontStretch,

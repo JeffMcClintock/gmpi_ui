@@ -23,10 +23,11 @@
 #include <map>
 #include <d2d1_2.h>
 #include <d3d11.h>
-#include <dwrite.h>
+#include <dwrite_3.h> // IDWriteFactory5 / IDWriteFontSetBuilder1 / IDWriteFontCollection1, for the private (bundled-font) collection
 #include <Wincodec.h>
 #include <unordered_map>
 #include "../Drawing.h"
+#include "../helpers/BundledFonts.h"
 #include "MarkdownParser.h"
 
 namespace gmpi
@@ -911,6 +912,10 @@ struct fontScaling
     std::wstring systemFontName; // mixed-case
     float bodyHeight{};
     float capHeight{};
+    // Non-owning: nullptr means "resolve through the system collection", as
+    // before. Set only for families that came from privateFontCollection
+    // below, which outlives every fontScaling entry (both live in DxFactoryInfo).
+    IDWriteFontCollection* collection{ nullptr };
 };
 
 struct DxFactoryInfo
@@ -922,6 +927,10 @@ struct DxFactoryInfo
     std::unordered_map<std::string, fontScaling> availableFonts; // lowercase name mapping to scaling information.
     std::vector<std::string> supportedFontFamilies;              // actual system font names, mixed case.
     std::map<std::string, std::wstring> GdiFontConversions;
+    // Built from gmpi::drawing::bundledFontRegistry(), if non-empty, so
+    // Direct2D can resolve families that are not installed system-wide the
+    // same way the CPU backend does via helpers/FontProvider.h.
+    gmpi::directx::ComPtr<IDWriteFontCollection1> privateFontCollection;
 //    bool DX_support_sRGB = true;
 };
 

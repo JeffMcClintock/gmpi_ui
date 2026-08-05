@@ -145,6 +145,19 @@ enum class FileDialogType : int32_t
 	Folder = 2,
 };
 
+// Every dialog below is ASYNCHRONOUS. showAsync() returns immediately and the
+// callback fires later, on the UI thread — so the callback, and usually the
+// dialog object too, must outlive the call. Members of your editor, not locals.
+//
+// A stack-allocated callback here is a use-after-free that will usually appear
+// to work, because the dialog often completes while the frame is still live.
+//
+// The std::function wrappers further down this file (PopupMenuCallback,
+// StockDialogCallback, ...) exist so you do not have to implement these
+// interfaces by hand. There is one for every callback type; if you find
+// yourself tempted to pass nullptr instead, reach for the wrapper — a null
+// callback is not treated as "I don't care" and at least one implementation
+// dereferences it immediately.
 struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 {
 	// returns an ITextEdit
@@ -184,6 +197,14 @@ struct DECLSPEC_NOVTABLE IContextItemSink : gmpi::api::IUnknown
 	{ 0x4d91f798, 0x7ad1, 0x4919, { 0xa4, 0xfb, 0xa7, 0xc2, 0x4e, 0x35, 0x41, 0xbe } };
 };
 
+// Note the callback goes on each ITEM (IContextItemSink::addItem's last
+// argument), not on showAsync() — which takes none, unlike every other dialog
+// here. Passing the same IPopupMenuCallback to every addItem is the normal
+// thing to do; onComplete then reports which id was chosen.
+//
+// Submenus are built with flags rather than nesting: SubMenuBegin on the parent
+// item, then the children, then a SubMenuEnd item. The begin/end items carry no
+// id of their own.
 struct DECLSPEC_NOVTABLE IPopupMenu : IContextItemSink
 {
 	virtual ReturnCode setAlignment(int32_t alignment) = 0;
@@ -346,6 +367,12 @@ public:
 
 namespace sdk
 {
+// WARNING — this one is GMPI_REFCOUNT_NO_DELETE, while every other callback
+// helper in this file is GMPI_REFCOUNT. So `new TextEditCallback(...)` attached
+// to a shared_ptr LEAKS: release() drops the count but never frees it. Own it
+// outright (a member of your editor) and pass its address. The asymmetry looks
+// like an oversight rather than a decision; fix it here rather than in each
+// caller if you ever get the chance.
 struct TextEditCallback : public gmpi::api::ITextEditCallback
 {
 	std::function<void(const std::string&)> onSuccess;

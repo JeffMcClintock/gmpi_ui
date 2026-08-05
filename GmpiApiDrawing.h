@@ -104,11 +104,28 @@ enum class BitmapLockFlags : int32_t
 enum class BitmapRenderTargetFlags : int32_t
 {
     None,
-    Mask = 1,           // 8bpp alpha-only (1 byte per pixel)
+    Mask = 1,           // 8bpp alpha-only (1 byte per pixel). LINEAR coverage.
     CpuReadable = 2,
     SRGBPixels = 4,     // sRGB, 8 bits per channel, 32bpp PBGRA
     // default (no format flag) = 64bppPRGBAHalf (half-float)
 };
+// These are FLAGS, and the combination matters more than it looks:
+//
+//   SRGBPixels alone         is not enough to get an 8-bit face on DirectX.
+//                            Format selection there is gated behind
+//                            CpuReadable, so SRGBPixels on its own still
+//                            yields a GPU target that cannot be locked at all.
+//                            Pass SRGBPixels | CpuReadable when you want bytes.
+//   Factory::createCpuRenderTarget  force-ORs CpuReadable for you; the
+//                            IDeviceContext::createCompatibleRenderTarget route
+//                            does not. That is the whole difference between
+//                            them, and it decides whether lockPixels() works.
+//
+// On the colour space: 8-bit COLOUR is sRGB-encoded, for a render target as
+// well as for a loaded image. Only Mask (coverage) is linear, because coverage
+// has no transfer function. Spending 8 bits linearly on colour bands badly in
+// the shadows — a dark ramp keeps roughly 14 of the ~64 levels the eye wants —
+// which is why the render-target face is encoded rather than raw.
 
 enum class Gamma : int32_t
 {
@@ -490,6 +507,20 @@ struct DECLSPEC_NOVTABLE IBitmapPixels : gmpi::api::IUnknown
 	//   [8]    1 = integer, 0 = float
 	//   [10:9] channel layout: 0=BGRA, 1=RGBA, 2=ARGB, 3=ABGR
 	//   [11]   1 = sRGB transfer function, 0 = linear
+	//
+	// Read these bits rather than assuming, and read ALL of them:
+	//
+	//   * bytes-per-pixel comes from bit [7:0], NOT from bytesPerRow / width.
+	//     Rows can be padded — the CPU backend pads to a multiple of 8 pixels —
+	//     so that division silently reports the wrong stride.
+	//   * channel layout comes from [10:9], NOT from #ifdef _WIN32. Backends do
+	//     not agree, and JUCE uses the same layout on every platform.
+	//   * the transfer function comes from [11] and means what it says.
+	//     Everything 8-bit and colour is sRGB-encoded, whether it came from a
+	//     file or from a render target; only Alpha_8i coverage is linear. This
+	//     was NOT true before Aug 2026 — an SRGBPixels render target used to
+	//     hand back linear bytes under an sRGB name — so treat any older code
+	//     that "knows better" than isSRGB() as a bug to delete, not a hint.
 	enum PixelFormat : int32_t {
 		// Linear float
 		RGBA_32f      = 16 | (1 << 9),                            // macOS 128bpp float

@@ -150,6 +150,34 @@ public:
 		return ReturnCode::Ok;
 	}
 
+	// "Given at most this much room, how much do you want?"
+	//
+	// There are exactly TWO correct shapes of answer, and which one you give is
+	// how you declare whether your editor resizes:
+	//
+	//   RESIZABLE   echo availableSize back — "I'll fill whatever you give me".
+	//               That is what this default does.
+	//   FIXED SIZE  return the same constant every time, IGNORING availableSize.
+	//               Not "clamped to availableSize" — ignoring it.
+	//
+	// This is load-bearing, not stylistic: VST3EditorBase::canResize() measures
+	// you twice, against 0x0 and 10000x10000, and calls you resizable only if
+	// the two answers DIFFER. A constant is therefore the only way to say "fixed".
+	//
+	// Two plausible-looking answers are wrong, and each one hides in a different
+	// host, so testing in only one will not find them:
+	//
+	//   max(preferred, available)  The VST3 wrapper probes with an unbounded
+	//       availableSize to discover your preferred size, so this asks for a
+	//       99999 x 99999 window. DXGI refuses to create a swap chain that big
+	//       and the frame dies in tempSharedD2DBase::CreateSwapPanel — a stack
+	//       full of graphics calls that never mentions layout or the number.
+	//   min(preferred, available)  Collapses to whatever a host happens to offer
+	//       first. SynthEdit hands out a small default rect, so a fixed-size
+	//       editor shrinks to a ~100px box while VST3 looks fine.
+	//
+	// Both failures are at the swap chain, in opposite directions: too big is
+	// refused, and zero is refused. Hence the guard below.
 	ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override
 	{
 		*returnDesiredSize = *availableSize;

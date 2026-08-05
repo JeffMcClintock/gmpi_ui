@@ -80,11 +80,20 @@ Three things that are silent when you get them wrong:
    parent (the header says so explicitly), so this is the host's job — real
    hosts do it as part of their own rendering. A host that never re-commits
    shows a permanently blank plugin area, with no error anywhere.
-3. **`IWaylandHost::iid` and `IWaylandFrame::iid` are declared and never
-   defined.** Unlike every other interface, no `DEF_CLASS_IID` for them exists
-   anywhere in the SDK. Without your own, the module still *links* — a shared
-   object may carry undefined symbols — and then fails to `dlopen` in the host.
-   `nm -DC --undefined-only` on the built `.so` is how to catch it.
+3. **`IWaylandHost::iid` and `IWaylandFrame::iid` must be defined by your own
+   module.** They are in none of the SDK's central IID translation units —
+   `coreiids.cpp`, `baseiids.cpp`, `commoniids.cpp`, `vstinitiids.cpp`, or the
+   samples' `usediids.cpp` — so linking those, which is how a plugin gets every
+   other interface's IID, does not supply them. Each consumer writes its own
+   `DEF_CLASS_IID`, and the SDK does the same in
+   `vstgui4/vstgui/plugin-bindings/vst3editor.cpp` (plugin side) and in the
+   editorhost sample's `wayland/window.cpp` (host side).
+
+   Miss it and the module still *links* — a shared object may carry undefined
+   symbols — then fails to `dlopen` in the host, with nothing in the build to
+   say why. `nm -DC --undefined-only` on the built `.so` is how to catch it.
+   Conversely, a module that compiles `vst3editor.cpp` as well already has
+   them, and adding ours would be a duplicate definition.
 
 ## Testing
 

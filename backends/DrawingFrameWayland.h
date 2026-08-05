@@ -842,6 +842,7 @@ private:
     static void pointerMotion(void*, wl_pointer*, uint32_t, wl_fixed_t, wl_fixed_t);
     static void pointerButton(void*, wl_pointer*, uint32_t, uint32_t, uint32_t, uint32_t);
     static void pointerAxis(void*, wl_pointer*, uint32_t, uint32_t, wl_fixed_t);
+    static void pointerAxisDiscrete(void*, wl_pointer*, uint32_t, int32_t);
     static void pointerNop(void*, wl_pointer*) {}
     static void pointerU32(void*, wl_pointer*, uint32_t) {}
     static void pointerU32U32(void*, wl_pointer*, uint32_t, uint32_t) {}
@@ -885,6 +886,24 @@ public:
     // enter serial, so a change while hovering re-applies with the stored one
     // and every later enter re-asserts it - the compositor resets the cursor
     // to whatever the pointer last showed elsewhere on each crossing.
+    // One wheel event's delta, in the notches-of-120 the editor expects.
+    //
+    // A mouse wheel reports BOTH a continuous distance and a discrete notch
+    // count; a touchpad reports distance only. Preferring the notch count
+    // makes a real wheel exact - one click is one 120 - while a touchpad keeps
+    // its smooth scrolling through the fallback. The old code always
+    // approximated (distance x 10), so a wheel click delivered 100 where
+    // Windows delivers 120, and the editor's zoom steps were subtly short.
+    //
+    // Sign: Wayland counts DOWN as positive, Windows counts down as negative.
+    static int32_t wheelDelta(int32_t discrete, double continuousValue)
+    {
+        if (discrete != 0)
+            return -discrete * 120;
+
+        return static_cast<int32_t>(-continuousValue * 10.0);
+    }
+
     // App-level keyboard shortcuts, tried after popups and text edits but
     // BEFORE the client: Ctrl+Z must reach undo even while the canvas has the
     // keys, yet must never fire while a rename edit or a menu is up - those
@@ -922,6 +941,10 @@ private:
 
     double   x_ = 0, y_ = 0;
     bool     inside_ = false;
+
+    // Notch counts from axis_discrete, consumed by the axis event that follows.
+    int32_t pendingDiscreteV_ = 0;
+    int32_t pendingDiscreteH_ = 0;
 
     // Previous left-press, for isDoubleClick.
     std::chrono::steady_clock::time_point lastPressTime_{};
@@ -963,7 +986,19 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
         wp_cursor_shape_device_v1_set_shape(in.cursorShape_, serial, in.desiredCursor_);
 
     if (in.client_)
+    {
         in.client_->setHover(true);
+
+        // A move with the entry position, before anything else can happen
+        // here. On Windows the pointer cannot be inside the window without a
+        // WM_MOUSEMOVE having arrived, so the editor may assume its
+        // hit-test state is current by the time a button goes down. Wayland
+        // has no such guarantee: enter carries coordinates but is not a move,
+        // so a press without moving first (pointer already inside when the
+        // window maps, or returning from a popup) would be tested against
+        // wherever the pointer was last seen.
+        in.client_->onPointerMove(in.pointerPos(), in.basePointerFlags());
+    }
     if (in.onNeedsRedraw)
         in.onNeedsRedraw();
 }
@@ -1075,16 +1110,25 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
     if (in.pointerPreFilter && in.pointerPreFilter(in.x_, in.y_, pressed))
         return;
 
+    auto handled = gmpi::ReturnCode::Unhandled;
     if (in.client_)
     {
-        if (pressed) in.client_->onPointerDown(in.pointerPos(), flags);
-        else         in.client_->onPointerUp(in.pointerPos(), flags);
+        if (pressed) handled = in.client_->onPointerDown(in.pointerPos(), flags);
+        else         handled = in.client_->onPointerUp(in.pointerPos(), flags);
     }
 
     // A context menu must be opened from a real input serial or the compositor
     // refuses the popup grab, so the serial travels with the request.
-    if (pressed && button == 273 && in.onContextMenu)
+    //
+    // Only when the client did NOT handle the press, matching Windows
+    // (WM_RBUTTONDOWN calls doContextMenu on Unhandled alone). Firing
+    // unconditionally gives anything with its own right-click behaviour a
+    // second, generic menu on top of the one it just opened.
+    if (pressed && button == 273 && in.onContextMenu
+        && handled == gmpi::ReturnCode::Unhandled)
+    {
         in.onContextMenu(in.pointerPos(), serial);
+    }
 }
 
 inline void InputDispatch::pointerAxis(void* data, wl_pointer*, uint32_t,
@@ -1094,13 +1138,30 @@ inline void InputDispatch::pointerAxis(void* data, wl_pointer*, uint32_t,
     if (!in.client_ || !in.overContent())
         return;
 
-    int32_t flags = in.modifierFlags();
+    // Primary and Confidence on wheel events too - makeWheelFlags sends them.
+    int32_t flags = in.modifierFlags()
+                  | int32_t(gmpi::api::PointerFlags::Primary)
+                  | int32_t(gmpi::api::PointerFlags::Confidence);
     if (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
         flags |= int32_t(gmpi::api::PointerFlags::ScrollHoriz);
 
-    // wheel deltas arrive as a scroll distance; SE expects notches of 120
-    const double d = wl_fixed_to_double(value);
-    in.client_->onMouseWheel(in.pointerPos(), flags, static_cast<int32_t>(-d * 10.0));
+    const bool horizontal = (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL);
+    const int32_t discrete = horizontal ? in.pendingDiscreteH_ : in.pendingDiscreteV_;
+
+    in.client_->onMouseWheel(in.pointerPos(), flags,
+                             wheelDelta(discrete, wl_fixed_to_double(value)));
+
+    if (horizontal) in.pendingDiscreteH_ = 0;
+    else            in.pendingDiscreteV_ = 0;
+}
+
+inline void InputDispatch::pointerAxisDiscrete(void* data, wl_pointer*,
+                                               uint32_t axis, int32_t discrete)
+{
+    // Arrives BEFORE the axis event it describes, in the same frame.
+    auto& in = *static_cast<InputDispatch*>(data);
+    if (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) in.pendingDiscreteH_ = discrete;
+    else                                           in.pendingDiscreteV_ = discrete;
 }
 
 inline void InputDispatch::keyboardKeymap(void* data, wl_keyboard*, uint32_t format,
@@ -1195,7 +1256,12 @@ inline void InputDispatch::seatCapabilities(void* data, wl_seat* seat, uint32_t 
 
     static const wl_pointer_listener pointerListener = {
         pointerEnter, pointerLeave, pointerMotion, pointerButton, pointerAxis,
-        pointerNop, pointerU32, pointerU32U32, pointerU32I32, pointerU32I32, pointerU32U32
+        pointerNop,             // frame
+        pointerU32,             // axis_source
+        pointerU32U32,          // axis_stop
+        pointerAxisDiscrete,    // axis_discrete  (v5) - exact wheel notches
+        pointerU32I32,          // axis_value120  (v8) - unused: we bind v5
+        pointerU32U32           // axis_relative_direction
     };
     static const wl_keyboard_listener keyboardListener = {
         keyboardKeymap, keyboardEnter, keyboardLeave, keyboardKey,

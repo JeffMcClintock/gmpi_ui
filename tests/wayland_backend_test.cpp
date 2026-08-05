@@ -272,6 +272,21 @@ int main()
             check("a digit picks nothing", dlg.buttonForMnemonic('7') == nullptr);
         }
 
+        // Wheel deltas. Two conventions meet here and both are easy to get
+        // backwards: Wayland counts DOWN as positive where Windows counts it
+        // negative, and the editor wants notches of 120.
+        {
+            using ID = gmpi::wayland::InputDispatch;
+            check("one wheel notch down is -120",  ID::wheelDelta(1, 10.0) == -120);
+            check("one wheel notch up is +120",    ID::wheelDelta(-1, -10.0) == 120);
+            check("three notches scale",           ID::wheelDelta(3, 30.0) == -360);
+            // A touchpad sends distance with no notch count; it must still
+            // scroll, just smoothly.
+            check("touchpad falls back to distance", ID::wheelDelta(0, 10.0) == -100);
+            check("touchpad direction matches",      ID::wheelDelta(0, -5.0) == 50);
+            check("no movement is no delta",         ID::wheelDelta(0, 0.0) == 0);
+        }
+
         // geometry: laid out before mapping, inside the window, non-overlapping
         bool inside = true, ordered = true;
         const auto& bs = ync.buttons();

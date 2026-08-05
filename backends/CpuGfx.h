@@ -2791,7 +2791,14 @@ public:
         {
             if (!imageDecoder(std::filesystem::path(uri), decoded) || !decoded)
                 return ReturnCode::Fail;
-            bitmap.attach(new Bitmap(this, int32_t(decoded.width), int32_t(decoded.height)));
+            // SRGBPixels so lockPixels() presents 32bpp BGRA, matching what the
+            // DirectX backend gives for a loaded image (WIC 32bppPBGRA). Only the
+            // lock format is affected; rendering stays fp16 either way. Callers
+            // that lock a file-loaded bitmap — including every legacy SDK3 module,
+            // which hard-codes 4 bytes per pixel — would otherwise get a 64bpp
+            // half-float buffer and walk off the end of it.
+            bitmap.attach(new Bitmap(this, int32_t(decoded.width), int32_t(decoded.height),
+                                     int32_t(drawing::BitmapRenderTargetFlags::SRGBPixels)));
         }
         catch (...)
         {

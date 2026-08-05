@@ -174,14 +174,18 @@ struct Surface
 // A render target always rasterizes into the fp16 surface above. Two creation
 // flags change only how lockPixels() PRESENTS those pixels to the CPU:
 //
-//   Mask       -> Alpha_8i:     one byte of coverage per pixel
-//   SRGBPixels -> BGRA_sRGB_8i: four bytes, premultiplied — and despite the
-//                               format name, LINEAR, matching what the DirectX
-//                               and JUCE backends put in a 32bppPBGRA buffer
-//                               (see the un-gamma pass in helpers/SavePng.h).
+//   Mask       -> Alpha_8i:     one byte of LINEAR coverage per pixel
+//   SRGBPixels -> BGRA_sRGB_8i: four bytes, premultiplied, sRGB-encoded — the
+//                               name is the truth, and it means the same thing
+//                               for a file-loaded bitmap as for a render target
+//                               (see the contract note above loadImageU()).
 //
-// Nothing else in the renderer changes, which is the point: one surface type,
-// one set of blend loops, and the conversion confined to lock/unlock.
+// 8-bit colour is sRGB so the codes are spent perceptually; 8-bit coverage is
+// linear because coverage has no transfer function. Those are the only two
+// 8-bit forms, which is the whole point of keeping the format list this short.
+//
+// Nothing else in the renderer changes: one surface type, one set of blend
+// loops, and the conversion confined to lock/unlock.
 inline int32_t lockFormatFromFlags(int32_t flags)
 {
     if (flags & int32_t(drawing::BitmapRenderTargetFlags::Mask))
@@ -264,16 +268,26 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
                     return uint8_t(std::clamp(v * 255.0f + 0.5f, 0.0f, 255.0f));
                 };
 
+                // An 8-bit COLOUR face is sRGB, always — the file's curve for a
+                // loaded image, and Direct2D's _UNORM_SRGB encode for a render
+                // target. linearPixelToSRGB is the exact inverse of the LUT
+                // loadImageU uses and the one DirectXGfx's premultiply
+                // correction rounds through, so the bytes match Direct2D code
+                // for code. A Mask is coverage, not colour: it stays linear.
+                const auto toColourByte = [&](float v) {
+                    return drawing::linearPixelToSRGB(v);
+                };
+
                 if (mask)
                 {
                     dst[0] = toByte(drawing::detail::halfToFloat(src[3]));
                 }
                 else
                 {
-                    dst[0] = toByte(drawing::detail::halfToFloat(src[2])); // B
-                    dst[1] = toByte(drawing::detail::halfToFloat(src[1])); // G
-                    dst[2] = toByte(drawing::detail::halfToFloat(src[0])); // R
-                    dst[3] = toByte(drawing::detail::halfToFloat(src[3])); // A
+                    dst[0] = toColourByte(drawing::detail::halfToFloat(src[2])); // B
+                    dst[1] = toColourByte(drawing::detail::halfToFloat(src[1])); // G
+                    dst[2] = toColourByte(drawing::detail::halfToFloat(src[0])); // R
+                    dst[3] = toByte(drawing::detail::halfToFloat(src[3]));       // A
                 }
             }
         }
@@ -285,6 +299,12 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
         const auto& s = bitmap->surface;
         const int32_t bpp = bytesPerPixel();
         const bool mask = bitmap->lockFormat == drawing::api::IBitmapPixels::Alpha_8i;
+
+        // Undo what surfaceToStaging applied, so a read-modify-write lock that
+        // changes nothing leaves the surface untouched.
+        const auto fromColourByte = [&](uint8_t v) {
+            return drawing::SRGBPixelToLinear(v);
+        };
 
         for (int32_t y = 0; y < s.height; ++y)
         {
@@ -304,10 +324,10 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
                 }
                 else
                 {
-                    dst[0] = drawing::detail::floatToHalf(src[2] / 255.0f); // R
-                    dst[1] = drawing::detail::floatToHalf(src[1] / 255.0f); // G
-                    dst[2] = drawing::detail::floatToHalf(src[0] / 255.0f); // B
-                    dst[3] = drawing::detail::floatToHalf(src[3] / 255.0f); // A
+                    dst[0] = drawing::detail::floatToHalf(fromColourByte(src[2])); // R
+                    dst[1] = drawing::detail::floatToHalf(fromColourByte(src[1])); // G
+                    dst[2] = drawing::detail::floatToHalf(fromColourByte(src[0])); // B
+                    dst[3] = drawing::detail::floatToHalf(src[3] / 255.0f);        // A
                 }
             }
         }
@@ -558,18 +578,18 @@ private:
         for (int c = 0; c < 4; ++c)
             out[c] = drawing::detail::halfToFloat(p[c]);
 
-        // An SRGBPixels bitmap holds LINEAR bytes — that is what the renderer
-        // writes into it and what lockPixels hands back — but sampling one runs
-        // those bytes through the sRGB curve, because that is what Direct2D and
-        // CoreGraphics do with a 32bppPBGRA buffer. The round trip is a gamma
-        // error, kept deliberately: SynthEdit panels have been drawn against it
-        // since 1.5, and a plugin must not change appearance on Linux. Alpha is
-        // never gamma-encoded, so it passes through.
-        if (bitmap->lockFormat == drawing::api::IBitmapPixels::BGRA_sRGB_8i)
-        {
-            for (int c = 0; c < 3; ++c)
-                out[c] = srgbToLinear(out[c]);
-        }
+        // No conversion here, whatever the lock format. The surface is linear and
+        // sampling wants linear. Direct2D reaches the same place by a different
+        // route: it binds any 32bppPBGRA bitmap as B8G8R8A8_UNORM_SRGB, so it
+        // de-gammas on sample — but the bytes it de-gammas are genuinely sRGB
+        // (the file's curve for a loaded image, the _UNORM_SRGB encode for a
+        // render target), so it lands on the same linear value we already hold.
+        //
+        // This used to apply srgbToLinear for BGRA_sRGB_8i, to reproduce a real
+        // Direct2D gamma error: an SRGBPixels render target stored LINEAR bytes
+        // and D2D de-gammaed them anyway, so a cached bitmap came back darker
+        // than the direct draw. That was fixed at the source — the render target
+        // is created _UNORM_SRGB now — so there is no longer an error to copy.
     }
 
     void sample(float sx, float sy, float* out) const
@@ -2366,11 +2386,12 @@ public:
     ReturnCode endDraw() override
     {
         // A Mask or SRGBPixels target really is an 8-bit buffer on the DirectX
-        // and JUCE backends, and 8-bit LINEAR storage is coarse where it hurts:
-        // one step near black is ~20 sRGB levels once displayed. Rendering here
-        // stays fp16 — but the stored result is rounded to what the flagged
-        // format can hold, so compositing this bitmap matches the other
-        // backends instead of being quietly better than them.
+        // and JUCE backends. Rendering here stays fp16 — but the stored result
+        // is rounded to what the flagged format can hold, so compositing this
+        // bitmap matches the other backends instead of being quietly better
+        // than them. The colour face rounds through sRGB (see surfaceToStaging),
+        // so the levels land where the eye needs them rather than crowding into
+        // the highlights the way 8-bit linear did.
         if (bitmap && bitmap->lockFormat != drawing::api::IBitmapPixels::RGBA_16f)
         {
             drawing::api::IBitmapPixels* raw{};
@@ -2777,6 +2798,25 @@ public:
         return ReturnCode::Ok;
     }
 
+    // CONTRACT — BGRA_sRGB_8i means sRGB. One rule, no exceptions.
+    //
+    // A file-loaded bitmap locks as 32bpp premultiplied BGRA holding the file's
+    // own sRGB bytes, passed through unchanged. That is what the DirectX backend
+    // gives (WIC decodes a PNG to 32bppPBGRA and touches only the premultiply,
+    // not the gamma) and what the format name and the bit-11 documentation in
+    // GmpiApiDrawing.h both promise. Callers rely on it: gmpi_ui's own
+    // helpers/ImageCache.cpp and SynthEditLib's ImageCache/ImageTinted2Gui all
+    // branch on isSRGB() and then do sRGB-aware arithmetic on these bytes.
+    //
+    // An SRGBPixels RENDER TARGET now means the same thing. It used to be the
+    // exception — same format, LINEAR bytes — because D2D rendered into a plain
+    // B8G8R8A8_UNORM surface and then de-gammaed it on sample, which both
+    // darkened a cached bitmap and spent the 8 bits linearly (a dark ramp kept
+    // 14 of its 64 levels). Creating that target as _UNORM_SRGB instead removed
+    // the exception, so provenance no longer decides anything and no
+    // BGRA_Linear_8i split is needed. Only a Mask stays linear, because coverage
+    // is not colour. Pinned by CpuVsD2D.LoadedImageLocksAsSRGB and
+    // CpuVsD2D.SRGBRenderTargetRoundTripIsFaithful.
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override
     {
         *returnBitmap = {};

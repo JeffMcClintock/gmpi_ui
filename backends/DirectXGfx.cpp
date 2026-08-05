@@ -1277,9 +1277,22 @@ void createBitmapRenderTarget(
 		else
 		{
 			// 32bppPBGRA and 8bppAlpha paths: CreateWicBitmapRenderTarget is reliable for these formats.
+			//
+			// The colour case asks for _UNORM_SRGB explicitly rather than letting
+			// DXGI_FORMAT_UNKNOWN pick. UNKNOWN resolves 32bppPBGRA to plain
+			// B8G8R8A8_UNORM, which makes D2D store the rasterizer's LINEAR values
+			// in 8 bits — and those same bytes are then sampled as sRGB (a loaded
+			// or WIC-backed bitmap binds as _UNORM_SRGB), so a draw-then-redraw
+			// round trip de-gammas values that were never encoded: mid grey came
+			// back at sRGB 128 instead of 188, and 8 bits spent linearly left a
+			// dark ramp with a quarter of its levels. Asking for _UNORM_SRGB makes
+			// D2D encode on write, which both fixes the curve and spends the 8 bits
+			// perceptually. A Mask is coverage, not colour, and stays linear.
 			D2D1_RENDER_TARGET_PROPERTIES renderTargetProperties = D2D1::RenderTargetProperties(
 				D2D1_RENDER_TARGET_TYPE_DEFAULT,
-				D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN)
+				oneChannelMask
+					? D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN)
+					: D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, D2D1_ALPHA_MODE_PREMULTIPLIED)
 			);
 
 			gmpi::directx::ComPtr<ID2D1RenderTarget> wikBitmapRenderTarget;

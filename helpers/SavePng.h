@@ -127,7 +127,13 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
             }
             else
             {
-                // 32bppPBGRA: linear premultiplied BGRA 8-bit.
+                // 32bppPBGRA: premultiplied BGRA 8-bit, already sRGB-encoded —
+                // for a render target as well as a file-loaded bitmap, since the
+                // render-target face stopped storing linear values (see the
+                // contract note above cpugfx::Factory::loadImageU). So the only
+                // work here is un-premultiplying; the bytes are already in the
+                // space PNG wants. Un-premultiply IN sRGB, matching what
+                // DirectXGfx's unpremultiplyAlpha does to the same buffer.
                 a = src[3];
                 if (a == 0)
                 {
@@ -136,9 +142,9 @@ inline bool savePng(const std::filesystem::path& path, Bitmap& bitmap)
                     continue;
                 }
                 float fa = a / 255.0f;
-                b = detail::linearToSRGB(static_cast<uint8_t>(std::clamp(src[0] / fa + 0.5f, 0.0f, 255.0f)));
-                g = detail::linearToSRGB(static_cast<uint8_t>(std::clamp(src[1] / fa + 0.5f, 0.0f, 255.0f)));
-                r = detail::linearToSRGB(static_cast<uint8_t>(std::clamp(src[2] / fa + 0.5f, 0.0f, 255.0f)));
+                b = static_cast<uint8_t>(std::clamp(src[0] / fa + 0.5f, 0.0f, 255.0f));
+                g = static_cast<uint8_t>(std::clamp(src[1] / fa + 0.5f, 0.0f, 255.0f));
+                r = static_cast<uint8_t>(std::clamp(src[2] / fa + 0.5f, 0.0f, 255.0f));
             }
 
             // Store sRGB BGRA with STRAIGHT alpha: PNG has no premultiplied
@@ -362,6 +368,12 @@ inline bool bitmapToSrgbRgba8(BitmapPixels& pixels, SizeU size, std::vector<uint
 
     const bool isInt = pixels.isInteger();
     const int32_t layout = pixels.channelLayout(); // 0=BGRA 1=RGBA 2=ARGB 3=ABGR
+    // The 8-bit colour formats are already in PNG's space, so they only need
+    // un-premultiplying; everything else is linear and has to be encoded. This
+    // is now a straight read of the format bit, because the render-target face
+    // stopped being the exception that made isSRGB() a lie (see the contract
+    // note above cpugfx::Factory::loadImageU).
+    const bool srcIsSRGB = pixels.isSRGB();
 
     out.assign(size_t(size.width) * size.height * 4, 0);
 
@@ -426,13 +438,13 @@ inline bool bitmapToSrgbRgba8(BitmapPixels& pixels, SizeU size, std::vector<uint
                 r = g = b = 0.0f;
             }
 
-            // Every format here is LINEAR, including the one whose name says
-            // otherwise: BGRA_sRGB_8i holds linear bytes on the DirectX and JUCE
-            // backends alike (the Windows encoder above un-gammas it the same
-            // way), so isSRGB() is not consulted.
-            dst[0] = linearToSRGB_f(r);
-            dst[1] = linearToSRGB_f(g);
-            dst[2] = linearToSRGB_f(b);
+            const auto encode = [srcIsSRGB](float v) {
+                return srcIsSRGB ? static_cast<uint8_t>(std::clamp(v * 255.0f + 0.5f, 0.0f, 255.0f))
+                                 : linearToSRGB_f(v);
+            };
+            dst[0] = encode(r);
+            dst[1] = encode(g);
+            dst[2] = encode(b);
             dst[3] = static_cast<uint8_t>(std::clamp(a * 255.0f + 0.5f, 0.0f, 255.0f));
         }
     }

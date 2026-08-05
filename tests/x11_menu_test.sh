@@ -37,7 +37,7 @@ done
 trap 'kill $XVFB 2>/dev/null' EXIT
 sleep 2
 
-DISPLAY=$DISP "$HERE/x11_menu_test" 6 >"$OUT/test.log" 2>&1 & TEST_PID=$!
+DISPLAY=$DISP "$HERE/x11_menu_test" 9 >"$OUT/test.log" 2>&1 & TEST_PID=$!
 for _ in $(seq 1 40); do grep -q "frame open" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
 sleep 0.7
 
@@ -53,6 +53,22 @@ xwd -root -silent > "$OUT/menu.xwd" 2>/dev/null
 # so the first row's middle is a little below and to the right.
 "$TOOLS/usr/bin/xdotool" mousemove 100 58 sleep 0.3 click 1 >/dev/null 2>&1
 sleep 0.8
+
+# The test raises a message box two thirds of the way through. Wait for it to
+# say so rather than guessing, then click "Yes" - the first button, rightmost.
+for _ in $(seq 1 80); do grep -q "stock dialog created" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
+sleep 0.8
+xwd -root -silent > "$OUT/dialog.xwd" 2>/dev/null
+DIALOG_BTN=$("$TOOLS/usr/bin/xdotool" search --name "^Question$" | head -1)
+if [ -n "$DIALOG_BTN" ]; then
+    eval "$("$TOOLS/usr/bin/xdotool" getwindowgeometry --shell "$DIALOG_BTN")"
+    # "Yes" sits at the bottom right: 20 margin + 92 button, 30 tall.
+    "$TOOLS/usr/bin/xdotool" mousemove $((X + WIDTH - 20 - 46)) $((Y + HEIGHT - 20 - 15)) \
+        sleep 0.3 click 1 >/dev/null 2>&1
+    sleep 0.6
+else
+    echo "note: could not find the dialog window by name"
+fi
 
 wait $TEST_PID
 RC=$?
@@ -84,4 +100,11 @@ PY
 grep -q "^item chosen: 1$" "$OUT/test.log" \
   || { echo "FAIL: clicking the first item did not deliver its id (see test.log)"; exit 1; }
 
-echo "PASS: menu populated, mapped, and returned the clicked item"
+grep -q "^stock dialog created$" "$OUT/test.log" \
+  || { echo "FAIL: createStockDialog refused - the plugin frame still has no dialogs"; exit 1; }
+
+# StockDialogButton::Yes == 2
+grep -q "^dialog answer: 2$" "$OUT/test.log" \
+  || { echo "FAIL: clicking Yes did not deliver StockDialogButton::Yes (see test.log)"; exit 1; }
+
+echo "PASS: menu populated, mapped and returned its item; dialog opened and answered"

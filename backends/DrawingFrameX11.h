@@ -125,15 +125,17 @@ public:
 
     // Not implemented on X11 yet. Explicitly NoSupport with the out-param
     // cleared, rather than left to a null dereference in the caller: a plugin
-    // that asks for an in-place edit should find out, not crash.
+    // that asks for an in-place edit should find out, not crash. The colour
+    // picker is deliberately last in the queue - plugins rarely want one.
     gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
     gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
     gmpi::ReturnCode createFileDialog(int32_t, gmpi::api::IUnknown** r) override
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
-    gmpi::ReturnCode createStockDialog(int32_t, const char*, const char*, gmpi::api::IUnknown** r) override
-    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    // A message box: a transient-for toplevel, decorated by the window manager.
+    gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
+                                       gmpi::api::IUnknown** returnDialog) override;
     gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown** r) override
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
 
@@ -168,6 +170,7 @@ private:
     // Menus are drawn by this backend, share the frame's Display, and are
     // serviced from its event pump - so they need at the frame's internals.
     friend class X11PopupMenu;
+    friend class X11StockDialog;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

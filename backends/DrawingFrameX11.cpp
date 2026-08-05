@@ -37,6 +37,13 @@ constexpr int kMenuArrowGutter     = 22;
 constexpr int kMenuPadV            = 4;
 constexpr int kMenuMinWidth        = 120;
 
+// Stock-dialog metrics and palette, again matching the Wayland backend.
+constexpr int kDialogMargin    = 20;
+constexpr int kDialogButtonW   = 92;
+constexpr int kDialogButtonH   = 30;
+constexpr int kDialogButtonGap = 10;
+constexpr int kDialogTextWidth = 380;
+
 // X11 delivers wheel notches as button 4/5 (vertical) and 6/7 (horizontal).
 // One notch is 120, the same unit Windows uses and what the clients expect.
 constexpr int kWheelUp = 4, kWheelDown = 5, kWheelLeft = 6, kWheelRight = 7;
@@ -115,6 +122,11 @@ struct X11DrawingFrame::Impl
     // this connection fd, which is what lets the host's single registered
     // handler service them - see routeToMenus in processEvents.
     std::vector<class X11PopupMenu*> menus;
+
+    // Dialogs are toplevels, not children of ours, but they still live on this
+    // Display and so are serviced from this frame's event pump.
+    std::vector<class X11StockDialog*> dialogs;
+
     gmpi::drawing::api::ITextFormat* menuFont{};
 
     gmpi::drawing::Rect dirty{};
@@ -328,6 +340,72 @@ private:
 
     X11PopupMenu* child_{};
     X11PopupMenu* parentMenu_{};
+};
+
+// ---------------------------------------------------------------------------
+// X11StockDialog - IStockDialog as a transient-for toplevel
+// ---------------------------------------------------------------------------
+// Much simpler than the Wayland equivalent: X11 has a window manager, so the
+// dialog is an ordinary toplevel and the WM decorates it. All we add is
+// WM_TRANSIENT_FOR, so it stays above the host's window rather than becoming a
+// separate task-bar entry that can fall behind the DAW - which, for a modal
+// question, the user experiences as a hang.
+//
+// Not modal in the X sense. Nothing here grabs: a grab would freeze the DAW's
+// own UI too, and a plugin has no business doing that. The dialog simply stays
+// on top and answers when clicked.
+class X11StockDialog : public gmpi::api::IStockDialog
+{
+public:
+    X11StockDialog(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+                   gmpi::drawing::api::ITextFormat* font,
+                   int32_t dialogType, std::string title, std::string text);
+
+    ~X11StockDialog() { destroyWindow(); }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IStockDialog);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    Window window() const { return window_; }
+    bool handleEvent(const XEvent& e);
+
+private:
+    struct Button
+    {
+        std::string label;
+        gmpi::api::StockDialogButton id{};
+        gmpi::drawing::Rect rect{};
+    };
+
+    void layout();
+    void present();
+    void destroyWindow();
+    int  buttonAt(int x, int y) const;
+    void finish(gmpi::api::StockDialogButton button);
+
+    X11DrawingFrame::Impl& frame_;
+    gmpi::cpugfx::Factory& factory_;
+    gmpi::drawing::api::ITextFormat* font_{};
+    std::string title_, text_;
+    std::vector<Button> buttons_;
+    gmpi::api::StockDialogButton escape_{ gmpi::api::StockDialogButton::Cancel };
+
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+
+    Window  window_{};
+    XImage* image_{};
+    GC      gc_{};
+    Atom    wmDelete_{};
+    int     w_ = 0, h_ = 0;
+    int     hovered_ = -1;
+    bool    finished_ = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -572,11 +650,21 @@ void X11DrawingFrame::processEvents()
         // nothing and falls through harmlessly.
         {
             bool consumed = false;
-            // A copy: handling can dismiss a menu, which mutates d.menus.
+            // Copies: handling can dismiss a menu or close a dialog, which
+            // mutates the lists we are walking.
             const auto menus = d.menus;
+            const auto dialogs = d.dialogs;
             for (auto* m : menus)
             {
                 if (m->handleEvent(e))
+                {
+                    consumed = true;
+                    break;
+                }
+            }
+            for (auto* d2 : dialogs)
+            {
+                if (!consumed && d2->handleEvent(e))
                 {
                     consumed = true;
                     break;
@@ -1283,6 +1371,318 @@ bool X11PopupMenu::handleEvent(const XEvent& e)
 }
 
 // ---------------------------------------------------------------------------
+// X11StockDialog
+// ---------------------------------------------------------------------------
+
+X11StockDialog::X11StockDialog(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+                               gmpi::drawing::api::ITextFormat* font,
+                               int32_t dialogType, std::string title, std::string text)
+    : frame_(frame), factory_(factory), font_(font),
+      title_(std::move(title)), text_(std::move(text))
+{
+    using T = gmpi::api::StockDialogType;
+    using B = gmpi::api::StockDialogButton;
+
+    // Same button sets and same escape mapping as the Wayland dialog.
+    switch (static_cast<T>(dialogType))
+    {
+    case T::OkCancel:    buttons_ = { { "OK", B::Ok }, { "Cancel", B::Cancel } };
+                         escape_ = B::Cancel; break;
+    case T::YesNo:       buttons_ = { { "Yes", B::Yes }, { "No", B::No } };
+                         escape_ = B::No; break;
+    case T::YesNoCancel: buttons_ = { { "Yes", B::Yes }, { "No", B::No }, { "Cancel", B::Cancel } };
+                         escape_ = B::Cancel; break;
+    default:             buttons_ = { { "OK", B::Ok } };
+                         escape_ = B::Ok; break;
+    }
+
+    frame_.dialogs.push_back(this);
+}
+
+void X11StockDialog::layout()
+{
+    // Measure the message so a long one gets a taller box rather than a clipped
+    // one. Without a font we cannot measure, so fall back to a fixed height.
+    float textH = 40.0f;
+    if (font_)
+    {
+        gmpi::drawing::Size sz{};
+        if (font_->getTextExtentU(text_.c_str(), int32_t(text_.size()),
+                                  float(kDialogTextWidth), &sz) == gmpi::ReturnCode::Ok)
+            textH = (std::max)(20.0f, sz.height);
+    }
+
+    w_ = kDialogTextWidth + 2 * kDialogMargin;
+    h_ = kDialogMargin + int(textH) + 24 + kDialogButtonH + kDialogMargin;
+
+    // buttons right-aligned along the bottom, first one rightmost so the default
+    // sits where the eye lands
+    int x = w_ - kDialogMargin;
+    const int y = h_ - kDialogMargin - kDialogButtonH;
+    for (auto& b : buttons_)
+    {
+        x -= kDialogButtonW;
+        b.rect = { float(x), float(y), float(x + kDialogButtonW), float(y + kDialogButtonH) };
+        x -= kDialogButtonGap;
+    }
+}
+
+int X11StockDialog::buttonAt(int x, int y) const
+{
+    for (size_t i = 0; i < buttons_.size(); ++i)
+    {
+        const auto& r = buttons_[i].rect;
+        if (x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+            return int(i);
+    }
+    return -1;
+}
+
+gmpi::ReturnCode X11StockDialog::showAsync(gmpi::api::IUnknown* callback)
+{
+    auto& d = frame_;
+    if (!d.display)
+        return gmpi::ReturnCode::Fail;
+
+    layout();
+
+    // Centred on the host's window, which is where the user is looking - then
+    // clamped to the screen. A dialog is routinely WIDER than the plugin view it
+    // is centred on, so the raw result is often negative, and there is no
+    // guarantee a window manager will move it back: under a bare X server
+    // nothing does, and the message loses its left edge.
+    int rootX = 0, rootY = 0;
+    Window ignored{};
+    XTranslateCoordinates(d.display, d.window, DefaultRootWindow(d.display),
+                          (d.width - w_) / 2, (d.height - h_) / 2, &rootX, &rootY, &ignored);
+
+    const int screenW = DisplayWidth(d.display, d.screen);
+    const int screenH = DisplayHeight(d.display, d.screen);
+    rootX = (std::clamp)(rootX, 0, (std::max)(0, screenW - w_));
+    rootY = (std::clamp)(rootY, 0, (std::max)(0, screenH - h_));
+
+    XSetWindowAttributes attr{};
+    attr.border_pixel = 0;
+    attr.colormap = XCreateColormap(d.display, DefaultRootWindow(d.display), d.visual, AllocNone);
+    attr.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask
+                    | PointerMotionMask | KeyPressMask | StructureNotifyMask;
+
+    window_ = XCreateWindow(d.display, DefaultRootWindow(d.display),
+                            rootX, rootY, unsigned(w_), unsigned(h_),
+                            0, d.depth, InputOutput, d.visual,
+                            CWBorderPixel | CWColormap | CWEventMask, &attr);
+    if (!window_)
+        return gmpi::ReturnCode::Fail;
+
+    // The whole point of a dialog rather than a bare window: transient-for keeps
+    // it above the host and off the task bar. Without it a modal question can
+    // end up behind the DAW, which reads to the user as a hang.
+    XSetTransientForHint(d.display, window_, d.window);
+    XStoreName(d.display, window_, title_.c_str());
+
+    // Let the WM's close button answer as Escape would, rather than killing the
+    // connection - which would take the plugin down with it.
+    wmDelete_ = XInternAtom(d.display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(d.display, window_, &wmDelete_, 1);
+
+    gc_ = XCreateGC(d.display, window_, 0, nullptr);
+    XMapRaised(d.display, window_);
+
+    callback_ = callback;
+
+    // Stay alive until the user answers, independent of the caller's reference -
+    // the same contract as the Wayland dialog.
+    addRef();
+
+    present();
+    XFlush(d.display);
+    return gmpi::ReturnCode::Ok;
+}
+
+void X11StockDialog::present()
+{
+    auto& d = frame_;
+    if (!d.display || !window_ || w_ <= 0 || h_ <= 0)
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_.createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt)
+    {
+        if (rtRaw) rtRaw->release();
+        return;
+    }
+
+    rt->beginDraw();
+
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
+    rt->clear(&bg);
+
+    auto* ink     = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
+    auto* face    = brush({ 0.24f, 0.25f, 0.28f, 1.0f });
+    auto* faceHot = brush({ 0.30f, 0.44f, 0.68f, 1.0f });
+    auto* edge    = brush({ 0.38f, 0.39f, 0.43f, 1.0f });
+
+    if (font_ && ink)
+    {
+        const gmpi::drawing::Rect tr{ float(kDialogMargin), float(kDialogMargin),
+                                      float(kDialogMargin + kDialogTextWidth),
+                                      float(h_ - kDialogMargin - kDialogButtonH - 12) };
+        rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
+    }
+
+    for (size_t i = 0; i < buttons_.size(); ++i)
+    {
+        const auto& b = buttons_[i];
+        if (auto* fill = (int(i) == hovered_) ? faceHot : face; fill)
+            rt->fillRectangle(&b.rect, fill);
+        if (edge)
+            rt->drawRectangle(&b.rect, edge, 1.0f, nullptr);
+
+        if (font_ && ink)
+        {
+            // nudged down so the glyphs sit optically centred in the button
+            const gmpi::drawing::Rect lr{ b.rect.left, b.rect.top + 6.f,
+                                          b.rect.right, b.rect.bottom };
+            rt->drawTextU(b.label.c_str(), uint32_t(b.label.size()), font_, &lr, ink, 0);
+        }
+    }
+
+    if (ink)     ink->release();
+    if (face)    face->release();
+    if (faceHot) faceHot->release();
+    if (edge)    edge->release();
+
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        if (!image_)
+        {
+            auto* data = static_cast<char*>(std::calloc(size_t(w_) * h_, 4));
+            if (data)
+                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
+                                      data, w_, h_, 32, w_ * 4);
+            if (!image_ && data)
+                std::free(data);
+        }
+
+        if (image_)
+        {
+            const auto& s = bm->surface;
+            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
+                                                   image_->bytes_per_line, w_, h_,
+                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
+            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
+            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0, unsigned(w_), unsigned(h_));
+        }
+    }
+
+    if (bmRaw) bmRaw->release();
+    rtRaw->release();
+
+    XFlush(d.display);
+}
+
+void X11StockDialog::destroyWindow()
+{
+    auto& d = frame_;
+    std::erase(d.dialogs, this);
+
+    if (!d.display)
+        return;
+
+    if (image_)  { XDestroyImage(image_); image_ = {}; }
+    if (gc_)     { XFreeGC(d.display, gc_); gc_ = {}; }
+    if (window_) { XDestroyWindow(d.display, window_); window_ = {}; }
+
+    XFlush(d.display);
+}
+
+void X11StockDialog::finish(gmpi::api::StockDialogButton button)
+{
+    if (finished_)
+        return;
+    finished_ = true;
+
+    auto cb = callback_;
+    callback_ = {};
+
+    destroyWindow();
+
+    if (auto sink = cb.as<gmpi::api::IStockDialogCallback>(); sink)
+        sink->onComplete(button);
+
+    // LAST: drops the reference showAsync took, which may delete us.
+    release();
+}
+
+bool X11StockDialog::handleEvent(const XEvent& e)
+{
+    if (!window_ || e.xany.window != window_)
+        return false;
+
+    switch (e.type)
+    {
+    case Expose:
+        present();
+        return true;
+
+    case MotionNotify:
+    {
+        const int index = buttonAt(e.xmotion.x, e.xmotion.y);
+        if (index != hovered_)
+        {
+            hovered_ = index;
+            present();
+        }
+        return true;
+    }
+
+    case ButtonRelease:
+    {
+        const int index = buttonAt(e.xbutton.x, e.xbutton.y);
+        if (index >= 0)
+            finish(buttons_[index].id);
+        return true;
+    }
+
+    case KeyPress:
+    {
+        KeySym keysym{};
+        char buf[8]{};
+        XLookupString(const_cast<XKeyEvent*>(&e.xkey), buf, sizeof(buf) - 1, &keysym, nullptr);
+
+        if (keysym == XK_Escape)
+            finish(escape_);
+        else if ((keysym == XK_Return || keysym == XK_KP_Enter) && !buttons_.empty())
+            finish(buttons_.front().id);   // the first button is the default
+        return true;
+    }
+
+    case ClientMessage:
+        // The WM's close button. Answer as Escape would.
+        if (static_cast<Atom>(e.xclient.data.l[0]) == wmDelete_)
+            finish(escape_);
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // IDialogHost on the frame
 // ---------------------------------------------------------------------------
 
@@ -1319,6 +1719,21 @@ void X11DrawingFrame::showContextMenu(gmpi::drawing::Point pt)
 
     popup->addRef();
     static_cast<X11PopupMenu*>(popup.get())->takeSelfOwnership();
+}
+
+gmpi::ReturnCode X11DrawingFrame::createStockDialog(int32_t dialogType, const char* title,
+                                                    const char* text,
+                                                    gmpi::api::IUnknown** returnDialog)
+{
+    *returnDialog = {};
+
+    if (!impl_->display)
+        return gmpi::ReturnCode::Fail;
+
+    auto* dlg = new X11StockDialog(*impl_, factory_, impl_->menuFont, dialogType,
+                                   title ? title : "", text ? text : "");
+    *returnDialog = static_cast<gmpi::api::IStockDialog*>(dlg);
+    return gmpi::ReturnCode::Ok;
 }
 
 gmpi::ReturnCode X11DrawingFrame::createPopupMenu(const gmpi::drawing::Rect* r,

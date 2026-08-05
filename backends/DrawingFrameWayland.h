@@ -454,9 +454,18 @@ public:
     // own titlebar because of it. Default is a no-op for anything undecorated.
     virtual gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const { return r; }
 
-    // Message boxes are windows of our own, so they need the app's libdecor
-    // context: one context, many frames, one dispatch loop servicing them all.
-    virtual libdecor* decorContext() const { return nullptr; }
+    // Message boxes are windows of our own, so they need a libdecor context:
+    // one context, many frames, one dispatch loop servicing them all. An app
+    // has one already; a plugin makes one on demand (see
+    // WaylandSubsurfaceFrame::ensureDecor).
+    virtual libdecor* decorContext() { return nullptr; }
+
+    // The toplevel a dialog of ours should be a child of. An app's dialogs
+    // parent to its own window, which libdecor handles; a PLUGIN's must parent
+    // to the HOST's, from IWaylandFrame::getParentToplevel - otherwise the
+    // dialog is a separate task-bar entry that can fall behind the DAW, which
+    // for a modal question is a hang as far as the user is concerned.
+    virtual xdg_toplevel* parentToplevel() const { return nullptr; }
 
     static void onExported(void* data, zxdg_exported_v2*, const char* handle)
     {
@@ -3080,9 +3089,11 @@ class WaylandStockDialog : public gmpi::api::IStockDialog, public IPointerTarget
 public:
     WaylandStockDialog(Connection& connection, InputDispatch& input, libdecor* decor,
                        gmpi::cpugfx::Factory& factory, gmpi::drawing::api::ITextFormat* font,
-                       int32_t dialogType, std::string title, std::string text)
+                       int32_t dialogType, std::string title, std::string text,
+                       xdg_toplevel* parentToplevel = nullptr)
         : connection_(connection), input_(input), decor_(decor), factory_(factory),
-          font_(font), title_(std::move(title)), text_(std::move(text))
+          font_(font), title_(std::move(title)), text_(std::move(text)),
+          parentToplevel_(parentToplevel)
     {
         using T = gmpi::api::StockDialogType;
         using B = gmpi::api::StockDialogButton;
@@ -3210,6 +3221,18 @@ private:
 
     Connection&    connection_;
     InputDispatch& input_;
+    // libdecor owns the xdg_toplevel, so reach through it. Parenting is a plain
+    // xdg-shell call - libdecor_frame_set_parent takes another libdecor_frame,
+    // and the host's toplevel is not one.
+    void setParentToplevel()
+    {
+        if (!parentToplevel_ || !frame_)
+            return;
+        if (auto* self = libdecor_frame_get_xdg_toplevel(frame_))
+            xdg_toplevel_set_parent(self, parentToplevel_);
+    }
+
+    xdg_toplevel* parentToplevel_{};
     libdecor*      decor_{};
     gmpi::cpugfx::Factory& factory_;
     gmpi::drawing::api::ITextFormat* font_{};
@@ -3302,6 +3325,7 @@ inline gmpi::ReturnCode WaylandStockDialog::showAsync(gmpi::api::IUnknown* callb
 
     libdecor_frame_set_title(frame_, title_.c_str());
     libdecor_frame_map(frame_);
+    setParentToplevel();
 
     input_.registerSurface(surface_, this);
     callback_ = callback;
@@ -3545,7 +3569,8 @@ inline gmpi::ReturnCode WaylandFrameBase::createStockDialog(
 
     auto* dlg = new WaylandStockDialog(connection_, inputDispatch(), decorContext(),
                                        factory_, menuFont_, dialogType,
-                                       title ? title : "", text ? text : "");
+                                       title ? title : "", text ? text : "",
+                                       parentToplevel());
     *returnDialog = static_cast<gmpi::api::IStockDialog*>(dlg);
     return gmpi::ReturnCode::Ok;
 }
@@ -3590,7 +3615,7 @@ public:
     }
 
     // share our context so a message box is dispatched by this window's loop
-    libdecor* decorContext() const override { return decor_; }
+    libdecor* decorContext() override { return decor_; }
 
     gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const override
     {
@@ -3955,6 +3980,7 @@ public:
         // must go before the surface, which the base destructor destroys.
         if (frameCb_)     { wl_callback_destroy(frameCb_); frameCb_ = nullptr; }
         if (subsurface_)  { wl_subsurface_destroy(subsurface_); subsurface_ = nullptr; }
+        if (decor_)       { libdecor_unref(decor_); decor_ = nullptr; }
     }
 
     // parentSurface is the pointer handed to IPlugView::attached().
@@ -4003,6 +4029,27 @@ public:
         parentRect_ = parentRect;
     }
 
+    // The host's toplevel, from IWaylandFrame::getParentToplevel(). Dialogs of
+    // ours parent to it, so they stay above the DAW window instead of becoming
+    // a separate entry that can fall behind it.
+    void setParentToplevel(xdg_toplevel* hostToplevel) { hostToplevel_ = hostToplevel; }
+    xdg_toplevel* parentToplevel() const override { return hostToplevel_; }
+
+    // A plugin's VIEW needs no decorations - it is a subsurface. Its DIALOGS do:
+    // a message box is a toplevel of its own, and on GNOME nothing will decorate
+    // it for us. So the context is created on first use rather than at attach,
+    // and a plugin that never opens a dialog never loads libdecor's backend
+    // plugin at all.
+    libdecor* decorContext() override
+    {
+        if (!decor_)
+        {
+            static libdecor_interface iface{ decorError, {} };
+            decor_ = libdecor_new(connection_.display(), &iface);
+        }
+        return decor_;
+    }
+
     xdg_surface* popupParent() const override { return hostXdgSurface_; }
 
     // Our coordinates are relative to OUR surface; xdg_positioner anchors
@@ -4033,6 +4080,8 @@ public:
 
     // --- the host owns the event loop (VST3 Linux::IRunLoop) ---
 
+    // The same underlying descriptor either way - libdecor_get_fd returns the
+    // display's - so this stays valid even though the context may appear later.
     int displayFd() const { return wl_display_get_fd(connection_.display()); }
 
     // Called when the run loop reports the fd readable. prepare_read/read_events
@@ -4043,6 +4092,16 @@ public:
         auto* d = connection_.display();
         if (!d)
             return;
+
+        // Once a libdecor context exists it must be the ONLY thing dispatching:
+        // libdecor_dispatch reads the socket itself, and two readers on one
+        // display is the classic wayland hang.
+        if (decor_)
+        {
+            libdecor_dispatch(decor_, 0);
+            wl_display_flush(d);
+            return;
+        }
 
         while (wl_display_prepare_read(d) != 0)
             wl_display_dispatch_pending(d);
@@ -4064,6 +4123,8 @@ public:
         if (!d)
             return;
 
+        // Never reads the socket, so it cannot race dispatch(). libdecor's own
+        // pending work is drained by dispatch().
         wl_display_dispatch_pending(d);
         wl_display_flush(d);
     }
@@ -4092,9 +4153,16 @@ private:
         wl_callback_add_listener(frameCb_, &listener, this);
     }
 
+    static void decorError(libdecor*, libdecor_error, const char* message)
+    {
+        std::fprintf(stderr, "libdecor (plugin): %s\n", message ? message : "");
+    }
+
     wl_subsurface* subsurface_{};
     wl_callback*   frameCb_{};
+    libdecor*      decor_{};          // created on first dialog, not at attach
     xdg_surface*   hostXdgSurface_{};
+    xdg_toplevel*  hostToplevel_{};
     gmpi::drawing::Rect parentRect_{};
     InputDispatch  input_;
 };

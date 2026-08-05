@@ -40,6 +40,7 @@ namespace
 // never opened" from "the client was never asked".
 int g_populateCalls = 0;
 int g_chosenId = -1;
+int g_dialogAnswer = -1;
 
 class MenuCallback : public api::IPopupMenuCallback
 {
@@ -59,6 +60,24 @@ public:
 };
 
 MenuCallback g_callback;
+
+class DialogCallback : public api::IStockDialogCallback
+{
+public:
+    void onComplete(api::StockDialogButton button) override
+    {
+        g_dialogAnswer = int32_t(button);
+    }
+    ReturnCode queryInterface(const api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(api::IStockDialogCallback);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT_NO_DELETE;
+};
+
+DialogCallback g_dialogCallback;
 
 // A client that draws a flat colour and offers a context menu. Deliberately
 // minimal: this is a test of the frame, not of a widget toolkit.
@@ -176,8 +195,39 @@ int main(int argc, char** argv)
 
     // No event loop of our own beyond this: the frame never blocks, so a plain
     // poll-and-sleep stands in for the host's run loop.
-    for (int i = 0; i < seconds * 100; ++i)
+    const int ticks = seconds * 100;
+    bool dialogRaised = false;
+
+    for (int i = 0; i < ticks; ++i)
     {
+        // Two thirds of the way through, after the menu has been exercised,
+        // raise a message box so the same run covers both. A plugin asking its
+        // host for one is the case that used to return NoSupport.
+        if (!dialogRaised && i == (ticks * 2) / 3)
+        {
+            dialogRaised = true;
+
+            api::IUnknown* raw{};
+            auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
+            if (dialogHost->createStockDialog(int32_t(api::StockDialogType::YesNo),
+                                              "Question", "Discard changes?", &raw) == ReturnCode::Ok && raw)
+            {
+                shared_ptr<api::IUnknown> owner;
+                owner.attach(raw);
+                if (auto dlg = owner.as<api::IStockDialog>(); dlg)
+                {
+                    std::printf("stock dialog created\n");
+                    std::fflush(stdout);
+                    dlg->showAsync(&g_dialogCallback);
+                }
+            }
+            else
+            {
+                std::printf("stock dialog NOT created\n");
+                std::fflush(stdout);
+            }
+        }
+
         frame.processEvents();
         frame.onTimer();
         usleep(10 * 1000);
@@ -185,6 +235,7 @@ int main(int argc, char** argv)
 
     std::printf("populateContextMenu called: %d\n", g_populateCalls);
     std::printf("item chosen: %d\n", g_chosenId);
+    std::printf("dialog answer: %d\n", g_dialogAnswer);
 
     frame.close();
     XDestroyWindow(dpy, parent);

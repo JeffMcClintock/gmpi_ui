@@ -2185,19 +2185,19 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode createBitmapBrush(drawing::api::IBitmap* bitmap, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
+    ReturnCode createBitmapBrush(drawing::api::IBitmap* sourceBitmap, const drawing::BrushProperties* brushProperties, drawing::api::IBitmapBrush** returnBitmapBrush) override
     {
         *returnBitmapBrush = {};
-        auto* bm = dynamic_cast<Bitmap*>(bitmap);
+        auto* bm = dynamic_cast<Bitmap*>(sourceBitmap);
         if (!bm)
             return ReturnCode::Fail;
         *returnBitmapBrush = new BitmapBrush(factory, bm, brushProperties);
         return ReturnCode::Ok;
     }
 
-    ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
+    ReturnCode drawBitmap(drawing::api::IBitmap* sourceBitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
     {
-        auto* bm = dynamic_cast<Bitmap*>(bitmap);
+        auto* bm = dynamic_cast<Bitmap*>(sourceBitmap);
         if (!bm || !destinationRectangle)
             return ReturnCode::NoSupport;
 

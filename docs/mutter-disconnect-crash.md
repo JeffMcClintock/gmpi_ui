@@ -1,9 +1,12 @@
 # mutter 46: compositor segfault when a client disconnects after xdg_popup use
 
-Draft bug report, ready to file against mutter (GNOME GitLab). Everything below
-was observed on this machine; the workaround shipped in
-`backends/DrawingFrameWayland.h` (`~Connection`), which is also where the notes
-were first recorded.
+**Not filed, and not to be filed.** Jef's call, 2026-08-05: an unsolicited
+report costs volunteer maintainers time, and this is very likely already fixed
+in a mutter newer than the 46.2 shipped with Ubuntu 24.04. Keep this as the
+record of WHY the workaround exists, not as a to-do.
+
+Everything below was observed on this machine; the workaround itself lives in
+`backends/DrawingFrameWayland.h` (`~Connection`).
 
 ## Environment
 
@@ -64,11 +67,11 @@ bug, which is why this is worth fixing in mutter rather than only working
 around: any Wayland client that uses popups and then crashes can take down a
 GNOME 46 session.
 
-## Filing notes
+## If this ever does need reporting
 
-- The retraced apport report on this machine is
-  `/var/crash/_usr_bin_gnome-shell.1000.crash` (root to read; already uploaded
-  to the Ubuntu error tracker once by whoopsie - see the `.uploaded` marker).
-- Search upstream for duplicates before filing: `g_signal_handler_disconnect`
-  + `wl_client_destroy` is a distinctive pair. mutter 47+ reworked some of the
-  resource-teardown paths, so also check whether 46.x backports exist.
+Only worth revisiting if the crash reappears on a CURRENT mutter - that would
+make it a live bug rather than a historical one. The retraced apport report on
+this machine is `/var/crash/_usr_bin_gnome-shell.1000.crash` (root to read;
+whoopsie already uploaded it once to the Ubuntu error tracker - see the
+`.uploaded` marker), and `g_signal_handler_disconnect` + `wl_client_destroy`
+is a distinctive enough pair to search upstream with.

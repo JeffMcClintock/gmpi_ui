@@ -239,6 +239,20 @@ public:
 			dy = sinf(a);
 			nsvg__xformPoint(&x, &y, dx * rx, dy * ry, t); // position
 			nsvg__xformVec(&tanx, &tany, -dy * rx * kappa, dx * ry * kappa, t); // tangent
+
+			// Snap the two endpoints to the values the caller actually gave us.
+			// The centre-parameterization round-trip above (atan2 -> cos/sin ->
+			// rotate -> translate) lands about one ULP away from them, and one ULP
+			// is not small when the coordinate is a few hundred: closing a figure
+			// on such a point leaves a hair-length segment whose direction is pure
+			// rounding noise, which a stroker reads as a ~180-degree turn and
+			// answers with a miter spike. That is what used to put a horizontal bar
+			// across the top of stroked circles (two arcs, start == end) once they
+			// were drawn far enough down the surface. The arc passes through these
+			// points exactly by definition, so there is nothing to approximate.
+			if (i == 0)     { x = x1; y = y1; }
+			if (i == ndivs) { x = x2; y = y2; }
+
 			if (i > 0)
 			{
 				//nsvg__cubicBezTo(p, px + ptanx, py + ptany, x - tanx, y - tany, x, y);

@@ -1285,17 +1285,36 @@ inline void widenFigure(const Figure& fig, float halfWidth, drawing::CapStyle ca
 {
     // Drop consecutive duplicates (zero-length segments have no direction, and
     // a closed figure repeats its start point).
+    //
+    // "Duplicate" has to be measured RELATIVE to the coordinates involved. A
+    // fixed epsilon cannot do the job: float spacing at a device coordinate of
+    // 500 is already ~6e-5, so an absolute 1e-6 test keeps hair-length segments
+    // whose direction is nothing but rounding noise. One of those at a vertex
+    // reads as a ~180-degree turn, and the miter join answers with a spike as
+    // long as the miter limit allows. 1e-5 relative is still far below a
+    // thousandth of a pixel at any plausible surface size, so nothing anyone
+    // meant to draw is lost.
+    const auto coincident = [](drawing::Point a, drawing::Point b) {
+        const float scale = (std::max)((std::max)(std::fabs(a.x), std::fabs(a.y)),
+                                       (std::max)((std::max)(std::fabs(b.x), std::fabs(b.y)), 1.0f));
+        return length(sub(a, b)) <= 1e-5f * scale;
+    };
+
     std::vector<drawing::Point> pts;
     pts.reserve(fig.points.size());
     for (const auto& p : fig.points)
     {
         if (!std::isfinite(p.x) || !std::isfinite(p.y))
             return; // poisoned figure: skip entirely
-        if (pts.empty() || length(sub(p, pts.back())) > 1e-6f)
+        if (pts.empty() || !coincident(p, pts.back()))
             pts.push_back(p);
     }
     const bool closed = fig.closed;
-    if (closed && pts.size() > 1 && length(sub(pts.back(), pts.front())) <= 1e-6f)
+    // A loop, not an if: removing the explicit closing point can expose another
+    // point that is itself a whisker from the start — a flattened circle ends on
+    // one, since its two arcs meet where the figure began — and that one closes
+    // the ring just as badly as the first.
+    while (closed && pts.size() > 1 && coincident(pts.back(), pts.front()))
         pts.pop_back();
 
     if (pts.empty())

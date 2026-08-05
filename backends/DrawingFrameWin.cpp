@@ -1562,6 +1562,15 @@ PlatformKeyListener::~PlatformKeyListener()
 
 ReturnCode PlatformKeyListener::showAsync(gmpi::api::IUnknown* callback)
 {
+	// A null callback took the whole host down here. Nothing in the signature
+	// says it is mandatory, and a key listener with nowhere to send keys is
+	// pointless rather than dangerous — so decline it instead of crashing.
+	if (!callback)
+	{
+		assert(false); // a key listener without a callback does nothing
+		return ReturnCode::Fail;
+	}
+
 	callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
 
 	// Create an HWND, capture keystrokes etc.

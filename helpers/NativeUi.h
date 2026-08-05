@@ -437,6 +437,62 @@ public:
 	GMPI_REFCOUNT;
 };
 
+// The key listener's std::function wrapper. It was the one callback in this
+// header with no helper, which is a trap rather than an omission: writing the
+// six-method interface by hand is enough friction that the tempting shortcut is
+// to pass nullptr to showAsync() instead — and the Win32 listener dereferences
+// it immediately, taking the host down with it.
+//
+// cut/copy/paste are part of the interface because a key listener stands in for
+// a text field; leave the clipboard handlers unset and they simply do nothing.
+class KeyListenerCallback : public gmpi::api::IKeyListenerCallback
+{
+	std::function<void(int32_t key, int32_t flags)> onDown;
+	std::function<void(int32_t key, int32_t flags)> onUp;
+	std::function<void(void)>                       onFocusLost;
+
+public:
+	// Set these if the listener should take part in clipboard operations.
+	std::function<std::string(void)>          onCut;
+	std::function<std::string(void)>          onCopy;
+	std::function<void(std::string_view)>     onPaste;
+
+	KeyListenerCallback(
+		std::function<void(int32_t, int32_t)> keyDown   = [](int32_t, int32_t) {},
+		std::function<void(int32_t, int32_t)> keyUp     = [](int32_t, int32_t) {},
+		std::function<void(void)>             lostFocus = []() {}
+	) : onDown(keyDown), onUp(keyUp), onFocusLost(lostFocus) {}
+
+	void onKeyDown(int32_t key, int32_t flags) override { onDown(key, flags); }
+	void onKeyUp  (int32_t key, int32_t flags) override { onUp(key, flags); }
+	void onLostFocus(gmpi::ReturnCode) override         { onFocusLost(); }
+
+	void cut(gmpi::api::IString* returnString) override
+	{
+		if (onCut && returnString)
+		{
+			const auto s = onCut();
+			returnString->setData(s.data(), static_cast<int32_t>(s.size()));
+		}
+	}
+	void copy(gmpi::api::IString* returnString) override
+	{
+		if (onCopy && returnString)
+		{
+			const auto s = onCopy();
+			returnString->setData(s.data(), static_cast<int32_t>(s.size()));
+		}
+	}
+	void paste(const char* text, size_t size) override
+	{
+		if (onPaste && text)
+			onPaste(std::string_view{ text, size });
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IKeyListenerCallback);
+	GMPI_REFCOUNT;
+};
+
 class ColorDialogCallback : public gmpi::api::IColorDialogCallback
 {
 	std::function<void(gmpi::drawing::Color)> onSuccess;

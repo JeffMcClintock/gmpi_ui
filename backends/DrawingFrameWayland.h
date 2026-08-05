@@ -40,6 +40,7 @@
 #include <cerrno>
 #include <cstdio>
 
+#include <chrono>
 #include <cctype>
 #include <cstring>
 #include <functional>
@@ -772,6 +773,43 @@ public:
     std::function<void(gmpi::drawing::Point, uint32_t serial)> onContextMenu;
 
 private:
+    // Double-click detection, by timing and movement.
+    //
+    // Wayland delivers no double-click event of its own - a client is expected
+    // to work it out - so this mirrors what DrawingFrameWin.cpp does for the
+    // same reason, and sets PointerFlags::Double on the second press of a fast
+    // pair. Without it, double-click features are simply inert: opening a
+    // container from the structure view, inserting a module by double-clicking
+    // the browser, and anything else that branches on the flag.
+    //
+    // 400ms and 5px are GNOME's own defaults (the interval is settable in
+    // org.gnome.desktop.peripherals.mouse double-click; reading gsettings from
+    // here would mean a GIO dependency for one integer).
+    bool isDoubleClick(double x, double y)
+    {
+        using clock = std::chrono::steady_clock;
+        constexpr auto kInterval = std::chrono::milliseconds(400);
+        constexpr double kSlopPx = 5.0;
+
+        const auto now = clock::now();
+        const bool inTime = lastPressTime_.time_since_epoch().count() != 0
+                         && (now - lastPressTime_) <= kInterval;
+        const bool inPlace = std::abs(x - lastPressX_) <= kSlopPx
+                          && std::abs(y - lastPressY_) <= kSlopPx;
+
+        lastPressX_ = x;
+        lastPressY_ = y;
+
+        if (inTime && inPlace)
+        {
+            lastPressTime_ = {};   // do not chain a third click into another double
+            return true;
+        }
+
+        lastPressTime_ = now;
+        return false;
+    }
+
     // What every pointer event carries, whatever it is.
     //
     // Matches DrawingFrameWin.h's makePointerFlags: InContact, Primary and
@@ -884,6 +922,10 @@ private:
 
     double   x_ = 0, y_ = 0;
     bool     inside_ = false;
+
+    // Previous left-press, for isDoubleClick.
+    std::chrono::steady_clock::time_point lastPressTime_{};
+    double lastPressX_ = -1000.0, lastPressY_ = -1000.0;
     uint32_t buttons_ = 0;
     uint32_t lastGrabSerial_ = 0;
 };
@@ -1021,8 +1063,14 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
     // and nothing else, which is exactly how "the mouse works but dragging
     // does not" presented. Windows sets it on every button-DOWN
     // (makePointerFlags in DrawingFrameWin.h); this mirrors that.
-    const int32_t flags = in.basePointerFlags() | bit
-                        | (pressed ? int32_t(gmpi::api::PointerFlags::New) : 0);
+    int32_t flags = in.basePointerFlags() | bit
+                  | (pressed ? int32_t(gmpi::api::PointerFlags::New) : 0);
+
+    // Only the left button doubles: nothing in the editor asks for a
+    // double-right-click, and tracking every button would make an alternating
+    // left-right pair read as a double.
+    if (pressed && button == 272 && in.isDoubleClick(in.x_, in.y_))
+        flags |= int32_t(gmpi::api::PointerFlags::Double);
 
     if (in.pointerPreFilter && in.pointerPreFilter(in.x_, in.y_, pressed))
         return;

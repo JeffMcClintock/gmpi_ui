@@ -3650,6 +3650,15 @@ public:
     bool running() const { return running_; }
     void close() { running_ = false; }
 
+    // Retitle a mapped window. create() sets the initial title; an editor's
+    // title changes whenever the document does, and the compositor owns the
+    // title bar - so it has to be told.
+    void setTitle(const std::string& title)
+    {
+        if (frame_)
+            libdecor_frame_set_title(frame_, title.c_str());
+    }
+
     // Return false to VETO the close (typically while an async prompt is up).
     // Unset means close immediately, which is the right default for a window
     // with nothing to lose.

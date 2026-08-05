@@ -4,3 +4,4 @@ JuceLibraryCode/
 .DS_Store
 *.json
 /.claude
+tests/x11_menu_test

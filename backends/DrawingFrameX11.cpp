@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -26,6 +27,15 @@ namespace
 
 constexpr int kDoubleClickMs = 400;   // GNOME's default
 constexpr int kDoubleClickSlopPx = 5;
+
+// Menu metrics, deliberately the same as the Wayland backend's so a plugin
+// looks the same whichever way the host embeds it.
+constexpr int kMenuItemHeight      = 24;
+constexpr int kMenuSeparatorHeight = 9;
+constexpr int kMenuTickGutter      = 26;
+constexpr int kMenuArrowGutter     = 22;
+constexpr int kMenuPadV            = 4;
+constexpr int kMenuMinWidth        = 120;
 
 // X11 delivers wheel notches as button 4/5 (vertical) and 6/7 (horizontal).
 // One notch is 120, the same unit Windows uses and what the clients expect.
@@ -98,6 +108,14 @@ struct X11DrawingFrame::Impl
 
     gmpi::api::IDrawingClient* client{};
     gmpi::api::IInputClient*   inputClient{};
+
+    // Menus are children of the ROOT window, not of ours: an override-redirect
+    // window inside the plugin's window would be clipped to it, and a menu
+    // routinely extends past the plugin's edge. They share this Display and so
+    // this connection fd, which is what lets the host's single registered
+    // handler service them - see routeToMenus in processEvents.
+    std::vector<class X11PopupMenu*> menus;
+    gmpi::drawing::api::ITextFormat* menuFont{};
 
     gmpi::drawing::Rect dirty{};
     bool  dirtyAll = true;
@@ -205,6 +223,111 @@ struct X11DrawingFrame::Impl
         imageHeight = h;
         return true;
     }
+};
+
+// ---------------------------------------------------------------------------
+// X11PopupMenu - IPopupMenu on an override-redirect window
+// ---------------------------------------------------------------------------
+// X11 gives us a window that the window manager will not touch, and a pointer
+// grab. There is no menu widget, so the items are drawn here with the same CPU
+// renderer and the same metrics as the Wayland backend - a plugin should look
+// the same whichever way its host embeds it.
+//
+// Three things shape this:
+//
+//  * NO EVENT LOOP. The frame owns the connection, and the host owns the frame.
+//    Menu windows live on the same Display, so their events arrive on the same
+//    fd and X11DrawingFrame::processEvents routes them here by window id. A
+//    modal "run the menu until it closes" loop would deadlock the host.
+//
+//  * The menu is a child of the ROOT window. Inside the plugin's window it
+//    would be clipped to it, and menus routinely extend past the edge.
+//
+//  * The grab belongs to the ROOT menu. A submenu does not take its own -
+//    nested grabs on one pointer are how you end up with an X server nobody can
+//    click, which on a single-seat machine means a reboot.
+class X11PopupMenu : public gmpi::api::IPopupMenu
+{
+public:
+    using Item = gmpi::popupmenu::Item;
+
+    X11PopupMenu(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+                 gmpi::drawing::api::ITextFormat* font, gmpi::drawing::Rect anchor)
+        : frame_(frame), factory_(factory), font_(font), anchor_(anchor)
+    {
+        frame_.menus.push_back(this);
+    }
+
+    ~X11PopupMenu()
+    {
+        destroyWindow();
+        std::erase(frame_.menus, this);
+    }
+
+    // --- IContextItemSink / IPopupMenu ---
+    gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags,
+                             gmpi::api::IUnknown* itemCallback) override
+    {
+        return builder_.addItem(text, id, flags, itemCallback);
+    }
+    gmpi::ReturnCode setAlignment(int32_t) override { return gmpi::ReturnCode::Ok; }
+    gmpi::ReturnCode showAsync() override;
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IPopupMenu);
+        GMPI_QUERYINTERFACE(gmpi::api::IContextItemSink);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    const std::vector<Item>& items() const { return builder_.items(); }
+    Window window() const { return window_; }
+    bool isDismissed() const { return dismissed_; }
+
+    // Called by the frame for any event naming one of our windows. Returns true
+    // if it was ours.
+    bool handleEvent(const XEvent& e);
+
+    // See selfOwned_. Called by showContextMenu after it has addRef'd.
+    void takeSelfOwnership() { selfOwned_ = true; }
+
+private:
+    int  measuredWidth() const;
+    int  measuredHeight() const;
+    int  itemTop(int index) const;
+    int  itemAt(int y) const;
+    void present();
+    void destroyWindow();
+    void openChildFor(int index);
+    void closeChild();
+    void choose(const Item& item);
+    void dismiss();
+    X11PopupMenu* rootMenu();
+
+    X11DrawingFrame::Impl& frame_;
+    gmpi::cpugfx::Factory& factory_;
+    gmpi::drawing::api::ITextFormat* font_{};
+    gmpi::drawing::Rect anchor_{};
+    gmpi::popupmenu::Builder builder_;
+
+    Window window_{};
+    XImage* image_{};
+    GC      gc_{};
+    int     width_ = 0, height_ = 0;
+
+    int  hovered_ = -1;
+    bool dismissed_ = false;
+    bool grabbed_ = false;
+
+    // A context menu outlives the call that created it: showContextMenu hands
+    // the reference over rather than destroying the menu on the way out. The
+    // menu drops it when dismissed. Submenus are owned by their parent instead.
+    bool selfOwned_ = false;
+
+    X11PopupMenu* child_{};
+    X11PopupMenu* parentMenu_{};
 };
 
 // ---------------------------------------------------------------------------
@@ -443,6 +566,26 @@ void X11DrawingFrame::processEvents()
         XEvent e{};
         XNextEvent(d.display, &e);
 
+        // Menus first, and by window id. They share this connection, so their
+        // events arrive here; a menu that has dismissed itself is dropped from
+        // the list by its destructor, so an event naming a dead window matches
+        // nothing and falls through harmlessly.
+        {
+            bool consumed = false;
+            // A copy: handling can dismiss a menu, which mutates d.menus.
+            const auto menus = d.menus;
+            for (auto* m : menus)
+            {
+                if (m->handleEvent(e))
+                {
+                    consumed = true;
+                    break;
+                }
+            }
+            if (consumed)
+                continue;
+        }
+
         switch (e.type)
         {
         case Expose:
@@ -536,8 +679,19 @@ void X11DrawingFrame::processEvents()
             XSetInputFocus(d.display, d.window, RevertToParent, CurrentTime);
 
             if (d.inputClient)
-                d.inputClient->onPointerDown(
-                    { static_cast<float>(b.x) / d.scale, static_cast<float>(b.y) / d.scale }, flags);
+            {
+                const gmpi::drawing::Point pt{ static_cast<float>(b.x) / d.scale,
+                                               static_cast<float>(b.y) / d.scale };
+                const auto handled = d.inputClient->onPointerDown(pt, flags);
+
+                // Right-click that the client did not claim: ask it what belongs
+                // on a context menu, and show one if it says anything. Gated on
+                // Unhandled so a control with its own right-drag keeps it, and
+                // an empty menu is the client saying "not here" - put nothing on
+                // screen rather than an empty box. Mirrors the Wayland frame.
+                if (b.button == Button3 && handled == gmpi::ReturnCode::Unhandled)
+                    showContextMenu(pt);
+            }
             break;
         }
 
@@ -692,6 +846,493 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
 
     d.dirtyAll = false;
     d.dirty = {};
+}
+
+// ---------------------------------------------------------------------------
+// X11PopupMenu
+// ---------------------------------------------------------------------------
+
+int X11PopupMenu::itemTop(int index) const
+{
+    int top = kMenuPadV;
+    for (int i = 0; i < index && i < (int)items().size(); ++i)
+        top += items()[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+    return top;
+}
+
+int X11PopupMenu::measuredHeight() const
+{
+    return itemTop(int(items().size())) + kMenuPadV;
+}
+
+int X11PopupMenu::measuredWidth() const
+{
+    // Without a text engine there is nothing to measure against, so fall back to
+    // a width that at least shows the highlight and the structure.
+    float widest = 0.0f;
+    if (font_)
+    {
+        for (const auto& item : items())
+        {
+            if (item.separator)
+                continue;
+            gmpi::drawing::Size sz{};
+            font_->getTextExtentU(item.label.c_str(), int32_t(item.label.size()), 10000.0f, &sz);
+            widest = (std::max)(widest, sz.width);
+        }
+    }
+
+    return (std::max)(kMenuMinWidth,
+                      int(widest) + kMenuTickGutter + kMenuArrowGutter + 8);
+}
+
+int X11PopupMenu::itemAt(int y) const
+{
+    int top = kMenuPadV;
+    for (size_t i = 0; i < items().size(); ++i)
+    {
+        const int h = items()[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+        if (y >= top && y < top + h)
+            return items()[i].separator ? -1 : int(i);
+        top += h;
+    }
+    return -1;
+}
+
+gmpi::ReturnCode X11PopupMenu::showAsync()
+{
+    auto& d = frame_;
+    if (!d.display || items().empty())
+        return gmpi::ReturnCode::Fail;
+
+    width_  = measuredWidth();
+    height_ = measuredHeight();
+
+    // Anchor is in the FRAME's coordinates; a root-window child needs screen
+    // coordinates, so translate through the frame's window.
+    int rootX = 0, rootY = 0;
+    Window ignored{};
+    XTranslateCoordinates(d.display, d.window, DefaultRootWindow(d.display),
+                          int(anchor_.left * d.scale), int(anchor_.bottom * d.scale),
+                          &rootX, &rootY, &ignored);
+
+    // Keep it on screen. A menu that opens past the bottom edge is a menu whose
+    // last items cannot be reached.
+    const int screenW = DisplayWidth(d.display, d.screen);
+    const int screenH = DisplayHeight(d.display, d.screen);
+    if (rootX + width_ > screenW)  rootX = (std::max)(0, screenW - width_);
+    if (rootY + height_ > screenH) rootY = (std::max)(0, rootY - height_ - int(anchor_.bottom - anchor_.top));
+
+    XSetWindowAttributes attr{};
+    attr.override_redirect = True;   // the window manager must not decorate or move it
+    attr.background_pixel = 0;
+    attr.border_pixel = 0;
+    attr.colormap = XCreateColormap(d.display, DefaultRootWindow(d.display), d.visual, AllocNone);
+    attr.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask
+                    | PointerMotionMask | KeyPressMask | LeaveWindowMask;
+
+    window_ = XCreateWindow(d.display, DefaultRootWindow(d.display),
+                            rootX, rootY, unsigned(width_), unsigned(height_),
+                            0, d.depth, InputOutput, d.visual,
+                            CWOverrideRedirect | CWBorderPixel | CWColormap | CWEventMask,
+                            &attr);
+    if (!window_)
+        return gmpi::ReturnCode::Fail;
+
+    gc_ = XCreateGC(d.display, window_, 0, nullptr);
+    XMapRaised(d.display, window_);
+
+    // Only the root menu grabs. GrabModeAsync on both so the server keeps
+    // delivering to us rather than freezing the device, and owner_events True so
+    // our own windows still get their events normally.
+    if (!parentMenu_)
+    {
+        XGrabPointer(d.display, window_, True,
+                     ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                     GrabModeAsync, GrabModeAsync, 0, 0, CurrentTime);
+        XGrabKeyboard(d.display, window_, True, GrabModeAsync, GrabModeAsync, CurrentTime);
+        grabbed_ = true;
+    }
+
+    present();
+    XFlush(d.display);
+    return gmpi::ReturnCode::Ok;
+}
+
+void X11PopupMenu::present()
+{
+    auto& d = frame_;
+    if (!d.display || !window_ || width_ <= 0 || height_ <= 0)
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_.createCpuRenderTarget({ uint32_t(width_), uint32_t(height_) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt)
+    {
+        if (rtRaw) rtRaw->release();
+        return;
+    }
+
+    rt->beginDraw();
+
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    // Same palette as the Wayland menu, deliberately.
+    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
+    rt->clear(&bg);
+
+    auto* ink    = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
+    auto* grey   = brush({ 0.45f, 0.46f, 0.50f, 1.0f });
+    auto* hilite = brush({ 0.16f, 0.42f, 0.75f, 1.0f });
+    auto* rule   = brush({ 0.28f, 0.29f, 0.32f, 1.0f });
+
+    for (size_t i = 0; i < items().size(); ++i)
+    {
+        const auto& item = items()[i];
+        const float top = float(itemTop(int(i)));
+
+        if (item.separator)
+        {
+            if (rule)
+            {
+                const gmpi::drawing::Rect r{ 6.f, top + kMenuSeparatorHeight * 0.5f,
+                                             float(width_) - 6.f,
+                                             top + kMenuSeparatorHeight * 0.5f + 1.f };
+                rt->fillRectangle(&r, rule);
+            }
+            continue;
+        }
+
+        if (int(i) == hovered_ && !item.grayed && hilite)
+        {
+            const gmpi::drawing::Rect r{ 3.f, top, float(width_) - 3.f, top + kMenuItemHeight };
+            rt->fillRectangle(&r, hilite);
+        }
+
+        auto* fg = item.grayed ? grey : ink;
+        if (!fg || !font_)
+            continue;
+
+        if (item.ticked)
+        {
+            const char* tick = "\xe2\x9c\x93";
+            const gmpi::drawing::Rect r{ 8.f, top + 3.f, 26.f, top + kMenuItemHeight };
+            rt->drawTextU(tick, 3, font_, &r, fg, 0);
+        }
+
+        const gmpi::drawing::Rect r{ float(kMenuTickGutter) + 2.f, top + 3.f,
+                                     float(width_) - kMenuArrowGutter, top + kMenuItemHeight };
+        rt->drawTextU(item.label.c_str(), uint32_t(item.label.size()), font_, &r, fg, 0);
+
+        if (!item.submenu.empty())
+        {
+            const char* arrow = "\xe2\x80\xba";
+            const gmpi::drawing::Rect a{ float(width_) - 20.f, top + 3.f,
+                                         float(width_) - 6.f, top + kMenuItemHeight };
+            rt->drawTextU(arrow, 3, font_, &a, fg, 0);
+        }
+    }
+
+    if (ink)    ink->release();
+    if (grey)   grey->release();
+    if (hilite) hilite->release();
+    if (rule)   rule->release();
+
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        if (!image_)
+        {
+            auto* data = static_cast<char*>(std::calloc(size_t(width_) * height_, 4));
+            if (data)
+                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
+                                      data, width_, height_, 32, width_ * 4);
+            if (!image_ && data)
+                std::free(data);
+        }
+
+        if (image_)
+        {
+            const auto& s = bm->surface;
+            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
+                                                   image_->bytes_per_line, width_, height_,
+                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
+            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, width_, height_ });
+
+            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0,
+                      unsigned(width_), unsigned(height_));
+        }
+    }
+
+    if (bmRaw) bmRaw->release();
+    rtRaw->release();
+
+    XFlush(d.display);
+}
+
+void X11PopupMenu::destroyWindow()
+{
+    auto& d = frame_;
+    closeChild();
+
+    if (!d.display)
+        return;
+
+    if (grabbed_)
+    {
+        XUngrabPointer(d.display, CurrentTime);
+        XUngrabKeyboard(d.display, CurrentTime);
+        grabbed_ = false;
+    }
+
+    if (image_)  { XDestroyImage(image_); image_ = {}; }
+    if (gc_)     { XFreeGC(d.display, gc_); gc_ = {}; }
+    if (window_) { XDestroyWindow(d.display, window_); window_ = {}; }
+
+    XFlush(d.display);
+}
+
+X11PopupMenu* X11PopupMenu::rootMenu()
+{
+    auto* m = this;
+    while (m->parentMenu_)
+        m = m->parentMenu_;
+    return m;
+}
+
+void X11PopupMenu::closeChild()
+{
+    if (!child_)
+        return;
+
+    auto* c = child_;
+    child_ = nullptr;
+    c->dismissed_ = true;
+    c->destroyWindow();
+    c->release();
+}
+
+void X11PopupMenu::openChildFor(int index)
+{
+    closeChild();
+
+    if (index < 0 || index >= (int)items().size() || items()[index].submenu.empty())
+        return;
+
+    // Anchor in the PARENT's coordinates: the right edge of the hovered item.
+    // showAsync translates through the frame's window, so express it there by
+    // going via the root - the submenu's parent is this menu, not the frame.
+    auto& d = frame_;
+    int rootX = 0, rootY = 0, frameX = 0, frameY = 0;
+    Window ignored{};
+    XTranslateCoordinates(d.display, window_, DefaultRootWindow(d.display),
+                          width_ - 6, itemTop(index), &rootX, &rootY, &ignored);
+    XTranslateCoordinates(d.display, DefaultRootWindow(d.display), d.window,
+                          rootX, rootY, &frameX, &frameY, &ignored);
+
+    const gmpi::drawing::Rect itemRect{ float(frameX) / d.scale, float(frameY) / d.scale,
+                                        float(frameX) / d.scale + 1.f,
+                                        float(frameY) / d.scale };
+
+    auto* c = new X11PopupMenu(frame_, factory_, font_, itemRect);
+    c->builder_.adopt(items()[index].submenu);
+    c->parentMenu_ = this;
+
+    child_ = c;
+    c->showAsync();
+}
+
+void X11PopupMenu::choose(const Item& item)
+{
+    auto callback = item.callback;   // copy: as<> is non-const
+    if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
+        cb->onComplete(gmpi::ReturnCode::Ok, item.id);
+
+    // Picking from a submenu closes the whole menu, not just that level.
+    // `this` may be gone after it, so touch nothing below.
+    rootMenu()->dismiss();
+}
+
+void X11PopupMenu::dismiss()
+{
+    if (dismissed_)
+        return;
+    dismissed_ = true;
+    destroyWindow();
+
+    // LAST: this may delete us, so nothing may touch a member afterwards.
+    if (selfOwned_)
+    {
+        selfOwned_ = false;
+        release();
+    }
+}
+
+bool X11PopupMenu::handleEvent(const XEvent& e)
+{
+    if (!window_ || e.xany.window != window_)
+        return false;
+
+    switch (e.type)
+    {
+    case Expose:
+        present();
+        return true;
+
+    case MotionNotify:
+    {
+        const int index = itemAt(e.xmotion.y);
+        if (index != hovered_)
+        {
+            hovered_ = index;
+            present();
+
+            // Hovering a plain item closes any open submenu; hovering a header
+            // opens its own. Both are what every desktop menu does.
+            if (index >= 0 && !items()[index].submenu.empty())
+                openChildFor(index);
+            else
+                closeChild();
+        }
+        return true;
+    }
+
+    case ButtonPress:
+        return true;   // act on release, like every other menu
+
+    case ButtonRelease:
+    {
+        const int index = itemAt(e.xbutton.y);
+
+        // Outside the menu: dismiss. With owner_events True the grab still
+        // reports coordinates relative to this window, so a click elsewhere
+        // lands outside its bounds.
+        if (e.xbutton.x < 0 || e.xbutton.y < 0 ||
+            e.xbutton.x >= width_ || e.xbutton.y >= height_)
+        {
+            rootMenu()->dismiss();
+            return true;
+        }
+
+        if (index >= 0 && !items()[index].grayed)
+        {
+            // A submenu header is not a choice - clicking it must not dismiss.
+            if (items()[index].submenu.empty())
+                choose(items()[index]);
+            else
+                openChildFor(index);
+        }
+        return true;
+    }
+
+    case KeyPress:
+    {
+        KeySym keysym{};
+        char buf[8]{};
+        XLookupString(const_cast<XKeyEvent*>(&e.xkey), buf, sizeof(buf) - 1, &keysym, nullptr);
+
+        if (keysym == XK_Escape)
+        {
+            rootMenu()->dismiss();
+            return true;
+        }
+
+        auto step = [&](int dir)
+        {
+            const int n = int(items().size());
+            for (int k = 1; k <= n; ++k)
+            {
+                const int i = ((hovered_ < 0 ? (dir > 0 ? -1 : 0) : hovered_) + dir * k + 2 * n) % n;
+                if (!items()[i].separator && !items()[i].grayed)
+                {
+                    hovered_ = i;
+                    present();
+                    return;
+                }
+            }
+        };
+
+        if (keysym == XK_Down)  { step(+1); return true; }
+        if (keysym == XK_Up)    { step(-1); return true; }
+
+        if ((keysym == XK_Return || keysym == XK_KP_Enter) &&
+            hovered_ >= 0 && !items()[hovered_].grayed)
+        {
+            if (items()[hovered_].submenu.empty())
+                choose(items()[hovered_]);
+            else
+                openChildFor(hovered_);
+            return true;
+        }
+        return true;
+    }
+
+    default:
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// IDialogHost on the frame
+// ---------------------------------------------------------------------------
+
+void X11DrawingFrame::setMenuFont(gmpi::drawing::api::ITextFormat* font)
+{
+    impl_->menuFont = font;
+}
+
+void X11DrawingFrame::showContextMenu(gmpi::drawing::Point pt)
+{
+    auto& d = *impl_;
+    if (!d.inputClient)
+        return;
+
+    gmpi::api::IUnknown* raw{};
+    const gmpi::drawing::Rect anchor{ pt.x, pt.y, pt.x + 1.f, pt.y + 1.f };
+    if (createPopupMenu(&anchor, &raw) != gmpi::ReturnCode::Ok || !raw)
+        return;
+
+    gmpi::shared_ptr<gmpi::api::IUnknown> owner;
+    owner.attach(raw);   // createPopupMenu returned a fresh reference
+
+    auto popup = owner.as<gmpi::api::IPopupMenu>();
+    if (!popup)
+        return;
+
+    if (d.inputClient->populateContextMenu(pt, popup.get()) != gmpi::ReturnCode::Ok)
+        return;
+
+    // The menu outlives this call. Hand our reference over rather than letting
+    // the shared_ptr destroy it on the way out; dismiss() drops it.
+    if (popup->showAsync() != gmpi::ReturnCode::Ok)
+        return;
+
+    popup->addRef();
+    static_cast<X11PopupMenu*>(popup.get())->takeSelfOwnership();
+}
+
+gmpi::ReturnCode X11DrawingFrame::createPopupMenu(const gmpi::drawing::Rect* r,
+                                                  gmpi::api::IUnknown** returnPopupMenu)
+{
+    *returnPopupMenu = {};
+
+    if (!impl_->display)
+        return gmpi::ReturnCode::Fail;
+
+    auto* menu = new X11PopupMenu(*impl_, factory_, impl_->menuFont,
+                                  r ? *r : gmpi::drawing::Rect{});
+    *returnPopupMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
+    return gmpi::ReturnCode::Ok;
 }
 
 } // namespace gmpi::hosting

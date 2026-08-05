@@ -30,13 +30,16 @@
 #include <memory>
 
 #include "backends/CpuGfx.h"
+#include "backends/PopupMenuModel.h"
 #include "helpers/NativeUi.h"
 #include "GmpiSdkCommon.h"
 
 namespace gmpi::hosting
 {
 
-class X11DrawingFrame : public gmpi::api::IDrawingHost, public gmpi::api::IInputHost
+class X11DrawingFrame : public gmpi::api::IDrawingHost,
+                        public gmpi::api::IInputHost,
+                        public gmpi::api::IDialogHost
 {
 public:
     X11DrawingFrame();
@@ -108,6 +111,42 @@ public:
     gmpi::ReturnCode getCapture(bool& returnValue) override;
     gmpi::ReturnCode releaseCapture() override;
 
+    // --- IDialogHost ---
+    // Menus are DRAWN here, not handed to a widget: X11 supplies an
+    // override-redirect window and a pointer grab and nothing else, exactly as
+    // Wayland supplies a positioned grabbing surface and nothing else. GTK and
+    // Qt draw their own for the same reason.
+    //
+    // Text needs a format the CPU backend cannot invent - see setMenuFont. A
+    // menu with no font draws its boxes and highlight and no labels, which is
+    // a confusing enough failure to be worth stating.
+    gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r,
+                                     gmpi::api::IUnknown** returnPopupMenu) override;
+
+    // Not implemented on X11 yet. Explicitly NoSupport with the out-param
+    // cleared, rather than left to a null dereference in the caller: a plugin
+    // that asks for an in-place edit should find out, not crash.
+    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
+    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
+    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createFileDialog(int32_t, gmpi::api::IUnknown** r) override
+    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createStockDialog(int32_t, const char*, const char*, gmpi::api::IUnknown** r) override
+    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown** r) override
+    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+
+    // The font menus draw their labels with. The CPU backend ships no font code,
+    // so the application or plugin wrapper supplies this, exactly as it supplies
+    // the text engine.
+    void setMenuFont(gmpi::drawing::api::ITextFormat* font);
+
+    // Right-click that the drawing client did not claim: ask it to populate a
+    // menu and show it. Called from the button handler; exposed so an app can
+    // raise the same menu from a keyboard shortcut.
+    void showContextMenu(gmpi::drawing::Point point);
+
     // --- IUnknown ---
     // The editor owns the frame for its whole life, so it is not refcounted -
     // same arrangement as the Windows and Wayland frames.
@@ -116,6 +155,7 @@ public:
         *returnInterface = {};
         GMPI_QUERYINTERFACE(gmpi::api::IDrawingHost);
         GMPI_QUERYINTERFACE(gmpi::api::IInputHost);
+        GMPI_QUERYINTERFACE(gmpi::api::IDialogHost);
 
         if (parameterHost_)
             return parameterHost_->queryInterface(iid, returnInterface);
@@ -125,6 +165,10 @@ public:
     GMPI_REFCOUNT_NO_DELETE;
 
 private:
+    // Menus are drawn by this backend, share the frame's Display, and are
+    // serviced from its event pump - so they need at the frame's internals.
+    friend class X11PopupMenu;
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
     gmpi::cpugfx::Factory factory_;

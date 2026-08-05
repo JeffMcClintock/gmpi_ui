@@ -52,6 +52,7 @@
 
 #include "backends/CpuGfx.h"
 #include "backends/CpuEncode.h"
+#include "backends/PopupMenuModel.h"
 #include "helpers/NativeUi.h"
 #include "RefCountMacros.h"
 #include "backends/PortalFileDialog.h"
@@ -1336,16 +1337,9 @@ class WaylandPopupMenu : public gmpi::api::IPopupMenu, public IPointerTarget,
                          public IPopupTeardown
 {
 public:
-    struct Item
-    {
-        std::string label;
-        int32_t     id{};
-        bool        separator{};
-        bool        ticked{};
-        bool        grayed{};
-        std::vector<Item> submenu;              // non-empty => opens a child popup
-        gmpi::shared_ptr<gmpi::api::IUnknown> callback;
-    };
+    // The tree, and the rebuild of it from the flat addItem stream, are shared
+    // with the X11 backend - see backends/PopupMenuModel.h.
+    using Item = gmpi::popupmenu::Item;
 
     WaylandPopupMenu(Connection& connection, InputDispatch& input,
                      xdg_surface* parentXdg, gmpi::cpugfx::Factory& factory,
@@ -1354,7 +1348,6 @@ public:
         : connection_(connection), input_(input), parentXdg_(parentXdg),
           factory_(factory), font_(font), anchor_(anchor)
     {
-        stack_.push_back(&root_);
     }
 
     ~WaylandPopupMenu() override { destroySurfaces(); }
@@ -1387,7 +1380,7 @@ public:
     GMPI_REFCOUNT;
 
     // exposed for headless tests: the tree rebuilt from the flat stream
-    const std::vector<Item>& items() const { return root_; }
+    const std::vector<Item>& items() const { return builder_.items(); }
 
     // True once the menu has completed or been dismissed. The distinction that
     // matters: clicking a submenu header must NOT dismiss, clicking an item must.
@@ -1400,7 +1393,7 @@ private:
     void  openChildFor(int index);
     void  onChildDismissed(WaylandPopupMenu* c);
     WaylandPopupMenu* rootMenu();
-    void  choose(Item& item);
+    void  choose(const Item& item);
     void  dismiss();
     int   itemAt(double y) const;
     int   itemTop(int index) const;
@@ -1419,9 +1412,7 @@ private:
     gmpi::drawing::api::ITextFormat* font_{};
     gmpi::drawing::Rect anchor_{};
 
-    std::vector<Item>   root_;
-    std::vector<std::vector<Item>*> stack_;
-    bool pendingSeparator_ = false;   // deferred, so leading/doubled ones vanish
+    gmpi::popupmenu::Builder builder_;
 
     wl_surface*  surface_{};
     xdg_surface* xdgSurface_{};
@@ -1447,76 +1438,25 @@ constexpr int kMenuArrowGutter = 22;
 inline gmpi::ReturnCode WaylandPopupMenu::addItem(const char* text, int32_t id, int32_t flags,
                                                   gmpi::api::IUnknown* itemCallback)
 {
-    using F = gmpi::api::PopupMenuFlags;
-
-    const bool subBegin = (flags & int32_t(F::SubMenuBegin)) != 0;
-    const bool subEnd   = (flags & int32_t(F::SubMenuEnd)) != 0;
-    const bool separator = (flags & (int32_t(F::Separator) | int32_t(F::Break))) != 0;
-
-    auto strip = [](const char* s)
-    {
-        // '&' marks a mnemonic; no platform here renders one, so drop it as the
-        // Win32, Cocoa and JUCE backends all do
-        std::string r;
-        for (const char* p = s ? s : ""; *p; ++p)
-            if (*p != '&') r += *p;
-        return r;
-    };
-
-    if (subBegin)
-    {
-        stack_.back()->push_back(Item{ strip(text), id });
-        stack_.push_back(&stack_.back()->back().submenu);
-        pendingSeparator_ = false;
-        return gmpi::ReturnCode::Ok;
-    }
-
-    if (subEnd)
-    {
-        if (stack_.size() > 1)
-            stack_.pop_back();
-        pendingSeparator_ = false;
-        return gmpi::ReturnCode::Ok;
-    }
-
-    if (separator)
-    {
-        pendingSeparator_ = true;   // committed only if a real item follows
-        return gmpi::ReturnCode::Ok;
-    }
-
-    if (pendingSeparator_)
-    {
-        if (!stack_.back()->empty())
-            stack_.back()->push_back(Item{ {}, 0, true });
-        pendingSeparator_ = false;
-    }
-
-    Item item{ strip(text), id };
-    item.ticked = (flags & int32_t(F::Ticked)) != 0;
-    item.grayed = (flags & int32_t(F::Grayed)) != 0;
-    item.callback = itemCallback;   // operator= addRefs; the T* ctor does not
-
-    stack_.back()->push_back(std::move(item));
-    return gmpi::ReturnCode::Ok;
+    return builder_.addItem(text, id, flags, itemCallback);
 }
 
 inline int WaylandPopupMenu::itemTop(int index) const
 {
     int top = 4;
-    for (int i = 0; i < index && i < (int)root_.size(); ++i)
-        top += root_[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+    for (int i = 0; i < index && i < (int)items().size(); ++i)
+        top += items()[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
     return top;
 }
 
 inline int WaylandPopupMenu::itemAt(double y) const
 {
     int top = 4;
-    for (size_t i = 0; i < root_.size(); ++i)
+    for (size_t i = 0; i < items().size(); ++i)
     {
-        const int h = root_[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+        const int h = items()[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
         if (y >= top && y < top + h)
-            return root_[i].separator ? -1 : int(i);
+            return items()[i].separator ? -1 : int(i);
         top += h;
     }
     return -1;
@@ -1525,7 +1465,7 @@ inline int WaylandPopupMenu::itemAt(double y) const
 inline int WaylandPopupMenu::measuredHeight() const
 {
     int h = 8;
-    for (const auto& i : root_)
+    for (const auto& i : items())
         h += i.separator ? kMenuSeparatorHeight : kMenuItemHeight;
     return h;
 }
@@ -1534,7 +1474,7 @@ inline int WaylandPopupMenu::measuredWidth() const
 {
     float widest = 90.0f;
 
-    for (const auto& i : root_)
+    for (const auto& i : items())
     {
         if (i.separator || !font_)
             continue;
@@ -1591,9 +1531,9 @@ inline void WaylandPopupMenu::present()
     auto* hilite = brush({ 0.16f, 0.42f, 0.75f, 1.0f });
     auto* rule   = brush({ 0.28f, 0.29f, 0.32f, 1.0f });
 
-    for (size_t i = 0; i < root_.size(); ++i)
+    for (size_t i = 0; i < items().size(); ++i)
     {
-        const auto& item = root_[i];
+        const auto& item = items()[i];
         const float top = float(itemTop(int(i)));
 
         if (item.separator)
@@ -1771,15 +1711,15 @@ inline void WaylandPopupMenu::onButton(double, double y, uint32_t, bool pressed,
 
     // A submenu header has no id of its own: clicking it opens (or keeps) the
     // child rather than completing the menu with a meaningless value.
-    if (index >= 0 && !root_[index].submenu.empty())
+    if (index >= 0 && !items()[index].submenu.empty())
     {
         if (childItem_ != index)
             openChildFor(index);
         return;
     }
 
-    if (index >= 0 && !root_[index].grayed)
-        choose(root_[index]);
+    if (index >= 0 && !items()[index].grayed)
+        choose(items()[index]);
     else
         dismiss();
 }
@@ -1796,9 +1736,10 @@ inline void WaylandPopupMenu::onKey(uint32_t keysym, uint32_t)
     }
 }
 
-inline void WaylandPopupMenu::choose(Item& item)
+inline void WaylandPopupMenu::choose(const Item& item)
 {
-    if (auto cb = item.callback.as<gmpi::api::IPopupMenuCallback>(); cb)
+    auto callback = item.callback;   // copy: as<> is non-const
+    if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
         cb->onComplete(gmpi::ReturnCode::Ok, item.id);
 
     // Picking from a submenu closes the entire menu, not just that level. Dismiss
@@ -1841,7 +1782,7 @@ inline void WaylandPopupMenu::openChildFor(int index)
 {
     closeChild();
 
-    if (index < 0 || index >= (int)root_.size() || root_[index].submenu.empty())
+    if (index < 0 || index >= (int)items().size() || items()[index].submenu.empty())
         return;
     if (!xdgSurface_)
         return;   // we are not mapped; a popup parent must be a live xdg_surface
@@ -1853,7 +1794,7 @@ inline void WaylandPopupMenu::openChildFor(int index)
                                         float(w),     float(top + kMenuItemHeight) };
 
     auto* c = new WaylandPopupMenu(connection_, input_, xdgSurface_, factory_, font_, itemRect);
-    c->root_       = root_[index].submenu;
+    c->builder_.adopt(items()[index].submenu);
     c->parentMenu_ = this;
     c->isSubmenu_  = true;
 

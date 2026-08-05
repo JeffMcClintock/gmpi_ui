@@ -221,6 +221,9 @@ public:
 
     wl_display*    display()    const { return display_; }
     wl_compositor* compositor() const { return compositor_; }
+    // Only a plugin view needs this: a toplevel owns its surface outright, a
+    // plugin has to hang one off the host's.
+    wl_subcompositor* subcompositor() const { return subcompositor_; }
     wl_shm*        shm()        const { return shm_; }
     xdg_wm_base*   wmBase()     const { return wmBase_; }
     wl_seat*       seat()       const { return seat_; }
@@ -253,6 +256,7 @@ private:
     wl_display*    display_{};
     wl_registry*   registry_{};
     wl_compositor* compositor_{};
+    wl_subcompositor* subcompositor_{};
     wl_shm*        shm_{};
     xdg_wm_base*   wmBase_{};
     wl_seat*       seat_{};
@@ -278,6 +282,8 @@ inline void Connection::globalAdd(void* data, wl_registry* reg, uint32_t name,
 
     if (!strcmp(iface, wl_compositor_interface.name))
         c.compositor_ = static_cast<wl_compositor*>(wl_registry_bind(reg, name, &wl_compositor_interface, 4));
+    else if (!strcmp(iface, wl_subcompositor_interface.name))
+        c.subcompositor_ = static_cast<wl_subcompositor*>(wl_registry_bind(reg, name, &wl_subcompositor_interface, 1));
     else if (!strcmp(iface, wl_shm_interface.name))
         c.shm_ = static_cast<wl_shm*>(wl_registry_bind(reg, name, &wl_shm_interface, 1));
     else if (!strcmp(iface, xdg_wm_base_interface.name))
@@ -346,6 +352,14 @@ public:
     // which is a silent and confusing failure - hence saying so here.
     gmpi::cpugfx::Factory& drawingFactory() { return factory_; }
 
+    // Anything this frame does not implement itself - IEditorHost above all -
+    // is forwarded here. A plugin's parameter pins take their host from a
+    // queryInterface for IEditorHost during setHost; leave it unset and the
+    // first knob drag dereferences null. The standalone app does not need it
+    // (its views get an editor host by another route), which is exactly why
+    // this was easy to miss until a plugin used the same frame.
+    void setFallbackHost(gmpi::api::IUnknown* paramHost) { parameterHost_ = paramHost; }
+
     // --- IDrawingHost ---
     gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
     {
@@ -396,12 +410,17 @@ public:
         *returnInterface = {};
         GMPI_QUERYINTERFACE(gmpi::api::IDrawingHost);
         GMPI_QUERYINTERFACE(gmpi::api::IInputHost);
+
+        if (parameterHost_)
+            return parameterHost_->queryInterface(iid, returnInterface);
+
         return gmpi::ReturnCode::NoSupport;
     }
     GMPI_REFCOUNT_NO_DELETE;
 
 protected:
     gmpi::cpugfx::Factory factory_;
+    gmpi::api::IUnknown*  parameterHost_{};
     gmpi::drawing::Rect   dirty_{};
     bool  dirtyAll_ = true;
     bool  needsMeasure_ = true;
@@ -3953,6 +3972,191 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
     if (timerFd >= 0)
         ::close(timerFd);   // ::, or this resolves to our own close() member
 }
+
+// ---------------------------------------------------------------------------
+// WaylandSubsurfaceFrame - a plugin view inside the host's window
+// ---------------------------------------------------------------------------
+// The sibling of WaylandToplevel promised above. VST3 3.8.0 defines this shape
+// exactly (kPlatformTypeWaylandSurfaceID, pluginterfaces/gui/iwaylandframe.h):
+//
+//   * the plugin does NOT connect to the system compositor. It calls
+//     IWaylandHost::openWaylandConnection() and gets a wl_display connected to
+//     the HOST, which acts as a compositor for its plugins. Connection::adopt()
+//     takes it, and never disconnects it - closeWaylandConnection() does that.
+//
+//   * IPlugView::attached() receives the host frame's wl_surface, of unknown
+//     role. We create our own surface and give it the wl_subsurface role with
+//     that as parent.
+//
+//   * everything else - popups, dialogs - needs an xdg_surface to anchor to,
+//     and a subsurface is not one. The host supplies it through
+//     IWaylandFrame::getParentSurface(), which is why popupParent() has been a
+//     virtual on WaylandFrameBase from the start.
+//
+// Three rules that are easy to get wrong and silent when you do:
+//   - a subsurface starts SYNCHRONIZED: our commits do nothing until the parent
+//     commits. set_desync() is what makes the view update on its own.
+//   - there is no configure event for a subsurface, so buffers are legal
+//     immediately. The base gates on surfaceConfigured_, which we set at create.
+//   - the host owns its surface. We never commit it, never resize it, never
+//     touch its state - the specification says so explicitly.
+class WaylandSubsurfaceFrame : public WaylandFrameBase
+{
+public:
+    explicit WaylandSubsurfaceFrame(Connection& connection) : WaylandFrameBase(connection) {}
+
+    ~WaylandSubsurfaceFrame() override
+    {
+        // while this object is still complete, so inputDispatch() resolves
+        detachClient();
+
+        // Same ordering rule as the toplevel: anything created ON the surface
+        // must go before the surface, which the base destructor destroys.
+        if (frameCb_)     { wl_callback_destroy(frameCb_); frameCb_ = nullptr; }
+        if (subsurface_)  { wl_subsurface_destroy(subsurface_); subsurface_ = nullptr; }
+    }
+
+    // parentSurface is the pointer handed to IPlugView::attached().
+    bool create(wl_surface* parentSurface, int w, int h)
+    {
+        if (!parentSurface || !connection_.subcompositor())
+            return false;
+
+        createSurface();
+        if (!surface_)
+            return false;
+
+        subsurface_ = wl_subcompositor_get_subsurface(connection_.subcompositor(),
+                                                      surface_, parentSurface);
+        if (!subsurface_)
+            return false;
+
+        // Without this the view is frozen: our commits would only take effect
+        // when the host next commits its own surface, which it has no reason to
+        // do while only the plugin is animating.
+        wl_subsurface_set_desync(subsurface_);
+
+        // Deliberately no set_position: the default is (0,0), which is what we
+        // want, and set_position is double-buffered on the PARENT - applying it
+        // would mean committing the host's surface.
+
+        setLogicalSize(w, h);
+        surfaceConfigured_ = true;   // no configure for a subsurface
+
+        input_.bindSeat(connection_);
+        input_.setSurface(surface_);
+
+        present();
+        requestFrameCallback();
+        wl_surface_commit(surface_);
+        wl_display_flush(connection_.display());
+        return true;
+    }
+
+    // The host's xdg_surface, from IWaylandFrame::getParentSurface(). Also
+    // reports where that surface sits relative to our top-left, which is what
+    // popup anchoring has to be expressed in.
+    void setPopupParent(xdg_surface* hostXdgSurface, gmpi::drawing::Rect parentRect)
+    {
+        hostXdgSurface_ = hostXdgSurface;
+        parentRect_ = parentRect;
+    }
+
+    xdg_surface* popupParent() const override { return hostXdgSurface_; }
+
+    // Our coordinates are relative to OUR surface; xdg_positioner anchors
+    // against the parent xdg_surface's window geometry. getParentSurface hands
+    // back the offset between the two, so this is a translation - the same job
+    // libdecor_frame_translate_coordinate does for a decorated toplevel.
+    gmpi::drawing::Rect toFrameCoordinates(const gmpi::drawing::Rect& r) const override
+    {
+        return { r.left   - parentRect_.left, r.top    - parentRect_.top,
+                 r.right  - parentRect_.left, r.bottom - parentRect_.top };
+    }
+
+    InputDispatch& input() { return input_; }
+    InputDispatch& inputDispatch() override { return input_; }
+
+    // The host told us the view resized. Only our own surface changes; the
+    // parent is the host's business.
+    void resize(int w, int h)
+    {
+        if (w <= 0 || h <= 0)
+            return;
+
+        setLogicalSize(w, h);
+        present();
+        wl_surface_commit(surface_);
+        wl_display_flush(connection_.display());
+    }
+
+    // --- the host owns the event loop (VST3 Linux::IRunLoop) ---
+
+    int displayFd() const { return wl_display_get_fd(connection_.display()); }
+
+    // Called when the run loop reports the fd readable. prepare_read/read_events
+    // rather than wl_display_dispatch, so that a queue already holding events
+    // cannot leave us blocked in a read that never returns.
+    void dispatch()
+    {
+        auto* d = connection_.display();
+        if (!d)
+            return;
+
+        while (wl_display_prepare_read(d) != 0)
+            wl_display_dispatch_pending(d);
+
+        wl_display_flush(d);
+
+        if (wl_display_read_events(d) < 0)
+            return;
+
+        wl_display_dispatch_pending(d);
+        wl_display_flush(d);
+    }
+
+    // Called on the run loop's timer. Never reads the socket, so it can run at
+    // any moment without racing dispatch().
+    void tick()
+    {
+        auto* d = connection_.display();
+        if (!d)
+            return;
+
+        wl_display_dispatch_pending(d);
+        wl_display_flush(d);
+    }
+
+private:
+    static void frameDone(void* data, wl_callback* cb, uint32_t)
+    {
+        auto& self = *static_cast<WaylandSubsurfaceFrame*>(data);
+        wl_callback_destroy(cb);
+        self.frameCb_ = nullptr;
+
+        if (self.hasPendingPaint())
+            self.present();
+
+        // Unconditional, for the same reason as the toplevel: a frame callback
+        // only arms on the next commit, so skipping it ends the chain silently
+        // and the view never updates again.
+        self.requestFrameCallback();
+        wl_surface_commit(self.surface_);
+    }
+
+    void requestFrameCallback()
+    {
+        static const wl_callback_listener listener = { frameDone };
+        frameCb_ = wl_surface_frame(surface_);
+        wl_callback_add_listener(frameCb_, &listener, this);
+    }
+
+    wl_subsurface* subsurface_{};
+    wl_callback*   frameCb_{};
+    xdg_surface*   hostXdgSurface_{};
+    gmpi::drawing::Rect parentRect_{};
+    InputDispatch  input_;
+};
 
 } // namespace wayland
 } // namespace gmpi

@@ -4,11 +4,13 @@
 // X11DrawingFrame - an IDrawingClient painted into a window EMBEDDED in some
 // other application's window.
 //
-// This exists for plugins. VST3 defines exactly one Linux embedding mechanism -
-// kPlatformTypeX11EmbedWindowID, an X11 Window id handed to IPlugView::attached
-// - and there is no Wayland equivalent in the specification (3.7.14 and
-// earlier). A Wayland-native host therefore reaches its plugins through
-// XWayland, and so do we. See docs/vst3-linux-editor.md.
+// This exists for plugins. VST3 defines two Linux embeddings:
+// kPlatformTypeX11EmbedWindowID (an X11 Window id, available in every version)
+// and kPlatformTypeWaylandSurfaceID (added in 3.8.0, handled by
+// WaylandSubsurfaceFrame in DrawingFrameWayland.h). This is the X11 one, and it
+// remains the path for any host that offers no Wayland - including a
+// Wayland-native host that embeds its plugins through XWayland. See
+// docs/vst3-linux-editor.md.
 //
 // Two rules follow from being a guest inside a host process, and they shape the
 // whole design:

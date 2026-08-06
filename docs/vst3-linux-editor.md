@@ -95,6 +95,35 @@ Three things that are silent when you get them wrong:
    Conversely, a module that compiles `vst3editor.cpp` as well already has
    them, and adding ours would be a duplicate definition.
 
+4. **Nothing pumps the portal bus or the clipboard for you.** The standalone
+   app does both in `WaylandToplevel::runEventLoop`, so it is easy to write a
+   dialog, watch it work in the app, and ship a plugin where it does not. The
+   portal answers on the D-Bus session bus and the clipboard on the wayland
+   data device; neither is the display's pending queue, and a plugin has no
+   loop of its own. `WaylandSubsurfaceFrame::tick()` pumps them from the host's
+   timer. Without it a file chooser opens, the user picks a file, and the
+   callback never fires - no error, just silence.
+
+### The portal chooser is not parented to the host window
+
+A file dialog is the desktop portal's own window in another process, and
+parenting one needs an exported handle string (`wayland:<handle>`) from
+`zxdg_exporter_v2`, which only exports **toplevels**. A plugin's view is a
+subsurface, and 3.8.0 offers no way to get a handle for the host's window:
+`getParentSurface()` returns an `xdg_surface`, `getParentToplevel()` an
+`xdg_toplevel`, and the protocol has no accessor from either back to the
+`wl_surface` the exporter would need - nor is the host obliged to implement the
+exporter at all. So the chooser appears unparented, and this cannot be fixed
+from the plugin side.
+
+Note this is specific to the *portal*. Dialogs we draw ourselves - the message
+box and the colour picker - are real `xdg_toplevel`s of our own, and those are
+parented properly: `getParentToplevel()` is passed to
+`WaylandSubsurfaceFrame::setParentToplevel()` and reaches
+`xdg_toplevel_set_parent`, which is exactly the use the header describes. X11
+has no such gap either, because the portal takes an `x11:<hex window id>`
+parent and a plugin knows its own window id.
+
 ## Testing
 
 `GMPI_Wrappers/tests/` has a host per path, because the Steinberg validator

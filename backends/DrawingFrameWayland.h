@@ -2497,6 +2497,19 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
     if (edge) edge->release();
 }
 
+// libdecor owns the xdg_toplevel, so reach through it to parent a dialog on the
+// window it belongs to. Parenting is a plain xdg-shell call and
+// libdecor_frame_set_parent takes another libdecor_frame, which the host's
+// toplevel is not - in a plugin it arrives as a bare xdg_toplevel from
+// IWaylandFrame::getParentToplevel, exactly the use that header describes.
+inline void setDecorParent(libdecor_frame* frame, xdg_toplevel* parentToplevel)
+{
+    if (!parentToplevel || !frame)
+        return;
+    if (auto* self = libdecor_frame_get_xdg_toplevel(frame))
+        xdg_toplevel_set_parent(self, parentToplevel);
+}
+
 // ---------------------------------------------------------------------------
 // WaylandColorDialog - IColorDialog, drawn by us
 // ---------------------------------------------------------------------------
@@ -2514,8 +2527,10 @@ class WaylandColorDialog : public gmpi::api::IColorDialog, public IPointerTarget
 public:
     WaylandColorDialog(Connection& connection, InputDispatch& input, libdecor* decor,
                        gmpi::cpugfx::Factory& factory, gmpi::drawing::api::ITextFormat* font,
-                       gmpi::drawing::Color initialColor)
-        : connection_(connection), input_(input), decor_(decor), factory_(factory), font_(font)
+                       gmpi::drawing::Color initialColor,
+                       xdg_toplevel* parentToplevel = nullptr)
+        : connection_(connection), input_(input), decor_(decor), factory_(factory), font_(font),
+          parentToplevel_(parentToplevel)
     {
         setFromLinear(initialColor);
     }
@@ -2600,6 +2615,7 @@ private:
 
     Connection&    connection_;
     InputDispatch& input_;
+    xdg_toplevel*  parentToplevel_{};
     libdecor*      decor_{};
     gmpi::cpugfx::Factory& factory_;
     gmpi::drawing::api::ITextFormat* font_{};
@@ -2691,6 +2707,7 @@ inline gmpi::ReturnCode WaylandColorDialog::showAsync(gmpi::api::IUnknown* callb
     }
 
     libdecor_frame_set_title(frame_, "Choose a Colour");
+    setDecorParent(frame_, parentToplevel_);
     libdecor_frame_map(frame_);
 
     input_.registerSurface(surface_, this);
@@ -3060,17 +3077,6 @@ private:
 
     Connection&    connection_;
     InputDispatch& input_;
-    // libdecor owns the xdg_toplevel, so reach through it. Parenting is a plain
-    // xdg-shell call - libdecor_frame_set_parent takes another libdecor_frame,
-    // and the host's toplevel is not one.
-    void setParentToplevel()
-    {
-        if (!parentToplevel_ || !frame_)
-            return;
-        if (auto* self = libdecor_frame_get_xdg_toplevel(frame_))
-            xdg_toplevel_set_parent(self, parentToplevel_);
-    }
-
     xdg_toplevel* parentToplevel_{};
     libdecor*      decor_{};
     gmpi::cpugfx::Factory& factory_;
@@ -3164,7 +3170,7 @@ inline gmpi::ReturnCode WaylandStockDialog::showAsync(gmpi::api::IUnknown* callb
 
     libdecor_frame_set_title(frame_, title_.c_str());
     libdecor_frame_map(frame_);
-    setParentToplevel();
+    setDecorParent(frame_, parentToplevel_);
 
     input_.registerSurface(surface_, this);
     callback_ = callback;
@@ -3384,7 +3390,8 @@ inline gmpi::ReturnCode WaylandFrameBase::createColorDialog(
         return gmpi::ReturnCode::NoSupport;
 
     auto* dlg = new WaylandColorDialog(connection_, inputDispatch(), decorContext(),
-                                       factory_, menuFont_, initialColor);
+                                       factory_, menuFont_, initialColor,
+                                       parentToplevel());
     *returnDialog = static_cast<gmpi::api::IColorDialog*>(dlg);
     return gmpi::ReturnCode::Ok;
 }

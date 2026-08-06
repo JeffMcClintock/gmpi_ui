@@ -37,7 +37,7 @@ done
 trap 'kill $XVFB 2>/dev/null' EXIT
 sleep 2
 
-DISPLAY=$DISP "$HERE/x11_menu_test" 9 >"$OUT/test.log" 2>&1 & TEST_PID=$!
+DISPLAY=$DISP "$HERE/x11_menu_test" 25 >"$OUT/test.log" 2>&1 & TEST_PID=$!
 for _ in $(seq 1 40); do grep -q "frame open" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
 sleep 0.7
 
@@ -70,6 +70,25 @@ sleep 0.5
 sleep 0.3
 "$TOOLS/usr/bin/xdotool" key Escape >/dev/null 2>&1
 sleep 0.5
+
+# The colour picker: click in the saturation/value square, then OK.
+for _ in $(seq 1 80); do grep -q "colour dialog created" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
+sleep 0.5    # the next phase waits for this one, so no rush
+xwd -root -silent > "$OUT/colour.xwd" 2>/dev/null
+CW=$("$TOOLS/usr/bin/xdotool" search --name "^Colour$" | head -1)
+if [ -n "$CW" ]; then
+    eval "$("$TOOLS/usr/bin/xdotool" getwindowgeometry --shell "$CW")"
+    # Top-right of the sat/val square is a saturated, bright colour.
+    "$TOOLS/usr/bin/xdotool" mousemove $((X + 20 + 180)) $((Y + 20 + 20)) sleep 0.3 click 1 >/dev/null 2>&1
+    sleep 0.4
+    xwd -root -silent > "$OUT/colour2.xwd" 2>/dev/null
+    # OK is the rightmost button on the bottom row.
+    "$TOOLS/usr/bin/xdotool" mousemove $((X + WIDTH - 20 - 46)) $((Y + HEIGHT - 20 - 15)) \
+        sleep 0.3 click 1 >/dev/null 2>&1
+    sleep 0.5
+else
+    echo "note: could not find the colour window by name"
+fi
 
 # The test raises a message box two thirds of the way through. Wait for it to
 # say so rather than guessing, then click "Yes" - the first button, rightmost.
@@ -130,4 +149,7 @@ grep -q "^edit result: 'new' complete 1$" "$OUT/test.log" \
 grep -q "^keys seen: 'xyz' ended 1$" "$OUT/test.log" \
   || { echo "FAIL: the key listener did not receive raw keys / end on Escape (see test.log)"; exit 1; }
 
-echo "PASS: menu, dialog, text edit and key listener all work"
+grep -q "^colour picked 1:" "$OUT/test.log" \
+  || { echo "FAIL: the colour picker did not report a colour (see test.log)"; exit 1; }
+
+echo "PASS: menu, dialog, text edit, key listener and colour picker all work"

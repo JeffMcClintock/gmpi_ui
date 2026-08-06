@@ -45,6 +45,8 @@ std::string g_editResult;
 bool        g_editComplete = false;
 std::string g_keysSeen;
 bool        g_keyListenerEnded = false;
+gmpi::drawing::Color g_pickedColor{};
+bool                 g_colorPicked = false;
 
 class MenuCallback : public api::IPopupMenuCallback
 {
@@ -92,6 +94,33 @@ gmpi::sdk::KeyListenerCallback g_keyCallback{
     [](int32_t key, int32_t) { if (key >= 32 && key < 127) g_keysSeen += char(key); },
     [](int32_t, int32_t) {},
     []() { g_keyListenerEnded = true; } };
+
+bool g_colorDone = false;
+
+// Not sdk::ColorDialogCallback: that only forwards an Ok, and the phase machine
+// below has to advance on a cancel too.
+class ColorCallback : public api::IColorDialogCallback
+{
+public:
+    void onComplete(ReturnCode result, gmpi::drawing::Color color) override
+    {
+        g_colorDone = true;
+        if (result == ReturnCode::Ok)
+        {
+            g_pickedColor = color;
+            g_colorPicked = true;
+        }
+    }
+    ReturnCode queryInterface(const api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(api::IColorDialogCallback);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT_NO_DELETE;
+};
+
+ColorCallback g_colorCallback;
 
 // A client that draws a flat colour and offers a context menu. Deliberately
 // minimal: this is a test of the frame, not of a widget toolkit.
@@ -210,14 +239,34 @@ int main(int argc, char** argv)
     // No event loop of our own beyond this: the frame never blocks, so a plain
     // poll-and-sleep stands in for the host's run loop.
     const int ticks = seconds * 100;
-    bool dialogRaised = false;
+    int phase = 0;
+    int phaseStart = 0;
 
     for (int i = 0; i < ticks; ++i)
     {
-        // An in-place edit, early: the harness types into it and presses Return.
-        if (i == ticks / 5)
+        // Phases advance when the PREVIOUS one finishes, not on a tick count.
+        // Wall time drifts from the tick index - a repaint is not free - and
+        // when it drifted far enough the colour picker opened before the
+        // harness had sent Escape to the key listener, and swallowed it. Each
+        // phase also has a deadline so a broken step cannot wedge the run.
+        auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
+        const int deadline = ticks / 5;
+
+        // phaseStart is 0 until the first advance, so phase 0's deadline is
+        // measured from the start of the run - which is what we want.
+        auto advance = [&](const char* label) {
+            ++phase;
+            phaseStart = i;
+            std::printf("%s\n", label);
+            std::fflush(stdout);
+        };
+
+        const bool overdue = (i - phaseStart) > deadline;
+
+        // Phase 0 waits for the MENU to have been used: the harness does that
+        // first, and an edit raised before then would swallow the right-click.
+        if (phase == 0 && (g_chosenId >= 0 || overdue))
         {
-            auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
             api::IUnknown* raw{};
             const gmpi::drawing::Rect where{ 20.f, 120.f, 220.f, 146.f };
             if (dialogHost->createTextEdit(&where, &raw) == ReturnCode::Ok && raw)
@@ -227,57 +276,49 @@ int main(int argc, char** argv)
                 if (auto edit = owner.as<api::ITextEdit>(); edit)
                 {
                     edit->setText("old");
-                    std::printf("text edit created\n");
-                    std::fflush(stdout);
                     edit->showAsync(&g_editCallback);
                 }
             }
+            advance("text edit created");
         }
-
-        // Then a raw-key sink.
-        if (i == (ticks * 2) / 5)
+        else if (phase == 1 && (g_editComplete || overdue))
         {
-            auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
             api::IUnknown* raw{};
             if (dialogHost->createKeyListener(nullptr, &raw) == ReturnCode::Ok && raw)
             {
                 shared_ptr<api::IUnknown> owner;
                 owner.attach(raw);
                 if (auto kl = owner.as<api::IKeyListener>(); kl)
-                {
-                    std::printf("key listener created\n");
-                    std::fflush(stdout);
                     kl->showAsync(&g_keyCallback);
-                }
             }
+            advance("key listener created");
         }
-
-        // Two thirds of the way through, after the menu has been exercised,
-        // raise a message box so the same run covers both. A plugin asking its
-        // host for one is the case that used to return NoSupport.
-        if (!dialogRaised && i == (ticks * 2) / 3)
+        else if (phase == 2 && (g_keyListenerEnded || overdue))
         {
-            dialogRaised = true;
-
             api::IUnknown* raw{};
-            auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
+            // A mid blue, so a click elsewhere in the square is a visible change.
+            const drawing::Color seed{ 0.05f, 0.25f, 0.6f, 1.0f };
+            if (dialogHost->createColorDialog(seed, &raw) == ReturnCode::Ok && raw)
+            {
+                shared_ptr<api::IUnknown> owner;
+                owner.attach(raw);
+                if (auto cd = owner.as<api::IColorDialog>(); cd)
+                    cd->showAsync(&g_colorCallback);
+            }
+            advance("colour dialog created");
+        }
+        else if (phase == 3 && (g_colorDone || overdue))
+        {
+            api::IUnknown* raw{};
             if (dialogHost->createStockDialog(int32_t(api::StockDialogType::YesNo),
                                               "Question", "Discard changes?", &raw) == ReturnCode::Ok && raw)
             {
                 shared_ptr<api::IUnknown> owner;
                 owner.attach(raw);
                 if (auto dlg = owner.as<api::IStockDialog>(); dlg)
-                {
-                    std::printf("stock dialog created\n");
-                    std::fflush(stdout);
                     dlg->showAsync(&g_dialogCallback);
-                }
             }
-            else
-            {
-                std::printf("stock dialog NOT created\n");
-                std::fflush(stdout);
-            }
+            advance("stock dialog created");
         }
 
         frame.processEvents();
@@ -290,6 +331,8 @@ int main(int argc, char** argv)
     std::printf("dialog answer: %d\n", g_dialogAnswer);
     std::printf("edit result: '%s' complete %d\n", g_editResult.c_str(), int(g_editComplete));
     std::printf("keys seen: '%s' ended %d\n", g_keysSeen.c_str(), int(g_keyListenerEnded));
+    std::printf("colour picked %d: %.3f %.3f %.3f a %.3f\n", int(g_colorPicked),
+                g_pickedColor.r, g_pickedColor.g, g_pickedColor.b, g_pickedColor.a);
 
     // The file chooser goes through the XDG portal - D-Bus, not X11. Check the
     // part this backend actually owns: that createFileDialog hands back a

@@ -146,11 +146,10 @@ public:
     // A message box: a transient-for toplevel, decorated by the window manager.
     gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
                                        gmpi::api::IUnknown** returnDialog) override;
-    // The one still unimplemented. Explicitly NoSupport with the out-param
-    // cleared rather than left to a null dereference in the caller - and last
-    // in the queue, because plugins rarely want a colour picker.
-    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown** r) override
-    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    // An HSV picker in a transient-for toplevel. The picker itself is
+    // gmpi::colorpicker, shared with the Wayland one.
+    gmpi::ReturnCode createColorDialog(gmpi::drawing::Color initialColor,
+                                       gmpi::api::IUnknown** returnDialog) override;
 
     // The font menus draw their labels with. The CPU backend ships no font code,
     // so the application or plugin wrapper supplies this, exactly as it supplies
@@ -186,6 +185,7 @@ private:
     friend class X11StockDialog;
     friend class X11TextEdit;
     friend class X11KeyListener;
+    friend class X11ColorDialog;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

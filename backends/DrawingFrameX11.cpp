@@ -7,6 +7,16 @@
 #include <string>
 #include <vector>
 
+// EVERY gmpi header before Xlib. Xlib #defines None, Status, Bool and Success;
+// gmpi::colorpicker::Model has a `Region::None` and gmpi::api::PinDatatype has
+// a `Bool`, and getting this order wrong turns them into integer literals with
+// an error twenty headers from the cause. X11Clipboard.h is the exception - it
+// is ours but it needs Xlib - so it comes after.
+#include "backends/CpuEncode.h"
+#include "backends/PortalFileDialog.h"
+#include "backends/TextEditModel.h"
+#include "backends/ColorPickerModel.h"
+
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -14,15 +24,13 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
-#include "backends/CpuEncode.h"
-#include "backends/PortalFileDialog.h"
-#include "backends/TextEditModel.h"
 #include "backends/X11Clipboard.h"
 
-// Xlib's macros, disposed of the moment we no longer need them. `None` and
-// `Status` in particular collide with ordinary C++ names; the rest are here so
-// that a later edit cannot reintroduce the problem by accident.
+// Xlib's macros, disposed of now that its headers are in. `None` and `Status`
+// collide with ordinary C++ names - Region::None below is one - and nothing
+// here wants either: a null X resource is spelled 0.
 #undef Status
+#undef None
 
 namespace gmpi::hosting
 {
@@ -144,6 +152,7 @@ struct X11DrawingFrame::Impl
     // Dialogs are toplevels, not children of ours, but they still live on this
     // Display and so are serviced from this frame's event pump.
     std::vector<class X11StockDialog*> dialogs;
+    std::vector<class X11ColorDialog*> colorDialogs;
 
     gmpi::drawing::api::ITextFormat* menuFont{};
 
@@ -537,6 +546,61 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// X11ColorDialog - IColorDialog as a transient-for toplevel
+// ---------------------------------------------------------------------------
+// Same window arrangement as X11StockDialog: an ordinary toplevel the window
+// manager decorates, transient for the plugin's window so it stays above the
+// DAW. The picker itself - conversions, layout, hit-testing and drawing - is
+// gmpi::colorpicker, shared with the Wayland one.
+class X11ColorDialog : public gmpi::api::IColorDialog
+{
+public:
+    X11ColorDialog(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+                   gmpi::drawing::api::ITextFormat* font, gmpi::drawing::Color initialColor)
+        : frame_(frame), factory_(factory), font_(font)
+    {
+        model_.setFromLinear(initialColor);
+        frame_.colorDialogs.push_back(this);
+    }
+
+    ~X11ColorDialog() { destroyWindow(); }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IColorDialog);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    bool handleEvent(const XEvent& e);
+
+private:
+    using Region = gmpi::colorpicker::Model::Region;
+
+    void present();
+    void destroyWindow();
+    void complete(gmpi::ReturnCode result);
+
+    X11DrawingFrame::Impl& frame_;
+    gmpi::cpugfx::Factory& factory_;
+    gmpi::drawing::api::ITextFormat* font_{};
+    gmpi::colorpicker::Model model_;
+
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+
+    Window  window_{};
+    XImage* image_{};
+    GC      gc_{};
+    Atom    wmDelete_{};
+    int     hoveredButton_ = -1;
+    Region  dragging_ = Region::None;
+    bool    completed_ = false;
+};
+
+// ---------------------------------------------------------------------------
 // X11StockDialog - IStockDialog as a transient-for toplevel
 // ---------------------------------------------------------------------------
 // Much simpler than the Wayland equivalent: X11 has a window manager, so the
@@ -851,6 +915,7 @@ void X11DrawingFrame::processEvents()
             // mutates the lists we are walking.
             const auto menus = d.menus;
             const auto dialogs = d.dialogs;
+            const auto colorDialogs = d.colorDialogs;
             for (auto* m : menus)
             {
                 if (m->handleEvent(e))
@@ -862,6 +927,14 @@ void X11DrawingFrame::processEvents()
             for (auto* d2 : dialogs)
             {
                 if (!consumed && d2->handleEvent(e))
+                {
+                    consumed = true;
+                    break;
+                }
+            }
+            for (auto* cd : colorDialogs)
+            {
+                if (!consumed && cd->handleEvent(e))
                 {
                     consumed = true;
                     break;
@@ -1805,6 +1878,238 @@ void X11KeyListener::handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, b
 }
 
 // ---------------------------------------------------------------------------
+// X11ColorDialog
+// ---------------------------------------------------------------------------
+
+gmpi::ReturnCode X11ColorDialog::showAsync(gmpi::api::IUnknown* callback)
+{
+    auto& d = frame_;
+    if (!d.display)
+        return gmpi::ReturnCode::Fail;
+
+    const int w = model_.contentWidth();
+    const int h = model_.contentHeight();
+
+    // Centred on the host's window, then clamped - the picker is wider than
+    // many plugin views, so the raw result is often off-screen.
+    int rootX = 0, rootY = 0;
+    Window ignored{};
+    XTranslateCoordinates(d.display, d.window, DefaultRootWindow(d.display),
+                          (d.width - w) / 2, (d.height - h) / 2, &rootX, &rootY, &ignored);
+
+    const int screenW = DisplayWidth(d.display, d.screen);
+    const int screenH = DisplayHeight(d.display, d.screen);
+    rootX = (std::clamp)(rootX, 0, (std::max)(0, screenW - w));
+    rootY = (std::clamp)(rootY, 0, (std::max)(0, screenH - h));
+
+    XSetWindowAttributes attr{};
+    attr.border_pixel = 0;
+    attr.colormap = XCreateColormap(d.display, DefaultRootWindow(d.display), d.visual, AllocNone);
+    attr.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask
+                    | PointerMotionMask | KeyPressMask | StructureNotifyMask;
+
+    window_ = XCreateWindow(d.display, DefaultRootWindow(d.display),
+                            rootX, rootY, unsigned(w), unsigned(h),
+                            0, d.depth, InputOutput, d.visual,
+                            CWBorderPixel | CWColormap | CWEventMask, &attr);
+    if (!window_)
+        return gmpi::ReturnCode::Fail;
+
+    XSetTransientForHint(d.display, window_, d.window);
+    XStoreName(d.display, window_, "Colour");
+
+    wmDelete_ = XInternAtom(d.display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(d.display, window_, &wmDelete_, 1);
+
+    gc_ = XCreateGC(d.display, window_, 0, nullptr);
+    XMapRaised(d.display, window_);
+
+    // Same reasoning as the stock dialog: without focus, Escape and Return
+    // never arrive, and nothing guarantees a window manager is running.
+    XSync(d.display, False);
+    focusIfViewable(d.display, window_);
+
+    callback_ = callback;
+    addRef();   // alive until the user answers
+
+    present();
+    XFlush(d.display);
+    return gmpi::ReturnCode::Ok;
+}
+
+void X11ColorDialog::present()
+{
+    auto& d = frame_;
+    if (!d.display || !window_)
+        return;
+
+    const int w = model_.contentWidth();
+    const int h = model_.contentHeight();
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_.createCpuRenderTarget({ uint32_t(w), uint32_t(h) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt)
+    {
+        if (rtRaw) rtRaw->release();
+        return;
+    }
+
+    rt->beginDraw();
+    gmpi::colorpicker::render(rt, model_, font_, hoveredButton_);
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        if (!image_)
+        {
+            auto* data = static_cast<char*>(std::calloc(size_t(w) * h, 4));
+            if (data)
+                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
+                                      data, w, h, 32, w * 4);
+            if (!image_ && data)
+                std::free(data);
+        }
+
+        if (image_)
+        {
+            const auto& s = bm->surface;
+            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
+                                                   image_->bytes_per_line, w, h,
+                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
+            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w, h });
+            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0, unsigned(w), unsigned(h));
+        }
+    }
+
+    if (bmRaw) bmRaw->release();
+    rtRaw->release();
+
+    XFlush(d.display);
+}
+
+void X11ColorDialog::destroyWindow()
+{
+    auto& d = frame_;
+    std::erase(d.colorDialogs, this);
+
+    if (!d.display)
+        return;
+
+    if (image_)  { XDestroyImage(image_); image_ = {}; }
+    if (gc_)     { XFreeGC(d.display, gc_); gc_ = {}; }
+    if (window_) { XDestroyWindow(d.display, window_); window_ = {}; }
+
+    XFlush(d.display);
+}
+
+void X11ColorDialog::complete(gmpi::ReturnCode result)
+{
+    if (completed_)
+        return;
+    completed_ = true;
+
+    auto cb = callback_;
+    const auto picked = model_.color();
+    callback_ = {};
+
+    destroyWindow();
+
+    if (auto sink = cb.as<gmpi::api::IColorDialogCallback>(); sink)
+        sink->onComplete(result, picked);
+
+    // LAST: drops the reference showAsync took, which may delete us.
+    release();
+}
+
+bool X11ColorDialog::handleEvent(const XEvent& e)
+{
+    if (!window_ || e.xany.window != window_)
+        return false;
+
+    switch (e.type)
+    {
+    case Expose:
+        present();
+        return true;
+
+    case MotionNotify:
+    {
+        // A drag keeps tracking outside the control: releasing the pointer is
+        // what ends it, not wandering off the edge of the square.
+        if (dragging_ != Region::None)
+        {
+            if (model_.applyDrag(dragging_, e.xmotion.x, e.xmotion.y))
+                present();
+            return true;
+        }
+
+        const int hit = model_.buttonAt(e.xmotion.x, e.xmotion.y);
+        if (hit != hoveredButton_)
+        {
+            hoveredButton_ = hit;
+            present();
+        }
+        return true;
+    }
+
+    case ButtonPress:
+    {
+        const Region r = model_.regionAt(e.xbutton.x, e.xbutton.y);
+        if (r == Region::SatVal || r == Region::Hue || r == Region::Alpha)
+        {
+            dragging_ = r;
+            if (model_.applyDrag(r, e.xbutton.x, e.xbutton.y))
+                present();
+        }
+        return true;
+    }
+
+    case ButtonRelease:
+    {
+        if (dragging_ != Region::None)
+        {
+            dragging_ = Region::None;
+            return true;
+        }
+
+        // Act on release, so a press that slid off a button does not count.
+        switch (model_.regionAt(e.xbutton.x, e.xbutton.y))
+        {
+        case Region::Ok:     complete(gmpi::ReturnCode::Ok); break;
+        case Region::Cancel: complete(gmpi::ReturnCode::Cancel); break;
+        default: break;
+        }
+        return true;
+    }
+
+    case KeyPress:
+    {
+        KeySym keysym{};
+        char buf[8]{};
+        XLookupString(const_cast<XKeyEvent*>(&e.xkey), buf, sizeof(buf) - 1, &keysym, nullptr);
+
+        if (keysym == XK_Escape)
+            complete(gmpi::ReturnCode::Cancel);
+        else if (keysym == XK_Return || keysym == XK_KP_Enter)
+            complete(gmpi::ReturnCode::Ok);
+        return true;
+    }
+
+    case ClientMessage:
+        if (static_cast<Atom>(e.xclient.data.l[0]) == wmDelete_)
+            complete(gmpi::ReturnCode::Cancel);
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // X11StockDialog
 // ---------------------------------------------------------------------------
 
@@ -2167,6 +2472,19 @@ void X11DrawingFrame::showContextMenu(gmpi::drawing::Point pt)
 int X11DrawingFrame::portalFd() const
 {
     return impl_->portalBus.fd();
+}
+
+gmpi::ReturnCode X11DrawingFrame::createColorDialog(gmpi::drawing::Color initialColor,
+                                                    gmpi::api::IUnknown** returnDialog)
+{
+    *returnDialog = {};
+
+    if (!impl_->display)
+        return gmpi::ReturnCode::Fail;
+
+    auto* dlg = new X11ColorDialog(*impl_, factory_, impl_->menuFont, initialColor);
+    *returnDialog = static_cast<gmpi::api::IColorDialog*>(dlg);
+    return gmpi::ReturnCode::Ok;
 }
 
 gmpi::ReturnCode X11DrawingFrame::createTextEdit(const gmpi::drawing::Rect* r,

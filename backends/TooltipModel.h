@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -26,6 +27,13 @@ namespace gmpi::tooltip
 {
 
 constexpr int64_t kHoverDelayMs = 650;   // ~40 ticks at 60Hz, as on Windows
+
+// One clock for every backend, so the delay means the same thing everywhere.
+inline int64_t nowMs()
+{
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
 constexpr float   kPadX = 6.f;
 constexpr float   kPadY = 3.f;
 constexpr float   kCursorOffsetX = 12.f;

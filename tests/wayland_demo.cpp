@@ -81,7 +81,15 @@ public:
     ReturnCode onPointerMove(drawing::Point, int32_t) override { return ReturnCode::Ok; }
     ReturnCode onPointerUp(drawing::Point, int32_t) override { return ReturnCode::Ok; }
     ReturnCode onMouseWheel(drawing::Point, int32_t, int32_t) override { return ReturnCode::Unhandled; }
-    ReturnCode getToolTip(drawing::Point, api::IString*) override { return ReturnCode::Unhandled; }
+    // A real tooltip, so the backend's hover timing and popup can be seen.
+    // Reports the position so a screenshot shows the frame passed it through.
+    ReturnCode getToolTip(drawing::Point point, api::IString* returnString) override
+    {
+        char buf[64];
+        const int n = snprintf(buf, sizeof buf, "hovering %d,%d", int(point.x), int(point.y));
+        returnString->setData(buf, n);
+        return ReturnCode::Ok;
+    }
 
     ReturnCode populateContextMenu(drawing::Point, api::IUnknown* sink) override;
     ReturnCode onKeyPress(wchar_t c) override;

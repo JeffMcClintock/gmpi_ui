@@ -55,6 +55,7 @@
 #include "backends/PopupMenuModel.h"
 #include "backends/TextEditModel.h"
 #include "backends/ColorPickerModel.h"
+#include "backends/TooltipModel.h"
 #include "helpers/NativeUi.h"
 #include "RefCountMacros.h"
 #include "backends/PortalFileDialog.h"
@@ -433,6 +434,188 @@ protected:
 };
 
 // ---------------------------------------------------------------------------
+// WaylandTooltip - an xdg_popup that takes no grab and no input
+// ---------------------------------------------------------------------------
+// Owned by the frame, not refcounted: a tooltip is something the frame decides
+// to show, not an object the client holds.
+//
+// Two things distinguish it from WaylandPopupMenu, and both matter:
+//
+//   * NO xdg_popup_grab. A grab would take the keyboard and pointer from the
+//     application for a label nobody clicks. It also needs a real user-action
+//     serial, and a tooltip appears precisely when the user has done nothing.
+//
+//   * NO input_.registerSurface. Nothing routes pointer events here, so the
+//     surface is inert - and an empty input region tells the compositor to send
+//     events straight through to whatever is beneath, which is the window the
+//     tooltip is describing.
+class WaylandTooltip : public IPopupTeardown
+{
+public:
+    explicit WaylandTooltip(Connection& connection) : connection_(connection) {}
+    ~WaylandTooltip() { destroySurfaces(); }
+
+    void show(xdg_surface* parentXdg, gmpi::cpugfx::Factory& factory,
+              gmpi::drawing::api::ITextFormat* font,
+              const std::string& text, gmpi::drawing::Point cursor);
+    void hide() { destroySurfaces(); }
+
+    // IPopupTeardown: the connection drops surfaces without destroying us.
+    void closeSurfaces() override { destroySurfaces(); }
+
+private:
+    void present();
+    void destroySurfaces();
+
+    static void surfaceConfigure(void* data, xdg_surface* s, uint32_t serial)
+    {
+        xdg_surface_ack_configure(s, serial);
+        auto& self = *static_cast<WaylandTooltip*>(data);
+        self.configured_ = true;
+        self.present();
+    }
+    static void popupConfigure(void*, xdg_popup*, int32_t, int32_t, int32_t, int32_t) {}
+    static void popupDone(void* data, xdg_popup*)
+    {
+        static_cast<WaylandTooltip*>(data)->destroySurfaces();
+    }
+    static void popupRepositioned(void*, xdg_popup*, uint32_t) {}
+
+    Connection&   connection_;
+    wl_surface*   surface_{};
+    xdg_surface*  xdgSurface_{};
+    xdg_popup*    popup_{};
+    ShmBuffer     buffer_;
+    gmpi::cpugfx::Factory* factory_{};
+    gmpi::drawing::api::ITextFormat* font_{};
+    std::string   text_;
+    int  w_ = 0, h_ = 0;
+    bool configured_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// WaylandTooltip
+// ---------------------------------------------------------------------------
+
+inline void WaylandTooltip::show(xdg_surface* parentXdg, gmpi::cpugfx::Factory& factory,
+                                 gmpi::drawing::api::ITextFormat* font,
+                                 const std::string& text, gmpi::drawing::Point cursor)
+{
+    static const xdg_popup_listener popupListener = { popupConfigure, popupDone, popupRepositioned };
+    static const xdg_surface_listener surfaceListener = { surfaceConfigure };
+
+    destroySurfaces();
+
+    if (!parentXdg || !connection_.wmBase() || !connection_.compositor() || text.empty())
+        return;
+
+    factory_ = &factory;
+    font_ = font;
+    text_ = text;
+
+    // Screen extent is the compositor's business, not ours - a wayland client
+    // cannot know where its own window is - so pass 0 and let the positioner's
+    // constraint adjustment keep the popup on screen.
+    const auto box = gmpi::tooltip::Model::layout(text_, font_, 0.f, 0.f, 0.f, 0.f);
+    w_ = int(box.right - box.left);
+    h_ = int(box.bottom - box.top);
+    if (w_ <= 0 || h_ <= 0)
+        return;
+
+    surface_    = wl_compositor_create_surface(connection_.compositor());
+    xdgSurface_ = xdg_wm_base_get_xdg_surface(connection_.wmBase(), surface_);
+    xdg_surface_add_listener(xdgSurface_, &surfaceListener, this);
+
+    xdg_positioner* pos = xdg_wm_base_create_positioner(connection_.wmBase());
+    xdg_positioner_set_size(pos, w_, h_);
+    xdg_positioner_set_anchor_rect(pos, int32_t(cursor.x), int32_t(cursor.y), 1, 1);
+    xdg_positioner_set_anchor(pos, XDG_POSITIONER_ANCHOR_BOTTOM_LEFT);
+    xdg_positioner_set_gravity(pos, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
+    xdg_positioner_set_offset(pos, int32_t(gmpi::tooltip::kCursorOffsetX),
+                                   int32_t(gmpi::tooltip::kCursorOffsetY));
+    xdg_positioner_set_constraint_adjustment(pos,
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_X |
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y |
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X |
+        XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y);
+
+    popup_ = xdg_surface_get_popup(xdgSurface_, parentXdg, pos);
+    xdg_positioner_destroy(pos);
+
+    if (!popup_)
+    {
+        destroySurfaces();
+        return;
+    }
+
+    // Registered for teardown like any other popup: mutter must not be left
+    // holding our surfaces when the connection goes.
+    connection_.registerPopup(this);
+    xdg_popup_add_listener(popup_, &popupListener, this);
+
+    // Empty input region: pointer events pass straight through to the window
+    // underneath, which is the one being described.
+    if (auto* region = wl_compositor_create_region(connection_.compositor()))
+    {
+        wl_surface_set_input_region(surface_, region);
+        wl_region_destroy(region);
+    }
+
+    wl_surface_commit(surface_);
+}
+
+inline void WaylandTooltip::present()
+{
+    if (!configured_ || !surface_ || !factory_ || w_ <= 0 || h_ <= 0)
+        return;
+    if (!buffer_.matches(w_, h_) && !buffer_.create(connection_.shm(), w_, h_))
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory_->createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt) { if (rtRaw) rtRaw->release(); return; }
+
+    rt->beginDraw();
+    gmpi::tooltip::Model::render(rt, text_, font_, float(w_), float(h_));
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        const auto& s = bm->surface;
+        const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+        const gmpi::cpugfx::DestSurface   dst{ buffer_.pixels(), buffer_.stride(), w_, h_,
+                                               gmpi::cpugfx::PixelEncoding::Bgra8888 };
+        gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
+    }
+    if (bmRaw) bmRaw->release();
+    if (rtRaw) rtRaw->release();
+
+    wl_surface_attach(surface_, buffer_.buffer(), 0, 0);
+    wl_surface_damage_buffer(surface_, 0, 0, w_, h_);
+    wl_surface_commit(surface_);
+}
+
+inline void WaylandTooltip::destroySurfaces()
+{
+    if (!surface_ && !popup_ && !xdgSurface_)
+        return;
+
+    connection_.unregisterPopup(this);
+
+    // Topmost first, as xdg-shell requires.
+    if (popup_)      { xdg_popup_destroy(popup_); popup_ = nullptr; }
+    if (xdgSurface_) { xdg_surface_destroy(xdgSurface_); xdgSurface_ = nullptr; }
+    buffer_.release();
+    if (surface_)    { wl_surface_destroy(surface_); surface_ = nullptr; }
+
+    configured_ = false;
+}
+
+
+// ---------------------------------------------------------------------------
 // WaylandFrameBase - the present pipeline
 // ---------------------------------------------------------------------------
 // Owns a wl_surface and paints an IDrawingClient into it. Knows nothing about
@@ -589,6 +772,59 @@ public:
     // Render whatever is dirty and hand the pixels to the compositor.
     void present();
 
+    // Tooltips. Called every tick; asks the client ONLY once the pointer has
+    // been still for the shared delay, which is what stops a hit-test of the
+    // client's whole tree at pointer rate.
+    void tickTooltip(int64_t nowMs)
+    {
+        if (tooltip_.takeHideRequest() && tooltipWindow_)
+            tooltipWindow_->hide();
+
+        if (!client_ || !popupParent() || !tooltip_.ready(nowMs))
+            return;
+
+        gmpi::api::IInputClient* in{};
+        client_->queryInterface(&gmpi::api::IInputClient::guid, reinterpret_cast<void**>(&in));
+        if (!in)
+            return;
+
+        gmpi::ReturnString text;
+        const auto rc = in->getToolTip(lastMovePoint_, &text);
+        in->release();
+
+        if (rc != gmpi::ReturnCode::Ok || text.getSize() <= 0)
+            return;
+
+        if (!tooltipWindow_)
+            tooltipWindow_ = std::make_unique<WaylandTooltip>(connection_);
+
+        tooltipWindow_->show(popupParent(), factory_, menuFont_,
+                             std::string(text.getData(), size_t(text.getSize())),
+                             tooltipAnchor());
+        tooltip_.markShown();
+    }
+
+    // Pointer moved / clicked / left: restart the wait, take down what is up.
+    void onTooltipActivity(gmpi::drawing::Point p, int64_t nowMs)
+    {
+        lastMovePoint_ = p;
+        tooltip_.onActivity(nowMs);
+    }
+    void suppressTooltip() { tooltip_.suppress(); }
+
+private:
+    // The pointer position in the coordinates an xdg_positioner anchors in -
+    // the PARENT surface's, which with client-side decorations is not the
+    // content origin. Same translation the menus need.
+    gmpi::drawing::Point tooltipAnchor() const
+    {
+        const auto r = toFrameCoordinates({ lastMovePoint_.x, lastMovePoint_.y,
+                                            lastMovePoint_.x, lastMovePoint_.y });
+        return { r.left, r.top };
+    }
+
+public:
+
 protected:
     void createSurface();
 
@@ -609,6 +845,11 @@ protected:
 
     gmpi::api::IDrawingClient* client_{};
     gmpi::drawing::api::ITextFormat* menuFont_{};
+
+    // Hover timing shared with X11 and Windows; the popup is created on demand.
+    gmpi::tooltip::Model tooltip_;
+    std::unique_ptr<WaylandTooltip> tooltipWindow_;
+    gmpi::drawing::Point lastMovePoint_{};
     bool surfaceConfigured_ = false;
 
     int logicalW_ = 0, logicalH_ = 0;
@@ -801,6 +1042,11 @@ public:
     gmpi::drawing::Point pointerPos() const { return { float(x_), float(y_) }; }
 
     std::function<void()> onNeedsRedraw;
+
+    // Pointer activity, for the frame's tooltip timing. Separate from
+    // onNeedsRedraw because a tooltip must also react to a BUTTON, which does
+    // not necessarily repaint anything.
+    std::function<void(gmpi::drawing::Point, bool active)> onPointerActivity;
     std::function<void(gmpi::drawing::Point, uint32_t serial)> onContextMenu;
 
 private:
@@ -1038,6 +1284,9 @@ inline void InputDispatch::pointerLeave(void* data, wl_pointer*, uint32_t serial
 {
     auto& in = *static_cast<InputDispatch*>(data);
 
+    if (in.onPointerActivity)
+        in.onPointerActivity(in.pointerPos(), false);   // false: no tooltip until we are back
+
     if (in.pointerFocus_ == surf)
         in.pointerFocus_ = nullptr;
 
@@ -1075,6 +1324,9 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
     if (!in.overContent())
         return;
 
+    if (in.onPointerActivity)
+        in.onPointerActivity(in.pointerPos(), true);
+
     if (in.client_)
         in.client_->onPointerMove(in.pointerPos(),
                                   in.basePointerFlags() | int32_t(in.buttons_));
@@ -1086,6 +1338,10 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
     auto& in = *static_cast<InputDispatch*>(data);
     if (state == WL_POINTER_BUTTON_STATE_PRESSED)
         in.lastGrabSerial_ = serial;
+
+    // A click means the user is doing something, not reading.
+    if (in.onPointerActivity)
+        in.onPointerActivity(in.pointerPos(), false);
 
     if (auto* t = in.targetFor(in.pointerFocus_))
     {
@@ -1899,6 +2155,16 @@ inline void WaylandFrameBase::attachClient(gmpi::api::IDrawingClient* client)
     // seat reports the press serial, which has to travel all the way to
     // xdg_popup.grab: mutter grants the grab only for the serial of the event
     // that started it, so it cannot be looked up later.
+    // Tooltip timing: the frame owns it, InputDispatch just reports activity.
+    inputDispatch().onPointerActivity =
+        [this](gmpi::drawing::Point p, bool active)
+        {
+            if (active)
+                onTooltipActivity(p, gmpi::tooltip::nowMs());
+            else
+                suppressTooltip();
+        };
+
     inputDispatch().onContextMenu =
         [this](gmpi::drawing::Point pt, uint32_t)
         {
@@ -3475,8 +3741,15 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
         if (timerFd >= 0 && (fds[1].revents & POLLIN))
         {
             uint64_t expiries = 0;
-            if (read(timerFd, &expiries, sizeof(expiries)) == sizeof(expiries) && onTick)
-                onTick(static_cast<int>(expiries) * tickMs);
+            if (read(timerFd, &expiries, sizeof(expiries)) == sizeof(expiries))
+            {
+                // Before the app's own tick: a tooltip appearing is not
+                // something the app should have to remember to drive.
+                tickTooltip(gmpi::tooltip::nowMs());
+
+                if (onTick)
+                    onTick(static_cast<int>(expiries) * tickMs);
+            }
         }
     }
 
@@ -3671,6 +3944,7 @@ public:
         // Never reads the socket, so it cannot race dispatch(). libdecor's own
         // pending work is drained by dispatch().
         wl_display_dispatch_pending(d);
+        tickTooltip(gmpi::tooltip::nowMs());
         wl_display_flush(d);
     }
 

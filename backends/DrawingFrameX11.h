@@ -186,6 +186,7 @@ private:
     friend class X11TextEdit;
     friend class X11KeyListener;
     friend class X11ColorDialog;
+    friend class X11Tooltip;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

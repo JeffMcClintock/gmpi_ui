@@ -16,11 +16,13 @@
 #include "backends/PortalFileDialog.h"
 #include "backends/TextEditModel.h"
 #include "backends/ColorPickerModel.h"
+#include "backends/TooltipModel.h"
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 #include <X11/extensions/XShm.h>
+#include <X11/extensions/shape.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
@@ -161,6 +163,13 @@ struct X11DrawingFrame::Impl
     gmpi::portal::PortalBus portalBus;
 
     X11Clipboard clipboard;
+
+    // Hover timing lives in the model so X11, Wayland and Windows all wait the
+    // same length of time; the window is below.
+    gmpi::tooltip::Model tooltip;
+    class X11Tooltip*    tooltipWindow{};
+    int lastMoveRootX = 0, lastMoveRootY = 0;
+    gmpi::drawing::Point lastMovePoint{};
 
     // The in-place editor and the raw-key sink, at most one of each. Both are
     // drawn on / fed by THIS window rather than getting one of their own: an
@@ -546,6 +555,36 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// X11Tooltip - a small override-redirect window that never takes input
+// ---------------------------------------------------------------------------
+// Owned by the frame, not refcounted and not handed to the client: a tooltip is
+// something the frame decides to show, not an object the plugin holds.
+//
+// The event mask is ExposureMask ALONE. A tooltip that accepts button or motion
+// events is one the user cannot click through, and it sits right under the
+// pointer - so it must be invisible to input, not merely ignore it.
+class X11Tooltip
+{
+public:
+    void show(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+              gmpi::drawing::api::ITextFormat* font,
+              const std::string& text, int rootX, int rootY);
+    void hide(X11DrawingFrame::Impl& frame);
+
+    bool handleEvent(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory, const XEvent& e);
+
+private:
+    void present(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory);
+
+    Window  window_{};
+    XImage* image_{};
+    GC      gc_{};
+    int     w_ = 0, h_ = 0;
+    std::string text_;
+    gmpi::drawing::api::ITextFormat* font_{};
+};
+
+// ---------------------------------------------------------------------------
 // X11ColorDialog - IColorDialog as a transient-for toplevel
 // ---------------------------------------------------------------------------
 // Same window arrangement as X11StockDialog: an ordinary toplevel the window
@@ -794,6 +833,13 @@ void X11DrawingFrame::close()
         d.captured = false;
     }
 
+    if (d.tooltipWindow)
+    {
+        d.tooltipWindow->hide(d);
+        delete d.tooltipWindow;
+        d.tooltipWindow = nullptr;
+    }
+
     d.releaseImage();
 
     if (d.gc)     { XFreeGC(d.display, d.gc); d.gc = {}; }
@@ -944,6 +990,9 @@ void X11DrawingFrame::processEvents()
             if (!consumed && d.clipboard.handleEvent(e))
                 consumed = true;
 
+            if (!consumed && d.tooltipWindow && d.tooltipWindow->handleEvent(d, factory_, e))
+                consumed = true;
+
             if (consumed)
                 continue;
         }
@@ -966,6 +1015,7 @@ void X11DrawingFrame::processEvents()
 
         case EnterNotify:
             d.pointerInside = true;
+            d.tooltip.onActivity(nowMs());
             if (d.inputClient)
             {
                 d.inputClient->setHover(true);
@@ -980,6 +1030,7 @@ void X11DrawingFrame::processEvents()
 
         case LeaveNotify:
             d.pointerInside = false;
+            d.tooltip.suppress();
             if (d.inputClient)
                 d.inputClient->setHover(false);
             break;
@@ -992,11 +1043,19 @@ void X11DrawingFrame::processEvents()
             while (XCheckTypedWindowEvent(d.display, d.window, MotionNotify, &latest))
                 ; // keep the last
 
+            const gmpi::drawing::Point mp{ static_cast<float>(latest.xmotion.x) / d.scale,
+                                           static_cast<float>(latest.xmotion.y) / d.scale };
+
+            // Any movement restarts the wait and takes down whatever is up.
+            // Recorded in ROOT coordinates too, because the tooltip is a
+            // top-level window and has to be placed in them.
+            d.lastMovePoint = mp;
+            d.lastMoveRootX = latest.xmotion.x_root;
+            d.lastMoveRootY = latest.xmotion.y_root;
+            d.tooltip.onActivity(nowMs());
+
             if (d.inputClient)
-                d.inputClient->onPointerMove(
-                    { static_cast<float>(latest.xmotion.x) / d.scale,
-                      static_cast<float>(latest.xmotion.y) / d.scale },
-                    basePointerFlags(latest.xmotion.state));
+                d.inputClient->onPointerMove(mp, basePointerFlags(latest.xmotion.state));
             break;
         }
 
@@ -1021,6 +1080,9 @@ void X11DrawingFrame::processEvents()
                 }
                 break;
             }
+
+            // A click means the user is doing something, not reading.
+            d.tooltip.suppress();
 
             const int64_t t = nowMs();
             const bool isDouble = (t - d.lastClickMs) < kDoubleClickMs
@@ -1144,6 +1206,29 @@ void X11DrawingFrame::onTimer()
     // so the timer is what gets that on screen. Events themselves are handled by
     // processEvents when the run loop says the fd is ready.
     d.present(factory_);
+
+    // Tooltips. The client is asked ONLY when the pointer has been still long
+    // enough - a hit-test of its whole tree at pointer rate is exactly what the
+    // delay exists to avoid. Suppressed while captured: mid-drag the user is
+    // not reading, and the pointer is not where the tooltip would describe.
+    if (d.tooltip.takeHideRequest() && d.tooltipWindow)
+        d.tooltipWindow->hide(d);
+
+    if (d.inputClient && !d.captured && d.pointerInside && d.tooltip.ready(nowMs()))
+    {
+        gmpi::ReturnString text;
+        if (d.inputClient->getToolTip(d.lastMovePoint, &text) == gmpi::ReturnCode::Ok
+            && text.getSize() > 0)
+        {
+            if (!d.tooltipWindow)
+                d.tooltipWindow = new X11Tooltip;
+
+            d.tooltipWindow->show(d, factory_, d.menuFont,
+                                  std::string(text.getData(), size_t(text.getSize())),
+                                  d.lastMoveRootX, d.lastMoveRootY);
+            d.tooltip.markShown();
+        }
+    }
 
     // The portal replies on the session bus, not the X connection, so it needs
     // pumping too. Doing it here rather than requiring the host to register a
@@ -1875,6 +1960,140 @@ void X11KeyListener::handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, b
         cb->onKeyDown(key, flags);
     else
         cb->onKeyUp(key, flags);
+}
+
+// ---------------------------------------------------------------------------
+// X11Tooltip
+// ---------------------------------------------------------------------------
+
+void X11Tooltip::show(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+                      gmpi::drawing::api::ITextFormat* font,
+                      const std::string& text, int rootX, int rootY)
+{
+    hide(frame);
+
+    auto& d = frame;
+    if (!d.display || text.empty())
+        return;
+
+    text_ = text;
+    font_ = font;
+
+    const auto box = gmpi::tooltip::Model::layout(
+        text_, font_, float(rootX), float(rootY),
+        float(DisplayWidth(d.display, d.screen)), float(DisplayHeight(d.display, d.screen)));
+
+    w_ = int(box.right - box.left);
+    h_ = int(box.bottom - box.top);
+    if (w_ <= 0 || h_ <= 0)
+        return;
+
+    XSetWindowAttributes attr{};
+    attr.override_redirect = True;   // the window manager must not decorate it
+    attr.border_pixel = 0;
+    attr.colormap = XCreateColormap(d.display, DefaultRootWindow(d.display), d.visual, AllocNone);
+    attr.event_mask = ExposureMask;  // deliberately nothing else - see the class comment
+
+    window_ = XCreateWindow(d.display, DefaultRootWindow(d.display),
+                            int(box.left), int(box.top), unsigned(w_), unsigned(h_),
+                            0, d.depth, InputOutput, d.visual,
+                            CWOverrideRedirect | CWBorderPixel | CWColormap | CWEventMask,
+                            &attr);
+    if (!window_)
+        return;
+
+    // Belt and braces: an empty input region means the server routes pointer
+    // events straight through to whatever is underneath, even if a future edit
+    // adds a mask by accident.
+    // Both out-params are written unconditionally - passing nullptr segfaults
+    // inside libXext rather than returning False.
+    int shapeEventBase = 0, shapeErrorBase = 0;
+    if (XShapeQueryExtension(d.display, &shapeEventBase, &shapeErrorBase))
+    {
+        const XRectangle empty{ 0, 0, 0, 0 };
+        XShapeCombineRectangles(d.display, window_, ShapeInput, 0, 0,
+                                const_cast<XRectangle*>(&empty), 1, ShapeSet, Unsorted);
+    }
+
+    gc_ = XCreateGC(d.display, window_, 0, nullptr);
+    XMapRaised(d.display, window_);
+    present(frame, factory);
+    XFlush(d.display);
+}
+
+void X11Tooltip::hide(X11DrawingFrame::Impl& frame)
+{
+    auto& d = frame;
+    if (!d.display)
+        return;
+
+    if (image_)  { XDestroyImage(image_); image_ = {}; }
+    if (gc_)     { XFreeGC(d.display, gc_); gc_ = {}; }
+    if (window_) { XDestroyWindow(d.display, window_); window_ = {}; XFlush(d.display); }
+}
+
+bool X11Tooltip::handleEvent(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory,
+                             const XEvent& e)
+{
+    if (!window_ || e.xany.window != window_)
+        return false;
+
+    if (e.type == Expose)
+    {
+        present(frame, factory);
+        return true;
+    }
+    return false;
+}
+
+void X11Tooltip::present(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& factory)
+{
+    auto& d = frame;
+    if (!d.display || !window_)
+        return;
+
+    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
+    factory.createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
+    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
+    if (!rt)
+    {
+        if (rtRaw) rtRaw->release();
+        return;
+    }
+
+    rt->beginDraw();
+    gmpi::tooltip::Model::render(rt, text_, font_, float(w_), float(h_));
+    rt->endDraw();
+
+    gmpi::drawing::api::IBitmap* bmRaw{};
+    rt->getBitmap(&bmRaw);
+    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
+    {
+        if (!image_)
+        {
+            auto* data = static_cast<char*>(std::calloc(size_t(w_) * h_, 4));
+            if (data)
+                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
+                                      data, w_, h_, 32, w_ * 4);
+            if (!image_ && data)
+                std::free(data);
+        }
+
+        if (image_)
+        {
+            const auto& s = bm->surface;
+            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
+            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
+                                                   image_->bytes_per_line, w_, h_,
+                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
+            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
+            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0, unsigned(w_), unsigned(h_));
+        }
+    }
+
+    if (bmRaw) bmRaw->release();
+    rtRaw->release();
+    XFlush(d.display);
 }
 
 // ---------------------------------------------------------------------------

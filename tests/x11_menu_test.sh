@@ -42,6 +42,20 @@ for _ in $(seq 1 40); do grep -q "frame open" "$OUT/test.log" 2>/dev/null && bre
 sleep 0.7
 
 export DISPLAY=$DISP
+
+# Tooltip: park the pointer over the client and leave it still.
+"$TOOLS/usr/bin/xdotool" mousemove 150 90 >/dev/null 2>&1
+sleep 1.4
+xwd -root -silent > "$OUT/tooltip.xwd" 2>/dev/null
+
+# Click straight THROUGH the tooltip. It sits under the pointer by design, so
+# if it accepted input the user could not click what it is describing.
+"$TOOLS/usr/bin/xdotool" mousemove 168 116 sleep 0.2 click 1 >/dev/null 2>&1
+sleep 0.4
+
+# Away, so the tooltip is down before the menu comparison starts.
+"$TOOLS/usr/bin/xdotool" mousemove 260 180 >/dev/null 2>&1
+sleep 0.4
 xwd -root -silent > "$OUT/before.xwd" 2>/dev/null
 
 # Right-click inside the plugin window (which is at the root's top-left).
@@ -152,4 +166,8 @@ grep -q "^keys seen: 'xyz' ended 1$" "$OUT/test.log" \
 grep -q "^colour picked 1:" "$OUT/test.log" \
   || { echo "FAIL: the colour picker did not report a colour (see test.log)"; exit 1; }
 
-echo "PASS: menu, dialog, text edit, key listener and colour picker all work"
+grep -qE "^tooltip asks: [1-9][0-9]*, clicks reaching the client: [1-9]" "$OUT/test.log" \
+  || { echo "FAIL: no tooltip was asked for, or the click through it never reached "\
+            "the client - a tooltip that eats input is worse than none"; exit 1; }
+
+echo "PASS: menu, dialog, text edit, key listener, colour picker and tooltip all work"

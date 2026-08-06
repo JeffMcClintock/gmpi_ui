@@ -45,6 +45,8 @@ std::string g_editResult;
 bool        g_editComplete = false;
 std::string g_keysSeen;
 bool        g_keyListenerEnded = false;
+int g_toolTipCalls = 0;
+int g_pointerDowns = 0;
 gmpi::drawing::Color g_pickedColor{};
 bool                 g_colorPicked = false;
 
@@ -150,11 +152,24 @@ public:
     ReturnCode onPointerUp(drawing::Point, int32_t) override { return ReturnCode::Ok; }
     ReturnCode onMouseWheel(drawing::Point, int32_t, int32_t) override { return ReturnCode::Ok; }
     ReturnCode onKeyPress(wchar_t) override { return ReturnCode::Ok; }
-    ReturnCode getToolTip(drawing::Point, api::IString*) override { return ReturnCode::Unhandled; }
+    // Reports where it was asked, so the test can check the frame passes the
+    // pointer position rather than something stale.
+    ReturnCode getToolTip(drawing::Point point, api::IString* returnString) override
+    {
+        ++g_toolTipCalls;
+        char buf[64];
+        const int n = snprintf(buf, sizeof buf, "tip at %d,%d", int(point.x), int(point.y));
+        returnString->setData(buf, n);
+        return ReturnCode::Ok;
+    }
 
     // Unhandled is what lets the frame offer a context menu - the same gate the
     // Windows backend uses.
-    ReturnCode onPointerDown(drawing::Point, int32_t) override { return ReturnCode::Unhandled; }
+    ReturnCode onPointerDown(drawing::Point, int32_t) override
+    {
+        ++g_pointerDowns;
+        return ReturnCode::Unhandled;
+    }
 
     ReturnCode populateContextMenu(drawing::Point, api::IUnknown* sink) override
     {
@@ -331,6 +346,8 @@ int main(int argc, char** argv)
     std::printf("dialog answer: %d\n", g_dialogAnswer);
     std::printf("edit result: '%s' complete %d\n", g_editResult.c_str(), int(g_editComplete));
     std::printf("keys seen: '%s' ended %d\n", g_keysSeen.c_str(), int(g_keyListenerEnded));
+    std::printf("tooltip asks: %d, clicks reaching the client: %d\n",
+                g_toolTipCalls, g_pointerDowns);
     std::printf("colour picked %d: %.3f %.3f %.3f a %.3f\n", int(g_colorPicked),
                 g_pickedColor.r, g_pickedColor.g, g_pickedColor.b, g_pickedColor.a);
 

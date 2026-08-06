@@ -2019,7 +2019,19 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
 {
     drawing::api::IFactory* factory{};
     Bitmap* bitmap{}; // owned (refcounted)
+
+    // transform_ is the EFFECTIVE local -> device-pixel transform that every
+    // drawing routine below uses: the client's transform followed by the DPI
+    // scale, pre-multiplied so the hot paths stay a single matrix.
+    //
+    // clientTransform_ is what setTransform() was handed. getTransform() has to
+    // return that, not the effective one - a client that reads the transform,
+    // concatenates its own and writes it back is the normal idiom, and handing
+    // back the DPI-scaled matrix would compound the scale on every round trip.
     drawing::Matrix3x2 transform_;
+    drawing::Matrix3x2 clientTransform_;
+    drawing::Matrix3x2 dpiTransform_;
+    float              dpiScale_{ 1.0f };
 
     // The factory owns the text engine; reach it through the factory so a
     // render target never holds a stale pointer.
@@ -2198,9 +2210,21 @@ private:
     std::vector<Figure> strokeFigures; // widened stroke outline, reused per call
 
 public:
-    RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size, int32_t flags = 0) : factory(pfactory)
+    // `size` is in PIXELS; `dpi` says how many of those a DIP is worth, exactly
+    // as it does for Direct2D. At the default 96 the scale is 1 and coordinates
+    // are pixels, which is what every on-screen frame here wants. Above that,
+    // drawing is in DIPs and the surface holds a higher-resolution rendering of
+    // the same logical picture - what an offscreen thumbnail or a HiDPI export
+    // needs. This argument used to be discarded, so such callers silently drew
+    // at 1 DIP = 1 pixel into a surface sized for more, filling a corner of it.
+    RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size, int32_t flags = 0, float dpi = 96.0f)
+        : factory(pfactory)
     {
         bitmap = new Bitmap(factory, int32_t(size.width), int32_t(size.height), flags);
+
+        dpiScale_     = (dpi > 0.0f) ? dpi / 96.0f : 1.0f;
+        dpiTransform_ = drawing::makeScale(dpiScale_);
+        transform_    = dpiTransform_;   // clientTransform_ starts as identity
 
         // Clip stack is in device space; replace the base's huge default with the surface bounds.
         clipRectStack.clear();
@@ -2275,12 +2299,15 @@ public:
     {
         *returnBitmapRenderTarget = {};
 
+        // desiredSize is in DIPs and the compatible target inherits this one's
+        // DPI, as it does under Direct2D - so the surface needs dpiScale_ pixels
+        // per DIP. At the default 96 dpi this is the previous behaviour exactly.
         const drawing::SizeU size{
-            uint32_t((std::max)(0.0f, std::ceil(desiredSize.width))),
-            uint32_t((std::max)(0.0f, std::ceil(desiredSize.height))) };
+            uint32_t((std::max)(0.0f, std::ceil(desiredSize.width  * dpiScale_))),
+            uint32_t((std::max)(0.0f, std::ceil(desiredSize.height * dpiScale_))) };
         try
         {
-            *returnBitmapRenderTarget = new RenderTarget(factory, size, flags);
+            *returnBitmapRenderTarget = new RenderTarget(factory, size, flags, dpiScale_ * 96.0f);
         }
         catch (...)
         {
@@ -2319,13 +2346,17 @@ public:
     // ---- state -------------------------------------------------------------
     ReturnCode setTransform(const drawing::Matrix3x2* ptransform) override
     {
-        transform_ = *ptransform;
+        // Client space is DIPs, so its transform applies FIRST and the DPI scale
+        // converts the result to pixels. Row-vector convention here: `a * b`
+        // means a then b.
+        clientTransform_ = *ptransform;
+        transform_       = clientTransform_ * dpiTransform_;
         return ReturnCode::Ok;
     }
 
     ReturnCode getTransform(drawing::Matrix3x2* returnTransform) override
     {
-        *returnTransform = transform_;
+        *returnTransform = clientTransform_;
         return ReturnCode::Ok;
     }
 
@@ -2900,13 +2931,13 @@ public:
                                                 lineSpacing, baseline, returnRichTextFormat);
     }
 
-    ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float /*dpi*/) override
+    ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi) override
     {
         *returnBitmapRenderTarget = {};
 
         try
         {
-            *returnBitmapRenderTarget = new RenderTarget(this, size, flags); // refcount born at 1; caller owns it
+            *returnBitmapRenderTarget = new RenderTarget(this, size, flags, dpi); // refcount born at 1; caller owns it
         }
         catch (...)
         {

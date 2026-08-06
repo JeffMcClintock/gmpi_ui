@@ -3972,10 +3972,19 @@ public:
         if (!d)
             return;
 
-        // Never reads the socket, so it cannot race dispatch(). libdecor's own
-        // pending work is drained by dispatch().
+        // Never reads the WAYLAND socket, so it cannot race dispatch().
+        // libdecor's own pending work is drained by dispatch().
         wl_display_dispatch_pending(d);
         tickTooltip(gmpi::tooltip::nowMs());
+
+        // The portal answers on the session bus and the clipboard on the
+        // wayland data device - neither is the display's pending queue, and
+        // WaylandToplevel::runEventLoop pumps both for the standalone app. A
+        // plugin has no loop of its own, so the host's timer must do it here or
+        // a file chooser opens, the user picks, and the reply is never read.
+        portalBus().pump();
+        inputDispatch().clipboard().pump(d);
+
         wl_display_flush(d);
     }
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <string>
@@ -51,12 +52,14 @@ constexpr int kMenuArrowGutter     = 22;
 constexpr int kMenuPadV            = 4;
 constexpr int kMenuMinWidth        = 120;
 
-// Stock-dialog metrics and palette, again matching the Wayland backend.
-constexpr int kDialogMargin    = 20;
-constexpr int kDialogButtonW   = 92;
-constexpr int kDialogButtonH   = 30;
-constexpr int kDialogButtonGap = 10;
-constexpr int kDialogTextWidth = 380;
+// Stock-dialog metrics and palette, again matching the Wayland backend - see
+// the note there on why the button padding is Adwaita's.
+constexpr int kDialogMargin     = 20;
+constexpr int kDialogButtonPadH = 16;
+constexpr int kDialogButtonMinW = 64;
+constexpr int kDialogButtonH    = 34;
+constexpr int kDialogButtonGap  = 6;
+constexpr int kDialogTextWidth  = 380;
 
 // X11 delivers wheel notches as button 4/5 (vertical) and 6/7 (horizontal).
 // One notch is 120, the same unit Windows uses and what the clients expect.
@@ -679,7 +682,16 @@ private:
         std::string label;
         gmpi::api::StockDialogButton id{};
         gmpi::drawing::Rect rect{};
+        gmpi::drawing::Size labelSize{};   // measured in layout(), centres the label
     };
+
+    // Where a button's label draws: centred both ways on the measured extent,
+    // matching the Wayland backend.
+    gmpi::drawing::Point labelOrigin(const Button& b) const
+    {
+        return { b.rect.left + 0.5f * ((b.rect.right - b.rect.left) - b.labelSize.width),
+                 b.rect.top  + 0.5f * ((b.rect.bottom - b.rect.top) - b.labelSize.height) };
+    }
 
     void layout();
     void present();
@@ -2379,8 +2391,18 @@ void X11StockDialog::layout()
     const int y = h_ - kDialogMargin - kDialogButtonH;
     for (auto& b : buttons_)
     {
-        x -= kDialogButtonW;
-        b.rect = { float(x), float(y), float(x + kDialogButtonW), float(y + kDialogButtonH) };
+        // Measured once here rather than per frame; present() also centres the
+        // label with it. Without a font there is nothing to measure and nothing
+        // to draw either, so the floor width is the whole answer.
+        b.labelSize = {};
+        if (font_)
+            font_->getTextExtentU(b.label.c_str(), int32_t(b.label.size()),
+                                  float(kDialogTextWidth), &b.labelSize);
+
+        const int bw = (std::max)(kDialogButtonMinW,
+                                  int(std::ceil(b.labelSize.width)) + 2 * kDialogButtonPadH);
+        x -= bw;
+        b.rect = { float(x), float(y), float(x + bw), float(y + kDialogButtonH) };
         x -= kDialogButtonGap;
     }
 }
@@ -2516,9 +2538,10 @@ void X11StockDialog::present()
 
         if (font_ && ink)
         {
-            // nudged down so the glyphs sit optically centred in the button
-            const gmpi::drawing::Rect lr{ b.rect.left, b.rect.top + 6.f,
-                                          b.rect.right, b.rect.bottom };
+            // See the matching note in the Wayland backend on why the shared
+            // menu font is left alone rather than given Center alignment.
+            const auto o = labelOrigin(b);
+            const gmpi::drawing::Rect lr{ o.x, o.y, b.rect.right, b.rect.bottom };
             rt->drawTextU(b.label.c_str(), uint32_t(b.label.size()), font_, &lr, ink, 0);
         }
     }

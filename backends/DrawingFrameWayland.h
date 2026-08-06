@@ -42,6 +42,7 @@
 
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -3047,12 +3048,22 @@ public:
         std::string label;
         gmpi::api::StockDialogButton id;
         gmpi::drawing::Rect rect{};
+        gmpi::drawing::Size labelSize{};   // measured in layout(), centres the label
     };
 
     // exposed for headless tests: which buttons this dialog type offers, where
     // they sit, and what Escape maps to
     const std::vector<Button>& buttons() const { return buttons_; }
     gmpi::api::StockDialogButton escapeButton() const { return escape_; }
+
+    // Where a button's label draws: centred both ways on the measured extent.
+    // Its own function so a headless test can pin it - present() needs a render
+    // target and a compositor, this needs neither.
+    gmpi::drawing::Point labelOrigin(const Button& b) const
+    {
+        return { b.rect.left + 0.5f * ((b.rect.right - b.rect.left) - b.labelSize.width),
+                 b.rect.top  + 0.5f * ((b.rect.bottom - b.rect.top) - b.labelSize.height) };
+    }
 
     // Which button a typed letter selects, or null for none.
     //
@@ -3122,11 +3133,17 @@ private:
     gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
 };
 
-constexpr int kDialogMargin     = 20;
-constexpr int kDialogButtonW    = 92;
-constexpr int kDialogButtonH    = 30;
-constexpr int kDialogButtonGap  = 10;
-constexpr int kDialogTextWidth  = 380;   // content width before margins
+// Button metrics follow Adwaita, which is what a GNOME/Ubuntu desktop puts
+// either side of this dialog: 16px of padding left and right of the label, the
+// label itself deciding the width from there, a 34px row, and 6px between
+// buttons in the action area. The floor keeps "OK" and "No" from shrinking to
+// stubs - Adwaita has one too, for the same reason.
+constexpr int kDialogMargin        = 20;
+constexpr int kDialogButtonPadH    = 16;
+constexpr int kDialogButtonMinW    = 64;
+constexpr int kDialogButtonH       = 34;
+constexpr int kDialogButtonGap     = 6;
+constexpr int kDialogTextWidth     = 380;   // content width before margins
 
 inline void WaylandStockDialog::layout()
 {
@@ -3150,8 +3167,18 @@ inline void WaylandStockDialog::layout()
     const int y = h_ - kDialogMargin - kDialogButtonH;
     for (auto& b : buttons_)
     {
-        x -= kDialogButtonW;
-        b.rect = { float(x), float(y), float(x + kDialogButtonW), float(y + kDialogButtonH) };
+        // Measured once here rather than per frame; present() also centres the
+        // label with it. Without a font there is nothing to measure and nothing
+        // to draw either, so the floor width is the whole answer.
+        b.labelSize = {};
+        if (font_)
+            font_->getTextExtentU(b.label.c_str(), int32_t(b.label.size()),
+                                  float(kDialogTextWidth), &b.labelSize);
+
+        const int bw = (std::max)(kDialogButtonMinW,
+                                  int(std::ceil(b.labelSize.width)) + 2 * kDialogButtonPadH);
+        x -= bw;
+        b.rect = { float(x), float(y), float(x + bw), float(y + kDialogButtonH) };
         x -= kDialogButtonGap;
     }
 }
@@ -3274,9 +3301,12 @@ inline void WaylandStockDialog::present()
 
         if (font_ && ink)
         {
-            // nudged down so the glyphs sit optically centred in the button
-            const gmpi::drawing::Rect lr{ b.rect.left, b.rect.top + 6.f,
-                                          b.rect.right, b.rect.bottom };
+            // The shared menu font is left alone deliberately - it draws the
+            // menus and the text edit too, so setting Center alignment on it
+            // would recentre those as well; offsetting the layout rect keeps
+            // the change to this dialog.
+            const auto o = labelOrigin(b);
+            const gmpi::drawing::Rect lr{ o.x, o.y, b.rect.right, b.rect.bottom };
             rt->drawTextU(b.label.c_str(), uint32_t(b.label.size()), font_, &lr, ink, 0);
         }
     }

@@ -253,6 +253,72 @@ int main()
               ync.buttons().size() == 3 && ync.buttons()[2].id == B::Cancel);
         check("YesNoCancel: Escape means Cancel", ync.escapeButton() == B::Cancel);
 
+        // Button geometry. A desktop's buttons pad their label and centre it;
+        // ours drew every label hard against the left edge of a fixed-width
+        // button, which is what this pins. Needs a font to measure with - with
+        // none there is nothing to measure and every button takes the floor
+        // width - so a stub stands in for one, 8px per character.
+        {
+            struct StubFont : gmpi::drawing::api::ITextFormat
+            {
+                gmpi::ReturnCode setTextAlignment(gmpi::drawing::TextAlignment) override
+                    { return gmpi::ReturnCode::Ok; }
+                gmpi::ReturnCode setParagraphAlignment(gmpi::drawing::ParagraphAlignment) override
+                    { return gmpi::ReturnCode::Ok; }
+                gmpi::ReturnCode setWordWrapping(gmpi::drawing::WordWrapping) override
+                    { return gmpi::ReturnCode::Ok; }
+                gmpi::ReturnCode getTextExtentU(const char*, int32_t len, float,
+                                                gmpi::drawing::Size* returnSize) override
+                {
+                    *returnSize = { 8.0f * float(len), 18.0f };
+                    return gmpi::ReturnCode::Ok;
+                }
+                gmpi::ReturnCode getFontMetrics(gmpi::drawing::FontMetrics*) override
+                    { return gmpi::ReturnCode::NoSupport; }
+                gmpi::ReturnCode setLineSpacing(float, float) override
+                    { return gmpi::ReturnCode::Ok; }
+                gmpi::ReturnCode queryInterface(const gmpi::api::Guid*, void** obj) override
+                    { *obj = {}; return gmpi::ReturnCode::NoSupport; }
+                GMPI_REFCOUNT_NO_DELETE;
+            } stubFont;
+
+            Dlg dlg(connection, input, nullptr, factory, &stubFont,
+                    int32_t(T::YesNoCancel), "Title", "Save changes to Untitled?");
+
+            const auto& bs = dlg.buttons();          // Yes, No, Cancel (rightmost first)
+            auto width = [](const Dlg::Button& b) { return b.rect.right - b.rect.left; };
+
+            // "Cancel" is 6 chars = 48px of text, plus 16px either side.
+            check("a button is its label plus 16px of padding each side",
+                  width(bs[2]) == 48.0f + 32.0f);
+
+            // "No" would be 16 + 32 = 48, under the floor.
+            check("a short label stops at the floor width", width(bs[1]) == 64.0f);
+
+            check("a longer label gets a wider button", width(bs[2]) > width(bs[1]));
+
+            // Right-aligned against the margin, 6px apart - the action-area
+            // spacing a GNOME desktop uses.
+            check("the first button is flush with the right margin",
+                  bs[0].rect.right == float(dlg.contentWidth() - 20));
+            check("buttons sit 6px apart",
+                  bs[0].rect.left - bs[1].rect.right == 6.0f
+                  && bs[1].rect.left - bs[2].rect.right == 6.0f);
+
+            // The point of the exercise: equal space either side of the label,
+            // and the same top and bottom.
+            for (const auto& b : bs)
+            {
+                const auto o = dlg.labelOrigin(b);
+                const float padL = o.x - b.rect.left;
+                const float padR = b.rect.right - (o.x + b.labelSize.width);
+                const float padT = o.y - b.rect.top;
+                const float padB = b.rect.bottom - (o.y + b.labelSize.height);
+                check("the label is centred horizontally", std::fabs(padL - padR) < 0.01f);
+                check("the label is centred vertically",   std::fabs(padT - padB) < 0.01f);
+            }
+        }
+
         // Mnemonics: the first letter of a label picks that button. Without
         // them "No" is unreachable from the keyboard - Return takes the
         // default and Escape the cancel - which is the one answer a save

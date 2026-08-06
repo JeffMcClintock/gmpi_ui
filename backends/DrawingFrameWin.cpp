@@ -1398,34 +1398,55 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 	}
 }
 
+// Direct3D 11 supports at most 16384 texture pixels in either dimension (8192 at
+// feature level 10_x). Past that every ResizeBuffers fails, which reads here as
+// device loss and tears down a device that was never broken.
+constexpr int maxSwapChainDimension = 16384;
+
 void DrawingFrame::reSize(int left, int top, int right, int bottom)
 {
 	const auto width = right - left;
 	const auto height = bottom - top;
 
-	if (d2dDeviceContext && (swapChainSize.width != width || swapChainSize.height != height))
-	{
-		SetWindowPos(
-			windowHandle
-			, nullptr
-			, 0
-			, 0
-			, width
-			, height
-			, SWP_NOZORDER
-		);
+	// Hosts do pass nonsense: REAPER offered 2178 x 32672 here. A degenerate or
+	// over-limit extent is not a size any device could be made to satisfy, so
+	// refuse it rather than discovering that inside DXGI.
+	if (width <= 0 || height <= 0 || width > maxSwapChainDimension || height > maxSwapChainDimension)
+		return;
 
-		d2dDeviceContext->SetTarget(nullptr);
-		if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
-		{
-			CreateDeviceSwapChainBitmap();
-		}
-		else
-		{
-			// Device lost: rebuild the client along with the swap chain (see OnSize).
-			ReleaseDevice();
-			recreateSwapChainAndClientAsync();
-		}
+	if (!d2dDeviceContext || (swapChainSize.width == width && swapChainSize.height == height))
+		return;
+
+	SetWindowPos(
+		windowHandle
+		, nullptr
+		, 0
+		, 0
+		, width
+		, height
+		, SWP_NOZORDER
+	);
+
+	// SetWindowPos *sends* WM_WINDOWPOSCHANGED, WM_SIZE and WM_PAINT rather than
+	// posting them, so OnSize and PaintFrame have already run to completion by
+	// the time it returns -- and either releases the device on a failed
+	// ResizeBuffers or present, nulling both pointers. The check above is stale
+	// by this line, so re-read it instead of trusting it. Skipping this test was
+	// a null dereference that killed the host process outright; the sibling
+	// OnSize has always re-checked both pointers, for exactly this reason.
+	if (!d2dDeviceContext || !swapChain)
+		return;
+
+	d2dDeviceContext->SetTarget(nullptr);
+	if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
+	{
+		CreateDeviceSwapChainBitmap();
+	}
+	else
+	{
+		// Device lost: rebuild the client along with the swap chain (see OnSize).
+		ReleaseDevice();
+		recreateSwapChainAndClientAsync();
 	}
 }
 

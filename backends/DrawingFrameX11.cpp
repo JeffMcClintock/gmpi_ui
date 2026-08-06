@@ -80,6 +80,20 @@ int32_t basePointerFlags(unsigned int state)
          | int32_t(gmpi::api::PointerFlags::Confidence);
 }
 
+// XSetInputFocus on a window that is not yet viewable raises BadMatch, and
+// Xlib's default error handler calls exit() - inside a DAW that is the host
+// going down, not just us. Ask first; a window that is not viewable cannot
+// usefully hold focus anyway.
+void focusIfViewable(Display* display, Window window)
+{
+    if (!display || !window)
+        return;
+
+    XWindowAttributes attr{};
+    if (XGetWindowAttributes(display, window, &attr) && attr.map_state == IsViewable)
+        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+}
+
 int32_t buttonFlag(unsigned int button)
 {
     switch (button)
@@ -764,7 +778,7 @@ void X11DrawingFrame::processEvents()
 
             // Keys must reach us once the user has clicked in the view; the host
             // gives its embedded child no focus of its own.
-            XSetInputFocus(d.display, d.window, RevertToParent, CurrentTime);
+            focusIfViewable(d.display, d.window);
 
             if (d.inputClient)
             {
@@ -1487,6 +1501,15 @@ gmpi::ReturnCode X11StockDialog::showAsync(gmpi::api::IUnknown* callback)
 
     gc_ = XCreateGC(d.display, window_, 0, nullptr);
     XMapRaised(d.display, window_);
+
+    // Take the keyboard ourselves rather than trusting something else to hand
+    // it over. A window manager would focus a transient-for dialog, but nothing
+    // guarantees one is running - under a bare X server nothing is - and
+    // without focus Escape and Return never arrive, so the only way out of the
+    // dialog is the mouse. XSync first: the window must be mapped before it can
+    // take focus, or the request is silently dropped with a BadMatch.
+    XSync(d.display, False);
+    focusIfViewable(d.display, window_);
 
     callback_ = callback;
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include <sys/shm.h>
 
 #include "backends/CpuEncode.h"
+#include "backends/PortalFileDialog.h"
 
 // Xlib's macros, disposed of the moment we no longer need them. `None` and
 // `Status` in particular collide with ordinary C++ names; the rest are here so
@@ -142,6 +144,10 @@ struct X11DrawingFrame::Impl
     std::vector<class X11StockDialog*> dialogs;
 
     gmpi::drawing::api::ITextFormat* menuFont{};
+
+    // The desktop portal answers on the session bus. Connected on first use, so
+    // a plugin that never opens a file chooser never talks to D-Bus at all.
+    gmpi::portal::PortalBus portalBus;
 
     gmpi::drawing::Rect dirty{};
     bool  dirtyAll = true;
@@ -848,6 +854,12 @@ void X11DrawingFrame::onTimer()
     // so the timer is what gets that on screen. Events themselves are handled by
     // processEvents when the run loop says the fd is ready.
     d.present(factory_);
+
+    // The portal replies on the session bus, not the X connection, so it needs
+    // pumping too. Doing it here rather than requiring the host to register a
+    // second descriptor: pump() is non-blocking and a no-op until a file dialog
+    // has connected the bus, and a file chooser does not care about 16ms.
+    d.portalBus.pump();
 }
 
 void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
@@ -1742,6 +1754,36 @@ void X11DrawingFrame::showContextMenu(gmpi::drawing::Point pt)
 
     popup->addRef();
     static_cast<X11PopupMenu*>(popup.get())->takeSelfOwnership();
+}
+
+int X11DrawingFrame::portalFd() const
+{
+    return impl_->portalBus.fd();
+}
+
+gmpi::ReturnCode X11DrawingFrame::createFileDialog(int32_t dialogType,
+                                                   gmpi::api::IUnknown** returnDialog)
+{
+    *returnDialog = {};
+
+    auto& d = *impl_;
+    if (!d.display || !d.window)
+        return gmpi::ReturnCode::Fail;
+
+    // No session bus means no portal - a bare X session, or a container without
+    // one. Say so rather than handing back a dialog that will never answer.
+    if (!d.portalBus.connect())
+        return gmpi::ReturnCode::NoSupport;
+
+    // The portal's parent_window format for X11. Lower-case hex, no 0x, as
+    // written by GTK and Qt; without it the chooser floats unparented and is
+    // not modal to the host.
+    char parent[32];
+    std::snprintf(parent, sizeof parent, "x11:%lx", static_cast<unsigned long>(d.window));
+
+    auto* dlg = new gmpi::portal::PortalFileDialog(d.portalBus, dialogType, parent);
+    *returnDialog = static_cast<gmpi::api::IFileDialog*>(dlg);
+    return gmpi::ReturnCode::Ok;
 }
 
 gmpi::ReturnCode X11DrawingFrame::createStockDialog(int32_t dialogType, const char* title,

@@ -237,6 +237,28 @@ int main(int argc, char** argv)
     std::printf("item chosen: %d\n", g_chosenId);
     std::printf("dialog answer: %d\n", g_dialogAnswer);
 
+    // The file chooser goes through the XDG portal - D-Bus, not X11. Check the
+    // part this backend actually owns: that createFileDialog hands back a
+    // dialog and that the bus it will answer on is live and therefore being
+    // pumped. Deliberately NOT calling showAsync: the portal renders on the
+    // real desktop session, and a test must not put a window on the user's
+    // screen. The request/response half is PortalFileDialog, unchanged and
+    // already exercised by the Wayland frame.
+    {
+        auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
+        api::IUnknown* raw{};
+        const auto rc = dialogHost->createFileDialog(0, &raw);
+        std::printf("createFileDialog: %s, portal fd %d\n",
+                    rc == ReturnCode::Ok ? "Ok" : "FAILED", frame.portalFd());
+        if (raw)
+        {
+            shared_ptr<api::IUnknown> owner;
+            owner.attach(raw);
+            std::printf("IFileDialog interface: %s\n",
+                        owner.as<api::IFileDialog>() ? "yes" : "no");
+        }
+    }
+
     frame.close();
     XDestroyWindow(dpy, parent);
     XCloseDisplay(dpy);

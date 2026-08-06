@@ -77,6 +77,12 @@ public:
     // Register this with the host's run loop (VST3: Linux::IRunLoop). -1 when closed.
     int connectionFd() const;
 
+    // The desktop portal's D-Bus descriptor, or -1 until a file dialog has
+    // connected it. A host that wants the chooser to be event-driven can
+    // register this too; nothing has to, because onTimer() pumps the bus as
+    // well - a file chooser does not care about 16ms.
+    int portalFd() const;
+
     // Drain every X event that has arrived, then repaint if anything went dirty.
     // Safe to call when nothing is pending.
     void processEvents();
@@ -131,8 +137,12 @@ public:
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
     gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
-    gmpi::ReturnCode createFileDialog(int32_t, gmpi::api::IUnknown** r) override
-    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    // Open/save/folder, through the XDG desktop portal - the same
+    // implementation the Wayland frame uses. The portal is D-Bus, not Wayland:
+    // it takes an "x11:<hex window id>" parent just as readily as a
+    // "wayland:<handle>" one, so an X11 host gets a properly parented native
+    // chooser rather than nothing.
+    gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnDialog) override;
     // A message box: a transient-for toplevel, decorated by the window manager.
     gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
                                        gmpi::api::IUnknown** returnDialog) override;

@@ -32,7 +32,7 @@
 
 namespace gmpi
 {
-namespace wayland
+namespace portal
 {
 
 // ---------------------------------------------------------------------------
@@ -498,5 +498,16 @@ inline gmpi::ReturnCode PortalFileDialog::showAsync(const gmpi::drawing::Rect*,
     return gmpi::ReturnCode::Ok;
 }
 
-} // namespace wayland
+} // namespace portal
+
+// Both Linux backends use these. They were written for the Wayland frame and
+// lived in gmpi::wayland, but there is nothing Wayland about them - the desktop
+// portal is D-Bus, and it takes an "x11:<hex>" parent as readily as a
+// "wayland:<handle>" one. The alias keeps every existing spelling working.
+namespace wayland
+{
+using portal::PortalBus;
+using portal::PortalFileDialog;
+}
+
 } // namespace gmpi

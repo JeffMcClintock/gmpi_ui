@@ -22,7 +22,7 @@ mkdir -p "$OUT"
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}:$TOOLS/usr/lib/x86_64-linux-gnu
 
 CXXFLAGS="-std=c++20 -O1 -I$ROOT -I$ROOT/helpers -I$GMPI -I$GMPI/Core"
-LIBS=$(pkg-config --cflags --libs x11 xext fontconfig harfbuzz freetype2)
+LIBS=$(pkg-config --cflags --libs x11 xext fontconfig harfbuzz freetype2 dbus-1)
 
 g++ $CXXFLAGS -o "$HERE/x11_menu_test" \
     "$HERE/x11_menu_test.cpp" "$ROOT/backends/DrawingFrameX11.cpp" $LIBS -lpng || exit 1

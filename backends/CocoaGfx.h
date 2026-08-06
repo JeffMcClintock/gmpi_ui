@@ -1705,8 +1705,11 @@ public:
             cgLineCapFromStyle(strokeStyle), cgLineJoinFromStyle(strokeStyle), 10.0);
 
 		CGPoint cgpoint = CGPointMake(point.x, point.y);
-		bool useEOFill = (fillMode_ == gmpi::drawing::FillMode::Alternate);
-		*returnContains = (bool)CGPathContainsPoint(hitTargetPath, NULL, cgpoint, useEOFill);
+		// A stroke outline is always non-zero, whatever the source geometry's fill mode.
+		// Even-odd would cancel wherever the outline overlaps itself — the inner side of
+		// a curve tighter than the stroke radius, or two figures of the same geometry
+		// crossing — punching holes in the middle of the stroke.
+		*returnContains = (bool)CGPathContainsPoint(hitTargetPath, NULL, cgpoint, false);
 
 		CGPathRelease(hitTargetPath);
 		return gmpi::ReturnCode::Ok;

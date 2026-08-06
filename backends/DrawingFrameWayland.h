@@ -615,6 +615,30 @@ inline void WaylandTooltip::destroySurfaces()
 }
 
 
+// A wayland protocol error is fatal AND silent: the connection is dead and
+// every later call is a quiet no-op, so the window simply stops updating with
+// nothing anywhere to say why. Print it once. True if the connection is gone.
+inline bool reportWaylandError(wl_display* display)
+{
+    const int err = display ? wl_display_get_error(display) : 0;
+    if (!err)
+        return false;
+
+    if (err == EPROTO)
+    {
+        const wl_interface* iface{};
+        uint32_t id = 0;
+        const uint32_t code = wl_display_get_protocol_error(display, &iface, &id);
+        fprintf(stderr, "wayland protocol error: %s.%u on object %u\n",
+                iface && iface->name ? iface->name : "?", code, id);
+    }
+    else
+    {
+        fprintf(stderr, "wayland connection error: %s\n", strerror(err));
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // WaylandFrameBase - the present pipeline
 // ---------------------------------------------------------------------------
@@ -3677,22 +3701,8 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
 
 inline bool WaylandToplevel::reportProtocolError()
 {
-    const int err = wl_display_get_error(connection_.display());
-    if (!err)
+    if (!reportWaylandError(connection_.display()))
         return false;
-
-    if (err == EPROTO)
-    {
-        const wl_interface* iface{};
-        uint32_t id = 0;
-        const uint32_t code = wl_display_get_protocol_error(connection_.display(), &iface, &id);
-        fprintf(stderr, "wayland protocol error: %s.%u on object %u\n",
-                iface && iface->name ? iface->name : "?", code, id);
-    }
-    else
-    {
-        fprintf(stderr, "wayland connection error: %s\n", strerror(err));
-    }
 
     running_ = false;
     return true;
@@ -3889,6 +3899,10 @@ public:
     // ours parent to it, so they stay above the DAW window instead of becoming
     // a separate entry that can fall behind it.
     void setParentToplevel(xdg_toplevel* hostToplevel) { hostToplevel_ = hostToplevel; }
+
+    // True once the wayland connection has died. Nothing recovers from that; it
+    // is here so a host can stop ticking a corpse.
+    bool connectionLost() const { return connectionLost_; }
     xdg_toplevel* parentToplevel() const override { return hostToplevel_; }
 
     // A plugin's VIEW needs no decorations - it is a subsurface. Its DIALOGS do:
@@ -3993,6 +4007,12 @@ public:
         inputDispatch().clipboard().pump(d);
 
         wl_display_flush(d);
+
+        // The toplevel's loop checks this every iteration. A plugin has no loop,
+        // so without it a dead connection is indistinguishable from a plugin
+        // that just stopped repainting.
+        if (!connectionLost_ && reportWaylandError(d))
+            connectionLost_ = true;
     }
 
 private:
@@ -4029,6 +4049,7 @@ private:
     libdecor*      decor_{};          // created on first dialog, not at attach
     xdg_surface*   hostXdgSurface_{};
     xdg_toplevel*  hostToplevel_{};
+    bool           connectionLost_ = false;
     gmpi::drawing::Rect parentRect_{};
     InputDispatch  input_;
 };

@@ -2231,7 +2231,23 @@ class WaylandTextEdit : public gmpi::api::ITextEdit, private IKeySink
 public:
     WaylandTextEdit(Connection& connection, InputDispatch& input,
                     gmpi::drawing::api::ITextFormat* font, gmpi::drawing::Rect rect)
-        : connection_(connection), input_(input), font_(font), rect_(rect) {}
+        : connection_(connection), input_(input), font_(font), rect_(rect)
+    {
+        // Wire the shared model to this backend. Missing these is silent: the
+        // text still edits, because that is all internal to the model, but
+        // Return and Escape do nothing, the client never hears onChanged, and
+        // the clipboard chords are dead.
+        model_.setClipboard = [this](const std::string& s)
+        {
+            input_.clipboard().setText(connection_.display(), s, input_.lastGrabSerial());
+        };
+        model_.getClipboard = [this]
+        {
+            return input_.clipboard().getText(connection_.display());
+        };
+        model_.onChanged = [this] { notifyChanged(); redraw(); };
+        model_.onFinish  = [this](gmpi::ReturnCode r) { finish(r); };
+    }
 
     ~WaylandTextEdit()
     {
@@ -2278,6 +2294,11 @@ public:
     std::function<void(WaylandTextEdit*)> onFinished;
 
     // --- used by the frame ---
+    // The frame only repaints when something marks it dirty, so an edit that
+    // does not say so is created, never drawn, and looks like a click that did
+    // nothing. Set by createTextEdit.
+    std::function<void()> onNeedsRedraw;
+
     bool active() const { return !finished_; }
     void commit() { finish(gmpi::ReturnCode::Ok); }
     const gmpi::drawing::Rect& rect() const { return rect_; }
@@ -2293,10 +2314,14 @@ public:
     std::pair<int32_t, int32_t> selection() const { return model_.selection(); }
     void handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
     {
-        if (!finished_)
-            model_.handleKey(keysym, utf32, flags, down);
+        if (finished_)
+            return;
+        model_.handleKey(keysym, utf32, flags, down);
+        redraw();
     }
 private:
+    void redraw() { if (onNeedsRedraw) onNeedsRedraw(); }
+
     void notifyChanged();
     void finish(gmpi::ReturnCode result);
 
@@ -2342,6 +2367,8 @@ inline void WaylandTextEdit::finish(gmpi::ReturnCode result)
 
     if (input_.keySink() == this)
         input_.setKeySink(nullptr);
+
+    redraw();   // the box has to come OFF the screen as well as go on it
 
     if (auto cb = callback_.as<gmpi::api::ITextEditCallback>(); cb)
         cb->onComplete(result);
@@ -2392,6 +2419,7 @@ inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
     }
 
     model_.placeCaret(best);
+    redraw();
 }
 
 inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
@@ -3304,6 +3332,9 @@ inline gmpi::ReturnCode WaylandFrameBase::createTextEdit(
     // moment it has called showAsync, and the frame still has to draw it.
     edit->addRef();
     activeEdit_ = edit;
+
+    edit->onNeedsRedraw = [this] { dirtyAll_ = true; };
+    dirtyAll_ = true;   // it exists now; the next frame must show it
 
     edit->onFinished = [this](WaylandTextEdit* e)
     {

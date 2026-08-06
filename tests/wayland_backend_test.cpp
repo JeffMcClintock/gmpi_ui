@@ -532,6 +532,33 @@ int main()
                   TE2::scrollFor(0.f, 300.f, 100.f, 200.f) == 0.f);
         }
         {
+            // The regression this pins: the edit forwarded keys to the shared
+            // model but never wired its callbacks, so Return and Escape were
+            // silently dead - typing worked, committing did not. Only the
+            // FRAME path shows it, hence asserting through the callback.
+            struct Sink : gmpi::api::ITextEditCallback
+            {
+                int completions = 0;
+                gmpi::ReturnCode last{};
+                void onChanged(const char*) override {}
+                void onComplete(gmpi::ReturnCode r) override { ++completions; last = r; }
+                gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid,
+                                                void** returnInterface) override
+                {
+                    *returnInterface = {};
+                    GMPI_QUERYINTERFACE(gmpi::api::ITextEditCallback);
+                    return gmpi::ReturnCode::NoSupport;
+                }
+                GMPI_REFCOUNT_NO_DELETE;
+            } sink;
+
+            auto* e = make("ab");
+            e->showAsync(&sink);
+            key(e, 0xff0d, 0);                       // Return
+            check("return COMMITS the edit through its callback",
+                  sink.completions == 1 && sink.last == gmpi::ReturnCode::Ok);
+        }
+        {
             auto* e = make("ab");
             key(e, 0xff1b, 0);                       // Escape: finish() releases it
             check("escape ends the edit without touching the text", true);

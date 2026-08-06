@@ -54,6 +54,23 @@ xwd -root -silent > "$OUT/menu.xwd" 2>/dev/null
 "$TOOLS/usr/bin/xdotool" mousemove 100 58 sleep 0.3 click 1 >/dev/null 2>&1
 sleep 0.8
 
+# The edit appears first: type into it and commit with Return.
+for _ in $(seq 1 80); do grep -q "text edit created" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
+sleep 0.5
+xwd -root -silent > "$OUT/edit.xwd" 2>/dev/null
+"$TOOLS/usr/bin/xdotool" type --delay 40 "new" >/dev/null 2>&1
+sleep 0.3
+"$TOOLS/usr/bin/xdotool" key Return >/dev/null 2>&1
+sleep 0.5
+
+# Then the raw-key sink: send a few keys, then Escape to end it.
+for _ in $(seq 1 80); do grep -q "key listener created" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
+sleep 0.5
+"$TOOLS/usr/bin/xdotool" type --delay 40 "xyz" >/dev/null 2>&1
+sleep 0.3
+"$TOOLS/usr/bin/xdotool" key Escape >/dev/null 2>&1
+sleep 0.5
+
 # The test raises a message box two thirds of the way through. Wait for it to
 # say so rather than guessing, then click "Yes" - the first button, rightmost.
 for _ in $(seq 1 80); do grep -q "stock dialog created" "$OUT/test.log" 2>/dev/null && break; sleep 0.1; done
@@ -107,4 +124,10 @@ grep -q "^stock dialog created$" "$OUT/test.log" \
 grep -q "^dialog answer: 2$" "$OUT/test.log" \
   || { echo "FAIL: clicking Yes did not deliver StockDialogButton::Yes (see test.log)"; exit 1; }
 
-echo "PASS: menu populated, mapped and returned its item; dialog opened and answered"
+grep -q "^edit result: 'new' complete 1$" "$OUT/test.log" \
+  || { echo "FAIL: the text edit did not receive typing / commit (see test.log)"; exit 1; }
+
+grep -q "^keys seen: 'xyz' ended 1$" "$OUT/test.log" \
+  || { echo "FAIL: the key listener did not receive raw keys / end on Escape (see test.log)"; exit 1; }
+
+echo "PASS: menu, dialog, text edit and key listener all work"

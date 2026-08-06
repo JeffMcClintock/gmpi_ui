@@ -16,6 +16,8 @@
 
 #include "backends/CpuEncode.h"
 #include "backends/PortalFileDialog.h"
+#include "backends/TextEditModel.h"
+#include "backends/X11Clipboard.h"
 
 // Xlib's macros, disposed of the moment we no longer need them. `None` and
 // `Status` in particular collide with ordinary C++ names; the rest are here so
@@ -148,6 +150,16 @@ struct X11DrawingFrame::Impl
     // The desktop portal answers on the session bus. Connected on first use, so
     // a plugin that never opens a file chooser never talks to D-Bus at all.
     gmpi::portal::PortalBus portalBus;
+
+    X11Clipboard clipboard;
+
+    // The in-place editor and the raw-key sink, at most one of each. Both are
+    // drawn on / fed by THIS window rather than getting one of their own: an
+    // edit is an overlay on the client, and a key listener is invisible.
+    // Non-owning - each keeps itself alive until it finishes, exactly as the
+    // dialogs do.
+    class X11TextEdit*     activeEdit{};
+    class X11KeyListener*  keySink{};
 
     gmpi::drawing::Rect dirty{};
     bool  dirtyAll = true;
@@ -363,6 +375,168 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// X11TextEdit - ITextEdit as an overlay on the plugin's own window
+// ---------------------------------------------------------------------------
+// No window of its own. A rename box is a few pixels over the client, and
+// giving it an override-redirect window would put it on a different visual
+// with its own clipping and its own focus. Instead the frame draws it after
+// the client (see Impl::present) and routes keys to it while it is up.
+//
+// The buffer, caret, selection and keystroke table are gmpi::textedit::Model,
+// shared with the Wayland edit and covered by the headless tests.
+class X11TextEdit : public gmpi::api::ITextEdit
+{
+public:
+    X11TextEdit(X11DrawingFrame::Impl& frame, gmpi::drawing::api::ITextFormat* font,
+                gmpi::drawing::Rect rect)
+        : frame_(frame), font_(font), rect_(rect)
+    {
+        model_.setClipboard = [this](const std::string& s) { frame_.clipboard.setText(s); };
+        model_.getClipboard = [this] { return frame_.clipboard.getText(); };
+        model_.onChanged    = [this] { notifyChanged(); invalidate(); };
+        model_.onFinish     = [this](gmpi::ReturnCode r) { finish(r); };
+    }
+
+    // --- ITextEdit ---
+    gmpi::ReturnCode setText(const char* text) override
+    {
+        model_.setText(text ? text : "");
+        model_.selectAll();   // showing an edit selects its contents
+        return gmpi::ReturnCode::Ok;
+    }
+    gmpi::ReturnCode setAlignment(int32_t) override { return gmpi::ReturnCode::Ok; }
+    gmpi::ReturnCode setTextSize(float) override    { return gmpi::ReturnCode::Ok; }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+    {
+        callback_ = callback;
+
+        // One edit at a time: a second one commits the first, which is what
+        // clicking from one rename box into another should do.
+        if (frame_.activeEdit && frame_.activeEdit != this)
+            frame_.activeEdit->commit();
+
+        frame_.activeEdit = this;
+        addRef();             // alive until committed or abandoned
+        invalidate();
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::ITextEdit);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    bool active() const { return !finished_; }
+    void commit() { finish(gmpi::ReturnCode::Ok); }
+    const gmpi::drawing::Rect& rect() const { return rect_; }
+
+    void handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
+    {
+        if (finished_)
+            return;
+        model_.handleKey(keysym, utf32, flags, down);
+        invalidate();
+    }
+
+    // A click inside places the caret; the frame commits us on a click outside.
+    void onPointer(double x, double y, bool pressed);
+    void render(gmpi::cpugfx::RenderTarget* rt);
+
+private:
+    void invalidate() { frame_.dirtyAll = true; }
+
+    void notifyChanged()
+    {
+        if (auto cb = callback_.as<gmpi::api::ITextEditCallback>(); cb)
+            cb->onChanged(model_.text().c_str());
+    }
+
+    void finish(gmpi::ReturnCode result)
+    {
+        if (finished_)
+            return;
+        finished_ = true;
+
+        if (frame_.activeEdit == this)
+            frame_.activeEdit = nullptr;
+
+        if (auto cb = callback_.as<gmpi::api::ITextEditCallback>(); cb)
+            cb->onComplete(result);
+        callback_ = {};
+
+        frame_.dirtyAll = true;
+        release();   // balances showAsync
+    }
+
+    X11DrawingFrame::Impl& frame_;
+    gmpi::drawing::api::ITextFormat* font_{};
+    gmpi::drawing::Rect rect_{};
+    gmpi::textedit::Model model_;
+    float scrollX_ = 0.f;
+    bool  finished_ = false;
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+};
+
+// ---------------------------------------------------------------------------
+// X11KeyListener - IKeyListener, an invisible sink for raw keys
+// ---------------------------------------------------------------------------
+class X11KeyListener : public gmpi::api::IKeyListener
+{
+public:
+    explicit X11KeyListener(X11DrawingFrame::Impl& frame) : frame_(frame) {}
+
+    ~X11KeyListener()
+    {
+        // Detach only. stop() releases, and by the time a destructor runs the
+        // count is already zero - decrementing again turns teardown into a
+        // double free.
+        if (frame_.keySink == this)
+            frame_.keySink = nullptr;
+    }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+    {
+        callback_ = callback;
+
+        if (frame_.keySink && frame_.keySink != this)
+            frame_.keySink->stop(gmpi::ReturnCode::Cancel);
+
+        frame_.keySink = this;
+        addRef();             // alive until focus is lost
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IKeyListener);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+    void handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down);
+    void stop(gmpi::ReturnCode result);
+
+private:
+    static bool isClipboardKey(uint32_t keysym)
+    {
+        switch (keysym)
+        {
+        case 'c': case 'C': case 'x': case 'X': case 'v': case 'V': return true;
+        default: return false;
+        }
+    }
+
+    X11DrawingFrame::Impl& frame_;
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
+    bool stopped_ = false;
+};
+
+// ---------------------------------------------------------------------------
 // X11StockDialog - IStockDialog as a transient-for toplevel
 // ---------------------------------------------------------------------------
 // Much simpler than the Wayland equivalent: X11 has a window manager, so the
@@ -530,6 +704,9 @@ bool X11DrawingFrame::open(uintptr_t parentWindowId, int width, int height)
 
     d.gc = XCreateGC(d.display, d.window, 0, nullptr);
 
+    // The clipboard is a selection owned by a window, so it needs ours.
+    d.clipboard.init(d.display, d.window);
+
     XMapWindow(d.display, d.window);
     XFlush(d.display);
 
@@ -690,6 +867,10 @@ void X11DrawingFrame::processEvents()
                     break;
                 }
             }
+            // Selection traffic is the clipboard's, not the client's.
+            if (!consumed && d.clipboard.handleEvent(e))
+                consumed = true;
+
             if (consumed)
                 continue;
         }
@@ -786,6 +967,21 @@ void X11DrawingFrame::processEvents()
             // gives its embedded child no focus of its own.
             focusIfViewable(d.display, d.window);
 
+            // A click inside an active edit places the caret; a click outside
+            // commits it, which is what every in-place rename box does. Either
+            // way the client does not see this press.
+            if (d.activeEdit)
+            {
+                const gmpi::drawing::Point ep{ static_cast<float>(b.x) / d.scale,
+                                               static_cast<float>(b.y) / d.scale };
+                const auto& er = d.activeEdit->rect();
+                if (ep.x >= er.left && ep.x < er.right && ep.y >= er.top && ep.y < er.bottom)
+                    d.activeEdit->onPointer(ep.x, ep.y, true);
+                else
+                    d.activeEdit->commit();
+                break;
+            }
+
             if (d.inputClient)
             {
                 const gmpi::drawing::Point pt{ static_cast<float>(b.x) / d.scale,
@@ -820,10 +1016,31 @@ void X11DrawingFrame::processEvents()
         }
 
         case KeyPress:
+        case KeyRelease:
         {
             char buf[32]{};
             KeySym keysym{};
             const int n = XLookupString(&e.xkey, buf, sizeof(buf) - 1, &keysym, nullptr);
+            const bool down = (e.type == KeyPress);
+            const uint32_t utf32 = (n > 0) ? uint32_t(uint8_t(buf[0])) : 0u;
+            const int32_t keyFlags = modifierFlags(e.xkey.state);
+
+            // An in-place edit or a key listener owns the keyboard while it is
+            // up, or typing into a rename box would also drive the client's
+            // shortcuts.
+            if (d.activeEdit)
+            {
+                d.activeEdit->handleKey(uint32_t(keysym), utf32, keyFlags, down);
+                break;
+            }
+            if (d.keySink)
+            {
+                d.keySink->handleKey(uint32_t(keysym), utf32, keyFlags, down);
+                break;
+            }
+
+            if (!down)
+                break;   // the client's onKeyPress has no release half
 
             if (d.inputClient && n > 0)
             {
@@ -914,6 +1131,12 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
         rt->setTransform(&m);
     }
     d.client->render(static_cast<gmpi::drawing::api::IDeviceContext*>(rt));
+
+    // An in-place edit sits ON the client, so it is drawn after - same order as
+    // the Wayland frame's drawActiveTextEdit.
+    if (d.activeEdit)
+        d.activeEdit->render(rt);
+
     rt->endDraw();
 
     gmpi::drawing::api::IBitmap* bmRaw{};
@@ -1397,6 +1620,191 @@ bool X11PopupMenu::handleEvent(const XEvent& e)
 }
 
 // ---------------------------------------------------------------------------
+// X11TextEdit / X11KeyListener
+// ---------------------------------------------------------------------------
+
+void X11TextEdit::onPointer(double x, double y, bool pressed)
+{
+    if (!pressed || !font_ || finished_)
+        return;
+
+    (void)y;
+
+    // Place the caret at the character boundary nearest the click, by measuring
+    // each prefix. Linear, but a text edit holds a name, not a document.
+    const double target = x - rect_.left - 3.0 + scrollX_;
+    const std::string& text = model_.text();
+
+    int32_t best = 0;
+    double bestDist = 1e30;
+    for (int32_t i = 0; i <= int32_t(text.size()); i = model_.nextCodepoint(i))
+    {
+        gmpi::drawing::Size sz{};
+        if (i > 0)
+            font_->getTextExtentU(text.c_str(), i, 100000.f, &sz);
+
+        const double dist = std::fabs(double(sz.width) - target);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            best = i;
+        }
+        if (i == int32_t(text.size()))
+            break;
+    }
+
+    model_.placeCaret(best);
+    invalidate();
+}
+
+void X11TextEdit::render(gmpi::cpugfx::RenderTarget* rt)
+{
+    if (finished_ || !rt)
+        return;
+
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    // Same palette as the Wayland edit.
+    auto* back = brush({ 0.10f, 0.11f, 0.13f, 1.0f });
+    auto* edge = brush({ 0.38f, 0.55f, 0.85f, 1.0f });
+    auto* ink  = brush({ 0.94f, 0.95f, 0.97f, 1.0f });
+    auto* sel  = brush({ 0.16f, 0.42f, 0.75f, 1.0f });
+
+    if (back) rt->fillRectangle(&rect_, back);
+    if (edge) rt->drawRectangle(&rect_, edge, 1.f, nullptr);
+
+    const std::string& text = model_.text();
+
+    auto widthTo = [&](int32_t i) -> float
+    {
+        if (i <= 0 || !font_) return 0.f;
+        gmpi::drawing::Size sz{};
+        font_->getTextExtentU(text.c_str(), i, 100000.f, &sz);
+        return sz.width;
+    };
+
+    const float span = (rect_.right - 2.f) - (rect_.left + 3.f);
+    scrollX_ = gmpi::textedit::Model::scrollFor(widthTo(model_.caret()),
+                                                widthTo(int32_t(text.size())), span, scrollX_);
+
+    const float textLeft = rect_.left + 3.f - scrollX_;
+    const float textTop  = rect_.top + 2.f;
+
+    rt->pushAxisAlignedClip(&rect_);
+
+    if (sel && model_.hasSelection())
+    {
+        const auto [a, b] = model_.selection();
+        const gmpi::drawing::Rect r{ textLeft + widthTo(a), rect_.top + 1.f,
+                                     textLeft + widthTo(b), rect_.bottom - 1.f };
+        rt->fillRectangle(&r, sel);
+    }
+
+    if (font_ && ink && !text.empty())
+    {
+        // The clip limits the right edge, not the rect, so a scrolled-off tail
+        // cannot spill past the box.
+        const gmpi::drawing::Rect tr{ textLeft, textTop, textLeft + 100000.f, rect_.bottom };
+        rt->drawTextU(text.c_str(), uint32_t(text.size()), font_, &tr, ink, 0);
+    }
+
+    // Solid rather than blinking: a blink needs a timer of its own, and a steady
+    // caret is not the thing anyone notices about a rename box.
+    if (ink)
+    {
+        const float cx = textLeft + widthTo(model_.caret());
+        const gmpi::drawing::Rect c{ cx, rect_.top + 2.f, cx + 1.5f, rect_.bottom - 2.f };
+        rt->fillRectangle(&c, ink);
+    }
+
+    rt->popAxisAlignedClip();
+
+    if (back) back->release();
+    if (edge) edge->release();
+    if (ink)  ink->release();
+    if (sel)  sel->release();
+}
+
+void X11KeyListener::stop(gmpi::ReturnCode result)
+{
+    if (stopped_)
+        return;
+    stopped_ = true;
+
+    if (frame_.keySink == this)
+        frame_.keySink = nullptr;
+
+    if (auto cb = callback_.as<gmpi::api::IKeyListenerCallback>(); cb)
+        cb->onLostFocus(result);
+    callback_ = {};
+
+    release();   // balances showAsync
+}
+
+void X11KeyListener::handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
+{
+    auto cb = callback_.as<gmpi::api::IKeyListenerCallback>();
+    if (!cb)
+        return;
+
+    const bool ctrl = (flags & int32_t(gmpi::api::PointerFlags::KeyControl)) != 0;
+
+    // Clipboard first: the callback owns the text, we own the selection.
+    //
+    // Both edges are swallowed, but only the press acts. Acting on the release
+    // as well would copy twice; delivering the release as an ordinary keystroke
+    // would hand the caller an onKeyUp with no matching onKeyDown.
+    if (ctrl && isClipboardKey(keysym))
+    {
+        if (!down)
+            return;
+
+        switch (keysym)
+        {
+        case 'c': case 'C':
+        case 'x': case 'X':
+        {
+            gmpi::ReturnString text;
+            if (keysym == 'x' || keysym == 'X')
+                cb->cut(&text);
+            else
+                cb->copy(&text);
+
+            frame_.clipboard.setText(std::string(text.getData(), size_t(text.getSize())));
+            return;
+        }
+        case 'v': case 'V':
+        {
+            const std::string text = frame_.clipboard.getText();
+            if (!text.empty())
+                cb->paste(text.c_str(), text.size());
+            return;
+        }
+        default: break;
+        }
+    }
+
+    // Escape gives the focus back rather than being delivered as a keystroke,
+    // which is what every caller of this expects to end an edit.
+    if (down && keysym == XK_Escape)
+    {
+        stop(gmpi::ReturnCode::Cancel);
+        return;
+    }
+
+    const int32_t key = utf32 ? int32_t(utf32) : int32_t(keysym);
+    if (down)
+        cb->onKeyDown(key, flags);
+    else
+        cb->onKeyUp(key, flags);
+}
+
+// ---------------------------------------------------------------------------
 // X11StockDialog
 // ---------------------------------------------------------------------------
 
@@ -1759,6 +2167,32 @@ void X11DrawingFrame::showContextMenu(gmpi::drawing::Point pt)
 int X11DrawingFrame::portalFd() const
 {
     return impl_->portalBus.fd();
+}
+
+gmpi::ReturnCode X11DrawingFrame::createTextEdit(const gmpi::drawing::Rect* r,
+                                                 gmpi::api::IUnknown** returnTextEdit)
+{
+    *returnTextEdit = {};
+
+    if (!impl_->display)
+        return gmpi::ReturnCode::Fail;
+
+    auto* edit = new X11TextEdit(*impl_, impl_->menuFont, r ? *r : gmpi::drawing::Rect{});
+    *returnTextEdit = static_cast<gmpi::api::ITextEdit*>(edit);
+    return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode X11DrawingFrame::createKeyListener(const gmpi::drawing::Rect*,
+                                                    gmpi::api::IUnknown** returnKeyListener)
+{
+    *returnKeyListener = {};
+
+    if (!impl_->display)
+        return gmpi::ReturnCode::Fail;
+
+    auto* listener = new X11KeyListener(*impl_);
+    *returnKeyListener = static_cast<gmpi::api::IKeyListener*>(listener);
+    return gmpi::ReturnCode::Ok;
 }
 
 gmpi::ReturnCode X11DrawingFrame::createFileDialog(int32_t dialogType,

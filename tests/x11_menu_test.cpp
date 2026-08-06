@@ -41,6 +41,10 @@ namespace
 int g_populateCalls = 0;
 int g_chosenId = -1;
 int g_dialogAnswer = -1;
+std::string g_editResult;
+bool        g_editComplete = false;
+std::string g_keysSeen;
+bool        g_keyListenerEnded = false;
 
 class MenuCallback : public api::IPopupMenuCallback
 {
@@ -78,6 +82,16 @@ public:
 };
 
 DialogCallback g_dialogCallback;
+
+gmpi::sdk::TextEditCallback g_editCallback{
+    [](const std::string& text) { g_editResult = text; g_editComplete = true; },
+    []() { g_editComplete = true; } };
+
+// Records what the raw-key sink was handed, so the test can assert on it.
+gmpi::sdk::KeyListenerCallback g_keyCallback{
+    [](int32_t key, int32_t) { if (key >= 32 && key < 127) g_keysSeen += char(key); },
+    [](int32_t, int32_t) {},
+    []() { g_keyListenerEnded = true; } };
 
 // A client that draws a flat colour and offers a context menu. Deliberately
 // minimal: this is a test of the frame, not of a widget toolkit.
@@ -200,6 +214,44 @@ int main(int argc, char** argv)
 
     for (int i = 0; i < ticks; ++i)
     {
+        // An in-place edit, early: the harness types into it and presses Return.
+        if (i == ticks / 5)
+        {
+            auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
+            api::IUnknown* raw{};
+            const gmpi::drawing::Rect where{ 20.f, 120.f, 220.f, 146.f };
+            if (dialogHost->createTextEdit(&where, &raw) == ReturnCode::Ok && raw)
+            {
+                shared_ptr<api::IUnknown> owner;
+                owner.attach(raw);
+                if (auto edit = owner.as<api::ITextEdit>(); edit)
+                {
+                    edit->setText("old");
+                    std::printf("text edit created\n");
+                    std::fflush(stdout);
+                    edit->showAsync(&g_editCallback);
+                }
+            }
+        }
+
+        // Then a raw-key sink.
+        if (i == (ticks * 2) / 5)
+        {
+            auto* dialogHost = static_cast<api::IDialogHost*>(&frame);
+            api::IUnknown* raw{};
+            if (dialogHost->createKeyListener(nullptr, &raw) == ReturnCode::Ok && raw)
+            {
+                shared_ptr<api::IUnknown> owner;
+                owner.attach(raw);
+                if (auto kl = owner.as<api::IKeyListener>(); kl)
+                {
+                    std::printf("key listener created\n");
+                    std::fflush(stdout);
+                    kl->showAsync(&g_keyCallback);
+                }
+            }
+        }
+
         // Two thirds of the way through, after the menu has been exercised,
         // raise a message box so the same run covers both. A plugin asking its
         // host for one is the case that used to return NoSupport.
@@ -236,6 +288,8 @@ int main(int argc, char** argv)
     std::printf("populateContextMenu called: %d\n", g_populateCalls);
     std::printf("item chosen: %d\n", g_chosenId);
     std::printf("dialog answer: %d\n", g_dialogAnswer);
+    std::printf("edit result: '%s' complete %d\n", g_editResult.c_str(), int(g_editComplete));
+    std::printf("keys seen: '%s' ended %d\n", g_keysSeen.c_str(), int(g_keyListenerEnded));
 
     // The file chooser goes through the XDG portal - D-Bus, not X11. Check the
     // part this backend actually owns: that createFileDialog hands back a

@@ -53,6 +53,7 @@
 #include "backends/CpuGfx.h"
 #include "backends/CpuEncode.h"
 #include "backends/PopupMenuModel.h"
+#include "backends/TextEditModel.h"
 #include "helpers/NativeUi.h"
 #include "RefCountMacros.h"
 #include "backends/PortalFileDialog.h"
@@ -1974,9 +1975,8 @@ public:
     // --- ITextEdit ---
     gmpi::ReturnCode setText(const char* text) override
     {
-        text_ = text ? text : "";
-        caret_ = int32_t(text_.size());
-        selectAll();
+        model_.setText(text ? text : "");
+        model_.selectAll();   // showing an edit selects its contents
         return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode setAlignment(int32_t alignment) override
@@ -2018,36 +2018,18 @@ public:
     void onPointer(double x, double y, bool pressed);
 
     // --- exposed so the editing model can be checked without a compositor ----
-    const std::string& text() const { return text_; }
-    int32_t caret() const { return caret_; }
-    std::pair<int32_t, int32_t> selection() const
-    { return { (std::min)(selAnchor_, caret_), (std::max)(selAnchor_, caret_) }; }
-
-    // UTF-8 aware stepping: continuation bytes are 10xxxxxx, so skip them
-    int32_t nextCodepoint(int32_t i) const
+    // The buffer, caret, selection and keystroke table live in
+    // gmpi::textedit::Model, shared with the X11 backend. These forwarders keep
+    // the API the headless tests drive.
+    const std::string& text() const { return model_.text(); }
+    int32_t caret() const { return model_.caret(); }
+    std::pair<int32_t, int32_t> selection() const { return model_.selection(); }
+    void handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
     {
-        const int32_t n = int32_t(text_.size());
-        if (i >= n) return n;
-        ++i;
-        while (i < n && (uint8_t(text_[size_t(i)]) & 0xC0) == 0x80) ++i;
-        return i;
+        if (!finished_)
+            model_.handleKey(keysym, utf32, flags, down);
     }
-    int32_t prevCodepoint(int32_t i) const
-    {
-        if (i <= 0) return 0;
-        --i;
-        while (i > 0 && (uint8_t(text_[size_t(i)]) & 0xC0) == 0x80) --i;
-        return i;
-    }
-
-    void insertUtf32(uint32_t cp);
-    void handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down);
-
 private:
-    void selectAll() { selAnchor_ = 0; caret_ = int32_t(text_.size()); }
-    bool hasSelection() const { return selAnchor_ != caret_; }
-    void deleteSelection();
-    std::string selectedText() const;
     void notifyChanged();
     void finish(gmpi::ReturnCode result);
 
@@ -2062,28 +2044,16 @@ private:
     gmpi::drawing::api::ITextFormat* font_{};
     gmpi::drawing::Rect rect_{};
 
-    std::string text_;
-    int32_t caret_ = 0;
     float   scrollX_ = 0.f;   // horizontal scroll so the caret stays visible
 
 public:
-    // The scroll policy, as arithmetic: given where the caret is, how wide the
-    // text is, and how wide the box is, where must the window start so the
-    // caret is visible, the tail is not over-scrolled, and short text never
-    // scrolls at all? Static and pure so the tests can pin the invariants
-    // without a font or a render target.
+    // The scroll policy, as arithmetic. Lives in the shared model now; kept here
+    // because the headless tests pin the invariants through this name.
     static float scrollFor(float caretX, float textWidth, float span, float current)
-    {
-        float sx = current;
-        if (caretX - sx > span) sx = caretX - span;
-        if (caretX < sx)        sx = caretX;
-        if (sx > 0.f && textWidth - sx < span)
-            sx = (std::max)(0.f, textWidth - span);
-        return sx;
-    }
+    { return gmpi::textedit::Model::scrollFor(caretX, textWidth, span, current); }
 
 private:
-    int32_t selAnchor_ = 0;
+    gmpi::textedit::Model model_;
     int32_t alignment_ = 0;
     float   textHeight_ = 0.f;
     bool    finished_ = false;
@@ -2091,58 +2061,10 @@ private:
     gmpi::shared_ptr<gmpi::api::IUnknown> callback_;
 };
 
-inline std::string WaylandTextEdit::selectedText() const
-{
-    const auto [a, b] = selection();
-    return text_.substr(size_t(a), size_t(b - a));
-}
-
-inline void WaylandTextEdit::deleteSelection()
-{
-    if (!hasSelection())
-        return;
-    const auto [a, b] = selection();
-    text_.erase(size_t(a), size_t(b - a));
-    caret_ = a;
-    selAnchor_ = a;
-}
-
-inline void WaylandTextEdit::insertUtf32(uint32_t cp)
-{
-    deleteSelection();
-
-    // encode as UTF-8; the edit buffer is bytes, the model is codepoints
-    char buf[4];
-    int n = 0;
-    if (cp < 0x80) { buf[n++] = char(cp); }
-    else if (cp < 0x800)
-    {
-        buf[n++] = char(0xC0 | (cp >> 6));
-        buf[n++] = char(0x80 | (cp & 0x3F));
-    }
-    else if (cp < 0x10000)
-    {
-        buf[n++] = char(0xE0 | (cp >> 12));
-        buf[n++] = char(0x80 | ((cp >> 6) & 0x3F));
-        buf[n++] = char(0x80 | (cp & 0x3F));
-    }
-    else
-    {
-        buf[n++] = char(0xF0 | (cp >> 18));
-        buf[n++] = char(0x80 | ((cp >> 12) & 0x3F));
-        buf[n++] = char(0x80 | ((cp >> 6) & 0x3F));
-        buf[n++] = char(0x80 | (cp & 0x3F));
-    }
-
-    text_.insert(size_t(caret_), buf, size_t(n));
-    caret_ += n;
-    selAnchor_ = caret_;
-}
-
 inline void WaylandTextEdit::notifyChanged()
 {
     if (auto cb = callback_.as<gmpi::api::ITextEditCallback>(); cb)
-        cb->onChanged(text_.c_str());
+        cb->onChanged(model_.text().c_str());
 }
 
 inline void WaylandTextEdit::finish(gmpi::ReturnCode result)
@@ -2172,132 +2094,6 @@ inline void WaylandTextEdit::finish(gmpi::ReturnCode result)
     release();   // balances the addRef in showAsync
 }
 
-inline void WaylandTextEdit::handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, bool down)
-{
-    if (!down || finished_)
-        return;
-
-    const bool ctrl  = (flags & int32_t(gmpi::api::PointerFlags::KeyControl)) != 0;
-    const bool shift = (flags & int32_t(gmpi::api::PointerFlags::KeyShift)) != 0;
-
-    // moving the caret collapses the selection unless shift is held
-    auto moveTo = [&](int32_t pos)
-    {
-        caret_ = pos;
-        if (!shift)
-            selAnchor_ = pos;
-    };
-
-    if (ctrl)
-    {
-        switch (keysym)
-        {
-        case 'a': case 'A': selectAll(); return;
-        case 'c': case 'C':
-            if (hasSelection())
-                input_.clipboard().setText(connection_.display(), selectedText(),
-                                           input_.lastGrabSerial());
-            return;
-        case 'x': case 'X':
-            if (hasSelection())
-            {
-                input_.clipboard().setText(connection_.display(), selectedText(),
-                                           input_.lastGrabSerial());
-                deleteSelection();
-                notifyChanged();
-            }
-            return;
-        case 'v': case 'V':
-        {
-            const std::string raw = input_.clipboard().getText(connection_.display());
-
-            // Clipboard content is whatever some other program put there. A
-            // newline or NUL in a single-line value corrupts both the display and
-            // the string handed to the host, so apply the same filter as typing.
-            std::string clip;
-            clip.reserve(raw.size());
-            for (const char ch : raw)
-            {
-                const auto byte = uint8_t(ch);
-                if (byte == 0)
-                    break;                       // NUL ends it; the rest is not text
-                if (byte >= 0x20 && byte != 0x7f)
-                    clip += ch;
-            }
-
-            if (!clip.empty())
-            {
-                deleteSelection();
-                text_.insert(size_t(caret_), clip);
-                caret_ += int32_t(clip.size());
-                selAnchor_ = caret_;
-                notifyChanged();
-            }
-            return;
-        }
-        default: return;   // any other ctrl chord is a shortcut, not text
-        }
-    }
-
-    switch (keysym)
-    {
-    case 0xff08:                       // Backspace
-        if (hasSelection())
-            deleteSelection();
-        else if (caret_ > 0)
-        {
-            const int32_t p = prevCodepoint(caret_);
-            text_.erase(size_t(p), size_t(caret_ - p));
-            caret_ = p;
-            selAnchor_ = p;
-        }
-        notifyChanged();
-        return;
-
-    case 0xffff:                       // Delete
-        if (hasSelection())
-            deleteSelection();
-        else if (caret_ < int32_t(text_.size()))
-        {
-            const int32_t nx = nextCodepoint(caret_);
-            text_.erase(size_t(caret_), size_t(nx - caret_));
-        }
-        notifyChanged();
-        return;
-
-    // With a selection and no shift, an arrow collapses to that EDGE - it does
-    // not step from the caret, which would drop a character off the end.
-    case 0xff51:                                                     // Left
-        if (!shift && hasSelection()) moveTo(selection().first);
-        else                          moveTo(prevCodepoint(caret_));
-        return;
-    case 0xff53:                                                     // Right
-        if (!shift && hasSelection()) moveTo(selection().second);
-        else                          moveTo(nextCodepoint(caret_));
-        return;
-    case 0xff50: moveTo(0); return;                                  // Home
-    case 0xff57: moveTo(int32_t(text_.size())); return;              // End
-
-    case 0xff0d: case 0xff8d:          // Return / KP_Enter: commit
-        finish(gmpi::ReturnCode::Ok);
-        return;
-
-    case 0xff1b:                       // Escape: abandon
-        finish(gmpi::ReturnCode::Cancel);
-        return;
-
-    default: break;
-    }
-
-    // Anything that produced a printable character is text. Control codes below
-    // space are not - they would otherwise be inserted as invisible rubbish.
-    if (utf32 >= 0x20 && utf32 != 0x7f)
-    {
-        insertUtf32(utf32);
-        notifyChanged();
-    }
-}
-
 inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
 {
     if (!pressed || !font_ || finished_)
@@ -2311,11 +2107,12 @@ inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
 
     int32_t best = 0;
     double bestDist = 1e30;
-    for (int32_t i = 0; i <= int32_t(text_.size()); i = nextCodepoint(i))
+    const std::string& text = model_.text();
+    for (int32_t i = 0; i <= int32_t(text.size()); i = model_.nextCodepoint(i))
     {
         gmpi::drawing::Size sz{};
         if (i > 0)
-            font_->getTextExtentU(text_.c_str(), i, 100000.f, &sz);
+            font_->getTextExtentU(text.c_str(), i, 100000.f, &sz);
 
         const double d = std::fabs(double(sz.width) - target);
         if (d < bestDist)
@@ -2323,12 +2120,11 @@ inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
             bestDist = d;
             best = i;
         }
-        if (i == int32_t(text_.size()))
+        if (i == int32_t(text.size()))
             break;
     }
 
-    caret_ = best;
-    selAnchor_ = best;
+    model_.placeCaret(best);
 }
 
 inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
@@ -2351,11 +2147,13 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
     if (back) rt->fillRectangle(&rect_, back);
     if (edge) rt->drawRectangle(&rect_, edge, 1.f, nullptr);
 
+    const std::string& text = model_.text();
+
     auto widthTo = [&](int32_t i) -> float
     {
         if (i <= 0 || !font_) return 0.f;
         gmpi::drawing::Size sz{};
-        font_->getTextExtentU(text_.c_str(), i, 100000.f, &sz);
+        font_->getTextExtentU(text.c_str(), i, 100000.f, &sz);
         return sz.width;
     };
 
@@ -2364,34 +2162,34 @@ inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
     // marching out of sight. The window is [scrollX_, scrollX_ + span] in
     // text coordinates, nudged only when the caret leaves it.
     const float span = (rect_.right - 2.f) - (rect_.left + 3.f);
-    scrollX_ = scrollFor(widthTo(caret_), widthTo(int32_t(text_.size())), span, scrollX_);
+    scrollX_ = scrollFor(widthTo(model_.caret()), widthTo(int32_t(text.size())), span, scrollX_);
 
     const float textLeft = rect_.left + 3.f - scrollX_;
     const float textTop  = rect_.top + 2.f;
 
     rt->pushAxisAlignedClip(&rect_);
 
-    if (sel && hasSelection())
+    if (sel && model_.hasSelection())
     {
-        const auto [a, b] = selection();
+        const auto [a, b] = model_.selection();
         const gmpi::drawing::Rect r{ textLeft + widthTo(a), rect_.top + 1.f,
                                      textLeft + widthTo(b), rect_.bottom - 1.f };
         rt->fillRectangle(&r, sel);
     }
 
-    if (font_ && ink && !text_.empty())
+    if (font_ && ink && !text.empty())
     {
         // The rect no longer limits the right edge - the clip does - so the
         // scrolled-off tail cannot spill past the box.
         const gmpi::drawing::Rect tr{ textLeft, textTop, textLeft + 100000.f, rect_.bottom };
-        rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
+        rt->drawTextU(text.c_str(), uint32_t(text.size()), font_, &tr, ink, 0);
     }
 
     // Caret drawn solid rather than blinking: a blink needs a timer of its own,
     // and a steady caret is not the thing anyone notices about a rename box.
     if (ink)
     {
-        const float cx = textLeft + widthTo(caret_);
+        const float cx = textLeft + widthTo(model_.caret());
         const gmpi::drawing::Rect c{ cx, rect_.top + 2.f, cx + 1.5f, rect_.bottom - 2.f };
         rt->fillRectangle(&c, ink);
     }

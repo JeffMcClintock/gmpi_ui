@@ -129,14 +129,14 @@ public:
     gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r,
                                      gmpi::api::IUnknown** returnPopupMenu) override;
 
-    // Not implemented on X11 yet. Explicitly NoSupport with the out-param
-    // cleared, rather than left to a null dereference in the caller: a plugin
-    // that asks for an in-place edit should find out, not crash. The colour
-    // picker is deliberately last in the queue - plugins rarely want one.
-    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
-    { *r = {}; return gmpi::ReturnCode::NoSupport; }
-    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect*, gmpi::api::IUnknown** r) override
-    { *r = {}; return gmpi::ReturnCode::NoSupport; }
+    // An in-place editor, drawn over the client rather than in a window of its
+    // own - see X11TextEdit. Needs setMenuFont for the same reason menus do.
+    gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r,
+                                    gmpi::api::IUnknown** returnTextEdit) override;
+
+    // An invisible sink for raw keys, including the clipboard chords.
+    gmpi::ReturnCode createKeyListener(const gmpi::drawing::Rect* r,
+                                       gmpi::api::IUnknown** returnKeyListener) override;
     // Open/save/folder, through the XDG desktop portal - the same
     // implementation the Wayland frame uses. The portal is D-Bus, not Wayland:
     // it takes an "x11:<hex window id>" parent just as readily as a
@@ -146,6 +146,9 @@ public:
     // A message box: a transient-for toplevel, decorated by the window manager.
     gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text,
                                        gmpi::api::IUnknown** returnDialog) override;
+    // The one still unimplemented. Explicitly NoSupport with the out-param
+    // cleared rather than left to a null dereference in the caller - and last
+    // in the queue, because plugins rarely want a colour picker.
     gmpi::ReturnCode createColorDialog(gmpi::drawing::Color, gmpi::api::IUnknown** r) override
     { *r = {}; return gmpi::ReturnCode::NoSupport; }
 
@@ -181,6 +184,8 @@ private:
     // serviced from its event pump - so they need at the frame's internals.
     friend class X11PopupMenu;
     friend class X11StockDialog;
+    friend class X11TextEdit;
+    friend class X11KeyListener;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

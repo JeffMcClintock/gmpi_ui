@@ -20,12 +20,18 @@ inline gmpi::drawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 // Maps NSEvent modifier flags onto gmpi::api::PointerFlags. Cmd → KeyControl
 // follows the macOS convention that Cmd is the equivalent of Win Ctrl for
 // shortcut purposes (matching cross-platform user expectations).
+//
+// Control maps to KeyControl as well. Clients treat KeyControl as "the user is
+// modifying a selection, not editing the thing under the cursor" - leaving the
+// physical Control key unmapped made it arrive as a plain click, so on macOS a
+// Ctrl-click landed as an edit (e.g. dropping a node into a connector) where the
+// same gesture on Windows only changed the selection.
 inline void applyKeyModifiers(int32_t& flags, NSEvent* theEvent)
 {
     const auto mod = [theEvent modifierFlags];
     if ((mod & NSEventModifierFlagShift) != 0)
         flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
-    if ((mod & NSEventModifierFlagCommand) != 0)
+    if ((mod & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0)
         flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
     if ((mod & NSEventModifierFlagOption) != 0)
         flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);

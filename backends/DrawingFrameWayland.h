@@ -1726,6 +1726,10 @@ constexpr int kMenuItemHeight = 24;
 constexpr int kMenuSeparatorHeight = 9;
 constexpr int kMenuTickGutter = 26;
 constexpr int kMenuArrowGutter = 22;
+// Inset of the label from the tick gutter. measuredWidth() has to reserve the
+// SAME value the draw uses, or the widest item is handed a rect narrower than
+// the text it was measured from - see measuredWidth().
+constexpr int kMenuLabelInset = 2;
 
 inline gmpi::ReturnCode WaylandPopupMenu::addItem(const char* text, int32_t id, int32_t flags,
                                                   gmpi::api::IUnknown* itemCallback)
@@ -1776,7 +1780,13 @@ inline int WaylandPopupMenu::measuredWidth() const
         widest = (std::max)(widest, sz.width);
     }
 
-    return int(widest) + kMenuTickGutter + kMenuArrowGutter;
+    // Round UP and reserve the label inset as well as both gutters. Truncating,
+    // and forgetting the inset, left the widest item a couple of pixels short of
+    // its own text: drawTextU then WRAPPED it onto a second line, and because the
+    // item height is fixed that second line overprinted the item below. "Hide
+    // Module Browser" landing on top of "Hide Properties" in the View menu was
+    // this, and it read as a font problem rather than an arithmetic one.
+    return int(std::ceil(widest)) + kMenuTickGutter + kMenuLabelInset + kMenuArrowGutter;
 }
 
 inline void WaylandPopupMenu::present()
@@ -1856,7 +1866,7 @@ inline void WaylandPopupMenu::present()
             rt->drawTextU(tick, 3, font_, &r, fg, 0);
         }
 
-        const gmpi::drawing::Rect r{ float(kMenuTickGutter) + 2.f, top + 3.f,
+        const gmpi::drawing::Rect r{ float(kMenuTickGutter + kMenuLabelInset), top + 3.f,
                                      float(w) - kMenuArrowGutter, top + kMenuItemHeight };
         rt->drawTextU(item.label.c_str(), uint32_t(item.label.size()), font_, &r, fg, 0);
 
@@ -3545,6 +3555,17 @@ public:
     {
         if (frame_)
             libdecor_frame_set_title(frame_, title.c_str());
+    }
+
+    // Floor on the CONTENT size, in logical pixels. A client cannot refuse a
+    // configure, so a window with fixed-width side panes will happily be dragged
+    // narrower than the panes themselves and hand what is left - possibly a
+    // negative width - to whatever fills the middle. Only the compositor can
+    // actually stop the drag, and this is how it is told to.
+    void setMinimumSize(int w, int h)
+    {
+        if (frame_)
+            libdecor_frame_set_min_content_size(frame_, w, h);
     }
 
     // Return false to VETO the close (typically while an async prompt is up).

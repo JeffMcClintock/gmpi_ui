@@ -21,8 +21,80 @@
 #import "helpers/IController.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <string>
 #include <string_view>
+
+
+// Bounds on the editor extent. Nothing on this path used to have one -- not onSize,
+// not resizeNativeView, not initBackingBitmap -- and hosts do pass nonsense: REAPER
+// was seen offering 2178 x 32672 on Windows.
+//
+// Do not copy the Windows number. 16384 there is the hard Direct3D 11 texture limit,
+// so an over-limit extent fails loudly. CoreGraphics has no comparable wall: measured,
+// CGBitmapContextCreate accepts 2178 x 32672, 16384 x 16384 and 65536 x 600, with a
+// square limit of 131071 and a single axis of 4194303, because it reserves lazily. So
+// there is no NULL to fall back on and onRender's `if(!backBuffer) return;` only ever
+// fires at 0 x 0. The cost here is memory instead: one measured paint at 16385 x 600
+// points cost +253 MiB.
+//
+// These numbers are therefore a product decision about how much an editor may reserve,
+// not a technical ceiling. Reasoning, and the measurements behind them, in TideSynth
+// docs/p7-resize-audit-mac-x11.md (BACKLOG P7a).
+//
+//  - maxEditorDimensionPoints is set from displays, not from any graphics API: the
+//    widest single Mac display in logical points is a 6K Pro Display XDR in "more
+//    space" at 3840, so 8192 is a bit over twice the largest real case.
+//  - maxBackingBitmapBytes is what actually bounds memory. The backing bitmap is 8
+//    bytes per pixel (16-bit x 4 components) at *backing* resolution, so a full-screen
+//    editor on that same display at 2x reserves ~265 MiB. 384 MiB clears the largest
+//    legitimate case with headroom while still biting on every rect the P7 audit
+//    exercised.
+constexpr double maxEditorDimensionPoints = 8192.0;
+constexpr size_t maxBackingBitmapBytes = 384u * 1024u * 1024u;
+constexpr size_t backingBitmapBytesPerPixel = 8; // 16-bit x 4 components, per initBackingBitmap
+constexpr double assumedBackingScale = 2.0;      // Retina; the pessimistic guess when the real one is unknown
+
+// Reduce an extent so neither axis exceeds maxAxis and the bitmap it implies fits the
+// byte budget. Aspect ratio is preserved when the area budget bites, so a clamped
+// editor is a smaller version of what was asked for rather than a differently-shaped
+// one. Never returns a degenerate extent -- 0 x 0 is the one size CoreGraphics does
+// refuse, and onRender copes with it, but there is no reason to hand it one.
+static void clampEditorExtent(double& width, double& height, double backingScale, double maxAxis)
+{
+    width  = std::max(1.0, std::min(width,  maxAxis));
+    height = std::max(1.0, std::min(height, maxAxis));
+
+    const double maxPixels = static_cast<double>(maxBackingBitmapBytes) / backingBitmapBytesPerPixel;
+    const double pixels = (width * backingScale) * (height * backingScale);
+
+    if (pixels > maxPixels)
+    {
+        const double shrink = std::sqrt(maxPixels / pixels);
+        width  = std::max(1.0, std::floor(width  * shrink));
+        height = std::max(1.0, std::floor(height * shrink));
+    }
+}
+
+// Exported for the VST3 wrapper's checkSizeConstraint, which must answer with a size
+// this file will actually honour -- see GMPI_Wrappers wrapper/VST3/SEVSTGUIEditorMac.cpp.
+// Forward-declared there rather than shared through a header, matching how
+// createNativeView and resizeNativeView already cross that boundary.
+//
+// Works in logical points against assumedBackingScale: at checkSizeConstraint time the
+// view may not be on a screen yet, so the real scale is not knowable and the pessimistic
+// guess is the safe one. The result is therefore never larger than what resizeNativeView
+// and initBackingBitmap will allow, which is the direction that matters.
+void gmpi_clampEditorSize(int* width, int* height)
+{
+    double w = *width;
+    double h = *height;
+
+    clampEditorExtent(w, h, assumedBackingScale, maxEditorDimensionPoints);
+
+    *width  = static_cast<int>(w);
+    *height = static_cast<int>(h);
+}
 
 
 class DrawingFrameCocoa :
@@ -407,6 +479,28 @@ public:
     {
         NSSize physicalsize = [view convertRectToBacking:[view bounds]].size;
 
+        // This line is where the memory is actually reserved, so bound it here as well
+        // as in resizeNativeView. Not redundant: a host can set the view's frame
+        // directly without going through the wrapper (JUCE does), and the backing scale
+        // then multiplies whatever it set.
+        //
+        // Clamping in backing pixels, so the axis limit is scaled to match. If it bites,
+        // the bitmap ends up smaller than the view and the blit at the end of onRender
+        // stretches it -- a blurry editor at an absurd extent, which is the intended
+        // trade against reserving gigabytes.
+        {
+            const double scale = ([view bounds].size.width > 0)
+                ? physicalsize.width / [view bounds].size.width
+                : assumedBackingScale;
+            double pw = physicalsize.width;
+            double ph = physicalsize.height;
+
+            clampEditorExtent(pw, ph, 1.0, maxEditorDimensionPoints * std::max(1.0, scale));
+
+            physicalsize.width  = pw;
+            physicalsize.height = ph;
+        }
+
         CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
 
         // CGBitmapContextCreate doesn't support 16-bit float.
@@ -788,8 +882,19 @@ void gmpi_onCloseNativeView(void* ptr)
 void resizeNativeView(void* ptr, int width, int height)
 {
     auto view = /*(GMPI_VIEW_CLASS*)*/ (NSView*) ptr;
+
+    // Refuse to adopt an extent that would reserve more than the budget. This used to
+    // forward the host's numbers verbatim, which is how 2178 x 32672 reaches a backing
+    // bitmap. Here the real backing scale is usually knowable; fall back to the
+    // pessimistic guess when the view is not on a screen yet.
+    double w = width;
+    double h = height;
+    const double scale = ([view window] != nil) ? (double)[[view window] backingScaleFactor] : assumedBackingScale;
+
+    clampEditorExtent(w, h, std::max(1.0, scale), maxEditorDimensionPoints);
+
     auto r = [view frame];
-    r.size.width = width;
-    r.size.height = height;
+    r.size.width = w;
+    r.size.height = h;
     [view setFrame:r];
 }

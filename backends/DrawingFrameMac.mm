@@ -278,6 +278,31 @@ public:
            if(drawingClient)
                drawingClient->render(static_cast<gmpi::drawing::api::IDeviceContext*>(&context));
 
+            // render() is re-entrant: a client that resizes its own view from inside it
+            // reaches setFrame: -> onResize(), which does CGContextRelease(backBuffer).
+            // Everything below this line -- the clip pop, the state restore and the blit
+            // -- then operates on a bitmap context that no longer exists. Time of check,
+            // re-entrant call, use: the P4 Windows crash, on this path.
+            //
+            // The guard has to sit HERE rather than after the block closes, because the
+            // line that actually faults is popAxisAlignedClip() below: GraphicsContext
+            // kept its own copy of the pointer at setCGContext time and nothing nulls
+            // that, so it restores state on freed memory. The two statements after the
+            // block read the member, which onResize did null, so they merely hand
+            // CoreGraphics a NULL.
+            //
+            // Reproduced under Guard Malloc before this guard existed -- SIGSEGV in
+            // CGContextRestoreGState <- popAxisAlignedClip <- onRender. AddressSanitizer
+            // does NOT catch it: the read happens inside CoreGraphics, which it does not
+            // instrument. Test: gmpi_ui tests/mac_render_reentrant_resize.mm (BACKLOG P7b).
+            //
+            // Dropping this frame is safe: setFrame: has already invalidated the view, so
+            // AppKit repaints, and the bitmap is reallocated lazily at the top of the next
+            // onRender at the new size. Same rule this function already follows after
+            // arrange() above.
+            if(!backBuffer)
+                return;
+
             context.popAxisAlignedClip();
         }
 

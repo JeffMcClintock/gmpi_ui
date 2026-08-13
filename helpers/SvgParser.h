@@ -1673,6 +1673,314 @@ inline gmpi::drawing::Size drawFromMemory(gmpi::drawing::Graphics& g, std::strin
 }
 
 // ============================================================
+// Retained SVG
+// ============================================================
+//
+// Hold one of these as a member and draw it every frame. The alternative,
+// drawFromMemory(), re-parses the whole document on every call - a Eurorack
+// panel is 40-70KB of XML and 70-110 paths, and re-parsing that per repaint
+// costs far more than the drawing does. A blinking LED that dirties one small
+// rectangle still pays the full parse, because the clip discards pixels rather
+// than work.
+//
+// WHAT IS CACHED, AND WHY THAT SPLIT. Geometry and stroke styles come from the
+// FACTORY: they are device-independent, so they survive as long as the factory
+// does and are the expensive things to rebuild. Brushes come from the render
+// target, are device-dependent, and are cheap - so they are made per draw
+// rather than cached and carefully invalidated.
+//
+// The cached geometry is rebuilt automatically if it is drawn with a context
+// whose factory is not the one it was built against, which is what happens
+// when a host recreates its device. Nothing about that needs handling by the
+// caller.
+//
+// Transforms are stored in DOCUMENT space, excluding whatever transform the
+// context carries when draw() is called - so the same cached document can be
+// drawn at any position or scale, which is how a panel gets scaled to a host's
+// DPI without invalidating anything.
+
+class Svg
+{
+public:
+	Svg() = default;
+
+	// Non-copyable: it owns a parsed document that the shape list points into.
+	Svg(const Svg&) = delete;
+	Svg& operator=(const Svg&) = delete;
+
+	bool loadFromMemory(std::string_view xml)
+	{
+		reset();
+
+		if (doc.Parse(xml.data(), xml.size()) != tinyxml2::XML_SUCCESS)
+			return false;
+
+		return compile();
+	}
+
+	bool loadFromFile(const std::string& fullFilename)
+	{
+		reset();
+
+		if (doc.LoadFile(fullFilename.c_str()) != tinyxml2::XML_SUCCESS)
+			return false;
+
+		return compile();
+	}
+
+	// The document's intrinsic size in user units, as the width/height (or
+	// viewBox) declared. Available without a graphics context, unlike draw().
+	gmpi::drawing::Size size() const { return documentSize; }
+
+	bool empty() const { return shapes.empty(); }
+
+	// Draw, building the factory-owned resources first if they are missing or
+	// belong to a different factory. Returns the document size, matching
+	// SvgParser::draw().
+	gmpi::drawing::Size draw(gmpi::drawing::Graphics& g)
+	{
+		using namespace gmpi::drawing;
+
+		if (shapes.empty())
+			return documentSize;
+
+		auto factory = g.getFactory();
+		if (AccessPtr::get(factory) != builtWith)
+			build(g);
+
+		detail::Context ctx;
+		ctx.graphics = &g;
+		ctx.gradients = gradients;
+
+		const auto base = g.getTransform();
+
+		// Non-const: fillGeometry/drawGeometry take their geometry and brush by
+		// non-const lvalue reference, as the whole drawing API does.
+		for (auto& shape : shapes)
+		{
+			if (!shape.wantFill && !shape.wantStroke)
+				continue;
+
+			g.setTransform(shape.transform * base);
+
+			if (shape.wantFill)
+			{
+				auto brush = detail::makeBrush(g, ctx, shape.style.fill,
+					shape.style.fillOpacity * shape.style.groupOpacity, shape.bounds);
+				if (brush)
+					g.fillGeometry(shape.geometry, brush);
+			}
+
+			if (shape.wantStroke)
+			{
+				auto brush = detail::makeBrush(g, ctx, shape.style.stroke,
+					shape.style.strokeOpacity * shape.style.groupOpacity, shape.bounds);
+				if (brush)
+					g.drawGeometry(shape.geometry, brush, shape.style.strokeWidth, shape.strokeStyle);
+			}
+		}
+
+		g.setTransform(base);
+
+		return documentSize;
+	}
+
+private:
+	// One drawable shape, flattened out of the tree. `element` and `style` are
+	// what a rebuild needs; `geometry`, `strokeStyle` and `bounds` are what a
+	// rebuild produces.
+	struct Shape
+	{
+		tinyxml2::XMLElement* element{};
+		detail::Style style;
+		gmpi::drawing::Matrix3x2 transform;
+
+		gmpi::drawing::PathGeometry geometry;
+		gmpi::drawing::StrokeStyle strokeStyle;
+		gmpi::drawing::Rect bounds{};
+
+		bool wantFill = false;
+		bool wantStroke = false;
+	};
+
+	void reset()
+	{
+		shapes.clear();
+		gradients.clear();
+		documentSize = {};
+		builtWith = {};
+		doc.Clear();
+	}
+
+	// Walk the tree once, recording what would be drawn. Mirrors
+	// detail::drawElement's traversal exactly - the two must agree on which
+	// elements are skipped, or a cached document renders differently from a
+	// streamed one.
+	bool compile()
+	{
+		using namespace gmpi::drawing;
+
+		auto* root = doc.FirstChildElement("svg");
+		if (!root)
+			return false;
+
+		detail::collectGradients(root, gradients);
+
+		documentSize = {
+			detail::parseLength(root->Attribute("width")  ? root->Attribute("width")  : "", 0.f, 0.f),
+			detail::parseLength(root->Attribute("height") ? root->Attribute("height") : "", 0.f, 0.f)
+		};
+
+		// Identity rather than the context's transform: these are document
+		// coordinates, composed with the caller's transform at draw time.
+		Matrix3x2 transform;   // identity by default
+
+		if (const char* viewBoxText = root->Attribute("viewBox"))
+		{
+			detail::Scanner sc(viewBoxText);
+			float x = 0.f, y = 0.f, w = 0.f, h = 0.f;
+			if (sc.readNumber(x) && sc.readNumber(y) && sc.readNumber(w) && sc.readNumber(h) &&
+			    w > 0.f && h > 0.f)
+			{
+				if (documentSize.width <= 0.f)  documentSize.width = w;
+				if (documentSize.height <= 0.f) documentSize.height = h;
+
+				const float scaleX = documentSize.width / w;
+				const float scaleY = documentSize.height / h;
+				if (scaleX != 1.0f || scaleY != 1.0f || x != 0.0f || y != 0.0f)
+					transform = makeTranslation(-x, -y) * makeScale(scaleX, scaleY) * transform;
+			}
+		}
+
+		detail::Style rootStyle;
+		compileChildren(root, rootStyle, transform);
+
+		return true;
+	}
+
+	void compileChildren(tinyxml2::XMLElement* e, const detail::Style& style,
+	                     gmpi::drawing::Matrix3x2 transform)
+	{
+		for (auto* child = e->FirstChildElement(); child; child = child->NextSiblingElement())
+			compileElement(child, style, transform);
+	}
+
+	void compileElement(tinyxml2::XMLElement* e, const detail::Style& parentStyle,
+	                    gmpi::drawing::Matrix3x2 parentTransform)
+	{
+		using namespace gmpi::drawing;
+
+		const std::string_view name(e->Name());
+
+		if (name == "defs" || name == "metadata" || name == "title" || name == "desc" ||
+		    name == "style" || name == "linearGradient" || name == "radialGradient" ||
+		    name == "clipPath" || name == "mask" || name == "filter" || name == "pattern" ||
+		    name == "symbol" || name == "marker" || name == "namedview")
+		{
+			return;
+		}
+
+		const detail::Style style = detail::resolveStyle(parentStyle, e);
+		if (!style.display)
+			return;
+
+		Matrix3x2 transform = parentTransform;
+		if (const char* t = e->Attribute("transform"))
+			transform = detail::parseTransform(t) * transform;
+
+		if (name == "g" || name == "a" || name == "svg")
+		{
+			compileChildren(e, style, transform);
+			return;
+		}
+
+		if (!style.visible)
+			return;
+
+		Shape shape;
+		shape.element = e;
+		shape.style = style;
+		shape.transform = transform;
+
+		// Whether it paints at all is decided here, but whether it is FILLABLE
+		// is not - that comes out of building the geometry, so a shape can
+		// still turn out to be stroke-only later.
+		shape.wantFill = style.fill.kind != detail::Paint::Kind::None;
+		shape.wantStroke = style.stroke.kind != detail::Paint::Kind::None && style.strokeWidth > 0.0f;
+
+		if (!shape.wantFill && !shape.wantStroke)
+			return;
+
+		shapes.push_back(std::move(shape));
+	}
+
+	// Create the factory-owned resources. Called on the first draw, and again
+	// whenever the factory changes underneath us.
+	void build(gmpi::drawing::Graphics& g)
+	{
+		using namespace gmpi::drawing;
+
+		for (auto& shape : shapes)
+		{
+			detail::BoundsAccumulator bounds;
+			bool fillable = true;
+
+			PathGeometry geometry;
+			if (!detail::buildShapeGeometry(g, shape.element, shape.style, geometry, bounds, fillable))
+			{
+				// Nothing drawable - an empty <path>, say. Keep the entry so
+				// indices stay stable, but make it a no-op.
+				shape.geometry = {};
+				shape.wantFill = shape.wantStroke = false;
+				continue;
+			}
+
+			shape.geometry = std::move(geometry);
+			shape.bounds = bounds.rect;
+
+			// An open shape (a polyline) cannot be filled however the style
+			// reads. buildShapeGeometry is the only thing that knows.
+			if (!fillable)
+				shape.wantFill = false;
+
+			if (shape.wantStroke)
+			{
+				StrokeStyleProperties properties;
+				properties.lineCap = shape.style.lineCap;
+				properties.lineJoin = shape.style.lineJoin;
+				properties.miterLimit = shape.style.miterLimit;
+
+				// SVG dash lengths are absolute user units; the drawing API
+				// wants multiples of the stroke width.
+				std::vector<float> dashes;
+				if (!shape.style.dashes.empty())
+				{
+					properties.dashStyle = DashStyle::Custom;
+					dashes.reserve(shape.style.dashes.size());
+					for (float d : shape.style.dashes)
+						dashes.push_back(d / shape.style.strokeWidth);
+				}
+
+				shape.strokeStyle = g.getFactory().createStrokeStyle(properties, dashes);
+			}
+		}
+
+		auto factory = g.getFactory();
+		builtWith = AccessPtr::get(factory);
+	}
+
+	tinyxml2::XMLDocument doc;
+	detail::GradientMap gradients;
+	std::vector<Shape> shapes;
+	gmpi::drawing::Size documentSize{};
+
+	// The factory the cached geometry belongs to. Compared by address, never
+	// dereferenced - it is an identity token, and may well be dangling after a
+	// device is recreated, which is exactly the case it detects.
+	gmpi::drawing::api::IFactory* builtWith{};
+};
+
+// ============================================================
 // Geometry-only interface
 // ============================================================
 //

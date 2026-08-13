@@ -6,3 +6,4 @@ JuceLibraryCode/
 /.claude
 tests/x11_menu_test
 tests/build-mac/
+tests/build-x11/

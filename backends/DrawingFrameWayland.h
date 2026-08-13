@@ -3651,6 +3651,11 @@ inline void WaylandToplevel::configure(libdecor_frame* frame,
     self.configured_ = true;
     self.surfaceConfigured_ = true;   // buffers are legal from here on
 
+    // The surface has its xdg_toplevel role by now, which export_toplevel
+    // requires (see create()). Cheap to call again - it returns early once the
+    // handle has been asked for.
+    self.exportWindowHandle();
+
     self.present();
     if (first)
         self.requestFrameCallback();
@@ -3732,9 +3737,16 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
     libdecor_frame_set_title(frame_, title);
     libdecor_frame_map(frame_);
 
-    // Ask for the handle now: the compositor answers asynchronously, so it is
-    // ready long before the user reaches a File menu.
-    exportWindowHandle();
+    // NOT exportWindowHandle() here. libdecor_frame_map only REQUESTS mapping;
+    // the xdg_toplevel role does not exist on the surface until libdecor has
+    // been through a dispatch, and zxdg_exporter_v2.export_toplevel on a
+    // surface with no role is a protocol error that kills the connection
+    // ("surface must be an xdg_toplevel"). Compositors that do not implement
+    // xdg-foreign at all - WSLg's weston - never showed it, because the
+    // exporter is then null and the call is skipped; sway killed the client on
+    // startup every time. The export moved into configure(), which is the
+    // first point at which the role is guaranteed to exist, and is still long
+    // before the user can reach a File menu.
 
     if (connection_.fractionalScale())
     {

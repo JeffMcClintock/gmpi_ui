@@ -1309,6 +1309,34 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
 
     rt->endDraw();
 
+    // measure(), arrange() and render() above are all client calls, and pw/ph
+    // were read before the first of them. If any drove a nested present() at a
+    // smaller size, ensureImage() released the image we sized for and put a
+    // smaller one in its place: the dst below re-reads d.image->data and
+    // ->bytes_per_line, so it picks the new buffer up, but pw/ph are stale, and
+    // encodeDirtyRect clips to dst.width/height - i.e. to the lie - so it walks
+    // pw x ph pixels down a shorter stride and off the end of the allocation.
+    // A heap overflow rather than a null dereference, so a worse outcome than
+    // the P4 crash this is a cousin of.
+    //
+    // Dropping the frame is the right response, not merely the safe one: the
+    // nested present() already rendered and blitted the whole surface at the new
+    // size and cleared d.dirtyAll/d.dirty doing it, so there is nothing left to
+    // put on screen. Returning here leaves those flags exactly as it left them.
+    //
+    // Reproduced before this guard existed - SIGSEGV in encodeDirtyRect
+    // (CpuEncode.h:269) with clip bounds right=800/bottom=600 against a 64x48
+    // image. Test: tests/x11_present_reentrant_resize.cpp (TIDE BACKLOG P7c).
+    // Note that test reaches the nesting only by handing the client a pointer to
+    // the concrete frame; through the public interfaces it is unreachable today
+    // (docs/x11-present-extents.md). The guard is here so that stays a property
+    // of the code rather than of the audit.
+    if (!d.image || d.imageWidth != pw || d.imageHeight != ph)
+    {
+        rtRaw->release();
+        return;
+    }
+
     gmpi::drawing::api::IBitmap* bmRaw{};
     rt->getBitmap(&bmRaw);
     if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))

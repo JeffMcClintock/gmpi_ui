@@ -2,7 +2,14 @@
 #define GMPI_MAC_FILEDIALOG_H
 
 // Single-header gmpi::api::IFileDialog implementation for macOS.
-// Uses the modern UTType / allowedContentTypes API (macOS 11+).
+//
+// Prefers the modern UTType / allowedContentTypes API, falling back to
+// -allowedFileTypes below macOS 11. The UTType path is guarded by @available
+// rather than assumed, so a host is free to keep a deployment target below 11.
+//
+// Link with -weak_framework UniformTypeIdentifiers. Weak, not plain
+// -framework: on macOS 10.x the framework does not exist, and a hard link
+// would stop the plugin loading at all rather than taking the fallback.
 
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -94,27 +101,56 @@ public:
         // Folder dialogs ignore extension filters.
         if (dialogType != gmpi::api::FileDialogType::Folder)
         {
-            NSMutableArray<UTType*>* allowedTypes = [[NSMutableArray alloc] init];
+            // "*" means "and anything else", and is a filter-list entry rather
+            // than a real extension in both code paths below.
             bool allowsOtherFileTypes = false;
             for (auto& [ext, desc] : extensions)
             {
                 if (ext == "*")
-                {
                     allowsOtherFileTypes = true;
-                }
-                else
+            }
+
+            if (@available(macOS 11.0, *))
+            {
+                NSMutableArray<UTType*>* allowedTypes = [[NSMutableArray alloc] init];
+                for (auto& [ext, desc] : extensions)
                 {
+                    if (ext == "*")
+                        continue;
+
                     NSString* extStr = [NSString stringWithUTF8String:ext.c_str()];
                     UTType* type = [UTType typeWithFilenameExtension:extStr];
                     if (type)
                         [allowedTypes addObject:type];
                 }
+                if (allowedTypes.count > 0)
+                {
+                    dialog.allowedContentTypes = allowedTypes;
+                    if (allowsOtherFileTypes)
+                        dialog.allowsOtherFileTypes = YES;
+                }
             }
-            if (allowedTypes.count > 0)
+            else
             {
-                dialog.allowedContentTypes = allowedTypes;
-                if (allowsOtherFileTypes)
-                    dialog.allowsOtherFileTypes = YES;
+                NSMutableArray<NSString*>* allowedExtensions = [[NSMutableArray alloc] init];
+                for (auto& [ext, desc] : extensions)
+                {
+                    if (ext == "*")
+                        continue;
+
+                    [allowedExtensions addObject:[NSString stringWithUTF8String:ext.c_str()]];
+                }
+                if (allowedExtensions.count > 0)
+                {
+                    // allowedFileTypes is deprecated in favour of the UTType
+                    // path above, which is exactly why we are here.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                    dialog.allowedFileTypes = allowedExtensions;
+#pragma clang diagnostic pop
+                    if (allowsOtherFileTypes)
+                        dialog.allowsOtherFileTypes = YES;
+                }
             }
         }
 

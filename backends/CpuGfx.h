@@ -313,6 +313,23 @@ public:
     // What lockPixels() hands out. Rendering is fp16 regardless.
     int32_t lockFormat{ drawing::api::IBitmapPixels::RGBA_16f };
 
+    // 8-bit-format staging buffer, owned by the Bitmap (not by the per-lock
+    // BitmapPixels) so it survives across locks. A render target's endDraw
+    // does one lock+release per frame purely to run the quantization round
+    // trip (see surfaceToStaging below) — with the buffer living on
+    // BitmapPixels that was a fresh heap alloc + zero-fill of the WHOLE
+    // surface (6.4 MB at 1600x1000 BGRA) every single frame, a large slice
+    // of the software renderer's fixed per-frame cost
+    // (SynthEdit repo tests/profile/OPTIMIZATIONS.md). Living here, the
+    // buffer is sized once and reused; BitmapPixels::resize() is a no-op
+    // when the size hasn't changed. Safe to share across sequential locks:
+    // every lock either fully repopulates it (surfaceToStaging, for a read)
+    // or the caller is expected to overwrite it entirely (a write-only
+    // lock's documented contract) before any byte is read back out — no
+    // code path in this tree re-enters a lock on the same Bitmap while one
+    // is already held, so there is never a live second writer to race.
+    std::vector<uint8_t> staging;
+
     Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h, int32_t flags = 0)
         : factory(pfactory), lockFormat(lockFormatFromFlags(flags))
     {
@@ -348,11 +365,6 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
     Bitmap* bitmap; // keeps the surface alive while locked
     int32_t lockFlags{};
 
-    // Only used by the 8-bit lock formats. Tightly packed (no stride padding):
-    // callers index it as width*height bytes, and the fp16 surface's padding is
-    // an implementation detail they should not see.
-    std::vector<uint8_t> staging;
-
     int32_t bytesPerPixel() const { return bitmap->lockFormat & 0xFF; }
     bool    converts()      const { return bitmap->lockFormat != drawing::api::IBitmapPixels::RGBA_16f; }
 
@@ -374,7 +386,7 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
         for (int32_t y = 0; y < s.height; ++y)
         {
             const uint16_t* src = bitmap->surface.pixels + size_t(y) * s.stridePixels * 4;
-            uint8_t* dst = staging.data() + size_t(y) * s.width * bpp;
+            uint8_t* dst = bitmap->staging.data() + size_t(y) * s.width * bpp;
 
             if (mask)
             {
@@ -406,7 +418,7 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
         // lock that changes nothing leaves the surface untouched.
         for (int32_t y = 0; y < s.height; ++y)
         {
-            const uint8_t* src = staging.data() + size_t(y) * s.width * bpp;
+            const uint8_t* src = bitmap->staging.data() + size_t(y) * s.width * bpp;
             uint16_t* dst = bitmap->surface.pixels + size_t(y) * s.stridePixels * 4;
 
             if (mask)
@@ -442,7 +454,13 @@ public:
         if (converts())
         {
             const auto& s = bitmap->surface;
-            staging.assign(size_t(s.width) * s.height * bytesPerPixel(), 0);
+            // resize() is a no-op when the size is already right — the common
+            // case, since a render target's viewport rarely changes between
+            // frames. Never re-zeroed on reuse: a read lock immediately
+            // overwrites every byte via surfaceToStaging below, and a
+            // write-only lock's contract is that the CALLER overwrites every
+            // byte, so stale content from a previous frame is never read.
+            bitmap->staging.resize(size_t(s.width) * s.height * bytesPerPixel());
 
             // Write-only locks overwrite everything, so skip the read pass. A
             // lock with no flags at all is treated as a read: that is what the
@@ -464,7 +482,7 @@ public:
 
     ReturnCode getAddress(uint8_t** returnAddress) override
     {
-        *returnAddress = converts() ? staging.data()
+        *returnAddress = converts() ? bitmap->staging.data()
                                     : reinterpret_cast<uint8_t*>(bitmap->surface.pixels);
         return ReturnCode::Ok;
     }

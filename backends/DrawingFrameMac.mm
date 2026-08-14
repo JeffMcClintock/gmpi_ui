@@ -486,6 +486,7 @@ public:
 
         GMPI_QUERYINTERFACE(gmpi::api::IDrawingHost);
         GMPI_QUERYINTERFACE(gmpi::api::IInputHost);
+        GMPI_QUERYINTERFACE(gmpi::api::IDialogHost);
 
         if(parameterHost)
             return parameterHost->queryInterface(iid, returnInterface);

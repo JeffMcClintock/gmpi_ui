@@ -278,6 +278,12 @@ struct QuantizeTables
     std::array<uint8_t, 65536>  halfToLinearByte; // alpha / coverage
     std::array<uint16_t, 256>   srgbByteToHalf;
     std::array<uint16_t, 256>   linearByteToHalf;
+
+    // The two directions composed: half -> 8-bit -> half as one lookup, for
+    // endDraw's in-place quantization (one pass over the surface, no staging
+    // buffer). Identical to running the pair above by construction.
+    std::array<uint16_t, 65536> srgbRoundTripHalf;
+    std::array<uint16_t, 65536> linearRoundTripHalf;
 };
 
 inline const QuantizeTables& quantizeTables()
@@ -295,6 +301,11 @@ inline const QuantizeTables& quantizeTables()
         {
             t.srgbByteToHalf[b] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(uint8_t(b)));
             t.linearByteToHalf[b] = drawing::detail::floatToHalf(b / 255.0f);
+        }
+        for (uint32_t h = 0; h < 65536; ++h)
+        {
+            t.srgbRoundTripHalf[h] = t.srgbByteToHalf[t.halfToSrgbByte[h]];
+            t.linearRoundTripHalf[h] = t.linearByteToHalf[t.halfToLinearByte[h]];
         }
         return t;
     }();
@@ -2542,11 +2553,43 @@ public:
         // than them. The colour face rounds through sRGB (see surfaceToStaging),
         // so the levels land where the eye needs them rather than crowding into
         // the highlights the way 8-bit linear did.
+        //
+        // This used to run a ReadWrite lockPixels round trip (surfaceToStaging
+        // + stagingToSurface): two full passes through an intermediate 8-bit
+        // buffer. But the round trip is a pure function of each half value, so
+        // the composed tables quantize the surface IN PLACE in one pass —
+        // identical bytes by construction, no staging buffer involved. A mask's
+        // round trip is the one non-per-channel case: it collapses each pixel
+        // to premultiplied white at the alpha's quantized coverage, exactly as
+        // stagingToSurface rebuilt it.
         if (bitmap && bitmap->lockFormat != drawing::api::IBitmapPixels::RGBA_16f)
         {
-            drawing::api::IBitmapPixels* raw{};
-            if (bitmap->lockPixels(&raw, int32_t(drawing::BitmapLockFlags::ReadWrite)) == ReturnCode::Ok && raw)
-                raw->release(); // the round trip through the lock format IS the quantization
+            auto& s = bitmap->surface;
+            const bool mask = bitmap->lockFormat == drawing::api::IBitmapPixels::Alpha_8i;
+            const auto& lut = quantizeTables();
+
+            for (int32_t y = 0; y < s.height; ++y)
+            {
+                uint16_t* p = s.row(y);
+                if (mask)
+                {
+                    for (int32_t x = 0; x < s.width; ++x, p += 4)
+                    {
+                        const uint16_t c = lut.linearRoundTripHalf[p[3]];
+                        p[0] = p[1] = p[2] = p[3] = c;
+                    }
+                }
+                else
+                {
+                    for (int32_t x = 0; x < s.width; ++x, p += 4)
+                    {
+                        p[0] = lut.srgbRoundTripHalf[p[0]];
+                        p[1] = lut.srgbRoundTripHalf[p[1]];
+                        p[2] = lut.srgbRoundTripHalf[p[2]];
+                        p[3] = lut.linearRoundTripHalf[p[3]];
+                    }
+                }
+            }
         }
         return ReturnCode::Ok;
     }

@@ -22,6 +22,11 @@
 #include <functional>
 #include <vector>
 
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <immintrin.h> // F16C span codec (runtime-gated via __cpuid)
+#include <intrin.h>
+#endif
+
 #include "../Drawing.h"
 #include "../helpers/BitmapMask.h"    // detail::floatToHalf / halfToFloat
 #include "../helpers/DecodedImage.h"  // decoder interchange format (no platform code)
@@ -90,18 +95,82 @@ inline void blendPixel(float* d, const float* sc, float c, bool gammaSpace)
 
 
 // ---------------------------------------------------------------------------
-// Span codec: the ONLY place fp16 appears. Plain loops so compilers can
-// auto-vectorize; F16C/NEON intrinsic versions can slot in behind the same
-// signatures later without touching any kernel.
+// Span codec: the ONLY place fp16 appears. Every fill, stroke and glyph blend
+// round-trips its rows through these two functions, so they set the floor for
+// the whole renderer — the branchy scalar decode/encode was a major slice of
+// frame time (tests/profile/OPTIMIZATIONS.md in the SynthEdit repo).
+//
+// x86: F16C hardware conversion when the CPU has it (the scalar floatToHalf
+// deliberately implements the same round-to-nearest-even, so results match
+// bit for bit). Everywhere else: decode goes through a 64K-entry table built
+// from the exact scalar decoder (fp16 has only 65536 values, so this is
+// lossless by construction); encode keeps the scalar loop.
 // ---------------------------------------------------------------------------
+inline const float* halfToFloatTable()
+{
+    static const std::vector<float> table = []
+    {
+        std::vector<float> t(65536);
+        for (uint32_t h = 0; h < 65536; ++h)
+            t[h] = drawing::detail::halfToFloat(uint16_t(h));
+        return t;
+    }();
+    return table.data();
+}
+
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+inline bool haveF16C()
+{
+    static const bool have = []
+    {
+        int r[4]{};
+        __cpuid(r, 1);
+        return (r[2] & (1 << 29)) != 0;
+    }();
+    return have;
+}
+#endif
+
 inline void loadSpan(const uint16_t* src, float* dst, int floatCount)
 {
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    if (haveF16C())
+    {
+        int i = 0;
+        for (; i + 4 <= floatCount; i += 4)
+        {
+            const __m128i h = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
+            _mm_storeu_ps(dst + i, _mm_cvtph_ps(h));
+        }
+        for (; i < floatCount; ++i)
+            dst[i] = drawing::detail::halfToFloat(src[i]);
+        return;
+    }
+#endif
+    const float* table = halfToFloatTable();
     for (int i = 0; i < floatCount; ++i)
-        dst[i] = drawing::detail::halfToFloat(src[i]);
+        dst[i] = table[src[i]];
 }
 
 inline void storeSpan(const float* src, uint16_t* dst, int floatCount)
 {
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    if (haveF16C())
+    {
+        // _MM_FROUND_TO_NEAREST_INT = round-to-nearest-even, the same rounding
+        // the scalar fallback implements.
+        int i = 0;
+        for (; i + 4 <= floatCount; i += 4)
+        {
+            const __m128 f = _mm_loadu_ps(src + i);
+            const __m128i h = _mm_cvtps_ph(f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+            _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i), h);
+        }
+        for (; i < floatCount; ++i)
+            dst[i] = drawing::detail::floatToHalf(src[i]);
+        return;
+    }
+#endif
     for (int i = 0; i < floatCount; ++i)
         dst[i] = drawing::detail::floatToHalf(src[i]);
 }
@@ -195,6 +264,43 @@ inline int32_t lockFormatFromFlags(int32_t flags)
     return drawing::api::IBitmapPixels::RGBA_16f;
 }
 
+// Bit-exact table form of the per-pixel conversions in surfaceToStaging /
+// stagingToSurface. fp16 has only 65536 values, so half→byte collapses to one
+// table load per channel; each table is built once FROM the exact scalar code
+// it replaces (branchy halfToFloat + the 8-step linearPixelToSRGB search), so
+// results are identical bit for bit — including the NaN/negative handling.
+// This matters because an 8-bit render target quantizes the whole surface
+// through these on EVERY endDraw: at 1600×1000 the scalar forms were ~2/3 of
+// the software renderer's frame time (tests/profile/OPTIMIZATIONS.md).
+struct QuantizeTables
+{
+    std::array<uint8_t, 65536>  halfToSrgbByte;   // colour faces
+    std::array<uint8_t, 65536>  halfToLinearByte; // alpha / coverage
+    std::array<uint16_t, 256>   srgbByteToHalf;
+    std::array<uint16_t, 256>   linearByteToHalf;
+};
+
+inline const QuantizeTables& quantizeTables()
+{
+    static const QuantizeTables tables = []
+    {
+        QuantizeTables t{};
+        for (uint32_t h = 0; h < 65536; ++h)
+        {
+            const float v = drawing::detail::halfToFloat(uint16_t(h));
+            t.halfToSrgbByte[h] = drawing::linearPixelToSRGB(v);
+            t.halfToLinearByte[h] = uint8_t(std::clamp(v * 255.0f + 0.5f, 0.0f, 255.0f));
+        }
+        for (uint32_t b = 0; b < 256; ++b)
+        {
+            t.srgbByteToHalf[b] = drawing::detail::floatToHalf(drawing::SRGBPixelToLinear(uint8_t(b)));
+            t.linearByteToHalf[b] = drawing::detail::floatToHalf(b / 255.0f);
+        }
+        return t;
+    }();
+    return tables;
+}
+
 // ---------------------------------------------------------------------------
 // Bitmap / BitmapPixels
 // ---------------------------------------------------------------------------
@@ -251,43 +357,38 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
     bool    converts()      const { return bitmap->lockFormat != drawing::api::IBitmapPixels::RGBA_16f; }
 
     // fp16 premultiplied linear RGBA -> the 8-bit lock format.
+    //
+    // An 8-bit COLOUR face is sRGB, always — the file's curve for a loaded
+    // image, and Direct2D's _UNORM_SRGB encode for a render target. The
+    // halfToSrgbByte table is built from linearPixelToSRGB, the exact inverse
+    // of the LUT loadImageU uses and the one DirectXGfx's premultiply
+    // correction rounds through, so the bytes match Direct2D code for code.
+    // A Mask is coverage, not colour: it stays linear.
     void surfaceToStaging()
     {
         const auto& s = bitmap->surface;
         const int32_t bpp = bytesPerPixel();
         const bool mask = bitmap->lockFormat == drawing::api::IBitmapPixels::Alpha_8i;
+        const auto& lut = quantizeTables();
 
         for (int32_t y = 0; y < s.height; ++y)
         {
             const uint16_t* src = bitmap->surface.pixels + size_t(y) * s.stridePixels * 4;
             uint8_t* dst = staging.data() + size_t(y) * s.width * bpp;
 
-            for (int32_t x = 0; x < s.width; ++x, src += 4, dst += bpp)
+            if (mask)
             {
-                const auto toByte = [](float v) {
-                    return uint8_t(std::clamp(v * 255.0f + 0.5f, 0.0f, 255.0f));
-                };
-
-                // An 8-bit COLOUR face is sRGB, always — the file's curve for a
-                // loaded image, and Direct2D's _UNORM_SRGB encode for a render
-                // target. linearPixelToSRGB is the exact inverse of the LUT
-                // loadImageU uses and the one DirectXGfx's premultiply
-                // correction rounds through, so the bytes match Direct2D code
-                // for code. A Mask is coverage, not colour: it stays linear.
-                const auto toColourByte = [&](float v) {
-                    return drawing::linearPixelToSRGB(v);
-                };
-
-                if (mask)
+                for (int32_t x = 0; x < s.width; ++x, src += 4, ++dst)
+                    dst[0] = lut.halfToLinearByte[src[3]];
+            }
+            else
+            {
+                for (int32_t x = 0; x < s.width; ++x, src += 4, dst += 4)
                 {
-                    dst[0] = toByte(drawing::detail::halfToFloat(src[3]));
-                }
-                else
-                {
-                    dst[0] = toColourByte(drawing::detail::halfToFloat(src[2])); // B
-                    dst[1] = toColourByte(drawing::detail::halfToFloat(src[1])); // G
-                    dst[2] = toColourByte(drawing::detail::halfToFloat(src[0])); // R
-                    dst[3] = toByte(drawing::detail::halfToFloat(src[3]));       // A
+                    dst[0] = lut.halfToSrgbByte[src[2]];   // B
+                    dst[1] = lut.halfToSrgbByte[src[1]];   // G
+                    dst[2] = lut.halfToSrgbByte[src[0]];   // R
+                    dst[3] = lut.halfToLinearByte[src[3]]; // A
                 }
             }
         }
@@ -299,35 +400,35 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
         const auto& s = bitmap->surface;
         const int32_t bpp = bytesPerPixel();
         const bool mask = bitmap->lockFormat == drawing::api::IBitmapPixels::Alpha_8i;
+        const auto& lut = quantizeTables();
 
-        // Undo what surfaceToStaging applied, so a read-modify-write lock that
-        // changes nothing leaves the surface untouched.
-        const auto fromColourByte = [&](uint8_t v) {
-            return drawing::SRGBPixelToLinear(v);
-        };
-
+        // The tables undo what surfaceToStaging applied, so a read-modify-write
+        // lock that changes nothing leaves the surface untouched.
         for (int32_t y = 0; y < s.height; ++y)
         {
             const uint8_t* src = staging.data() + size_t(y) * s.width * bpp;
             uint16_t* dst = bitmap->surface.pixels + size_t(y) * s.stridePixels * 4;
 
-            for (int32_t x = 0; x < s.width; ++x, src += bpp, dst += 4)
+            if (mask)
             {
-                if (mask)
+                // A coverage mask has no colour of its own, so it comes back
+                // as premultiplied white: coverage c reads as (c,c,c,c),
+                // which is what "c of a white shape covers this pixel" means
+                // and round-trips the white brush the mask was drawn with.
+                for (int32_t x = 0; x < s.width; ++x, ++src, dst += 4)
                 {
-                    // A coverage mask has no colour of its own, so it comes back
-                    // as premultiplied white: coverage c reads as (c,c,c,c),
-                    // which is what "c of a white shape covers this pixel" means
-                    // and round-trips the white brush the mask was drawn with.
-                    const uint16_t c = drawing::detail::floatToHalf(src[0] / 255.0f);
+                    const uint16_t c = lut.linearByteToHalf[src[0]];
                     dst[0] = dst[1] = dst[2] = dst[3] = c;
                 }
-                else
+            }
+            else
+            {
+                for (int32_t x = 0; x < s.width; ++x, src += 4, dst += 4)
                 {
-                    dst[0] = drawing::detail::floatToHalf(fromColourByte(src[2])); // R
-                    dst[1] = drawing::detail::floatToHalf(fromColourByte(src[1])); // G
-                    dst[2] = drawing::detail::floatToHalf(fromColourByte(src[0])); // B
-                    dst[3] = drawing::detail::floatToHalf(src[3] / 255.0f);        // A
+                    dst[0] = lut.srgbByteToHalf[src[2]];   // R
+                    dst[1] = lut.srgbByteToHalf[src[1]];   // G
+                    dst[2] = lut.srgbByteToHalf[src[0]];   // B
+                    dst[3] = lut.linearByteToHalf[src[3]]; // A
                 }
             }
         }
@@ -2686,6 +2787,172 @@ private:
     }
 
 public:
+    // ------------------------------------------------------------------
+    // Axis-aligned solid-colour rectangle fast path.
+    //
+    // The generic route (rect → heap path geometry → signed-area raster pass
+    // → chunk-aligned fp16 round trip of every touched row) is paid per call;
+    // structure-view scrolling fills the whole background and draws hundreds
+    // of snapped grid lines per frame, all axis-aligned solid rects, and they
+    // dominated the software renderer's frame time
+    // (tests/profile/OPTIMIZATIONS.md in the SynthEdit repo).
+    //
+    // Semantics mirror fillFigures exactly: same ALIASED clip window, the
+    // analytic edge coverage a rectangle's signed-area accumulation produces,
+    // the same blendPixel arithmetic and the same span codec — and opaque
+    // fully-covered pixels become a straight store of the pattern the codec
+    // would emit. Anything not exactly reproducible (rotation/skew, shaped
+    // clip mask, non-solid brush) falls back to the generic path.
+    bool fastFillAxisAlignedRect(const drawing::Rect& r, drawing::api::IBrush* brush)
+    {
+        if (activeClipMask())
+            return false;
+        if (transform_._12 != 0.0f || transform_._21 != 0.0f)
+            return false;
+
+        auto* solid = dynamic_cast<SolidColorBrush*>(brush);
+        if (!solid)
+            return false;
+        if (!solid->isPaintable())
+            return true; // the generic path paints nothing for a non-finite colour
+
+        // Device-space rect; min/max so a negative scale keeps l<r, t<b.
+        const auto c0 = drawing::transformPoint(transform_, { r.left, r.top });
+        const auto c1 = drawing::transformPoint(transform_, { r.right, r.bottom });
+        const float dl = (std::min)(c0.x, c1.x), dr = (std::max)(c0.x, c1.x);
+        const float dt = (std::min)(c0.y, c1.y), db = (std::max)(c0.y, c1.y);
+        if (!(std::isfinite(dl) && std::isfinite(dr) && std::isfinite(dt) && std::isfinite(db)))
+            return false;
+        if (!(dl < dr) || !(dt < db))
+            return true; // empty — nothing to draw
+
+        // Raster window = bbox ∩ clip ∩ surface, exactly as fillFigures
+        // computes it (float clamp BEFORE int conversion; ALIASED clip bounds).
+        const auto clip = drawing::intersectRect(clipRectStack.back(), surfaceBounds());
+        if (!(clip.left < clip.right) || !(clip.top < clip.bottom))
+            return true;
+        const float bl = std::clamp(dl, clip.left, clip.right);
+        const float br = std::clamp(dr, clip.left, clip.right);
+        const float bt = std::clamp(dt, clip.top, clip.bottom);
+        const float bb = std::clamp(db, clip.top, clip.bottom);
+        const int ix0 = (std::max)(int(std::floor(bl)), aliasedCoord(clip.left));
+        const int iy0 = (std::max)(int(std::floor(bt)), aliasedCoord(clip.top));
+        const int ix1 = (std::min)(int(std::ceil(br)), aliasedCoord(clip.right));
+        const int iy1 = (std::min)(int(std::ceil(bb)), aliasedCoord(clip.bottom));
+        if (ix1 <= ix0 || iy1 <= iy0)
+            return true;
+
+        // Coverage uses the rect clipped to the INTEGER window — matching
+        // accumulateEdgeClipped, which clips segments at the raster bounds
+        // (not at the float clip rect).
+        const float el = (std::max)(dl, float(ix0));
+        const float er = (std::min)(dr, float(ix1));
+        const float et = (std::max)(dt, float(iy0));
+        const float eb = (std::min)(db, float(iy1));
+        if (!(el < er) || !(et < eb))
+            return true;
+
+        const float srcA = solid->color.a * solid->opacity;
+        const float src[4] = { solid->color.r * srcA, solid->color.g * srcA,
+                               solid->color.b * srcA, srcA };
+
+        // The interior of an opaque rect is a straight store of the pattern
+        // the span codec would produce for the source colour.
+        uint16_t pattern[4];
+        storeSpan(src, pattern, 4);
+        const bool opaque = srcA >= 1.0f;
+
+        // Fully-covered column range [fx0, fx1).
+        const int fx0 = (std::min)(int(std::ceil(el)), ix1);
+        const int fx1 = (std::max)(int(std::floor(er)), fx0);
+
+        auto colCov = [&](int x) {
+            return (std::min)(er, float(x + 1)) - (std::max)(el, float(x));
+        };
+
+        auto& s = bitmap->surface;
+        float px[4]; // one-pixel float scratch
+
+        auto blendOne = [&](uint16_t* p, float cov)
+        {
+            if (cov <= 0.0f)
+                return;
+            loadSpan(p, px, 4);
+            blendPixel(px, src, cov, gammaSpaceBlend);
+            storeSpan(px, p, 4);
+        };
+
+        for (int y = iy0; y < iy1; ++y)
+        {
+            const float rowCov = (std::min)(eb, float(y + 1)) - (std::max)(et, float(y));
+            if (rowCov <= 0.0f)
+                continue;
+
+            uint16_t* row = s.row(y);
+
+            if (rowCov >= 1.0f)
+            {
+                // Partial-coverage edge columns.
+                for (int x = ix0; x < fx0; ++x)
+                    blendOne(row + size_t(x) * 4, colCov(x));
+
+                // Full-coverage interior.
+                if (opaque)
+                {
+                    uint16_t* p = row + size_t(fx0) * 4;
+                    for (int x = fx0; x < fx1; ++x, p += 4)
+                    {
+                        p[0] = pattern[0]; p[1] = pattern[1];
+                        p[2] = pattern[2]; p[3] = pattern[3];
+                    }
+                }
+                else
+                {
+                    for (int x = fx0; x < fx1; ++x)
+                        blendOne(row + size_t(x) * 4, 1.0f);
+                }
+
+                for (int x = (std::max)(fx1, ix0); x < ix1; ++x)
+                    blendOne(row + size_t(x) * 4, colCov(x));
+            }
+            else
+            {
+                for (int x = ix0; x < ix1; ++x)
+                    blendOne(row + size_t(x) * 4, rowCov * colCov(x));
+            }
+        }
+        return true;
+    }
+
+    ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
+    {
+        if (fastFillAxisAlignedRect(*rect, brush))
+            return ReturnCode::Ok;
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::fillRectangle(rect, brush);
+    }
+
+    ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush,
+                        float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+    {
+        // An axis-aligned solid line with the default stroke style (solid,
+        // flat caps) widens to exactly an axis-aligned rectangle — route it
+        // through the rect fast path instead of the stroker.
+        if (!strokeStyle && strokeWidth > 0.0f && std::isfinite(strokeWidth)
+            && (point0.x == point1.x) != (point0.y == point1.y))
+        {
+            const float h = strokeWidth * 0.5f;
+            const bool horizontal = point0.y == point1.y;
+            const drawing::Rect r{
+                (std::min)(point0.x, point1.x) - (horizontal ? 0.0f : h),
+                (std::min)(point0.y, point1.y) - (horizontal ? h : 0.0f),
+                (std::max)(point0.x, point1.x) + (horizontal ? 0.0f : h),
+                (std::max)(point0.y, point1.y) + (horizontal ? h : 0.0f) };
+            if (fastFillAxisAlignedRect(r, brush))
+                return ReturnCode::Ok;
+        }
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::drawLine(point0, point1, brush, strokeWidth, strokeStyle);
+    }
+
     ReturnCode fillRoundedRectangle(const drawing::RoundedRect* roundedRect, drawing::api::IBrush* brush) override
     {
         auto geometry = createRoundedRectGeometry(roundedRect);

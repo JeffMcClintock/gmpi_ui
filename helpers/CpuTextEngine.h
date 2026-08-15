@@ -1787,6 +1787,35 @@ public:
         float baselineOffset{}; // first baseline, from the block top
     };
 
+    // A retained text layout (api::ITextLayout): the shaped, line-broken text,
+    // kept so a draw goes straight to rasterisation.
+    //
+    // This is the whole point of the interface on this backend. drawText
+    // re-runs itemisation, line breaking and HarfBuzz shaping on every call,
+    // and glyph rasters are already cached, so shaping is what a repeated draw
+    // was paying for. Holding the LaidOut removes it.
+    //
+    // Parity with drawText is structural rather than delicate: drawText is
+    // "lay out, then renderLaidOut", so a retained layout is the same laying
+    // out done once, handed to the same renderLaidOut with the same rect.
+    class RetainedLayout final : public api::ITextLayout
+    {
+    public:
+        LaidOut laid;
+        Size extent{};
+        float boxWidth{};
+        float boxHeight{};
+
+        ReturnCode getTextExtentU(Size* returnSize) override
+        {
+            *returnSize = extent;
+            return ReturnCode::Ok;
+        }
+
+        GMPI_QUERYINTERFACE_METHOD(api::ITextLayout);
+        GMPI_REFCOUNT;
+    };
+
     ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName,
                                     int32_t fontFlags, TextAlignment textAlignment,
                                     ParagraphAlignment paragraphAlignment, WordWrapping wordWrapping,
@@ -1924,6 +1953,74 @@ public:
         laid.baselineOffset = rich->base->baselineOffset();
 
         return renderLaidOut(context, factory, laid, layoutRect, brush, options);
+    }
+
+    // Lay the text out now and keep the result.
+    //
+    // Styling runs are declined for the moment: the engine can already vary
+    // font, weight, size and decorations per run (that is how markdown is
+    // drawn), but not colour - GlyphRun carries no colour and renderLaidOut
+    // batches a whole block into one geometry fill and one coverage blend
+    // against a single brush, which per-run colour would have to be split up.
+    // Declining costs a caller nothing today: the fallback, drawText, cannot
+    // style text at all.
+    ReturnCode createTextLayout(const char* utf8, int32_t length, api::ITextFormat* baseFormat,
+                                float maxWidth, float maxHeight,
+                                const TextStyleRun* /*runs*/, int32_t runCount,
+                                const char* const* /*runFamilies*/, int32_t /*runFamilyCount*/,
+                                api::ITextLayout** returnTextLayout) override
+    {
+        *returnTextLayout = {};
+
+        auto* format = dynamic_cast<CpuTextFormat*>(baseFormat);
+        if (!format || !utf8 || length < 0)
+            return ReturnCode::NoSupport;
+
+        if (runCount > 0)
+            return ReturnCode::NoSupport; // see above
+
+        auto layout = std::make_unique<RetainedLayout>();
+
+        // Exactly what drawText does per call - once.
+        format->layout(utf8, length, maxWidth, layout->laid.lines);
+        layout->laid.textAlignment = format->textAlignment;
+        layout->laid.paragraphAlignment = format->paragraphAlignment;
+        layout->laid.defaultAscent = format->ascent();
+        layout->laid.defaultDescent = format->descent();
+        layout->laid.defaultAdvance = format->lineAdvance();
+        layout->laid.baselineOffset = format->baselineOffset();
+
+        layout->boxWidth = maxWidth;
+        layout->boxHeight = maxHeight;
+
+        // Measured through the format, so the answer matches what the format
+        // itself would report for this text at this width.
+        format->getTextExtentU(utf8, length, maxWidth, &layout->extent);
+
+        *returnTextLayout = layout.release();
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode drawTextLayout(api::IDeviceContext* context, api::ITextLayout* textLayout,
+                              Point point, api::IBrush* brush, int32_t options) override
+    {
+        auto* layout = dynamic_cast<RetainedLayout*>(textLayout);
+        if (!layout || !context)
+            return ReturnCode::NoSupport;
+
+        if (layout->laid.lines.empty())
+            return ReturnCode::Ok;
+
+        api::IFactory* factory{};
+        if (context->getFactory(&factory) != ReturnCode::Ok || !factory)
+            return ReturnCode::Fail;
+
+        // The rect drawText would have been given for the same box.
+        const Rect layoutRect{
+            point.x, point.y,
+            point.x + layout->boxWidth, point.y + layout->boxHeight };
+
+        return renderLaidOut(context, factory, layout->laid, layoutRect, brush, options);
     }
 
     ReturnCode drawText(api::IDeviceContext* context, api::ITextFormat* textFormat,

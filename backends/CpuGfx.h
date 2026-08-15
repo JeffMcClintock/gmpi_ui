@@ -556,6 +556,28 @@ public:
     {
         return ReturnCode::NoSupport;
     }
+
+    // Retained layouts. Also optional, and declined the same way: an engine
+    // that does not implement them makes the backend report NoSupport, and
+    // callers fall back to drawText.
+    virtual ReturnCode createTextLayout(const char* /*utf8*/, int32_t /*length*/,
+                                        drawing::api::ITextFormat* /*baseFormat*/,
+                                        float /*maxWidth*/, float /*maxHeight*/,
+                                        const drawing::TextStyleRun* /*runs*/, int32_t /*runCount*/,
+                                        const char* const* /*runFamilies*/, int32_t /*runFamilyCount*/,
+                                        drawing::api::ITextLayout** returnTextLayout)
+    {
+        *returnTextLayout = {};
+        return ReturnCode::NoSupport;
+    }
+
+    virtual ReturnCode drawTextLayout(drawing::api::IDeviceContext* /*context*/,
+                                      drawing::api::ITextLayout* /*textLayout*/,
+                                      drawing::Point /*point*/, drawing::api::IBrush* /*brush*/,
+                                      int32_t /*options*/)
+    {
+        return ReturnCode::NoSupport;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -3030,6 +3052,16 @@ public:
                                 *layoutRect, brush, options);
     }
 
+    ReturnCode drawTextLayout(drawing::Point point, drawing::api::ITextLayout* textLayout,
+                              drawing::api::IBrush* brush, int32_t options) override
+    {
+        auto* engine = textEngine();
+        if (!engine || !textLayout)
+            return ReturnCode::NoSupport;
+
+        return engine->drawTextLayout(this, textLayout, point, brush, options);
+    }
+
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect,
                              drawing::api::IBrush* brush, int32_t options) override
     {
@@ -3249,18 +3281,21 @@ public:
                                                 lineSpacing, baseline, returnRichTextFormat);
     }
 
-    // Retained text layouts: not yet implemented on the CPU backend (the win
-    // here is retaining the SHAPED text, which needs a cached LaidOut in the
-    // text engine - see TEXT_LAYOUT_PLAN.md). Declining is a supported
-    // outcome; callers keep their drawTextU path.
-    ReturnCode createTextLayout(const char* /*utf8String*/, int32_t /*stringLength*/,
-                                drawing::api::ITextFormat* /*baseFormat*/, float /*maxWidth*/, float /*maxHeight*/,
-                                const drawing::TextStyleRun* /*runs*/, int32_t /*runCount*/,
-                                const char* const* /*runFamilies*/, int32_t /*runFamilyCount*/,
+    // Retained text layouts, handed to the text engine: it keeps the SHAPED,
+    // line-broken text, so drawing skips itemisation, line breaking and
+    // shaping entirely.
+    ReturnCode createTextLayout(const char* utf8String, int32_t stringLength,
+                                drawing::api::ITextFormat* baseFormat, float maxWidth, float maxHeight,
+                                const drawing::TextStyleRun* runs, int32_t runCount,
+                                const char* const* runFamilies, int32_t runFamilyCount,
                                 drawing::api::ITextLayout** returnTextLayout) override
     {
         *returnTextLayout = {};
-        return ReturnCode::NoSupport;
+        if (!textEngine)
+            return ReturnCode::NoSupport;
+
+        return textEngine->createTextLayout(utf8String, stringLength, baseFormat, maxWidth, maxHeight,
+                                            runs, runCount, runFamilies, runFamilyCount, returnTextLayout);
     }
 
     ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi) override

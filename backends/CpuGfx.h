@@ -35,6 +35,15 @@
 #else
 #include <cpuid.h>
 #endif
+
+// AArch64 (Apple Silicon, arm64 Linux/Windows): fp16<->fp32 conversion is
+// MANDATORY in the base architecture, so there is nothing to detect and no
+// target attribute to apply — unlike F16C above, this is a compile-time
+// branch. vcvt rounds to nearest-even under the default FPCR, which is what
+// the scalar floatToHalf implements.
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define GMPI_UI_NEON_FP16_AVAILABLE 1
+#include <arm_neon.h>
 #endif
 
 #include "../Drawing.h"
@@ -88,7 +97,7 @@ inline const float* halfToFloatTable()
     return table.data();
 }
 
-#if GMPI_UI_F16C_AVAILABLE
+#if defined(GMPI_UI_F16C_AVAILABLE)
 
 // MSVC compiles intrinsics unconditionally; GCC/Clang need the instruction set
 // enabled for the function that uses it. Per-function rather than a global
@@ -152,7 +161,16 @@ GMPI_UI_F16C_FN inline void storeSpanF16C(const float* src, uint16_t* dst, int f
 
 inline void loadSpan(const uint16_t* src, float* dst, int floatCount)
 {
-#if GMPI_UI_F16C_AVAILABLE
+#if defined(GMPI_UI_NEON_FP16_AVAILABLE)
+    // Loaded as u16 and reinterpreted, so this needs no __fp16 pointer type.
+    // No fallback arm: the instruction is part of the base architecture.
+    int i = 0;
+    for (; i + 4 <= floatCount; i += 4)
+        vst1q_f32(dst + i, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(src + i))));
+    for (; i < floatCount; ++i)
+        dst[i] = drawing::detail::halfToFloat(src[i]);
+#else
+#if defined(GMPI_UI_F16C_AVAILABLE)
     if (haveF16C())
     {
         loadSpanF16C(src, dst, floatCount);
@@ -162,11 +180,19 @@ inline void loadSpan(const uint16_t* src, float* dst, int floatCount)
     const float* table = halfToFloatTable();
     for (int i = 0; i < floatCount; ++i)
         dst[i] = table[src[i]];
+#endif
 }
 
 inline void storeSpan(const float* src, uint16_t* dst, int floatCount)
 {
-#if GMPI_UI_F16C_AVAILABLE
+#if defined(GMPI_UI_NEON_FP16_AVAILABLE)
+    int i = 0;
+    for (; i + 4 <= floatCount; i += 4)
+        vst1_u16(dst + i, vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(src + i))));
+    for (; i < floatCount; ++i)
+        dst[i] = drawing::detail::floatToHalf(src[i]);
+#else
+#if defined(GMPI_UI_F16C_AVAILABLE)
     if (haveF16C())
     {
         storeSpanF16C(src, dst, floatCount);
@@ -175,6 +201,7 @@ inline void storeSpan(const float* src, uint16_t* dst, int floatCount)
 #endif
     for (int i = 0; i < floatCount; ++i)
         dst[i] = drawing::detail::floatToHalf(src[i]);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -2023,9 +2050,18 @@ inline void accumulateEdge(float* acc, int w, int h, drawing::Point p0, drawing:
 // means.
 inline float foldCoverage(float run, bool nonzero)
 {
+    const float a = std::fabs(run);
     if (nonzero)
-        return (std::min)(1.0f, std::fabs(run));
-    const float t = std::fmod(std::fabs(run), 2.0f);
+        return (std::min)(1.0f, a);
+
+    // Even-odd folds the winding run onto [0,2). std::fmod is a libm CALL in
+    // the innermost per-pixel loop — 5.5% of the Linux frame, and this branch
+    // is the common one because a path sink starts in Alternate mode (the D2D
+    // default). The floor form is the same idiom the Mirror gradient uses
+    // above, and agrees with fmod bit for bit here: `a` and `2*floor(a/2)` are
+    // both exactly representable and their difference is exact, NaN and inf
+    // still produce NaN, and beyond 2^24 every float is even so both give 0.
+    const float t = a - 2.0f * std::floor(a * 0.5f);
     return 1.0f - std::fabs(t - 1.0f);
 }
 

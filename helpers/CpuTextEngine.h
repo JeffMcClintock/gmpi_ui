@@ -317,21 +317,49 @@ inline void glyphClosePath(hb_draw_funcs_t*, void* userData, hb_draw_state_t*, v
 
 inline hb_draw_funcs_t* glyphDrawFuncs(); // defined below; used by the clip painter
 
-// DirectWrite's grayscale coverage-to-alpha curve, measured from the Direct2D
-// reference images (black text on white; gimpi_ui_tests). Direct2D text there
-// contains EXACTLY seventeen grey levels: coverage is quantised to k/16 by the
-// rasterizer, then mapped through this fixed gamma/contrast table and blended
-// in gamma space. These are the measured values to the byte —
-// bytes {255,238,222,208,194,180,167,154,142,130,118,105,92,77,62,41,0} as
-// alpha[k] = 1 - byte/255. The shape is close to DirectWrite's documented
-// enhanced-contrast function followed by gamma ~1.8, but it is stored as
-// measured rather than fitted: with the matching 4x4 sampling below, 99% of
-// clean glyph-edge pixels reproduce the reference byte EXACTLY.
-inline constexpr float kDWriteAlpha[17] = {
-    0.0f,        0.0666667f, 0.129412f, 0.184314f, 0.239216f, 0.294118f,
-    0.345098f,   0.396078f,  0.443137f, 0.490196f, 0.537255f, 0.588235f,
-    0.639216f,   0.698039f,  0.756863f, 0.839216f, 1.0f,
+// Text-weight model. This renderer blends EVERYTHING in linear premultiplied
+// space (cpugfx::blendPixel); perceived glyph weight is matched to Direct2D
+// by warping the coverage values once per draw call — the same place
+// DirectWrite applies its own gamma/contrast correction — so no transfer
+// function survives in any per-pixel blend.
+//
+// The dark anchor is DERIVED, not tuned. Direct2D grayscale text contains
+// EXACTLY seventeen grey levels (coverage quantised to k/16 by the
+// rasterizer), and black-on-white renders to the measured bytes
+// {255,238,222,208,194,180,167,154,142,130,118,105,92,77,62,41,0}
+// (gimpi_ui_tests reference images, byte-exact). The alpha a LINEAR blend of
+// black over white needs to reproduce those bytes is
+// 1 - srgbToLinear(byte/255) — the values below. A plain power curve misfits
+// this by up to 4.5%, so the table is kept as data.
+inline constexpr float kTextWarpDark[17] = {
+    0.0f,       0.1450074f, 0.2695393f, 0.3692429f, 0.4605205f, 0.5435890f,
+    0.6135706f, 0.6768568f, 0.7295022f, 0.7767720f, 0.8188358f, 0.8587367f,
+    0.8929769f, 0.9257864f, 0.9518282f, 0.9778261f, 1.0f,
 };
+
+// How strongly kTextWarpDark applies, in [0,1]: 1 = the full curve, 0 =
+// identity (pure linear coverage). Two factors, both measured:
+//   * Foreground luminance. The correction is for DARK glyphs only: measured
+//     at 10-12px against D2D, black-on-light needs the full curve (linear
+//     coverage reads 27% too light) while white-on-dark is already at
+//     reference weight — slightly past it — with NO correction. So strength
+//     scales with darkness, reaching zero for white text.
+//   * Glyph size, in device pixels. Past ~2px stems the antialiased fringe
+//     is a small fraction of the glyph, weight no longer reads differently,
+//     and unwarped linear coverage draws curves and diagonals most
+//     faithfully — so the warp fades to identity across a band rather than
+//     switching at a threshold (the editor zooms continuously, and a hard
+//     cut would make text weight pop mid-zoom).
+inline float textWarpStrength(float foregroundLuminance, float emPixels)
+{
+    constexpr float kWarpFadeStartPx = 16.0f;
+    constexpr float kWarpFadeEndPx = 32.0f;
+
+    const float darkness = 1.0f - std::clamp(foregroundLuminance, 0.0f, 1.0f);
+    const float sizeFade = std::clamp(
+        (kWarpFadeEndPx - emPixels) / (kWarpFadeEndPx - kWarpFadeStartPx), 0.0f, 1.0f);
+    return darkness * sizeFade;
+}
 
 // ---------------------------------------------------------------------------
 // COLRv1 painting.
@@ -1403,7 +1431,7 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
     // clean glyph-edge pixels reproduce the reference byte exactly. A sub-cell
     // counts as covered when at least half its area is, which for the straight
     // edges glyphs have at 1/16-pixel scale is the same thing as its centre
-    // being inside. See kDWriteAlpha for the matching output curve.
+    // being inside. See kTextWarpDark for the matching output curve.
 
     std::shared_ptr<GlyphMask> buildGlyphMask(api::IFactory* factory,
                                               const std::shared_ptr<detail::FontFace>& face,
@@ -2141,7 +2169,7 @@ public:
         // The mask path needs the software backend, a CPU brush, and a
         // transform without rotation or skew — a rotated glyph would need a
         // different mask per angle. It is where the DirectWrite grayscale
-        // emulation lives (4x4 sampling + kDWriteAlpha), so it is taken
+        // emulation lives (4x4 sampling + coverage warp), so it is taken
         // whenever possible, with or without the atlas cache; useGlyphAtlas
         // off merely rebuilds each mask instead of caching it, so tests can
         // compare the two. Rotated or exotically-brushed text falls through
@@ -2162,8 +2190,13 @@ public:
         // ordinary per-primitive antialiasing, so it must fall through to the
         // geometry path here.
         bool opaqueBrush = true;
+        float brushLuminance = 0.5f; // neutral middle for non-solid brushes
         if (auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush))
+        {
             opaqueBrush = solid->color.a * solid->opacity >= 1.0f;
+            brushLuminance = 0.2126f * solid->color.r + 0.7152f * solid->color.g
+                           + 0.0722f * solid->color.b;
+        }
 
         const bool maskPath = cpuTarget && cpuBrush && axisAligned && opaqueBrush;
 
@@ -2176,6 +2209,11 @@ public:
         // once at the end, so it composites like the text rather than blending
         // separately over each glyph it crosses.
         std::vector<Rect> strikeRects;
+
+        // Largest em size actually masked, in device pixels — feeds the
+        // coverage warp's size fade (mixed-size rich text warps by its
+        // biggest run, erring toward lighter).
+        float maxEmPx = 0.0f;
 
         for (const auto& line : lines)
         {
@@ -2260,6 +2298,7 @@ public:
                                 const int mx = ix + mask->bounds.left;
                                 const int my = iy + mask->bounds.top;
                                 atlasGlyphs.push_back({ std::move(mask), mx, my });
+                                maxEmPx = (std::max)(maxEmPx, run.emSize * contextTransform._22);
                             }
                             x += run.advances[i];
                             continue;
@@ -2333,49 +2372,41 @@ public:
                 }
             }
 
-            // The union coverage is still on the 1/16 grid (masks hold k/16 and
-            // the sum saturates); DirectWrite maps it through its gamma and
-            // contrast table before blending, and so must this, or mid-tone
-            // antialiasing comes out ~3% heavier than the reference.
-            for (auto& coverage : merged)
-                coverage = detail::kDWriteAlpha[std::clamp(int(std::lround(coverage * 16.0f)), 0, 16)];
-
-            const bool restore = cpuTarget->gammaSpaceBlend;
-            cpuTarget->gammaSpaceBlend = true;
+            // The union coverage is still on the 1/16 grid (masks hold k/16
+            // and the sum saturates). The Direct2D weight match happens HERE,
+            // on the coverage itself (see kTextWarpDark); the blend below is
+            // ordinary linear source-over like every other fill.
+            const float strength = detail::textWarpStrength(brushLuminance, maxEmPx);
+            if (strength > 0.0f)
+            {
+                float warp[17];
+                for (int i = 0; i <= 16; ++i)
+                {
+                    const float identity = float(i) / 16.0f;
+                    warp[i] = identity + strength * (detail::kTextWarpDark[i] - identity);
+                }
+                for (auto& coverage : merged)
+                    coverage = warp[std::clamp(int(std::lround(coverage * 16.0f)), 0, 16)];
+            }
             cpuTarget->blendCoverageMask(merged.data(), bw, bh, box.left, box.top, *cpuBrush);
-            cpuTarget->gammaSpaceBlend = restore;
         }
 
         if (brush)
         {
-            // Opaque glyph outlines that fell through here (rotation, exotic
-            // brushes) still composite in gamma space to sit near the mask
-            // path's output. Translucent text stays on the ordinary linear
-            // blend — that is the measured Direct2D behaviour (see above), not
-            // an omission.
-            const bool restore = cpuTarget ? cpuTarget->gammaSpaceBlend : false;
-            if (cpuTarget && opaqueBrush)
-                cpuTarget->gammaSpaceBlend = true;
-
+            // Rotated or exotically-brushed glyphs and all translucent text:
+            // continuous coverage through the ordinary linear fill. For
+            // translucent text that is the measured Direct2D behaviour (see
+            // above). The rare rotated-opaque case renders a shade lighter
+            // than masked text at small sizes — the coverage warp is a
+            // mask-path concept — much as Direct2D itself stops
+            // grid-processing text under such transforms.
             context->fillGeometry(geometry.get(), brush, nullptr);
-
-            if (cpuTarget)
-                cpuTarget->gammaSpaceBlend = restore;
         }
 
         if (brush && !strikeRects.empty())
         {
-            // Struck through in the same gamma space as the glyphs it crosses,
-            // so the line does not read heavier than the text.
-            const bool restore = cpuTarget ? cpuTarget->gammaSpaceBlend : false;
-            if (cpuTarget && opaqueBrush)
-                cpuTarget->gammaSpaceBlend = true;
-
             for (const auto& r : strikeRects)
                 context->fillRectangle(&r, brush);
-
-            if (cpuTarget)
-                cpuTarget->gammaSpaceBlend = restore;
         }
 
         for (const auto& item : colorGlyphs)

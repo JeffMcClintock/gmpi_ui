@@ -37,59 +37,18 @@ namespace gmpi
 namespace cpugfx
 {
 
-inline float srgbToLinear01(float c)
+// Blend one premultiplied pixel: straight linear source-over. EVERYTHING in
+// this renderer — text included — composites in linear premultiplied space,
+// with one encode at endDraw. Glyph weight parity with Direct2D is handled
+// where DirectWrite itself handles it, on the coverage values (the coverage
+// warp in CpuTextEngine), so no transfer function appears in any blend.
+inline void blendPixel(float* d, const float* sc, float c)
 {
-    c = c < 0.0f ? 0.0f : (c > 1.0f ? 1.0f : c);
-    return (c <= 0.04045f) ? c / 12.92f
-                           : std::pow((c + 0.055f) / 1.055f, 2.4f);
-}
-
-// The sRGB transfer function, DECODE direction - the inverse of
-// drawing::linearToSRGB01, which is the encode half. Needed because glyph
-// coverage is composited in gamma space to match Direct2D (see
-// blendCoverageMask) and has to come back to the linear surface afterwards.
-// Blend one premultiplied pixel.
-//
-// `gammaSpace` exists for TEXT ONLY. Everything else in this renderer is
-// linear and stays that way, but Direct2D renders text into a plain BGRA8
-// target and therefore mixes glyph coverage using the ENCODED values. Blending
-// the same coverage linearly gives visibly lighter glyphs - measured against
-// the D2D references, ours came out lighter on 1460 of 1497 differing pixels,
-// mean +42.5/255, peaking near half coverage exactly as the arithmetic
-// predicts. Layout was never wrong; only the weight was.
-inline void blendPixel(float* d, const float* sc, float c, bool gammaSpace)
-{
-    const float sa = sc[3];
-    const float k  = 1.0f - sa * c;
-
-    // Fully covered and fully opaque is a straight copy in either space, and
-    // it is the common case inside a glyph - worth taking before the transfer
-    // function, which is not cheap.
-    if (!gammaSpace || (c >= 1.0f && sa >= 1.0f))
-    {
-        d[0] = sc[0] * c + d[0] * k;
-        d[1] = sc[1] * c + d[1] * k;
-        d[2] = sc[2] * c + d[2] * k;
-        d[3] = sc[3] * c + d[3] * k;
-        return;
-    }
-
-    const float dstA = d[3];
-    const float outA = sa * c + dstA * k;
-
-    for (int ch = 0; ch < 3; ++ch)
-    {
-        // un-premultiply: a gamma curve is meaningless on premultiplied values
-        const float srcLin = sa   > 0.0f ? sc[ch] / sa   : 0.0f;
-        const float dstLin = dstA > 0.0f ? d[ch]  / dstA : 0.0f;
-
-        const float mixed = drawing::linearToSRGB01(srcLin) * (sa * c)
-                          + drawing::linearToSRGB01(dstLin) * (dstA * k);
-
-        d[ch] = outA > 0.0f ? srgbToLinear01(mixed / outA) * outA : 0.0f;
-    }
-
-    d[3] = outA;
+    const float k = 1.0f - sc[3] * c;
+    d[0] = sc[0] * c + d[0] * k;
+    d[1] = sc[1] * c + d[1] * k;
+    d[2] = sc[2] * c + d[2] * k;
+    d[3] = sc[3] * c + d[3] * k;
 }
 
 
@@ -2324,7 +2283,7 @@ public:
                 const float c = cv[i];
                 if (c <= 0.0f)
                     continue;
-                blendPixel(d, sc, c, gammaSpaceBlend);
+                blendPixel(d, sc, c);
             }
             storeSpan(rowBuf.data(), p, spanPx * 4);
 
@@ -2332,14 +2291,6 @@ public:
         }
         return ReturnCode::Ok;
     }
-
-private:
-
-    // Set while filling glyph outlines, so text rendered as geometry composites
-    // exactly as the glyph atlas does. Without it the two paths disagree, and
-    // the atlas stops being a pure optimisation.
-public:
-    bool gammaSpaceBlend = false;
 
 private:
     // scratch buffers, reused across fills
@@ -2847,7 +2798,7 @@ private:
                 const float c = cv[i];
                 if (c <= 0.0f)
                     continue;
-                blendPixel(d, sc, c, gammaSpaceBlend);
+                blendPixel(d, sc, c);
             }
 
             storeSpan(rowBuf.data(), p, spanPx * 4);
@@ -2951,7 +2902,7 @@ public:
             if (cov <= 0.0f)
                 return;
             loadSpan(p, px, 4);
-            blendPixel(px, src, cov, gammaSpaceBlend);
+            blendPixel(px, src, cov);
             storeSpan(px, p, 4);
         };
 

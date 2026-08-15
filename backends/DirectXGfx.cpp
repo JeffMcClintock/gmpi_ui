@@ -621,9 +621,207 @@ gmpi::ReturnCode Factory_base::createRichTextFormat(
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
 	wrapper.attach(new RichTextFormat(info.writeFactory, dwFormat, dwLayout));
+
+	// RichTextFormat's ComPtr member took its own reference, so release the
+	// one CreateTextLayout returned - without this every rich text format
+	// leaked its IDWriteTextLayout.
+	dwLayout->Release();
+
 	baseTextFormatApi->release();
 
 	wrapper->queryInterface(&drawing::api::IRichTextFormat::guid, reinterpret_cast<void**>(richTextFormat));
+	return gmpi::ReturnCode::Ok;
+}
+
+namespace
+{
+// Map every UTF-8 byte offset in `utf8` to the corresponding UTF-16 code-unit
+// offset, so a TextStyleRun's byte range becomes a DWRITE_TEXT_RANGE. Offsets
+// that land inside a multi-byte sequence are marked invalid, which is how run
+// validation rejects a range that splits a codepoint. The map has one extra
+// entry so the end offset is addressable.
+constexpr uint32_t kNotACodepointBoundary = 0xFFFFFFFFu;
+
+std::vector<uint32_t> buildUtf16OffsetMap(std::string_view utf8)
+{
+	std::vector<uint32_t> map(utf8.size() + 1, kNotACodepointBoundary);
+
+	uint32_t utf16Offset = 0;
+	size_t i = 0;
+	while (i < utf8.size())
+	{
+		map[i] = utf16Offset;
+
+		const auto lead = static_cast<unsigned char>(utf8[i]);
+		size_t sequenceLength = 1;
+		if (lead >= 0xF0)      sequenceLength = 4;
+		else if (lead >= 0xE0) sequenceLength = 3;
+		else if (lead >= 0xC0) sequenceLength = 2;
+
+		// Anything outside the BMP arrives in UTF-16 as a surrogate pair.
+		utf16Offset += (sequenceLength == 4) ? 2 : 1;
+		i += sequenceLength;
+	}
+	map[utf8.size()] = utf16Offset;
+
+	return map;
+}
+} // namespace
+
+gmpi::ReturnCode Factory_base::createTextLayout(const char* utf8String, int32_t stringLength, drawing::api::ITextFormat* baseFormat, float maxWidth, float maxHeight, const drawing::TextStyleRun* runs, int32_t runCount, const char* const* runFamilies, int32_t runFamilyCount, drawing::api::ITextLayout** returnTextLayout)
+{
+	*returnTextLayout = {};
+
+	if (!baseFormat || !utf8String || stringLength < 0)
+		return gmpi::ReturnCode::Fail;
+
+	auto* dxFormat = static_cast<TextFormat*>(baseFormat);
+	auto* dwFormat = dxFormat->native();
+
+	const std::string_view utf8{ utf8String, static_cast<size_t>(stringLength) };
+	const auto wideText = Utf8ToWstring(utf8);
+	const auto utf16Offsets = buildUtf16OffsetMap(utf8);
+
+	// Validate the runs before building anything: sorted, non-overlapping,
+	// in-bounds, and on codepoint boundaries. A programming error here is
+	// worth failing loudly rather than clamping into something plausible.
+	int32_t previousEnd = 0;
+	for (int32_t i = 0; i < runCount; ++i)
+	{
+		const auto& run = runs[i];
+		const int64_t end = static_cast<int64_t>(run.begin) + run.length;
+
+		if (run.begin < previousEnd || run.length < 0 || end > stringLength)
+			return gmpi::ReturnCode::Fail;
+
+		if (utf16Offsets[run.begin] == kNotACodepointBoundary ||
+			utf16Offsets[static_cast<size_t>(end)] == kNotACodepointBoundary)
+			return gmpi::ReturnCode::Fail;
+
+		previousEnd = static_cast<int32_t>(end);
+	}
+
+	// The layout box reproduces the rect drawTextU hands to DrawText: the
+	// caller's box, grown by topAdjustment because drawTextU shifts the top
+	// up by that much and leaves the bottom where it was.
+	const float topAdjustment = dxFormat->getTopAdjustment();
+
+	gmpi::directx::ComPtr<IDWriteTextLayout> dwLayout;
+	auto hr = info.writeFactory->CreateTextLayout(
+		wideText.data(),
+		static_cast<UINT32>(wideText.size()),
+		dwFormat,
+		maxWidth,
+		maxHeight + topAdjustment,
+		dwLayout.put()
+	);
+
+	if (FAILED(hr) || !dwLayout)
+		return gmpi::ReturnCode::Fail;
+
+	// Apply the styling runs. Everything is opt-in: an all-zero run inherits
+	// the base format entirely.
+	std::vector<TextLayout::ColorRange> colorRanges;
+	for (int32_t i = 0; i < runCount; ++i)
+	{
+		const auto& run = runs[i];
+		const auto begin16 = utf16Offsets[run.begin];
+		const auto end16 = utf16Offsets[static_cast<size_t>(run.begin) + run.length];
+		const DWRITE_TEXT_RANGE range{ begin16, end16 - begin16 };
+
+		if (range.length == 0)
+			continue;
+
+		if (run.flags & drawing::TextStyleFlags::HasFontWeight)
+			dwLayout->SetFontWeight(static_cast<DWRITE_FONT_WEIGHT>(run.fontWeight), range);
+
+		if (run.flags & drawing::TextStyleFlags::HasFontStyle)
+			dwLayout->SetFontStyle(static_cast<DWRITE_FONT_STYLE>(run.fontStyle), range);
+
+		if (run.flags & drawing::TextStyleFlags::Underline)
+			dwLayout->SetUnderline(TRUE, range);
+
+		if (run.flags & drawing::TextStyleFlags::Strikethrough)
+			dwLayout->SetStrikethrough(TRUE, range);
+
+		if (run.flags & drawing::TextStyleFlags::HasFontSize)
+		{
+			// Scale the format's RESOLVED size, so a run inherits whatever
+			// FontFlags (BodyHeight/CapHeight) scaling the base format got.
+			dwLayout->SetFontSize(dwFormat->GetFontSize() * run.fontSizeScale, range);
+		}
+
+		if ((run.flags & drawing::TextStyleFlags::HasFontFamily) &&
+			run.fontFamilyIndex >= 0 && run.fontFamilyIndex < runFamilyCount && runFamilies)
+		{
+			// A family that does not resolve simply leaves the run in the base
+			// family - DirectWrite resolves lazily, so this cannot fail here.
+			const auto wideFamily = Utf8ToWstring(runFamilies[run.fontFamilyIndex]);
+			dwLayout->SetFontFamilyName(wideFamily.c_str(), range);
+		}
+
+		if (run.flags & drawing::TextStyleFlags::HasColor)
+			colorRanges.push_back({ range, run.color });
+	}
+
+	// Measure once, now. Same convention as ITextFormat::getTextExtentU:
+	// width including trailing whitespace, height less the top padding some
+	// fonts carry above the ascent.
+	DWRITE_TEXT_METRICS textMetrics{};
+	dwLayout->GetMetrics(&textMetrics);
+	const drawing::Size extent
+	{
+		textMetrics.widthIncludingTrailingWhitespace,
+		textMetrics.height - topAdjustment
+	};
+
+	gmpi::shared_ptr<gmpi::api::IUnknown> wrapper;
+	wrapper.attach(new TextLayout(dwFormat, dwLayout.get(), topAdjustment, dxFormat->getAscent(), extent, std::move(colorRanges)));
+
+	return wrapper->queryInterface(&drawing::api::ITextLayout::guid, reinterpret_cast<void**>(returnTextLayout));
+}
+
+gmpi::ReturnCode GraphicsContext_base::drawTextLayout(drawing::Point point, drawing::api::ITextLayout* textLayout, drawing::api::IBrush* brush, int32_t options)
+{
+	if (!textLayout || !brush)
+		return gmpi::ReturnCode::Fail;
+
+	auto* layout = static_cast<TextLayout*>(textLayout);
+	auto* b = static_cast<BrushCommon*>(brush)->native();
+
+	// The other half of drawTextU's vertical placement. The rect shift by
+	// topAdjustment is already baked into the layout box; this is the pixel
+	// snap, which depends on the draw point and so cannot be baked.
+	const float scale = 0.5f; // Hi DPI x2
+	const float offset = -0.25f;
+	const auto winBaseline = point.y + layout->getAscent();
+	const auto winBaselineSnapped = floorf((offset + winBaseline) / scale) * scale;
+	const auto adjust = winBaselineSnapped - winBaseline + scale;
+
+	const D2D1_POINT_2F origin{ point.x, point.y - layout->getTopAdjustment() + adjust };
+
+	// Coloured runs paint with their own brush, created on THIS context. The
+	// effects are cleared again below so the retained layout - which outlives
+	// any device - never holds a reference to one.
+	const auto& colorRanges = layout->getColorRanges();
+	std::vector<gmpi::directx::ComPtr<ID2D1SolidColorBrush>> effectBrushes;
+	effectBrushes.reserve(colorRanges.size());
+
+	for (const auto& colorRange : colorRanges)
+	{
+		gmpi::directx::ComPtr<ID2D1SolidColorBrush> effectBrush;
+		if (SUCCEEDED(context_->CreateSolidColorBrush(*reinterpret_cast<const D2D1_COLOR_F*>(&colorRange.color), effectBrush.put())))
+		{
+			layout->native()->SetDrawingEffect(effectBrush.get(), colorRange.range);
+			effectBrushes.push_back(effectBrush);
+		}
+	}
+
+	context_->DrawTextLayout(origin, layout->native(), b, (D2D1_DRAW_TEXT_OPTIONS)options | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+
+	for (const auto& colorRange : colorRanges)
+		layout->native()->SetDrawingEffect(nullptr, colorRange.range);
+
 	return gmpi::ReturnCode::Ok;
 }
 

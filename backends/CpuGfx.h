@@ -3249,6 +3249,20 @@ public:
                                                 lineSpacing, baseline, returnRichTextFormat);
     }
 
+    // Retained text layouts: not yet implemented on the CPU backend (the win
+    // here is retaining the SHAPED text, which needs a cached LaidOut in the
+    // text engine - see TEXT_LAYOUT_PLAN.md). Declining is a supported
+    // outcome; callers keep their drawTextU path.
+    ReturnCode createTextLayout(const char* /*utf8String*/, int32_t /*stringLength*/,
+                                drawing::api::ITextFormat* /*baseFormat*/, float /*maxWidth*/, float /*maxHeight*/,
+                                const drawing::TextStyleRun* /*runs*/, int32_t /*runCount*/,
+                                const char* const* /*runFamilies*/, int32_t /*runFamilyCount*/,
+                                drawing::api::ITextLayout** returnTextLayout) override
+    {
+        *returnTextLayout = {};
+        return ReturnCode::NoSupport;
+    }
+
     ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi) override
     {
         *returnBitmapRenderTarget = {};

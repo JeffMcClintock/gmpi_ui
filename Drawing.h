@@ -928,6 +928,30 @@ public:
 	}
 };
 
+// A retained, immutable text layout. Build one with Factory::createTextLayout,
+// draw it with Graphics::drawTextLayout. Test it before use: retained layouts
+// are an OPTIONAL backend capability, and a backend that declines returns an
+// empty one (see Factory::createTextLayout).
+class TextLayout
+{
+	friend class AccessPtr;
+
+	gmpi::shared_ptr<api::ITextLayout> native;
+
+public:
+	operator bool() const
+	{
+		return native != nullptr;
+	}
+
+	Size getTextExtentU()
+	{
+		Size s;
+		native->getTextExtentU(&s);
+		return s;
+	}
+};
+
 class BitmapPixels
 {
 	friend class Bitmap;
@@ -1586,6 +1610,59 @@ public:
 		return returnFormat;
 	}
 
+	// Create a retained, immutable text layout: text, styling runs, box,
+	// alignment and spacing all fixed now, so the backend can keep its
+	// fully-processed form instead of rebuilding one per draw.
+	//
+	// A run-free layout draws pixel-identically to drawTextU with the same
+	// format over the rect {point, point + box}, so it is a drop-in for an
+	// existing drawTextU call site.
+	//
+	// Like createRichTextFormat, this is an OPTIONAL capability with no
+	// assert: a backend that declines returns an empty TextLayout, and the
+	// caller is expected to keep its drawTextU path as the fallback.
+	TextLayout createTextLayout(
+		std::string_view utf8String,
+		TextFormat_readonly baseFormat,
+		float maxWidth,
+		float maxHeight,
+		std::span<const TextStyleRun> runs = {},
+		std::span<const std::string_view> runFamilies = {}
+	)
+	{
+		TextLayout returnLayout;
+
+		if (!AccessPtr::get(baseFormat))
+			return returnLayout;
+
+		// The API takes an array of C strings; string_view is not guaranteed
+		// null-terminated, so materialise them.
+		std::vector<std::string> familyStorage;
+		std::vector<const char*> familyPointers;
+		familyStorage.reserve(runFamilies.size());
+		familyPointers.reserve(runFamilies.size());
+		for (const auto family : runFamilies)
+		{
+			familyStorage.emplace_back(family);
+			familyPointers.push_back(familyStorage.back().c_str());
+		}
+
+		native->createTextLayout(
+			utf8String.data(),
+			static_cast<int32_t>(utf8String.size()),
+			AccessPtr::get(baseFormat),
+			maxWidth,
+			maxHeight,
+			runs.empty() ? nullptr : runs.data(),
+			static_cast<int32_t>(runs.size()),
+			familyPointers.empty() ? nullptr : familyPointers.data(),
+			static_cast<int32_t>(familyPointers.size()),
+			AccessPtr::put(returnLayout)
+		);
+
+		return returnLayout;
+	}
+
 	Bitmap createImage(int32_t width = 32, int32_t height = 32, int32_t flags = 0)
 	{
 		Bitmap temp;
@@ -1938,6 +2015,14 @@ public:
 	void drawRichTextU(RichTextFormat richTextFormat, Rect layoutRect, const IHasBrush& brush, int32_t options = DrawTextOptions::None)
 	{
 		native->drawRichTextU(AccessPtr::get(richTextFormat), &layoutRect, brush.getBrush(), options);
+	}
+
+	// Draw a retained layout at `point` - the layout carries its own box, so
+	// there is no rect here. Runs without their own colour paint with `brush`,
+	// so one cached layout can be re-tinted per draw.
+	void drawTextLayout(TextLayout& textLayout, Point point, const IHasBrush& brush, int32_t options = DrawTextOptions::None)
+	{
+		native->drawTextLayout(point, AccessPtr::get(textLayout), brush.getBrush(), options);
 	}
 
 	void setTransform(const Matrix3x2& transform)

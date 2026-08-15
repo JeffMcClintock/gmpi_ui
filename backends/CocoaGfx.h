@@ -1156,6 +1156,16 @@ public:
 
     gmpi::ReturnCode createRichTextFormat(const char* markdownText, float fontSize, const char* fontFamilyName, int32_t fontFlags, gmpi::drawing::TextAlignment textAlignment, gmpi::drawing::ParagraphAlignment paragraphAlignment, gmpi::drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, gmpi::drawing::api::IRichTextFormat** richTextFormat) override;
 
+    // Retained text layouts: not yet implemented on the Cocoa backend (the
+    // plan is to retain the attributed string + framesetter and tint via the
+    // context - see TEXT_LAYOUT_PLAN.md). Declining is supported; callers keep
+    // their drawTextU path.
+    gmpi::ReturnCode createTextLayout(const char* /*utf8String*/, int32_t /*stringLength*/, gmpi::drawing::api::ITextFormat* /*baseFormat*/, float /*maxWidth*/, float /*maxHeight*/, const gmpi::drawing::TextStyleRun* /*runs*/, int32_t /*runCount*/, const char* const* /*runFamilies*/, int32_t /*runFamilyCount*/, gmpi::drawing::api::ITextLayout** returnTextLayout) override
+    {
+        *returnTextLayout = {};
+        return gmpi::ReturnCode::NoSupport;
+    }
+
     gmpi::ReturnCode createImage(int32_t width, int32_t height, int32_t flags, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
 
     gmpi::ReturnCode loadImageU(const char* utf8Uri, gmpi::drawing::api::IBitmap** returnDiBitmap) override;
@@ -2176,6 +2186,13 @@ public:
         }
 
         return gmpi::ReturnCode::Ok;
+	}
+
+	// See Factory::createTextLayout: this backend declines retained layouts
+	// for now, so nothing can hand one to us.
+	gmpi::ReturnCode drawTextLayout(gmpi::drawing::Point /*point*/, gmpi::drawing::api::ITextLayout* /*textLayout*/, gmpi::drawing::api::IBrush* /*defaultForegroundBrush*/, int32_t /*options*/) override
+	{
+		return gmpi::ReturnCode::NoSupport;
 	}
 
 	gmpi::ReturnCode drawRichTextU(gmpi::drawing::api::IRichTextFormat* richTextFormat, const gmpi::drawing::Rect* layoutRect, gmpi::drawing::api::IBrush* brush, int32_t options) override

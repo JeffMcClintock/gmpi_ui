@@ -1204,6 +1204,13 @@ public:
 		return ReturnCode::Ok;
 	}
 
+	// See Factory::createTextLayout below: this backend declines retained
+	// layouts, so nothing can hand one to us.
+	ReturnCode drawTextLayout(drawing::Point /*point*/, drawing::api::ITextLayout* /*textLayout*/, drawing::api::IBrush* /*defaultForegroundBrush*/, int32_t /*options*/) override
+	{
+		return ReturnCode::NoSupport;
+	}
+
 	ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override
 	{
 		auto* rtf = dynamic_cast<RichTextFormat*>(richTextFormat);
@@ -1567,6 +1574,18 @@ public:
 	{
 		*returnPixelFormat = drawing::api::IBitmapPixels::BGRA_sRGB_8i;
 		return ReturnCode::Ok;
+	}
+
+	// Retained text layouts are deliberately not implemented on the JUCE
+	// backend: it is obsolescent (Windows, macOS and Linux all render without
+	// it) and it is the one backend whose native layout object cannot express
+	// uniform line spacing, so parity with drawTextU would mean retaining this
+	// file's hand-rolled line engine. Declining is supported - callers keep
+	// their drawTextU path and render exactly as before.
+	ReturnCode createTextLayout(const char* /*utf8String*/, int32_t /*stringLength*/, drawing::api::ITextFormat* /*baseFormat*/, float /*maxWidth*/, float /*maxHeight*/, const drawing::TextStyleRun* /*runs*/, int32_t /*runCount*/, const char* const* /*runFamilies*/, int32_t /*runFamilyCount*/, drawing::api::ITextLayout** returnTextLayout) override
+	{
+		*returnTextLayout = {};
+		return ReturnCode::NoSupport;
 	}
 
 	ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName, int32_t fontFlags, drawing::TextAlignment textAlignment, drawing::ParagraphAlignment paragraphAlignment, drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, drawing::api::IRichTextFormat** returnRichTextFormat) override

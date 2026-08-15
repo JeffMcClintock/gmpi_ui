@@ -505,6 +505,14 @@ public:
 		return gmpi::ReturnCode::Fail;
 	}
 
+    // Retained text layouts are optional: a backend that does not implement
+    // them returns NoSupport here and its factory returns NoSupport from
+    // createTextLayout, so callers fall back to drawTextU.
+    gmpi::ReturnCode drawTextLayout(gmpi::drawing::Point point, gmpi::drawing::api::ITextLayout* textLayout, gmpi::drawing::api::IBrush* defaultForegroundBrush, int32_t options) override
+	{
+		return gmpi::ReturnCode::NoSupport;
+	}
+
     gmpi::ReturnCode pushClipGeometry(gmpi::drawing::api::IPathGeometry* geometry) override
 	{
 		// Geometry clipping is not implemented in the software backend (no-op, like pushAxisAlignedClip).

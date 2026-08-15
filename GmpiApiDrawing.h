@@ -457,6 +457,46 @@ inline float calcBodyHeight(const FontMetrics& fm)
 	return fm.ascent + fm.descent;
 }
 
+// Which parts of a TextStyleRun are active. EVERY override is opt-in, so an
+// all-zero run is a valid no-op that inherits the base format entirely -
+// FontWeight has no zero value, and gating weight/style also means a
+// colour-only run over an italic base cannot accidentally un-italicise it.
+namespace TextStyleFlags
+{
+    enum {
+        Underline     = 1,
+        Strikethrough = 2,
+        HasColor      = 4,  // run.color overrides the draw call's brush
+        HasFontSize   = 8,  // run.fontSizeScale multiplies the base size
+        HasFontFamily = 16, // run.fontFamilyIndex selects a run family
+        HasFontWeight = 32, // run.fontWeight overrides the base weight
+        HasFontStyle  = 64, // run.fontStyle overrides the base style
+    };
+};
+
+// One styling run over the UTF-8 text of an ITextLayout, resolved at creation.
+//
+// FROZEN: this struct crosses the plain-C ABI boundary and carries no size or
+// version field, so no member can ever be added compatibly. Extensions arrive
+// as new factory methods, never as new fields. (int32/float/enum only - no
+// bool: the C projection is uniformly int32_t, and bools would pad oddly.)
+struct TextStyleRun
+{
+    int32_t begin{};          // byte offset into the utf8 string; must land on
+    int32_t length{};         // a codepoint boundary. Runs must be sorted,
+                              // non-overlapping and in-bounds, else creation fails.
+    int32_t flags{};          // TextStyleFlags bitmask
+    FontWeight fontWeight{};  // honoured when HasFontWeight
+    FontStyle fontStyle{};    // honoured when HasFontStyle
+    Color color{};            // honoured when HasColor
+    float fontSizeScale{};    // multiplier of the base format's RESOLVED size,
+                              // honoured when HasFontSize. A scale, not DIPs, so
+                              // FontFlags (BodyHeight/CapHeight) rescaling applies
+                              // to runs exactly as it does to the base format.
+    int32_t fontFamilyIndex{};// into createTextLayout's runFamilies, honoured
+                              // when HasFontFamily
+};
+
 namespace api
 {
 
@@ -487,6 +527,25 @@ struct DECLSPEC_NOVTABLE IRichTextFormat : gmpi::api::IUnknown
     // {A3B8F4C1-7E2D-4A5F-9C6E-1D8B3F5A2E47}
     inline static const gmpi::api::Guid guid =
     { 0xA3B8F4C1, 0x7E2D, 0x4A5F, { 0x9C, 0x6E, 0x1D, 0x8B, 0x3F, 0x5A, 0x2E, 0x47} };
+};
+
+// INTERFACE 'ITextLayout'
+// An immutable, retained text layout: the text, its styling runs, the layout
+// box, alignment and spacing are ALL fixed at creation. That is what lets a
+// backend retain its fully-processed form - shaped glyphs included - instead
+// of rebuilding one per draw the way drawTextU must.
+//
+// Single-threaded use, like every other drawing object here.
+struct DECLSPEC_NOVTABLE ITextLayout : gmpi::api::IUnknown
+{
+    // The same value ITextFormat::getTextExtentU returns for this text at the
+    // layout's maxWidth: tight bounds of the formatted text, independent of
+    // alignment. Measured once at creation, never re-measured.
+    virtual gmpi::ReturnCode getTextExtentU(Size* returnSize) = 0;
+
+    // {6D2A9E74-5C31-4B88-A0F2-3E7C1B4D8A59}
+    inline static const gmpi::api::Guid guid =
+    { 0x6D2A9E74, 0x5C31, 0x4B88, { 0xA0, 0xF2, 0x3E, 0x7C, 0x1B, 0x4D, 0x8A, 0x59} };
 };
 
 // INTERFACE 'IResource'
@@ -723,6 +782,16 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     // Release it with popAxisAlignedClip(), exactly like a rectangular clip. Added last to preserve vtable layout.
     virtual gmpi::ReturnCode pushClipGeometry(IPathGeometry* geometry) = 0;
 
+    // Draw a retained layout at `point` - a Point, not a Rect, because the
+    // layout owns its box. Text exceeding that box is still laid out against
+    // it and DRAWN; DrawTextOptions::Clip clips exactly as drawTextU's Clip
+    // does on this backend for the equivalent rect.
+    //
+    // Runs without TextStyleFlags::HasColor fill with defaultForegroundBrush,
+    // so a cached layout can be re-tinted per draw (hover, selection) without
+    // being rebuilt. Added last to preserve vtable layout.
+    virtual gmpi::ReturnCode drawTextLayout(Point point, ITextLayout* textLayout, IBrush* defaultForegroundBrush, int32_t options) = 0;
+
     // {F38EC187-BA04-4A63-B1D6-22D931E1F308}
     inline static const gmpi::api::Guid guid =
     { 0xf38ec187, 0xba04, 0x4a63, { 0xb1, 0xd6, 0x22, 0xd9, 0x31, 0xe1, 0xf3, 0x8 } };
@@ -751,6 +820,22 @@ struct DECLSPEC_NOVTABLE IFactory : gmpi::api::IUnknown
     virtual gmpi::ReturnCode getPlatformPixelFormat(int32_t* returnPixelFormat) = 0;
     virtual gmpi::ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName, int32_t fontFlags, TextAlignment textAlignment, ParagraphAlignment paragraphAlignment, WordWrapping wordWrapping, float lineSpacing, float baseline, IRichTextFormat** returnRichTextFormat) = 0;
 	virtual gmpi::ReturnCode createCpuRenderTarget(SizeU size, int32_t flags, IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) = 0; // ref: BitmapRenderTargetFlags
+
+    // Create a retained, immutable text layout. Base styling (family, size,
+    // weight, style, font flags, alignments, word wrapping, line spacing) is
+    // CAPTURED BY VALUE from `baseFormat` - mutating that format afterwards
+    // does not affect the layout.
+    //
+    // runs/runCount may be null/0: a plain-text retained layout, which MUST
+    // draw pixel-identically to drawTextU with the same format and the rect
+    // {point, point + box}. runFamilies lists the families runs may select via
+    // fontFamilyIndex; an entry that does not resolve renders those runs in the
+    // base family - creation never fails for that reason.
+    //
+    // May return null (NoSupport) on a backend that declines this API; callers
+    // are expected to keep their drawTextU path as the fallback.
+    // Added last to preserve vtable layout.
+    virtual gmpi::ReturnCode createTextLayout(const char* utf8String, int32_t stringLength, ITextFormat* baseFormat, float maxWidth, float maxHeight, const TextStyleRun* runs, int32_t runCount, const char* const* runFamilies, int32_t runFamilyCount, ITextLayout** returnTextLayout) = 0;
 
     // {D47DEB59-BBA2-4B52-AF12-7983330A8C8A}
     inline static const gmpi::api::Guid guid =

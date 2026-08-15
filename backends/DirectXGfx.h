@@ -298,6 +298,66 @@ public:
     GMPI_REFCOUNT
 };
 
+// A retained, immutable text layout (drawing::api::ITextLayout).
+//
+// The whole point is that the IDWriteTextLayout is built ONCE: drawTextU has
+// to hand DirectWrite a string and a box on every call, and DrawText builds
+// and discards a layout internally each time. Here the box is baked in at
+// creation, so drawing is just DrawTextLayout.
+//
+// Parity with drawTextU is the contract for a run-free layout, so this
+// captures the base format's topAdjustment and ascent and the layout box is
+// built maxHeight+topAdjustment tall - exactly the rect drawTextU passes to
+// DrawText. The remaining half of the baseline snap depends on the draw point
+// and so is recomputed per draw (see GraphicsContext_base::drawTextLayout).
+class TextLayout final : public drawing::api::ITextLayout
+{
+public:
+    struct ColorRange
+    {
+        DWRITE_TEXT_RANGE range;
+        drawing::Color color;
+    };
+
+private:
+    gmpi::directx::ComPtr<IDWriteTextLayout> textLayout;
+    gmpi::directx::ComPtr<IDWriteTextFormat> baseFormat; // keeps the format alive
+    float topAdjustment = {};
+    float fontMetrics_ascent = {};
+    drawing::Size extent = {};
+
+    // Runs carrying TextStyleFlags::HasColor. Applied as drawing effects per
+    // draw and cleared afterwards, so this factory-lifetime object never holds
+    // a reference to any device's brush (device-loss safety).
+    std::vector<ColorRange> colorRanges;
+
+public:
+    TextLayout(IDWriteTextFormat* pbaseFormat, IDWriteTextLayout* ptextLayout,
+        float ptopAdjustment, float pascent, drawing::Size pextent, std::vector<ColorRange> pcolorRanges)
+        : baseFormat(pbaseFormat)
+        , textLayout(ptextLayout)
+        , topAdjustment(ptopAdjustment)
+        , fontMetrics_ascent(pascent)
+        , extent(pextent)
+        , colorRanges(std::move(pcolorRanges))
+    {
+    }
+
+    ReturnCode getTextExtentU(drawing::Size* returnSize) override
+    {
+        *returnSize = extent;
+        return ReturnCode::Ok;
+    }
+
+    float getTopAdjustment() const { return topAdjustment; }
+    float getAscent() const { return fontMetrics_ascent; }
+    IDWriteTextLayout* native() { return textLayout.get(); } // ComPtr::get is non-const
+    const std::vector<ColorRange>& getColorRanges() const { return colorRanges; }
+
+    GMPI_QUERYINTERFACE_METHOD(drawing::api::ITextLayout);
+    GMPI_REFCOUNT
+};
+
 class RichTextFormat final : public drawing::api::IRichTextFormat
 {
     float topAdjustment = {};
@@ -985,6 +1045,7 @@ public:
     ReturnCode createCpuRenderTarget(drawing::SizeU size, int32_t flags, drawing::api::IBitmapRenderTarget** returnBitmapRenderTarget, float dpi = 96.0f) override;
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle, drawing::FontStretch fontStretch, float fontHeight, int32_t fontFlags, drawing::api::ITextFormat** returnTextFormat) override;
     ReturnCode createRichTextFormat(const char* markdownText, float fontHeight, const char* fontFamilyName, int32_t fontFlags, drawing::TextAlignment textAlignment, drawing::ParagraphAlignment paragraphAlignment, drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, drawing::api::IRichTextFormat** returnRichTextFormat) override;
+    ReturnCode createTextLayout(const char* utf8String, int32_t stringLength, drawing::api::ITextFormat* baseFormat, float maxWidth, float maxHeight, const drawing::TextStyleRun* runs, int32_t runCount, const char* const* runFamilies, int32_t runFamilyCount, drawing::api::ITextLayout** returnTextLayout) override;
     ReturnCode createImage(int32_t width, int32_t height, int32_t flags, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode loadImageU(const char* uri, drawing::api::IBitmap** returnBitmap) override;
     ReturnCode createStrokeStyle(const drawing::StrokeStyleProperties* strokeStyleProperties, const float* dashes, int32_t dashesCount, drawing::api::IStrokeStyle** returnStrokeStyle) override
@@ -1169,6 +1230,7 @@ public:
 
     ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
+    ReturnCode drawTextLayout(drawing::Point point, drawing::api::ITextLayout* textLayout, drawing::api::IBrush* defaultForegroundBrush, int32_t options) override;
 
     ReturnCode drawBitmap(drawing::api::IBitmap* bitmap, const drawing::Rect* destinationRectangle, float opacity, drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle) override
     {

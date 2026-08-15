@@ -22,9 +22,19 @@
 #include <functional>
 #include <vector>
 
-#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-#include <immintrin.h> // F16C span codec (runtime-gated via __cpuid)
+// F16C span codec (runtime-gated via CPUID). x86 on any compiler: the guard
+// used to be _MSC_VER-only, which quietly left every GCC/Clang build — Linux,
+// where the software renderer is the ONLY renderer — on the scalar encoder.
+// A Linux profile put floatToHalf at 46% of the frame; see
+// tests/profile/OPTIMIZATIONS.md in the SynthEdit repo.
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+#define GMPI_UI_F16C_AVAILABLE 1
+#include <immintrin.h>
+#if defined(_MSC_VER)
 #include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
 #endif
 
 #include "../Drawing.h"
@@ -59,11 +69,12 @@ inline void blendPixel(float* d, const float* sc, float c)
 // the whole renderer — the branchy scalar decode/encode was a major slice of
 // frame time (tests/profile/OPTIMIZATIONS.md in the SynthEdit repo).
 //
-// x86: F16C hardware conversion when the CPU has it (the scalar floatToHalf
-// deliberately implements the same round-to-nearest-even, so results match
-// bit for bit). Everywhere else: decode goes through a 64K-entry table built
-// from the exact scalar decoder (fp16 has only 65536 values, so this is
-// lossless by construction); encode keeps the scalar loop.
+// x86 (any compiler): F16C hardware conversion when the CPU has it — the
+// scalar floatToHalf deliberately implements the same round-to-nearest-even,
+// so results match bit for bit. Non-x86, or an x86 without F16C: decode goes
+// through a 64K-entry table built from the exact scalar decoder (fp16 has only
+// 65536 values, so this is lossless by construction); encode keeps the scalar
+// loop.
 // ---------------------------------------------------------------------------
 inline const float* halfToFloatTable()
 {
@@ -77,32 +88,74 @@ inline const float* halfToFloatTable()
     return table.data();
 }
 
-#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#if GMPI_UI_F16C_AVAILABLE
+
+// MSVC compiles intrinsics unconditionally; GCC/Clang need the instruction set
+// enabled for the function that uses it. Per-function rather than a global
+// -mf16c, so the binary still starts on a CPU without F16C and takes the
+// scalar path below.
+#if defined(_MSC_VER)
+#define GMPI_UI_F16C_FN
+#else
+#define GMPI_UI_F16C_FN __attribute__((target("f16c")))
+#endif
+
 inline bool haveF16C()
 {
     static const bool have = []
     {
+        // CPUID leaf 1, ECX bit 29. Spelled out on both compilers rather than
+        // via __builtin_cpu_supports, whose feature-name list varies by
+        // toolchain version.
+#if defined(_MSC_VER)
         int r[4]{};
         __cpuid(r, 1);
         return (r[2] & (1 << 29)) != 0;
+#else
+        unsigned int a = 0, b = 0, c = 0, d = 0;
+        if (!__get_cpuid(1, &a, &b, &c, &d))
+            return false;
+        return (c & (1u << 29)) != 0;
+#endif
     }();
     return have;
 }
-#endif
+
+GMPI_UI_F16C_FN inline void loadSpanF16C(const uint16_t* src, float* dst, int floatCount)
+{
+    int i = 0;
+    for (; i + 4 <= floatCount; i += 4)
+    {
+        const __m128i h = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
+        _mm_storeu_ps(dst + i, _mm_cvtph_ps(h));
+    }
+    for (; i < floatCount; ++i)
+        dst[i] = drawing::detail::halfToFloat(src[i]);
+}
+
+// _MM_FROUND_TO_NEAREST_INT = round-to-nearest-even, the same rounding the
+// scalar fallback implements.
+GMPI_UI_F16C_FN inline void storeSpanF16C(const float* src, uint16_t* dst, int floatCount)
+{
+    int i = 0;
+    for (; i + 4 <= floatCount; i += 4)
+    {
+        const __m128 f = _mm_loadu_ps(src + i);
+        const __m128i h = _mm_cvtps_ph(f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i), h);
+    }
+    for (; i < floatCount; ++i)
+        dst[i] = drawing::detail::floatToHalf(src[i]);
+}
+
+#endif // GMPI_UI_F16C_AVAILABLE
 
 inline void loadSpan(const uint16_t* src, float* dst, int floatCount)
 {
-#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#if GMPI_UI_F16C_AVAILABLE
     if (haveF16C())
     {
-        int i = 0;
-        for (; i + 4 <= floatCount; i += 4)
-        {
-            const __m128i h = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-            _mm_storeu_ps(dst + i, _mm_cvtph_ps(h));
-        }
-        for (; i < floatCount; ++i)
-            dst[i] = drawing::detail::halfToFloat(src[i]);
+        loadSpanF16C(src, dst, floatCount);
         return;
     }
 #endif
@@ -113,20 +166,10 @@ inline void loadSpan(const uint16_t* src, float* dst, int floatCount)
 
 inline void storeSpan(const float* src, uint16_t* dst, int floatCount)
 {
-#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#if GMPI_UI_F16C_AVAILABLE
     if (haveF16C())
     {
-        // _MM_FROUND_TO_NEAREST_INT = round-to-nearest-even, the same rounding
-        // the scalar fallback implements.
-        int i = 0;
-        for (; i + 4 <= floatCount; i += 4)
-        {
-            const __m128 f = _mm_loadu_ps(src + i);
-            const __m128i h = _mm_cvtps_ph(f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-            _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i), h);
-        }
-        for (; i < floatCount; ++i)
-            dst[i] = drawing::detail::floatToHalf(src[i]);
+        storeSpanF16C(src, dst, floatCount);
         return;
     }
 #endif

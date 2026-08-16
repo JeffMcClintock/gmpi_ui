@@ -51,6 +51,21 @@
 namespace SvgParser
 {
 
+// macOS declares the classic QuickDraw `Point` in the GLOBAL namespace, via
+// MacTypes.h — which arrives in any translation unit that reaches
+// CoreFoundation/CoreText, such as the CPU text engine's font provider.
+// Several functions below say `using namespace gmpi::drawing`, and a
+// using-directive makes those names visible for lookup as if declared in the
+// nearest namespace enclosing both — the global one. So on a Mac an
+// unqualified `Point` sees two candidates and the file stops compiling, while
+// Windows and Linux build it happily.
+//
+// Naming it HERE fixes every use at once: unqualified lookup finds this alias
+// in the enclosing namespace and stops before it ever reaches global scope.
+// The alternative — qualifying two dozen individual uses — leaves the next
+// unqualified `Point` to break the Mac build again.
+using Point = gmpi::drawing::Point;
+
 // ============================================================
 // Number and token scanning
 // ============================================================

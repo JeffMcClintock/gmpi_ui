@@ -346,6 +346,121 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 #endif // _WIN32
 
 #ifdef __APPLE__
+namespace detail
+{
+
+inline uint32_t beU32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3]; }
+inline uint16_t beU16(const uint8_t* p) { return uint16_t((p[0] << 8) | p[1]); }
+
+// True when the font FILE carries glyph data a rasterizer can actually use:
+// outlines (glyf/CFF/CFF2) or colour bitmaps (sbix/CBDT), checked on the
+// first face's table directory. Apple's Reserved UI fonts (PingFangUI.ttc)
+// have NONE of these — cmap and metrics only, outlines in a private format —
+// so they map codepoints, shape with real advances, and draw nothing at all
+// outside CoreText.
+inline bool fileHasGlyphData(const char* path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        return false;
+    uint8_t buf[4096]{};
+    file.read(reinterpret_cast<char*>(buf), sizeof buf);
+    const size_t n = size_t(file.gcount());
+    if (n < 16)
+        return false;
+
+    size_t sfnt = 0;
+    if (beU32(buf) == 0x74746366u) // 'ttcf': a collection; sniff its first face
+        sfnt = beU32(buf + 12);
+    if (sfnt + 12 > n)
+        return false;
+
+    const uint16_t numTables = beU16(buf + sfnt + 4);
+    for (uint16_t i = 0; i < numTables; ++i)
+    {
+        const size_t entry = sfnt + 12 + size_t(i) * 16;
+        if (entry + 16 > n)
+            break;
+        switch (beU32(buf + entry))
+        {
+        case 0x676C7966u: // glyf
+        case 0x43464620u: // 'CFF '
+        case 0x43464632u: // CFF2
+        case 0x73626978u: // sbix (Apple Color Emoji)
+        case 0x43424454u: // CBDT
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+inline bool fontFilePath(CTFontRef font, char* pathBuffer, size_t bufferSize)
+{
+    CFURLRef url = static_cast<CFURLRef>(CTFontCopyAttribute(font, kCTFontURLAttribute));
+    if (!url)
+        return false;
+    const bool gotPath = CFURLGetFileSystemRepresentation(
+        url, true, reinterpret_cast<UInt8*>(pathBuffer), CFIndex(bufferSize));
+    CFRelease(url);
+    return gotPath;
+}
+
+// First installed font that covers the query string AND lives in a file with
+// real glyph data — the same question fontconfig answers on Linux. Needed
+// because CoreText's own cascade prefers the Reserved UI fonts above.
+inline CTFontRef publicFontCovering(CFStringRef queryString, const UniChar* utf16, CFIndex utf16Length)
+{
+    CFCharacterSetRef charset = CFCharacterSetCreateWithCharactersInString(kCFAllocatorDefault, queryString);
+    if (!charset)
+        return nullptr;
+
+    CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFDictionarySetValue(attrs, kCTFontCharacterSetAttribute, charset);
+    CFRelease(charset);
+    CTFontDescriptorRef want = CTFontDescriptorCreateWithAttributes(attrs);
+    CFRelease(attrs);
+    if (!want)
+        return nullptr;
+
+    CFArrayRef matches = CTFontDescriptorCreateMatchingFontDescriptors(want, nullptr);
+    CFRelease(want);
+    if (!matches)
+        return nullptr;
+
+    CTFontRef result{};
+    const CFIndex count = CFArrayGetCount(matches);
+    for (CFIndex i = 0; i < count && !result; ++i)
+    {
+        auto desc = static_cast<CTFontDescriptorRef>(CFArrayGetValueAtIndex(matches, i));
+
+        CFURLRef url = static_cast<CFURLRef>(CTFontDescriptorCopyAttribute(desc, kCTFontURLAttribute));
+        if (!url)
+            continue;
+        char path[1024]{};
+        const bool gotPath = CFURLGetFileSystemRepresentation(
+            url, true, reinterpret_cast<UInt8*>(path), sizeof path);
+        CFRelease(url);
+        if (!gotPath || !fileHasGlyphData(path))
+            continue;
+
+        CTFontRef candidate = CTFontCreateWithFontDescriptor(desc, 12.0, nullptr);
+        if (!candidate)
+            continue;
+        CGGlyph glyphs[2]{};
+        if (CTFontGetGlyphsForCharacters(candidate, utf16, glyphs, utf16Length))
+            result = candidate; // ownership transfers to the caller
+        else
+            CFRelease(candidate);
+    }
+    CFRelease(matches);
+    return result;
+}
+
+} // namespace detail
+
 inline bool findFont(const FontRequest& request, FontData& returnFont)
 {
     returnFont = {};
@@ -446,7 +561,6 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
         if (query)
         {
             CTFontRef covering = CTFontCreateForString(font, query, CFRangeMake(0, utf16Length));
-            CFRelease(query); // owned here, not by CTFontCreateForString
             if (covering)
             {
                 CFRelease(font);
@@ -460,21 +574,39 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
             CGGlyph glyphs[2]{};
             if (!CTFontGetGlyphsForCharacters(font, utf16, glyphs, utf16Length))
             {
+                CFRelease(query);
                 CFRelease(font);
                 return false;
             }
+
+            // And "got coverage" is still not "got something drawable":
+            // CoreText's cascade prefers the Reserved UI fonts (.PingFang UI),
+            // whose files carry cmap and metrics but no glyf/CFF at all — the
+            // outlines live in a private format only CoreText can read, so any
+            // other rasterizer shapes real advances and draws blank space.
+            // When the covering font is one of those, ask the descriptor
+            // matcher for an installed PUBLIC font with real glyph data.
+            char coveringPath[1024]{};
+            if (!detail::fontFilePath(font, coveringPath, sizeof coveringPath)
+                || !detail::fileHasGlyphData(coveringPath))
+            {
+                CTFontRef publicFont = detail::publicFontCovering(query, utf16, utf16Length);
+                if (!publicFont)
+                {
+                    CFRelease(query);
+                    CFRelease(font);
+                    return false;
+                }
+                CFRelease(font);
+                font = publicFont;
+            }
+            CFRelease(query); // owned here, not by CTFontCreateForString
         }
     }
 
-    CFURLRef url = static_cast<CFURLRef>(CTFontCopyAttribute(font, kCTFontURLAttribute));
-    CFRelease(font);
-    if (!url)
-        return false;
-
     char pathBuffer[1024]{};
-    const bool gotPath = CFURLGetFileSystemRepresentation(
-        url, true, reinterpret_cast<UInt8*>(pathBuffer), sizeof(pathBuffer));
-    CFRelease(url);
+    const bool gotPath = detail::fontFilePath(font, pathBuffer, sizeof pathBuffer);
+    CFRelease(font);
     if (!gotPath)
         return false;
 

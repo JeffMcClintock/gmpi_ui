@@ -317,6 +317,27 @@ inline void glyphClosePath(hb_draw_funcs_t*, void* userData, hb_draw_state_t*, v
 
 inline hb_draw_funcs_t* glyphDrawFuncs(); // defined below; used by the clip painter
 
+// True when the glyph produces at least one outline segment (every outline
+// starts with a move_to). A face can map a codepoint in its cmap yet draw
+// NOTHING — macOS's Reserved UI fonts carry cmap and metrics but keep their
+// outlines in a private format, so text shaped with them gets real advances
+// and renders as blank space.
+inline bool glyphHasOutline(hb_font_t* font, hb_codepoint_t glyph)
+{
+    static hb_draw_funcs_t* funcs = [] {
+        hb_draw_funcs_t* f = hb_draw_funcs_create();
+        hb_draw_funcs_set_move_to_func(f,
+            [](hb_draw_funcs_t*, void* any, hb_draw_state_t*, float, float, void*) {
+                *static_cast<bool*>(any) = true;
+            }, nullptr, nullptr);
+        hb_draw_funcs_make_immutable(f);
+        return f;
+    }();
+    bool any{};
+    hb_font_draw_glyph(font, glyph, funcs, &any);
+    return any;
+}
+
 // Text-weight model. This renderer blends EVERYTHING in linear premultiplied
 // space (cpugfx::blendPixel); perceived glyph weight is matched to Direct2D
 // by warping the coverage values once per draw call — the same place
@@ -1649,6 +1670,13 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
             // font and quietly produce .notdef boxes.
             hb_codepoint_t glyph{};
             if (!hb_font_get_nominal_glyph(candidate->unscaledFont.get(), mustCover, &glyph))
+                return {};
+
+            // And a mapping is still not a rendering: require a drawable
+            // outline too, unless the face is a colour font (sbix/CBDT/COLR),
+            // which legitimately has no outlines. See glyphHasOutline.
+            if (!candidate->hasColorPng && !candidate->hasColorPaint
+                && !detail::glyphHasOutline(candidate->unscaledFont.get(), glyph))
                 return {};
         }
 

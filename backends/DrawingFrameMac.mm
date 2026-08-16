@@ -799,6 +799,56 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
         drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
 }
 
+// Middle button. NSResponder routes buttons other than left/right here; TIDE's
+// TopView uses ThirdButton for grab-panning the canvas (ViewBase.cpp), and
+// without these handlers the button never enters GMPI at all (TideSynth
+// BACKLOG U2b). Gated to buttonNumber 2 so extra side-buttons on gaming mice
+// don't masquerade as the middle button.
+- (void)otherMouseDown:(NSEvent *)theEvent
+{
+    if (theEvent.buttonNumber != 2)
+        return;
+
+    drawingFrame.removeTextEdit();
+
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::New);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ThirdButton);
+
+    applyKeyModifiers(flags, theEvent);
+
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerDown(mouseToGmpi(self, theEvent), flags);
+}
+
+- (void)otherMouseDragged:(NSEvent *)theEvent
+{
+    if (theEvent.buttonNumber != 2)
+        return;
+
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ThirdButton);
+
+    applyKeyModifiers(flags, theEvent);
+
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerMove(mouseToGmpi(self, theEvent), flags);
+}
+
+- (void)otherMouseUp:(NSEvent *)theEvent
+{
+    if (theEvent.buttonNumber != 2)
+        return;
+
+    int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact) | static_cast<int32_t>(gmpi::api::PointerFlags::Primary) | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
+    flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ThirdButton);
+
+    applyKeyModifiers(flags, theEvent);
+
+    if(drawingFrame.inputClient)
+        drawingFrame.inputClient->onPointerUp(mouseToGmpi(self, theEvent), flags);
+}
+
 - (void)scrollWheel:(NSEvent *)theEvent {
     // Get the scroll wheel delta
     auto deltaX = theEvent.deltaX;

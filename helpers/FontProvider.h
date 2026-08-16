@@ -393,6 +393,34 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     if (!font)
         return false;
 
+    // CoreText never fails a family lookup: a family it has never heard of
+    // comes back as the substituted system font, where DirectWrite reports
+    // failure. The wrapper's fallback design — walk the requested families,
+    // then Arial — is built on honest failure, so verify the match really is
+    // the family asked for. Coverage queries are exempt (substitution is the
+    // point there), and so is the system-ui alias, whose resolved family is a
+    // private dot-name.
+    if (request.mustCoverCodepoint == 0 && family != ".AppleSystemUIFont")
+    {
+        bool matches = false;
+        if (CFStringRef resolvedFamily = CTFontCopyFamilyName(font))
+        {
+            if (CFStringRef wanted = CFStringCreateWithCString(
+                    kCFAllocatorDefault, family.c_str(), kCFStringEncodingUTF8))
+            {
+                matches = CFStringCompare(resolvedFamily, wanted,
+                                          kCFCompareCaseInsensitive) == kCFCompareEqualTo;
+                CFRelease(wanted);
+            }
+            CFRelease(resolvedFamily);
+        }
+        if (!matches)
+        {
+            CFRelease(font);
+            return false;
+        }
+    }
+
     // Fallback: ask CoreText for a font that can actually render this
     // character, since no single font covers Latin, CJK and emoji.
     if (request.mustCoverCodepoint != 0)
@@ -423,6 +451,17 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
             {
                 CFRelease(font);
                 font = covering;
+            }
+
+            // CTFontCreateForString returns its BASE font when nothing covers
+            // the string, so "got a font back" is not "got coverage": check
+            // for a real glyph, or a Latin face gets loaded as the CJK
+            // fallback and every ideograph renders as an empty .notdef.
+            CGGlyph glyphs[2]{};
+            if (!CTFontGetGlyphsForCharacters(font, utf16, glyphs, utf16Length))
+            {
+                CFRelease(font);
+                return false;
             }
         }
     }

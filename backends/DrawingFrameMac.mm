@@ -808,16 +808,15 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
     applyKeyModifiers(flags, theEvent);
 
     constexpr float wheelConversion = 120.0f; // on windows the wheel scrolls 120 per knotch
-    if(deltaY)
+    const auto mousePos = mouseToGmpi(self, theEvent);
+    if(deltaY && drawingFrame.inputClient)
     {
-        // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaY, mousePos);
+        drawingFrame.inputClient->onMouseWheel(mousePos, flags, static_cast<int32_t>(wheelConversion * deltaY));
     }
-    if(deltaX)
+    if(deltaX && drawingFrame.inputClient)
     {
         flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ScrollHoriz);
-        // TODO         drawingFrame.getView()->onMouseWheel(flags, wheelConversion * deltaX, mousePos);
-        //if(drawingFrame.inputClient)
-        //    drawingFrame.inputClient->onMouseWheel(mouseToGmpi(self, theEvent), flags);
+        drawingFrame.inputClient->onMouseWheel(mousePos, flags, static_cast<int32_t>(wheelConversion * deltaX));
     }
 }
 

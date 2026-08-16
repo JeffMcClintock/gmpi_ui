@@ -349,8 +349,10 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
 namespace detail
 {
 
-inline uint32_t beU32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3]; }
-inline uint16_t beU16(const uint8_t* p) { return uint16_t((p[0] << 8) | p[1]); }
+// sfnt-prefixed to avoid colliding with CpuTextEngine.h's detail::beU16 in
+// translation units that include both.
+inline uint32_t sfntU32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3]; }
+inline uint16_t sfntU16(const uint8_t* p) { return uint16_t((p[0] << 8) | p[1]); }
 
 // True when the font FILE carries glyph data a rasterizer can actually use:
 // outlines (glyf/CFF/CFF2) or colour bitmaps (sbix/CBDT), checked on the
@@ -370,18 +372,18 @@ inline bool fileHasGlyphData(const char* path)
         return false;
 
     size_t sfnt = 0;
-    if (beU32(buf) == 0x74746366u) // 'ttcf': a collection; sniff its first face
-        sfnt = beU32(buf + 12);
+    if (sfntU32(buf) == 0x74746366u) // 'ttcf': a collection; sniff its first face
+        sfnt = sfntU32(buf + 12);
     if (sfnt + 12 > n)
         return false;
 
-    const uint16_t numTables = beU16(buf + sfnt + 4);
+    const uint16_t numTables = sfntU16(buf + sfnt + 4);
     for (uint16_t i = 0; i < numTables; ++i)
     {
         const size_t entry = sfnt + 12 + size_t(i) * 16;
         if (entry + 16 > n)
             break;
-        switch (beU32(buf + entry))
+        switch (sfntU32(buf + entry))
         {
         case 0x676C7966u: // glyf
         case 0x43464620u: // 'CFF '

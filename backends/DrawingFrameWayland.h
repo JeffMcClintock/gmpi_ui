@@ -797,6 +797,25 @@ public:
     // Render whatever is dirty and hand the pixels to the compositor.
     void present();
 
+    // The pixels last handed to the compositor - literally what is on screen.
+    //
+    // Exposed because on Wayland a client cannot screenshot itself any other
+    // way: every desktop route goes through the compositor, and GNOME refuses
+    // both org.gnome.Shell.Screenshot and the xdg-desktop-portal one to an
+    // unattended caller ("Screenshot is not allowed"). An app that wants to
+    // hand a test harness a picture of its own window has to read its own
+    // buffer. Used by the standalone's command channel.
+    //
+    // Empty (pixels() == nullptr) until the first frame has been presented.
+    const ShmBuffer& frameBuffer() const { return buffer_; }
+
+    // Content size in LOGICAL pixels (DIPs) - the space input events are in.
+    // Under fractional scaling this is not frameBuffer()'s pixel size, and the
+    // ratio between them is the scale factor. Anything converting between a
+    // screenshot's pixels and a pointer coordinate needs both.
+    int logicalWidth()  const { return logicalW_; }
+    int logicalHeight() const { return logicalH_; }
+
     // Tooltips. Called every tick; asks the client ONLY once the pointer has
     // been still for the shared delay, which is what stops a hit-test of the
     // client's whole tree at pointer rate.

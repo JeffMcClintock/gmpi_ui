@@ -256,6 +256,14 @@ ComboBox::ComboBox(gmpi::drawing::Rect bounds)
 	result.push_back(std::move(combo));
 }
 
+Button::Button(std::string_view caption, gmpi::drawing::Rect bounds)
+{
+	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
+	auto button = std::make_unique<gmpi::ui::builder::ButtonView>(caption, bounds);
+	view = button.get();
+	result.push_back(std::move(button));
+}
+
 TextEdit::TextEdit(
 	gmpi_forms::State<std::string>& pname
 	, std::function <void(const std::string&)> validateAndSave

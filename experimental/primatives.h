@@ -422,6 +422,12 @@ struct TextBoxStyle : public Child
 	float bodyHeight = 12; // i.e. text size
 	float fixedLineSpacing = 0.0f; // 0.0f = auto.
 	int textAlignment = (int) gmpi::drawing::TextAlignment::Leading; //left
+	// Vertical placement within the box. Defaults to Near (the top), which is
+	// what every caller before this field existed was already getting.
+	// Center is what a control with a caption in it wants - a button, a combo -
+	// where the alternative is each of them insetting its own text rectangle by
+	// a guess at the font's height.
+	int paragraphAlignment = (int) gmpi::drawing::ParagraphAlignment::Near;
 
 	TextBoxStyle(gmpi::drawing::Color foreground = gmpi::drawing::Colors::White, gmpi::drawing::Color background = gmpi::drawing::colorFromHex(0x003E3E3Eu)) : foregroundColor(foreground), backgroundColor(background) {}
 	void setLineSpacing(float fixedLineSpacing);

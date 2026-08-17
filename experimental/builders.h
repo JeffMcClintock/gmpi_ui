@@ -133,7 +133,12 @@ struct View : public gmpi_forms::IObserver
 		gmpi::forms::primitive::IVisualParent& parent,
 		gmpi::forms::primitive::IMouseParent& mouseParent
 	) const;
-	void setDirty();
+	// const because it writes `dirty`, which is already mutable, and reaches
+	// the parent's flag through a pointer - neither needs a non-const `this`.
+	// That matters for a widget whose Render() (which IS const) installs mouse
+	// callbacks that mark the view dirty; ToggleSwitch installs its observer
+	// from the constructor instead and so never needed it.
+	void setDirty() const;
 	void OnModelWillChange() override;
 };
 
@@ -461,6 +466,45 @@ struct FileBrowseButtonView : public View
 	{
 		bounds = newBounds;
 	}
+};
+
+// A push button: a caption, and something that happens when it is clicked.
+//
+// Generalised from FileBrowseButtonView below, which was the only
+// button-shaped thing in this set - it already draws the rounded face with
+// centred text and takes a click. What differs is that the caption is any
+// string rather than a fixed ellipsis, the action is a callback rather than a
+// file dialog, and it shows the two states a button is expected to: lit under
+// the pointer, and pushed in while the mouse is down on it.
+struct ButtonView : public View
+{
+	gmpi::drawing::Rect bounds;
+	mutable gmpi_forms::StateRef<std::string> text;
+
+	// Runs on pointer-UP, and only while the pointer is still over the button:
+	// mouseList::onPointerUp hit-tests before delivering. That is what lets a
+	// press be abandoned by dragging off it before releasing, which is what
+	// every other button on the desktop does.
+	std::function<void()> onClick;
+
+	explicit ButtonView(gmpi::drawing::Rect bounds = {});
+	ButtonView(std::string_view caption, gmpi::drawing::Rect bounds = {});
+
+	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+	gmpi::drawing::Rect getBounds() const override
+	{
+		return bounds;
+	}
+	void setBounds(gmpi::drawing::Rect newBounds) override
+	{
+		bounds = newBounds;
+	}
+
+	// Presentation state, not model: nothing observes it and nothing is laid
+	// out from it, it only picks a fill colour. mutable because Render is const
+	// and Render is what installs the callbacks that write these.
+	mutable bool hovered = false;
+	mutable bool pressed = false;
 };
 
 // A text label that shows a popup menu when clicked.

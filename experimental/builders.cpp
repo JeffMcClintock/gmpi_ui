@@ -403,6 +403,111 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		//	};
 	}
 }
+ButtonView::ButtonView(gmpi::drawing::Rect pbounds) : bounds(pbounds)
+{
+	text.addObserver([this]()
+		{
+			setDirty();
+		});
+}
+
+ButtonView::ButtonView(std::string_view caption, gmpi::drawing::Rect pbounds) : ButtonView(pbounds)
+{
+	// Manage the caption's state myself, the way TextLabelView's builder does,
+	// so the common case - a button whose text never changes - needs no State
+	// object at the call site. Binding text.setSource() to one afterwards still
+	// works and takes over.
+	auto state = std::make_unique<gmpi_forms::State<std::string>>();
+	state->set(std::string(caption));
+	text.setSource(state.get());
+	selfOwnedStates.push_back(std::move(state));
+}
+
+void ButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
+{
+	const auto& theme = currentTheme();
+
+	// Hover and press blend the control background TOWARDS the text colour
+	// rather than lightening it. A fixed lightening reads as "brighter" in the
+	// dark theme and as "washed out" in the light one; blending toward the
+	// colour that is guaranteed to contrast with it is the same gesture in
+	// both, with no second set of theme tokens to keep in step.
+	const float lift = pressed ? 0.28f : (hovered ? 0.12f : 0.0f);
+	const auto face = gmpi::drawing::interpolateColor(theme.controlBackground, theme.controlText, lift);
+
+	{
+		auto shapeStyle = new primitive::ShapeStyle();
+
+		// OUTLINED, unlike the combo boxes and text fields around it, which
+		// leave strokeColor transparent. controlBackground sits 12/255 from
+		// panelBackground in the dark theme - deliberately subtle, and enough
+		// for a control whose affordance is a chevron or a caret, but a button
+		// has neither. Without the outline it is invisible until hovered, which
+		// is precisely when a button no longer needs to advertise itself.
+		shapeStyle->strokeColor = theme.separator;
+		shapeStyle->fillColor = face;
+		canvas.add(shapeStyle);
+
+		constexpr float radius = 4.f;
+		canvas.add(new primitive::RoundedRectangle(shapeStyle, getBounds(), radius, radius));
+	}
+
+	{
+		auto textStyle = new primitive::TextBoxStyle(
+			theme.controlText
+			, gmpi::drawing::Colors::TransparentBlack
+		);
+		textStyle->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
+		textStyle->paragraphAlignment = (int)gmpi::drawing::ParagraphAlignment::Center;
+		canvas.add(textStyle);
+
+		canvas.add(new primitive::TextBox(textStyle, getBounds(), text.get()));
+	}
+
+	auto clickDetector = new primitive::RectangleMouseTarget(getBounds());
+	canvas.add(clickDetector);
+
+	clickDetector->onHover_callback = [this](bool over)
+		{
+			// Leaving un-pushes. A press abandoned by dragging away never
+			// reaches onPointerUp - the hit test refuses it - so without this
+			// the button stays drawn pushed in until something else repaints.
+			const bool wasPressed = pressed;
+			if (hovered == over && !(wasPressed && !over))
+				return;
+
+			hovered = over;
+			if (!over)
+				pressed = false;
+
+			setDirty();
+		};
+
+	clickDetector->onPointerDown_callback = [this](const primitive::PointerEvent*)
+		{
+			pressed = true;
+			setDirty();
+		};
+
+	clickDetector->onPointerUp_callback = [this](gmpi::drawing::Point)
+		{
+			// Only a release that follows a press ON this button counts; one
+			// that began elsewhere and happened to end here does not.
+			if (!pressed)
+				return;
+
+			pressed = false;
+			setDirty();
+
+			// LAST. setDirty only marks - the rebuild that destroys this
+			// callback happens at the next paint - but the handler may close
+			// the page this button lives on, so nothing may touch the view
+			// after it runs.
+			if (onClick)
+				onClick();
+		};
+}
+
 void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	const auto& theme = currentTheme();
@@ -704,7 +809,7 @@ void ScrollPortal::doLayout()
 	doChildLayout();
 }
 
-void View::setDirty()
+void View::setDirty() const
 {
 	dirty = true;
 

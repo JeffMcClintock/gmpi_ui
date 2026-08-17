@@ -76,6 +76,7 @@ void TextBoxStyle::Draw(gmpi::drawing::Graphics& g, const TextBox& t) const
 		textFormat = g.getFactory().createTextFormat(bodyHeight, families);
 		textFormat.setWordWrapping(WordWrapping::NoWrap);
 		textFormat.setTextAlignment(static_cast<TextAlignment>(textAlignment));
+		textFormat.setParagraphAlignment(static_cast<ParagraphAlignment>(paragraphAlignment));
 
 		if (fixedLineSpacing)
 			textFormat.setLineSpacing(fixedLineSpacing, 0.8f * fixedLineSpacing);

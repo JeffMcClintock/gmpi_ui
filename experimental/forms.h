@@ -201,6 +201,17 @@ public:
 	ComboBox(gmpi::drawing::Rect bounds);
 };
 
+// A push button. `onClick` is the whole interface:
+//
+//     Button b("Close", { l, t, r, b });
+//     b.view->onClick = [this] { ... };
+struct Button
+{
+	gmpi::ui::builder::ButtonView* view = {};
+
+	Button(std::string_view caption, gmpi::drawing::Rect bounds = {});
+};
+
 struct TextEdit
 {
 	gmpi::ui::builder::TextEditView* view = {};

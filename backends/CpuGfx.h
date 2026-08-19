@@ -150,7 +150,7 @@ GMPI_UI_F16C_FN inline void storeSpanF16C(const float* src, uint16_t* dst, int f
     for (; i + 4 <= floatCount; i += 4)
     {
         const __m128 f = _mm_loadu_ps(src + i);
-        const __m128i h = _mm_cvtps_ph(f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        const __m128i h = _mm_cvtps_ph(f, _MM_FROUND_TO_NEAREST_INT);
         _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i), h);
     }
     for (; i < floatCount; ++i)

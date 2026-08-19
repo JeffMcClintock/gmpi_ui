@@ -1,6 +1,13 @@
-// macOS implementation of DrawingFactory.
+// Apple implementation of DrawingFactory. The CoreGraphics backend serves both
+// platforms; only the framework umbrella differs (CocoaGfx.h imports AppKit
+// itself when TARGET_OS_OSX).
 
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #import <Cocoa/Cocoa.h>
+#else
+#import <UIKit/UIKit.h>
+#endif
 #import "backends/CocoaGfx.h"
 #include "DrawingFactory.h"
 

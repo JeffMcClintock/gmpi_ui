@@ -778,8 +778,40 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     virtual gmpi::ReturnCode beginDraw() = 0;
     virtual gmpi::ReturnCode endDraw() = 0;
     virtual gmpi::ReturnCode createCompatibleRenderTarget(Size desiredSize, int32_t flags, struct IBitmapRenderTarget** returnBitmapRenderTarget) = 0; // TODO SizeL ??? remove flags (use CpuRenderTarget instead)
+    // ---------------------------------------------------------------------
+    // WARNING - appending here is NOT binary compatible.
+    //
+    // IBitmapRenderTarget (below) derives from IDeviceContext, so its own
+    // virtual, getBitmap, sits immediately AFTER the last method declared
+    // here. Every method appended to IDeviceContext therefore pushes
+    // getBitmap one vtable slot further down, and any GUI module compiled
+    // against an older copy of this header calls the newly appended method
+    // where it means to call getBitmap - a jump into the wrong function with
+    // the wrong arguments, i.e. a segfault, not a diagnosable error.
+    //
+    // The policy is therefore: do not break the vtable. The two methods below
+    // are a deliberate exception, taken twice during beta because the features
+    // were needed and the module set could still be rebuilt in step. They are
+    // not a precedent. Both did break every prebuilt module that offscreen-
+    // caches via createCompatibleRenderTarget (helpers/CachedBlur.h - drop
+    // shadows, so Slider/HSlider/Knob/Button crashed the renderer).
+    //
+    // Taking that exception again REQUIRES rebuilding every GUI module, and
+    // once third-party module binaries are in the field it stops being
+    // available at all.
+    //
+    // IFactory has no derived interface, so appending there cannot break an
+    // EXISTING binary - but it is only half a solution: a NEW module calling
+    // an appended method on an OLDER host runs off the end of that host's
+    // vtable. Anything added must therefore be gated, by probing a new
+    // interface guid through queryInterface (the loader resolves only
+    // MP_GetFactory today - see SynthEditLib/Module_Info3.cpp), never by
+    // calling and hoping. A NoSupport return cannot report a method the host
+    // does not have.
+    // ---------------------------------------------------------------------
+
     // Intersect the current clip region with an arbitrary geometry (cf. JUCE Graphics::reduceClipRegion(const Path&)).
-    // Release it with popAxisAlignedClip(), exactly like a rectangular clip. Added last to preserve vtable layout.
+    // Release it with popAxisAlignedClip(), exactly like a rectangular clip.
     virtual gmpi::ReturnCode pushClipGeometry(IPathGeometry* geometry) = 0;
 
     // Draw a retained layout at `point` - a Point, not a Rect, because the
@@ -789,7 +821,7 @@ struct DECLSPEC_NOVTABLE IDeviceContext : IResource
     //
     // Runs without TextStyleFlags::HasColor fill with defaultForegroundBrush,
     // so a cached layout can be re-tinted per draw (hover, selection) without
-    // being rebuilt. Added last to preserve vtable layout.
+    // being rebuilt.
     virtual gmpi::ReturnCode drawTextLayout(Point point, ITextLayout* textLayout, IBrush* defaultForegroundBrush, int32_t options) = 0;
 
     // {F38EC187-BA04-4A63-B1D6-22D931E1F308}

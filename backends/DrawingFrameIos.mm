@@ -377,6 +377,18 @@ public:
         pluginParameters_GMPI = {};
     }
 
+    ~DrawingFrameIos()
+    {
+        // Same as the Mac frame: onResize() is the only other release, and it
+        // only runs from a layout change. Don't leak the backing bitmap when the
+        // view goes away without one.
+        if (backBuffer)
+        {
+            CGContextRelease(backBuffer);
+            backBuffer = nullptr;
+        }
+    }
+
     void onRender(UIView* frame, gmpi::drawing::Rect* dirtyRect)
     {
         if (!backBuffer)

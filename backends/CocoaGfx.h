@@ -1141,6 +1141,14 @@ public:
     {
         if (info.cgColorSpace)
             CGColorSpaceRelease(info.cgColorSpace);
+#if TARGET_OS_OSX
+        // balance the alloc in initFactoryHelper (this target is MRR, not ARC).
+        // NSColorSpace caches one instance per CGColorSpace, so the object itself
+        // outlives us regardless -- but leaving the reference dangling grows its
+        // retain count by one per Factory, and a Factory is per-editor-window.
+        [info.gmpiColorSpace release];
+        info.gmpiColorSpace = nullptr;
+#endif
     }
 
     // utility: create a CGColor in the linear sRGB color space

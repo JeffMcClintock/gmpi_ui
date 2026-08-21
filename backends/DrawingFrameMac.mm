@@ -167,6 +167,15 @@ public:
 
     ~DrawingFrameCocoa()
     {
+        // onResize() is the only other place this is released, and it only runs
+        // from setFrame:. A host that closes the editor without a final resize
+        // would otherwise leak the whole backing bitmap (8 bytes/physical pixel
+        // -- over 20MB for a retina-sized editor) on every open/close.
+        if(backBuffer)
+        {
+            CGContextRelease(backBuffer);
+            backBuffer = nullptr;
+        }
     }
     // look into: https://blog.rectorsquid.com/getting-gpu-acceleration-with-nsgraphicscontext/
     void onRender(NSView* frame, gmpi::drawing::Rect* dirtyRect)

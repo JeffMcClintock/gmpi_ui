@@ -196,7 +196,10 @@ pushClipGeometry precedent exactly. Pure-virtual is deliberate: a defaulted
 method would let a forwarding bridge silently swallow drawTextLayout (the
 preGraphicsRedraw-wrapper failure mode); pure-virtual makes every missing
 implementation a compile error. Out-of-tree parties implement IDrawingClient,
-not IDeviceContext/IFactory, so nothing external breaks.
+not IDeviceContext/IFactory — but they *call* both, and callers bind vtable
+slot numbers at compile time, so prebuilt third-party GUI binaries DID break
+(the 2026-08 libControls drop-shadow segfault). Censusing implementers
+answers "who must recompile", not "what breaks in the field".
 
 The census (`grep pushClipGeometry` is the authoritative list):
 
@@ -214,11 +217,20 @@ one-line forward, mandatory).
 SynthEditLib's Factory_SDK3 — cpugfx, Cocoa; JUCE stubs NoSupport) plus the
 internal ICpuTextEngine seam and CpuTextEngine.
 
-Hazard callout: the DirectX and JUCE BitmapRenderTargets are "emulated by
-careful vtable layout" — an append is safe only while getBitmap stays the
-first derived-class virtual (pushClipGeometry's append already proved it;
-re-verify). Verification build must cover TIDE + EditorScreenshot + the Mac
-.mm hosts, not just SynthEdit2 (the IDialogHost lesson).
+Hazard callout (corrected 2026-08-19 — the original stated the invariant
+BACKWARDS, and the appends have since crashed prebuilt modules): getBitmap
+being the first derived-class virtual is exactly what makes appending to
+IDeviceContext binary-incompatible. IBitmapRenderTarget places getBitmap in
+the slot immediately after the base's last method, so every append shifts it
+one slot down, and a module compiled against an older header calls the newly
+appended method where it means to call getBitmap — SIGSEGV, not a diagnosable
+error. Appending is tolerable only for in-tree code rebuilt in lockstep
+(which includes the DirectX and JUCE BitmapRenderTargets "emulated by careful
+vtable layout"), and is barred now that prebuilt third-party binaries exist —
+policy 2026-08: do not break the vtable; pushClipGeometry/drawTextLayout were
+a one-time beta exception, not a precedent. Verification build must cover
+TIDE + EditorScreenshot + the Mac .mm hosts, not just SynthEdit2 (the
+IDialogHost lesson).
 
 ## Relationship to IRichTextFormat (phase 2, optional)
 

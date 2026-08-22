@@ -9,7 +9,15 @@
 #include "GmpiSdkCommon.h"
 #include "helpers/NativeUi.h"
 
-@interface GMPI_KeyListenerView : NSView
+// Objective-C has ONE flat, process-wide class namespace, so two plugins
+// exporting this name share whichever implementation loads first. Give each
+// iteration a unique name, exactly as DrawingFrameMac.mm does -- and BUMP THE
+// SUFFIX whenever the class below changes, or the scheme silently stops
+// working (BACKLOG S38: GMPI_VIEW_VERSION_03 drifted 8556 -> 10835 chars under
+// one name before anyone noticed).
+#define GMPI_KEY_LISTENER_VIEW_CLASS GMPI_KeyListenerView_01
+
+@interface GMPI_KEY_LISTENER_VIEW_CLASS : NSView
 {
     gmpi::api::IKeyListenerCallback* keyCallback;
 }
@@ -19,7 +27,7 @@
 class GMPI_MAC_KeyListener : public gmpi::api::IKeyListener
 {
     NSView* parentView;
-    GMPI_KeyListenerView* keyListenerView = nil;
+    GMPI_KEY_LISTENER_VIEW_CLASS* keyListenerView = nil;
     gmpi::api::IKeyListenerCallback* callback2 = nullptr;
     gmpi::drawing::Rect bounds;
 
@@ -43,7 +51,7 @@ public:
     {
         callback->queryInterface(&gmpi::api::IKeyListenerCallback::guid, (void**)&callback2);
 
-        keyListenerView = [[GMPI_KeyListenerView alloc] initWithParent:parentView callback:callback2];
+        keyListenerView = [[GMPI_KEY_LISTENER_VIEW_CLASS alloc] initWithParent:parentView callback:callback2];
         [[parentView window] makeFirstResponder:keyListenerView];
 
         return gmpi::ReturnCode::Ok;
@@ -55,7 +63,7 @@ public:
 
 #ifdef GMPI_MAC_KEYLISTENER_IMPLEMENTATION
 
-@implementation GMPI_KeyListenerView
+@implementation GMPI_KEY_LISTENER_VIEW_CLASS
 
 - (id)initWithParent:(NSView*)parent callback:(gmpi::api::IKeyListenerCallback*)pcallback
 {

@@ -27,7 +27,18 @@ struct EventHelperClient
 @end
 
 // NSTextField subclass that forwards Escape to the event helper.
-@interface GMPI_EscapableTextField : NSTextField
+// Objective-C has ONE flat, process-wide class namespace, so two plugins
+// exporting this name share whichever implementation loads first. That matters
+// more here than anywhere else in this repo: line ~276 does
+//     [control isKindOfClass:[<this class> class]]
+// which is precisely the "spurious casting failure" the runtime warns about --
+// a control created by one plugin, tested by another, against a class object
+// that may not be the one that made it.
+//
+// BUMP THE SUFFIX whenever the class below changes (BACKLOG S38).
+#define GMPI_ESCAPABLE_TEXT_FIELD_CLASS GMPI_EscapableTextField_01
+
+@interface GMPI_ESCAPABLE_TEXT_FIELD_CLASS : NSTextField
 {
     BOOL multilineMode;
 }
@@ -125,7 +136,7 @@ private:
             textField = nil;
         }
 
-        textField = [[GMPI_EscapableTextField alloc] initWithFrame:gmpiRectToViewRect(parentView.bounds, &editRect)];
+        textField = [[GMPI_ESCAPABLE_TEXT_FIELD_CLASS alloc] initWithFrame:gmpiRectToViewRect(parentView.bounds, &editRect)];
         [textField setFont:[NSFont systemFontOfSize:textHeight]];
 
         NSString* nsstr = [NSString stringWithCString:text.c_str() encoding:NSUTF8StringEncoding];
@@ -135,7 +146,7 @@ private:
         textField.drawsBackground = true;
         [textField setBackgroundColor:[NSColor textBackgroundColor]];
         textField.usesSingleLineMode = !multiline;
-        ((GMPI_EscapableTextField*)textField).multilineMode = multiline;
+        ((GMPI_ESCAPABLE_TEXT_FIELD_CLASS*)textField).multilineMode = multiline;
 
         switch (alignment)
         {
@@ -273,8 +284,8 @@ public:
 - (BOOL)control:(NSControl*)control textView:(NSTextView*)textView doCommandBySelector:(SEL)commandSelector
 {
     if (commandSelector == @selector(insertNewline:)
-        && [control isKindOfClass:[GMPI_EscapableTextField class]]
-        && ((GMPI_EscapableTextField*)control).multilineMode)
+        && [control isKindOfClass:[GMPI_ESCAPABLE_TEXT_FIELD_CLASS class]]
+        && ((GMPI_ESCAPABLE_TEXT_FIELD_CLASS*)control).multilineMode)
     {
         const BOOL shiftDown = ([[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift) != 0;
         if (shiftDown)
@@ -288,7 +299,7 @@ public:
 }
 @end
 
-@implementation GMPI_EscapableTextField
+@implementation GMPI_ESCAPABLE_TEXT_FIELD_CLASS
 
 @synthesize multilineMode;
 

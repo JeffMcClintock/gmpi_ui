@@ -611,7 +611,20 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 }
 
 // Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
-#define GMPI_VIEW_CLASS GMPI_VIEW_VERSION_03
+// BUMPED _03 -> _04, 2026-08-22 (BACKLOG S38). The scheme above is correct and
+// it had silently stopped working for THIS class: the implementation grew from
+// 8556 to 10835 characters across 38 commits while keeping the same versioned
+// name, so a plugin built before those changes and one built after both export
+// GMPI_VIEW_VERSION_03 with DIFFERENT bodies. Objective-C has one flat
+// process-wide class namespace, so whichever loads first wins and the other
+// silently runs the wrong implementation -- which is precisely what the naming
+// scheme exists to prevent.
+//
+// BUMP THIS WHENEVER THE CLASS BELOW CHANGES. Two plugins on the same gmpi_ui
+// share the name AND the body, which is harmless; the danger is only ever two
+// DIFFERENT bodies under one name. Verified sibling: GMPI_KEY_LISTENER_VERSION_03
+// is unchanged across the same 38 commits and correctly needs no bump.
+#define GMPI_VIEW_CLASS GMPI_VIEW_VERSION_04
 
 //--------------------------------------------------------------------------------------------------------------
 @interface GMPI_VIEW_CLASS : NSView {

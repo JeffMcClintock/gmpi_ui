@@ -1,8 +1,9 @@
 #ifndef GMPI_MAC_POPUPMENU_H
 #define GMPI_MAC_POPUPMENU_H
+#include "GmpiObjCNames.h"
 
 // Single-header gmpi::api::IPopupMenu implementation for macOS.
-// Depends on the EventHelperClient / GMPI_EVENT_HELPER_CLASSNAME_03 declarations
+// Depends on the EventHelperClient / GMPI_EVENT_HELPER_CLASS declarations
 // from MacTextEdit.h. The @implementation for those Obj-C classes must be
 // emitted in exactly one .mm per binary by defining GMPI_MAC_TEXTEDIT_IMPLEMENTATION
 // before including MacTextEdit.h.
@@ -25,7 +26,7 @@ class GMPI_MAC_PopupMenu : public gmpi::api::IPopupMenu, public EventHelperClien
 
     NSView* view;
     NSPopUpButton* button = nil;
-    GMPI_EVENT_HELPER_CLASSNAME_03* eventHelper = nil;
+    GMPI_EVENT_HELPER_CLASS* eventHelper = nil;
     gmpi::drawing::Rect rect;
     std::vector<MenuCallback> callbacks;
     std::vector<NSMenu*> menuStack;
@@ -39,7 +40,7 @@ public:
         : view(pview)
         , rect(prect)
     {
-        eventHelper = [GMPI_EVENT_HELPER_CLASSNAME_03 alloc];
+        eventHelper = [GMPI_EVENT_HELPER_CLASS alloc];
         [eventHelper initWithClient:this];
 
         button = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(10, 1000, 30, 30)];

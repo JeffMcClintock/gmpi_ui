@@ -1,5 +1,6 @@
 #ifndef GMPI_MAC_COLORDIALOG_H
 #define GMPI_MAC_COLORDIALOG_H
+#include "GmpiObjCNames.h"
 
 // Single-header (stb-style) gmpi::api::IColorDialog implementation for macOS,
 // backed by the process-wide shared NSColorPanel.
@@ -84,7 +85,7 @@
 // Objective-C can't load the same class into two plugins in one process; give
 // this helper a per-iteration unique name, matching the _03 house convention
 // (cf. GMPI_EVENT_HELPER_CLASSNAME_03, GMPI_VIEW_VERSION_03).
-#define GMPI_MAC_COLORPANEL_TARGET_CLASS GMPI_MAC_ColorPanelTarget_03
+#define GMPI_MAC_COLORPANEL_TARGET_CLASS GMPI_OBJC_NAME(GMPI_MAC_ColorPanelTarget_03)
 
 // ---------------------------------------------------------------------------
 // ObjC helper: the shared NSColorPanel's target/action + close observer.

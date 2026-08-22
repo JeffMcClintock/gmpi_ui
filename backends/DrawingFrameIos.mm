@@ -23,6 +23,7 @@
 #import "CocoaGfx.h"
 #include "DrawingFrameCommon.h"
 #include "DrawingFrameIos.h"
+#include "GmpiObjCNames.h"
 #import "helpers/IController.h"
 
 // Same product decision as DrawingFrameMac.mm, same numbers: bound what an
@@ -624,7 +625,7 @@ public:
 
 // Objective-C can't handle loading the same class into different plugins; give
 // each iteration of this class a unique name (same convention as the Mac view).
-#define GMPI_IOS_VIEW_CLASS GMPI_IOS_VIEW_VERSION_01
+#define GMPI_IOS_VIEW_CLASS GMPI_OBJC_NAME(GMPI_IOS_VIEW_VERSION_01)
 
 @interface GMPI_IOS_VIEW_CLASS : UIView {
     DrawingFrameIos drawingFrame;

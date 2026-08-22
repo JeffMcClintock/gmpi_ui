@@ -1,5 +1,6 @@
 #ifndef GMPI_MAC_TEXTEDIT_H
 #define GMPI_MAC_TEXTEDIT_H
+#include "GmpiObjCNames.h"
 
 // Single-header (stb-style) gmpi::api::ITextEdit implementation for macOS.
 // Define GMPI_MAC_TEXTEDIT_IMPLEMENTATION in exactly one .mm per binary
@@ -16,7 +17,10 @@ struct EventHelperClient
     virtual void CancelFromCocoa() {}
 };
 
-@interface GMPI_EVENT_HELPER_CLASSNAME_03 : NSObject <NSTextFieldDelegate> {
+// This one had no indirection at all; given one to match its siblings.
+#define GMPI_EVENT_HELPER_CLASS GMPI_OBJC_NAME(GMPI_EVENT_HELPER_CLASSNAME_03)
+
+@interface GMPI_EVENT_HELPER_CLASS : NSObject <NSTextFieldDelegate> {
     EventHelperClient* client;
 }
 - (void)initWithClient:(EventHelperClient*)client;
@@ -36,7 +40,7 @@ struct EventHelperClient
 // that may not be the one that made it.
 //
 // BUMP THE SUFFIX whenever the class below changes (BACKLOG S38).
-#define GMPI_ESCAPABLE_TEXT_FIELD_CLASS GMPI_EscapableTextField_01
+#define GMPI_ESCAPABLE_TEXT_FIELD_CLASS GMPI_OBJC_NAME(GMPI_EscapableTextField_01)
 
 @interface GMPI_ESCAPABLE_TEXT_FIELD_CLASS : NSTextField
 {
@@ -63,7 +67,7 @@ class GMPI_MAC_TextEdit : public gmpi::api::ITextEdit, public EventHelperClient
 {
     NSView* parentView;
     NSTextField* textField = nil;
-    GMPI_EVENT_HELPER_CLASSNAME_03* eventHelper = nil;
+    GMPI_EVENT_HELPER_CLASS* eventHelper = nil;
     gmpi::drawing::Rect editRect;
     std::string text;
     float textHeight = 12.0f;
@@ -76,7 +80,7 @@ public:
         : parentView(pview)
         , editRect(rect)
     {
-        eventHelper = [GMPI_EVENT_HELPER_CLASSNAME_03 alloc];
+        eventHelper = [GMPI_EVENT_HELPER_CLASS alloc];
         [eventHelper initWithClient:this];
     }
 
@@ -248,7 +252,7 @@ public:
 
 #ifdef GMPI_MAC_TEXTEDIT_IMPLEMENTATION
 
-@implementation GMPI_EVENT_HELPER_CLASSNAME_03
+@implementation GMPI_EVENT_HELPER_CLASS
 
 - (void)initWithClient:(EventHelperClient*)pclient
 {

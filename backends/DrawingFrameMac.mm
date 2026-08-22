@@ -21,6 +21,7 @@
 #import "helpers/IController.h"
 #include <algorithm>
 #include <array>
+#include "GmpiObjCNames.h"
 #include <cmath>
 #include <string>
 #include <string_view>
@@ -571,7 +572,7 @@ public:
 };
 
 // Objective-C can't handle loading the same class into different plugins, give each iteration of this class a unique name
-#define GMPI_KEY_LISTENER_CLASS GMPI_KEY_LISTENER_VERSION_03
+#define GMPI_KEY_LISTENER_CLASS GMPI_OBJC_NAME(GMPI_KEY_LISTENER_VERSION_03)
 
 //--------------------------------------------------------------------------------------------------------------
 @interface GMPI_KEY_LISTENER_CLASS : NSView {
@@ -624,7 +625,7 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 // share the name AND the body, which is harmless; the danger is only ever two
 // DIFFERENT bodies under one name. Verified sibling: GMPI_KEY_LISTENER_VERSION_03
 // is unchanged across the same 38 commits and correctly needs no bump.
-#define GMPI_VIEW_CLASS GMPI_VIEW_VERSION_04
+#define GMPI_VIEW_CLASS GMPI_OBJC_NAME(GMPI_VIEW_VERSION_04)
 
 //--------------------------------------------------------------------------------------------------------------
 @interface GMPI_VIEW_CLASS : NSView {

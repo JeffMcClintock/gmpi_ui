@@ -1,5 +1,6 @@
 #ifndef GMPI_MAC_KEYLISTENER_H
 #define GMPI_MAC_KEYLISTENER_H
+#include "GmpiObjCNames.h"
 
 // Single-header gmpi::api::IKeyListener implementation for macOS.
 // Define GMPI_MAC_KEYLISTENER_IMPLEMENTATION in exactly one .mm per binary
@@ -15,7 +16,7 @@
 // SUFFIX whenever the class below changes, or the scheme silently stops
 // working (BACKLOG S38: GMPI_VIEW_VERSION_03 drifted 8556 -> 10835 chars under
 // one name before anyone noticed).
-#define GMPI_KEY_LISTENER_VIEW_CLASS GMPI_KeyListenerView_01
+#define GMPI_KEY_LISTENER_VIEW_CLASS GMPI_OBJC_NAME(GMPI_KeyListenerView_01)
 
 @interface GMPI_KEY_LISTENER_VIEW_CLASS : NSView
 {

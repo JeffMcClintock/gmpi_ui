@@ -455,6 +455,12 @@ struct FileBrowseButtonView : public View
 	// when set, a chosen path routes here instead of writing 'value' directly.
 	std::function <void(const std::string&)> validateAndSave;
 
+	// Which native dialog to open. The default suits the common case: naming an existing
+	// file to read, where the file must exist and no overwrite warning makes sense.
+	// Set it when the caller will WRITE the chosen file, so that a name which doesn't
+	// exist yet can be typed, and picking an existing one warns before clobbering it.
+	bool saveMode{};
+
 	FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds) {}
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;

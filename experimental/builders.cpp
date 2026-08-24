@@ -552,8 +552,10 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 		clickDetector->onPointerDown_callback = [this, clickDetector, env](const primitive::PointerEvent*)
 			{
 				// creat file-browser
+				const auto dialogType = saveMode ? gmpi::api::FileDialogType::Save : gmpi::api::FileDialogType::Open;
+
 				gmpi::shared_ptr<gmpi::api::IUnknown> unknown;
-				env->dialogHost->createFileDialog((int32_t)gmpi::api::FileDialogType::Save, unknown.put());
+				env->dialogHost->createFileDialog((int32_t)dialogType, unknown.put());
 				fileDialog = unknown.as<gmpi::api::IFileDialog>();
 
 				if (!fileDialog)

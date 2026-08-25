@@ -54,6 +54,28 @@ struct IDrawingClient : gmpi::api::IUnknown
 	{ 0xe922d16f, 0x447b, 0x4e82, { 0xb0, 0xb1, 0xfd, 0x99, 0x5c, 0xa4, 0x21, 0xe } };
 };
 
+// Optional companion to IDrawingClient: lets a plugin paint into several compositing
+// passes instead of one render() call. The host (SE2::ViewBase::render, in
+// SynthEditLib's se_sdk3_hosting) walks every child once per layer -- painting each
+// child's contribution to a layer before moving to the next -- so e.g. every sibling's
+// shadow paints below every sibling's normal body, regardless of z-order. A plugin that
+// implements only IDrawingClient (no IDrawingLayer) takes no part in this: it is
+// composited solely by its render(), during the layer-0 pass below.
+//
+// Layers, back to front:
+//
+//   -2  background
+//   -1  shadow
+//    0  normal body. For an IDrawingLayer-supporting plugin this pass calls
+//       renderLayer(dc, 0) INSTEAD of render() -- render() is never invoked once
+//       IDrawingLayer is implemented.
+//    1  glow
+//  2, 3  unused
+//    4  editor guide: a design-time overlay for indicating the hit-test area of an
+//       otherwise-invisible object (e.g. a patch point). The SynthEdit editor's own
+//       hosting code composites this layer unconditionally, but that hosting code is
+//       not linked into a compiled plugin -- so layer 4 never paints in a shipped
+//       VST3/CLAP/AU, only inside the editor.
 struct IDrawingLayer : gmpi::api::IUnknown
 {
 	virtual ReturnCode renderLayer(gmpi::drawing::api::IDeviceContext* drawingContext, int32_t layer) = 0;

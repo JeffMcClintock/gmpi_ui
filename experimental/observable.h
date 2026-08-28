@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <algorithm>
 #include <functional>
 #include <utility>
@@ -31,6 +32,29 @@ public:
 
 	State() = default;
 	State(const T& initialValue) : value(initialValue) {}
+
+	// A StateRef that outlives its State is a GUARANTEED use-after-free: its
+	// destructor (or next setSource) calls release() on this object after it
+	// is gone. Measured (TIDE BACKLOG E66): SettingsPane::reload() destroyed
+	// its MIDI tick-box States while the old widget tree still held StateRefs
+	// into them, and the crash surfaced two frames later inside the STL's
+	// iterator machinery -- about as far from the cause as it could land.
+	//
+	// So death does both halves, deliberately in this order:
+	//   ASSERT (Debug)  -- the owner broke the teardown contract (visuals
+	//                      before states; ViewParent::clear()'s own comment
+	//                      states it). The defect stays loud AT THE CAUSE.
+	//   DETACH (always) -- null every surviving watcher's back-pointer, so a
+	//                      Release build loses a notification instead of
+	//                      corrupting the heap. Containment, not a licence:
+	//                      the assert above is what keeps it from becoming
+	//                      plaster over the root cause.
+	~State()
+	{
+		assert(watchers.empty() && "a StateRef outlives this State - release the visuals BEFORE the states they point to");
+		for (auto* w : watchers)
+			w->state = nullptr;
+	}
 
 	void set(const T& v)
 	{
@@ -146,6 +170,8 @@ struct StateRef : public thing
 	}
 
 protected:
+	// ~State() nulls this on any watcher that outlives it -- see there.
+	friend struct State<T>;
 	State<T>* state = {};
 	std::vector < std::function<void(void)> > callbacks;
 };

@@ -1,6 +1,7 @@
 #import <AudioUnit/AudioUnit.h>
 #import <AudioUnit/AUCocoaUIView.h>
 #import <Cocoa/Cocoa.h>
+#include <iostream>
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
 #import "CocoaGfx.h"
@@ -649,6 +650,62 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 //--------------------------------------------------------------------------------------------------------------
 @implementation GMPI_VIEW_CLASS
 
+// TIDE BACKLOG E57 -- KEYS REACH THE CLIENT ON macOS, AS THEY ALREADY DO EVERYWHERE ELSE.
+//
+// Windows, X11 and Wayland all PUSH keys to the input client straight from the
+// window proc (DrawingFrameWin.cpp, DrawingFrameX11.cpp, DrawingFrameWayland.h
+// each call cb->onKeyDown unconditionally). macOS delivered them only through
+// the OPT-IN IDialogHost::createKeyListener, and the only things that ever ask
+// for one are text widgets -- a module picker and a number edit. An editor
+// canvas never asks, so on macOS it received NO keyboard input at all: not
+// delete, not the arrow-key nudge, not ESC-to-cancel-a-drag. Measured 2026-08-28
+// with a probe on ViewBase::onKey -- three delete presses across two keyboards
+// produced zero events, while the same build fed the same codes through the
+// command channel saw all of them.
+//
+// Unhandled keys fall through to super so system behaviour (menu key
+// equivalents, the error beep) is unchanged; only keys the client claims are
+// consumed.
+- (BOOL)acceptsFirstResponder { return YES; }
+
+- (void)keyDown:(NSEvent*)theEvent
+{
+    NSString* characters = [theEvent characters];
+
+    if (drawingFrame.inputClient && characters.length > 0)
+    {
+        wchar_t c = static_cast<wchar_t>([characters characterAtIndex:0]);
+
+        // MAP macOS FUNCTION KEYS ONTO THE CODES THE SHARED LAYER ALREADY SPEAKS.
+        //
+        // AppKit reports arrows and forward-delete as Unicode PRIVATE-USE values
+        // (NSUpArrowFunctionKey = 0xF700 and friends), while every other backend
+        // delivers Windows virtual-key codes -- ViewBase::onKey switches on 0x25
+        // -0x28 for the arrows and 0x2E for delete. Without this the codes simply
+        // never match: measured 2026-08-28, ESC and the Apple delete key worked
+        // (0x1B and 0x7F/0x08 collide with their VK values by luck) while the
+        // arrows and a PC keyboard's forward-delete did nothing at all.
+        //
+        // Translating HERE rather than in ViewBase keeps the platform knowledge in
+        // the platform backend, which is the same thing SynthEdit's own HostedView
+        // does on Windows when it maps VK_DELETE to 0x7F before passing it down.
+        switch (c)
+        {
+        case NSUpArrowFunctionKey:    c = 0x26; break; // VK_UP
+        case NSDownArrowFunctionKey:  c = 0x28; break; // VK_DOWN
+        case NSLeftArrowFunctionKey:  c = 0x25; break; // VK_LEFT
+        case NSRightArrowFunctionKey: c = 0x27; break; // VK_RIGHT
+        case NSDeleteFunctionKey:     c = 0x2E; break; // VK_DELETE (PC forward-delete)
+        default: break;
+        }
+        if (drawingFrame.inputClient->onKeyPress(c) == gmpi::ReturnCode::Handled)
+            return;
+    }
+
+    [super keyDown:theEvent];
+}
+
+
 - (id) initWithClient: (class IUnknown*) _client parameterHost: (class IUnknown*) paramHost preferredSize: (NSSize) size
 {
     self = [super initWithFrame: NSMakeRect (0, 0, size.width, size.height)];
@@ -738,6 +795,9 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 //--------------------------------------------------------------------------------------------------------------
 #if !USE_BACKING_BUFFER
 - (BOOL)isFlipped { return YES; }
+
+
+
 #endif
 
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }

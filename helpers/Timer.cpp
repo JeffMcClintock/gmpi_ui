@@ -12,6 +12,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include "assert.h"
 #include "Timer.h"
 
@@ -91,6 +92,30 @@ namespace gmpi
 				timer.onTimer(); // may stop timers / unregister clients; the std::list stays valid.
 			}
 		}
+	}
+
+	void TimerManager::pump()
+	{
+		using namespace std::chrono;
+		const auto nowMs =
+			duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+
+		// The FIRST call only starts the clock. Measuring from an epoch nobody
+		// set would hand the timers however long this process has been alive,
+		// firing every client once immediately -- harmless for an idle timer
+		// and wrong for anything that reads the elapsed time.
+		if (lastPumpMonotonicMs_ == 0)
+		{
+			lastPumpMonotonicMs_ = nowMs;
+			return;
+		}
+
+		const auto elapsedMs = nowMs - lastPumpMonotonicMs_;
+		if (elapsedMs <= 0)
+			return; // a second pumper in the same millisecond; nothing has happened.
+
+		lastPumpMonotonicMs_ = nowMs;
+		pump(static_cast<int>(elapsedMs));
 	}
 
 

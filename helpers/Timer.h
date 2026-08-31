@@ -80,8 +80,26 @@ public:
 	// Do NOT call it on Windows/macOS — the native timers already fire there.
 	void pump(int elapsedMs);
 
+	// The same thing for a pumper that does not know how long it has been:
+	// elapsed time is measured here, from a monotonic clock, so the timers
+	// advance at wall-clock rate no matter how often (or how irregularly) this
+	// is called.
+	//
+	// That property is the reason it exists rather than being a convenience.
+	// A PLUG-IN has no application loop of its own -- its only UI-thread tick
+	// is whatever run loop the host gives it, and there is one of those PER
+	// OPEN EDITOR. Two instances of the same plug-in would each call pump(16)
+	// every 16 ms, and this manager is a process-wide singleton, so every timer
+	// client in the process would run at twice its period. Here the second
+	// caller simply observes that no time has passed.
+	void pump();
+
 private:
 	int interval_;
+
+	// Zero until the first pump(); see pump() in the .cpp for why the first
+	// call only starts the clock.
+	long long lastPumpMonotonicMs_ = 0;
 };
 
 }

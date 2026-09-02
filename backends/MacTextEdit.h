@@ -40,7 +40,7 @@ struct EventHelperClient
 // that may not be the one that made it.
 //
 // BUMP THE SUFFIX whenever the class below changes (BACKLOG S38).
-#define GMPI_ESCAPABLE_TEXT_FIELD_CLASS GMPI_OBJC_NAME(GMPI_EscapableTextField_01)
+#define GMPI_ESCAPABLE_TEXT_FIELD_CLASS GMPI_OBJC_NAME(GMPI_EscapableTextField_02)
 
 @interface GMPI_ESCAPABLE_TEXT_FIELD_CLASS : NSTextField
 {
@@ -313,24 +313,51 @@ public:
         [self.target performSelector:@selector(cancelEditing:) withObject:self];
 }
 
-// Intercept editing keys (Delete, arrows, etc.) so the menu key-equivalent
-// system doesn't claim them (e.g. Edit > Delete deleting document objects).
+// AppKit offers key equivalents to the key window's view hierarchy BEFORE the
+// menu bar, so an editing field has to sort out what belongs to whom.
 //
-// Command-modified keys are deliberately NOT intercepted: Cut/Copy/Paste/
-// Select All live on the menu bar, and AppKit offers key equivalents to the
-// view hierarchy before the menu. Swallowing them here left the field editor
-// with no clipboard at all, since interpretKeyEvents: has no bindings for
-// Command combinations -- the keystroke simply vanished.
+// Bare keys (Delete, arrows, ...) are ours: otherwise a menu item bound to an
+// unmodified key claims them -- SynthEdit's own Edit > Delete deleting the
+// selected modules while the user is typing.
+//
+// Cut/Copy/Paste/Select All are also handled here, directly on the field
+// editor, rather than by returning NO and hoping the surrounding menu does the
+// right thing. In a plug-in that menu belongs to the host: a DAW whose edit
+// commands are targeted at its own project (rather than at the first responder,
+// as standard Cocoa actions are) would copy its selection instead of the text.
+// Doing the work ourselves is correct in every host, and matches how the native
+// EDIT control behaves on Windows.
+//
+// Everything else with Command -- Cmd+Z, Cmd+S, whatever the host binds -- goes
+// to super, and on to the menu.
 - (BOOL)performKeyEquivalent:(NSEvent*)event
 {
-    const BOOL commandDown = ([event modifierFlags] & NSEventModifierFlagCommand) != 0;
+    NSText* const editor = self.currentEditor;
 
-    if (self.currentEditor && !commandDown)
+    if (!editor)
+        return [super performKeyEquivalent:event];
+
+    const NSEventModifierFlags mods = [event modifierFlags]
+        & (NSEventModifierFlagCommand | NSEventModifierFlagControl
+         | NSEventModifierFlagOption | NSEventModifierFlagShift);
+
+    if (mods == NSEventModifierFlagCommand)
     {
-        [self.currentEditor interpretKeyEvents:@[event]];
-        return YES;
+        NSString* const key = [[event charactersIgnoringModifiers] lowercaseString];
+
+        if ([key isEqualToString:@"x"]) { [editor cut:self];       return YES; }
+        if ([key isEqualToString:@"c"]) { [editor copy:self];      return YES; }
+        if ([key isEqualToString:@"v"]) { [editor paste:self];     return YES; }
+        if ([key isEqualToString:@"a"]) { [editor selectAll:self]; return YES; }
+
+        return [super performKeyEquivalent:event];
     }
-    return [super performKeyEquivalent:event];
+
+    if (mods & NSEventModifierFlagCommand)
+        return [super performKeyEquivalent:event];
+
+    [editor interpretKeyEvents:@[event]];
+    return YES;
 }
 
 @end

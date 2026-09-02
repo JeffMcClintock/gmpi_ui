@@ -315,9 +315,17 @@ public:
 
 // Intercept editing keys (Delete, arrows, etc.) so the menu key-equivalent
 // system doesn't claim them (e.g. Edit > Delete deleting document objects).
+//
+// Command-modified keys are deliberately NOT intercepted: Cut/Copy/Paste/
+// Select All live on the menu bar, and AppKit offers key equivalents to the
+// view hierarchy before the menu. Swallowing them here left the field editor
+// with no clipboard at all, since interpretKeyEvents: has no bindings for
+// Command combinations -- the keystroke simply vanished.
 - (BOOL)performKeyEquivalent:(NSEvent*)event
 {
-    if (self.currentEditor)
+    const BOOL commandDown = ([event modifierFlags] & NSEventModifierFlagCommand) != 0;
+
+    if (self.currentEditor && !commandDown)
     {
         [self.currentEditor interpretKeyEvents:@[event]];
         return YES;

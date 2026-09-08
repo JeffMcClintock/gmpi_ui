@@ -211,6 +211,7 @@ struct FontMetadata
 		}
 	}
 
+#if 0
 	// DEPRECATED.
 	// The new GUI API renders text differently than the old one.
 	// This method estimates the verical offset needed for backward compatibility.
@@ -242,6 +243,7 @@ struct FontMetadata
 
 		return verticalAdjustmentHack + vst3_vertical_offset_;
 	}
+#endif
 };
 
 struct SkinMetadata

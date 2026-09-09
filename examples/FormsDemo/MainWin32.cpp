@@ -12,6 +12,10 @@
 // Sizes crossing the API are DIPs, which is what the Form measures itself in;
 // the conversion to pixels happens here against the monitor the window is on.
 
+// <windows.h> defines min and max as macros, which breaks the std::min/max
+// calls inside immer's headers (reached through DemoForm.h). gmpi_ui's own
+// Windows sources define this too and its headers never use the bare macros.
+#define NOMINMAX
 #include <windows.h>
 
 #include "backends/DrawingFrameWin.h"

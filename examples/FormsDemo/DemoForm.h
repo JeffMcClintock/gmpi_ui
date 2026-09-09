@@ -18,12 +18,27 @@
 //   * A rebuild-on-dirty render: Body() is re-run whenever the model, the
 //     bounds or the theme change, so the summary line at the bottom is simply
 //     re-created with fresh text rather than kept in sync piecemeal.
+//
+//   * An IMMUTABLE model. Every committed edit produces a new Model value and
+//     appends it to an immer::vector - a persistent structure, so each version
+//     is a cheap, independent snapshot. The current model is the last one.
+//     That is the shape an undo stack wants, and it costs nothing here.
 
 #include <string>
+
+#include <immer/vector.hpp>
 
 #include "GmpiUiDrawing.h"
 #include "experimental/forms.h"
 #include "experimental/theme.h"
+
+// What the page is FOR. A plain value: edits make a new one.
+struct Model
+{
+    double      amount  = 1.5;
+    std::string name    = "Untitled";
+    bool        enabled = true;
+};
 
 class DemoForm : public gmpi::ui::Form
 {
@@ -46,10 +61,10 @@ public:
     }
 
 private:
-    // The model: what the page is FOR. Plain values, nothing observable.
-    double      amount_  = 1.5;
-    std::string name_    = "Untitled";
-    bool        enabled_ = true;
+    // Every committed version of the model, oldest first; never empty.
+    immer::vector<Model> history_{ Model{} };
+
+    const Model& model() const { return history_.back(); }
 
     // The widget-facing States (model -> UI). Re-seeded from the model by
     // refreshStates(); never written by the widgets themselves.
@@ -58,7 +73,9 @@ private:
     gmpi_forms::State<bool>        enabledState_;
 
     void refreshStates();
-    void modelChanged();
+
+    // Commit a new version: append it to the history and rebuild the page.
+    void commit(Model next);
 
     gmpi::drawing::Rect bounds{};
     bool formIsDirty_ = true;

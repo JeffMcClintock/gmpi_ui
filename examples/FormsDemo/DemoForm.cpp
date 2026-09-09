@@ -79,13 +79,18 @@ DemoForm::~DemoForm()
 
 void DemoForm::refreshStates()
 {
-    amountText_   = niceDoubleToString(amount_);
-    nameText_     = name_;
-    enabledState_ = enabled_;
+    const auto& m = model();
+    amountText_   = niceDoubleToString(m.amount);
+    nameText_     = m.name;
+    enabledState_ = m.enabled;
 }
 
-void DemoForm::modelChanged()
+void DemoForm::commit(Model next)
 {
+    // push_back returns a NEW vector sharing structure with the old one; the
+    // previous versions are untouched and still addressable.
+    history_ = history_.push_back(std::move(next));
+
     refreshStates();
 
     // Rebuild rather than patch: the summary line below the controls is
@@ -173,10 +178,11 @@ void DemoForm::Body()
                     return;
                 }
 
-                if (v != amount_)
+                if (v != model().amount)
                 {
-                    amount_ = v;
-                    modelChanged();
+                    auto next = model();
+                    next.amount = v;
+                    commit(std::move(next));
                 }
                 else
                 {
@@ -195,10 +201,11 @@ void DemoForm::Body()
             , [this](const std::string& val)
             {
                 const auto newName = trimmed(val);
-                if (newName != name_)
+                if (newName != model().name)
                 {
-                    name_ = newName;
-                    modelChanged();
+                    auto next = model();
+                    next.name = newName;
+                    commit(std::move(next));
                 }
                 else
                 {
@@ -218,10 +225,11 @@ void DemoForm::Body()
         auto tickBox = std::make_unique<gmpi::ui::builder::TickBox>(enabledState_);
         tickBox->validateAndSave = [this](bool newValue)
         {
-            if (newValue != enabled_)
+            if (newValue != model().enabled)
             {
-                enabled_ = newValue;
-                modelChanged();
+                auto next = model();
+                next.enabled = newValue;
+                commit(std::move(next));
             }
         };
 
@@ -238,9 +246,11 @@ void DemoForm::Body()
     // the editor re-shows exactly what was typed. Heading-sized: a label's
     // text scales with its row, and at editor height this line would not fit.
     Spacer spacer({ 0, 0, 0, kHeadingHeight });
+    const auto& m = model();
     Label summary(
-          std::format("amount = {}   name = \"{}\"   enabled = {}",
-                      niceDoubleToString(amount_), name_, enabled_ ? "true" : "false")
+          std::format("amount = {}   name = \"{}\"   enabled = {}   ({} edits kept)",
+                      niceDoubleToString(m.amount), m.name, m.enabled ? "true" : "false",
+                      history_.size() - 1)
         , { 0, 0, 0, kHeadingHeight }
     );
 }

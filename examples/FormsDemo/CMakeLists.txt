@@ -41,6 +41,21 @@ endif()
 message(STATUS "FormsDemo: gmpi_ui = ${GMPI_UI_SDK}")
 message(STATUS "FormsDemo: GMPI    = ${GMPI_SDK}")
 
+# immer - persistent (immutable) data structures. Header-only, so it is
+# fetched and put on the include path rather than configured: its own
+# CMakeLists would otherwise offer to build its tests, examples and docs.
+# The demo keeps its model's history in an immer::vector (see DemoForm.h).
+include(FetchContent)
+FetchContent_Declare(
+    immer
+    GIT_REPOSITORY https://github.com/arximboldi/immer
+    GIT_TAG        v0.9.1
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""                 # none: the repo's submodules are pybind11 and a docs theme, and the latter's paths exceed MAX_PATH on Windows
+    SOURCE_SUBDIR  do-not-configure   # header-only; nothing to add_subdirectory
+)
+FetchContent_MakeAvailable(immer)
+
 add_executable(${PROJECT_NAME} WIN32
     MainWin32.cpp
     DemoForm.h
@@ -66,6 +81,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${GMPI_SDK}/Core
     ${GMPI_UI_SDK}
 )
+
+# SYSTEM, so immer's headers are compiled as external code: MSVC then keeps
+# its warnings (unknown '#pragma GCC', among others) out of this build's output.
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${immer_SOURCE_DIR})
 
 # compat/ holds a shim for a SynthEdit SDK header that builders.cpp includes.
 # See compat/it_enum_list.h.

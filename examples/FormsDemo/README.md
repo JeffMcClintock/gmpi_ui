@@ -18,10 +18,13 @@ What it demonstrates:
   and `1.50` over `1.5` counts as no change.
 * **Rebuild-on-dirty rendering.** `Body()` is re-run whenever the model, the
   bounds or the theme change; the summary line is simply rebuilt.
-* **An immutable model.** `Model` is a plain value; every committed edit
-  appends a new one to an `immer::vector` (a persistent structure from
-  [immer](https://github.com/arximboldi/immer), fetched by CMake), so each
-  version is a cheap independent snapshot - the shape an undo stack wants.
+* **An immutable model with undo/redo.** `Model` is a plain value; every
+  committed edit appends a new one to an `immer::vector` (a persistent
+  structure from [immer](https://github.com/arximboldi/immer), fetched by
+  CMake), so each version is a cheap independent snapshot. A cursor into that
+  vector is the current version: Undo/Redo (buttons, or ctrl+Z / ctrl+Y) move
+  it, and a commit after an undo drops the redo tail. The history IS the
+  undo stack - no command objects, no inverse operations.
 
 Files:
 

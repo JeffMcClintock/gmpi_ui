@@ -19,11 +19,15 @@
 //     bounds or the theme change, so the summary line at the bottom is simply
 //     re-created with fresh text rather than kept in sync piecemeal.
 //
-//   * An IMMUTABLE model. Every committed edit produces a new Model value and
-//     appends it to an immer::vector - a persistent structure, so each version
-//     is a cheap, independent snapshot. The current model is the last one.
-//     That is the shape an undo stack wants, and it costs nothing here.
+//   * An IMMUTABLE model with undo/redo. Every committed edit produces a new
+//     Model value and appends it to an immer::vector - a persistent structure,
+//     so each version is a cheap, independent snapshot. A cursor into that
+//     vector says which version is current: undo and redo just move it, and a
+//     commit made after an undo drops the versions beyond the cursor (the redo
+//     tail), as every editor does. No command objects, no inverse operations:
+//     the history IS the undo stack.
 
+#include <cstddef>
 #include <string>
 
 #include <immer/vector.hpp>
@@ -61,10 +65,17 @@ public:
     }
 
 private:
-    // Every committed version of the model, oldest first; never empty.
+    // Every version of the model, oldest first; never empty. history_[cursor_]
+    // is the current one; anything after it is what redo would restore.
     immer::vector<Model> history_{ Model{} };
+    std::size_t          cursor_ = 0;
 
-    const Model& model() const { return history_.back(); }
+    const Model& model() const { return history_[cursor_]; }
+
+    bool canUndo() const { return cursor_ > 0; }
+    bool canRedo() const { return cursor_ + 1 < history_.size(); }
+    void undo();
+    void redo();
 
     // The widget-facing States (model -> UI). Re-seeded from the model by
     // refreshStates(); never written by the widgets themselves.
@@ -74,8 +85,11 @@ private:
 
     void refreshStates();
 
-    // Commit a new version: append it to the history and rebuild the page.
+    // Commit a new version: drop any redo tail, append it, rebuild the page.
     void commit(Model next);
+
+    // Move the cursor (undo/redo both land here) and rebuild the page.
+    void showVersion(std::size_t index);
 
     gmpi::drawing::Rect bounds{};
     bool formIsDirty_ = true;

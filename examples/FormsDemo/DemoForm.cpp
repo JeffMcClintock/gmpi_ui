@@ -68,6 +68,16 @@ std::string trimmed(std::string s)
 DemoForm::DemoForm()
 {
     refreshStates();
+
+    // Keyboard shortcuts. The frame delivers WM_CHAR, so a control chord
+    // arrives as the ASCII control code: ctrl+Z is 0x1A, ctrl+Y is 0x19.
+    setKeyboardHandler([this](std::string glyph)
+    {
+        if (glyph == std::string(1, char(0x1A)))
+            undo();
+        else if (glyph == std::string(1, char(0x19)))
+            redo();
+    });
 }
 
 DemoForm::~DemoForm()
@@ -87,14 +97,32 @@ void DemoForm::refreshStates()
 
 void DemoForm::commit(Model next)
 {
-    // push_back returns a NEW vector sharing structure with the old one; the
-    // previous versions are untouched and still addressable.
-    history_ = history_.push_back(std::move(next));
+    // take() and push_back() each return a NEW vector sharing structure with
+    // the old one; the versions they keep are untouched and still addressable.
+    // Truncating first is what discards the redo tail after an undo.
+    history_ = history_.take(cursor_ + 1).push_back(std::move(next));
+    showVersion(history_.size() - 1);
+}
 
+void DemoForm::undo()
+{
+    if (canUndo())
+        showVersion(cursor_ - 1);
+}
+
+void DemoForm::redo()
+{
+    if (canRedo())
+        showVersion(cursor_ + 1);
+}
+
+void DemoForm::showVersion(std::size_t index)
+{
+    cursor_ = index;
     refreshStates();
 
-    // Rebuild rather than patch: the summary line below the controls is
-    // re-created with fresh text on the next render.
+    // Rebuild rather than patch: the summary line and the button captions
+    // below the controls are re-created with fresh text on the next render.
     formIsDirty_ = true;
     redraw();
 }
@@ -241,6 +269,27 @@ void DemoForm::Body()
         Label filler("");
     }
 
+    // --- undo / redo ---------------------------------------------------------
+    // A row of two fixed-width buttons and a filler that absorbs the rest. A
+    // button with nothing to do is still drawn (the widget set has no disabled
+    // look) but says so in its caption, and its click is a no-op.
+    {
+        constexpr float kButtonW = 90.0f;
+
+        Grid row(
+              { .gap = kLineSpacing, .auto_rows = kRowHeight, .auto_flow = eAutoFlow::columns, .column_widths = { kButtonW, kButtonW, fr(1.0f) } }
+            , {}
+        );
+
+        Button undo(canUndo() ? "Undo" : "(no undo)");
+        undo.view->onClick = [this] { this->undo(); };
+
+        Button redo(canRedo() ? "Redo" : "(no redo)");
+        redo.view->onClick = [this] { this->redo(); };
+
+        Label filler("");
+    }
+
     // --- summary -------------------------------------------------------------
     // What the model currently holds, so an edit's effect is visible even when
     // the editor re-shows exactly what was typed. Heading-sized: a label's
@@ -248,9 +297,9 @@ void DemoForm::Body()
     Spacer spacer({ 0, 0, 0, kHeadingHeight });
     const auto& m = model();
     Label summary(
-          std::format("amount = {}   name = \"{}\"   enabled = {}   ({} edits kept)",
+          std::format("amount = {}   name = \"{}\"   enabled = {}   (version {} of {})",
                       niceDoubleToString(m.amount), m.name, m.enabled ? "true" : "false",
-                      history_.size() - 1)
+                      cursor_ + 1, history_.size())
         , { 0, 0, 0, kHeadingHeight }
     );
 }

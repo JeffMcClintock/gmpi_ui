@@ -780,7 +780,7 @@ bool ScrollPortal::RenderIfDirty(
 		gmpi::forms::primitive::Interactor* mouseState{};
 
 		if (mouseportal)
-			mouseportal->saveMouseState();
+			mouseState = mouseportal->saveMouseState(); // was discarded, so restore below always cleared the hover
 
 		bool childWasDirty = false;
 		for (auto& view : childViews)

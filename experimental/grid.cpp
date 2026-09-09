@@ -133,15 +133,28 @@ bool Grid::RenderIfDirty(
 	}
 	else
 	{
-		auto mouseportal = dynamic_cast<gmpi::forms::primitive::MousePortal*>(&mouseParent);
-		const auto mouseState = mouseportal->saveMouseState();
+		// Only children are dirty: re-render them in place, then re-point the
+		// hover state at whatever survived, since a re-rendered child replaces
+		// its mouse targets and the saved pointer may now name a dead one.
+		//
+		// The mouse parent is whoever owns the interactor list the children were
+		// rendered into. Under a ScrollPortal that is its MousePortal; for a grid
+		// placed directly on the page it is the Form itself, which is a mouseList
+		// but NOT a MousePortal. This used to dynamic_cast to MousePortal and call
+		// through the result unchecked, so a Form-parented grid with a dirty child
+		// dereferenced null on the timer tick. Windows swallows an exception raised
+		// inside a timer callback, so the symptom was not a crash but a page that
+		// silently stopped repainting after the first edit (the timer manager's
+		// re-entrancy flag never cleared). IMouseParent exposes the list either way.
+		auto& targets = mouseParent.getMouseTargetList();
+		const auto mouseState = targets.saveMouseState();
 
 		bool childWasDirty = false;
 		for (auto& view : childViews)
 			childWasDirty |= view->RenderIfDirty(env, parent_visual, mouseParent);
 
 		if (childWasDirty)
-			mouseportal->restoreMouseState(mouseState);
+			targets.restoreMouseState(mouseState);
 	}
 
 	childDirty = false;

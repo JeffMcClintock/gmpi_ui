@@ -2359,6 +2359,7 @@ public:
 		, dialogType(type)
 	{}
 
+	// exclude the "*."
 	gmpi::ReturnCode addExtension(const char* extension, const char* description) override
 	{
 		const auto wExt = privateStuff::Utf8ToWstring(extension);

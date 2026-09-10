@@ -1,3 +1,4 @@
+#include <filesystem>
 #include "builders.h"
 #include "forms.h"
 #include "it_enum_list.h"
@@ -561,12 +562,13 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 				if (!fileDialog)
 					return;
 
+				std::filesystem::path filename = value.get();
+
 				fileDialog->setInitialFilename(value.get().c_str());
 
-				// TODO bind to extensions list
-				//nativeFileDialog2->addExtension("xmlpreset");
-				//nativeFileDialog2->addExtension("aupreset");
-				//nativeFileDialog2->addExtension("vstpreset");
+				// TODO bind to extensions list properly. For now, just use the extension of the current value, if any.
+				if(filename.has_extension())
+					fileDialog->addExtension(filename.extension().string().c_str());
 				fileDialog->addExtension("*");
 
 				fileDialog->showAsync(

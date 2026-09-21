@@ -2422,6 +2422,15 @@ public:
 				filters.push_back({ descStr.c_str(), specs.back().c_str() });
 			}
 			dialog->SetFileTypes(static_cast<UINT>(filters.size()), filters.data());
+
+			// So a save dialog appends the extension when the user types a bare "myfile".
+			// The shell keeps this in sync with the file-type combo as the user changes it.
+			if (isSave)
+			{
+				const auto defaultExt = firstConcreteExtension();
+				if (!defaultExt.empty())
+					dialog->SetDefaultExtension(defaultExt.c_str());
+			}
 		}
 
 		if (!initialFilename.empty())
@@ -2453,8 +2462,19 @@ public:
 		hr = result->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
 		if (SUCCEEDED(hr) && filePath)
 		{
-			auto utf8Path = privateStuff::WStringToUtf8(filePath);
+			std::wstring path(filePath);
 			CoTaskMemFree(filePath);
+
+			// Belt-and-braces: SetDefaultExtension covers the usual case, but not when the
+			// caller supplied no filters, or the shell handed back an extensionless name anyway.
+			if (isSave)
+			{
+				UINT fileTypeIndex = 0; // 1-based
+				dialog->GetFileTypeIndex(&fileTypeIndex);
+				path = ensureExtension(std::move(path), extensionForFileType(fileTypeIndex));
+			}
+
+			const auto utf8Path = privateStuff::WStringToUtf8(path);
 			fileCallback->onComplete(gmpi::ReturnCode::Ok, utf8Path.c_str());
 		}
 		else
@@ -2474,6 +2494,53 @@ public:
 	GMPI_REFCOUNT
 
 private:
+	// the first extension that names an actual file type, ignoring "all files" wildcards
+	std::wstring firstConcreteExtension() const
+	{
+		for (const auto& [ext, desc] : extensions)
+		{
+			if (!ext.empty() && ext != L"*")
+				return ext;
+		}
+		return {};
+	}
+
+	// the extension a save dialog should append, given the file type the user had selected.
+	// empty when that type is a wildcard - they asked for "all files", so honour the name as typed.
+	std::wstring extensionForFileType(UINT oneBasedIndex) const
+	{
+		if (oneBasedIndex < 1 || oneBasedIndex > extensions.size())
+			return firstConcreteExtension();
+
+		const auto& ext = extensions[oneBasedIndex - 1].first;
+		if (ext.empty() || ext == L"*")
+			return {};
+
+		return ext;
+	}
+
+	// "myfile" -> "myfile.wav". a name that already has an extension is left alone,
+	// as is one under a dotted folder ("C:\\my.stuff\\myfile" has no extension of its own).
+	static std::wstring ensureExtension(std::wstring path, const std::wstring& extension)
+	{
+		if (extension.empty() || path.empty())
+			return path;
+
+		const auto slash = path.find_last_of(L"\\/");
+		const size_t nameBegin = (slash == std::wstring::npos) ? 0 : slash + 1;
+
+		const auto dot = path.find_last_of(L'.');
+		const bool hasExtension = dot != std::wstring::npos && dot >= nameBegin && dot + 1 < path.size();
+		if (hasExtension)
+			return path;
+
+		// "myfile." -> "myfile.wav", not "myfile..wav"
+		while (!path.empty() && path.back() == L'.')
+			path.pop_back();
+
+		return path + L'.' + extension;
+	}
+
 	gmpi::ReturnCode showFolderDialog(gmpi::api::IFileDialogCallback* fileCallback)
 	{
 		Microsoft::WRL::ComPtr<::IFileOpenDialog> dialog;

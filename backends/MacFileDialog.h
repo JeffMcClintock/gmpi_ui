@@ -154,12 +154,27 @@ public:
             }
         }
 
+        // Belt-and-braces, matching the Windows backend: a save dialog returns an extension
+        // even when the user typed a bare "myfile". AppKit appends it from allowedContentTypes
+        // in the normal case, but not when that list came out empty - no filters, only a "*"
+        // wildcard, or no extension UTType recognised.
+        // Captured as an NSString (blocks retain those); capturing anything off `this` would
+        // dangle, since the caller may release the dialog as soon as showAsync returns.
+        NSString* defaultExtension = nil;
+        if (dialogType == gmpi::api::FileDialogType::Save)
+        {
+            const auto ext = firstConcreteExtension();
+            if (!ext.empty())
+                defaultExtension = [NSString stringWithUTF8String:ext.c_str()];
+        }
+
         // Capture the callback by shared_ptr so it lives until the sheet completes.
         auto prevent_release = fileCallback;
         [dialog beginSheetModalForWindow:[view window] completionHandler:^(NSModalResponse result) {
             if (result == NSModalResponseOK)
             {
                 NSString* path = [[dialog.URL path] stringByResolvingSymlinksInPath];
+                path = ensureExtension(path, defaultExtension);
                 prevent_release->onComplete(gmpi::ReturnCode::Ok, [path UTF8String]);
             }
             else
@@ -171,6 +186,40 @@ public:
         return gmpi::ReturnCode::Ok;
     }
 
+private:
+    // the first extension that names an actual file type, ignoring "and anything else" wildcards
+    std::string firstConcreteExtension() const
+    {
+        for (const auto& [ext, desc] : extensions)
+        {
+            if (!ext.empty() && ext != "*")
+                return ext;
+        }
+        return {};
+    }
+
+    // "myfile" -> "myfile.wav". mirrors ensureExtension() in the Windows backend: a name that
+    // already has an extension is left alone, and so is one that only looks like it does
+    // because of a dotted parent folder. static, so the block below captures no `this`.
+    static NSString* ensureExtension(NSString* path, NSString* extension)
+    {
+        if (path.length == 0 || extension.length == 0)
+            return path;
+
+        NSString* name = [path lastPathComponent];
+        const NSRange dot = [name rangeOfString:@"." options:NSBackwardsSearch];
+        const bool hasExtension = dot.location != NSNotFound && dot.location + 1 < name.length;
+        if (hasExtension)
+            return path;
+
+        // "myfile." -> "myfile.wav", not "myfile..wav"
+        while (path.length > 0 && [path hasSuffix:@"."])
+            path = [path substringToIndex:path.length - 1];
+
+        return [path stringByAppendingFormat:@".%@", extension];
+    }
+
+public:
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
         *returnInterface = {};

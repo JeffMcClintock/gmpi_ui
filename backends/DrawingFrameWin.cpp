@@ -577,6 +577,16 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 			case VK_LEFT:
 			case VK_UP:
 			case VK_DOWN:
+			// Delete is not a character key, so TranslateMessage never synthesises a
+			// WM_CHAR for it and the case above cannot see it -- which is why the
+			// editor's delete-the-selection handler was unreachable on Windows.
+			// Backspace and Escape need no entry here: they DO produce a WM_CHAR
+			// (0x08, 0x1B) and already arrive that way.
+			//
+			// The virtual-key code is passed straight through, as the arrows are:
+			// VK_DELETE is 0x2E and VK_LEFT..VK_DOWN are 0x25..0x28, which is exactly
+			// what the client switches on (SynthEditLib ViewBase::onKey).
+			case VK_DELETE:
 				inputClient->onKeyPress((wchar_t)wParam);
 			}
 		}

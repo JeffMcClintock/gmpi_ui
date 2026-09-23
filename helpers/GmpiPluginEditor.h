@@ -7,75 +7,18 @@
 #include "RefCountMacros.h"
 #include "GmpiUiDrawing.h"
 #include "helpers/NativeUi.h"
+#include "helpers/GmpiPins.h"
 
 namespace gmpi
 {
 namespace editor
 {
 
-class PinBase
-{
-public:
-	int idx{};
-	gmpi::api::IEditorHost* host{};
-	std::function<void(PinBase*)> onUpdate;
-
-	PinBase();
-	virtual ~PinBase() {}
-	virtual void setFromHost(int32_t voice, std::span<const uint8_t> data) = 0;
-};
-
-template<typename T>
-class Pin : public PinBase
-{
-public:
-	T value{};
-
-	const T& operator=(const T& pvalue)
-	{
-		if (pvalue != value)
-		{
-			value = pvalue;
-			host->setPin(idx, 0, dataSize(value), dataPtr(value));
-		}
-		return value;
-	}
-
-	void setFromHost(int32_t voice, std::span<const uint8_t> data) override
-	{
-		valueFromData(data, value);
-		if(onUpdate)
-			onUpdate(this);
-	}
-};
-
-class PluginEditorBase : public gmpi::api::IEditor
+class PluginEditorBase : public gmpi::api::IEditor, public PinOwner
 {
 public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
-	std::vector<PinBase*> pins;
-	inline static thread_local PluginEditorBase* constructingInstance{};
-
-	PluginEditorBase()
-	{
-		constructingInstance = this;
-	}
-
-	void init(int pinIndex, PinBase& pin)
-	{
-		assert(0 <= pinIndex); // pin index must be positive.
-		assert(pins.size() <= pinIndex); // did you init the same pin twice?
-
-		pin.idx = pinIndex;
-		pins.resize(pinIndex + 1);
-		pins[pinIndex] = &pin;
-	}
-
-	void init(PinBase& pin)
-	{
-		init(static_cast<int32_t>(pins.size()), pin); // Automatic indexing.
-	}
 
 	// One setHost override per plugin satisfies IEditor, IDrawingClient and IInputClient
 	// simultaneously (all three declare identical-signature pure virtuals).
@@ -86,8 +29,7 @@ public:
 		editorHost = unknown.as<gmpi::api::IEditorHost>();
 		dialogHost = unknown.as<gmpi::api::IDialogHost>();
 
-		for (auto& pin : pins)
-			pin->host = editorHost.get();
+		setPinsHost(editorHost.get());
 
 		return ReturnCode::Ok;
 	}
@@ -259,13 +201,6 @@ public:
 	}
 	GMPI_REFCOUNT
 };
-
-inline PinBase::PinBase()
-{
-	// register with the plugin editor.
-	if (PluginEditorBase::constructingInstance)
-		PluginEditorBase::constructingInstance->init(*this);
-}
 
 } // namespace gmpi
 } // namespace editor

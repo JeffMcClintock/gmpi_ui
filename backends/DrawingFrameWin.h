@@ -161,98 +161,40 @@ public:
 // helper
 inline float calcWhiteLevelForHwnd(HWND windowHandle)
 {
-	// get bounds of plugin window
-	auto parent = ::GetAncestor(windowHandle, GA_ROOT);
-	RECT m_windowBoundsRoot;
-	GetWindowRect(parent, &m_windowBoundsRoot);
+	// The monitor showing most of the top-level window; for a minimised window, the one it restores to.
+	MONITORINFOEXW monitorInfo{};
+	monitorInfo.cbSize = sizeof(monitorInfo);
+	if (!GetMonitorInfoW(MonitorFromWindow(::GetAncestor(windowHandle, GA_ROOT), MONITOR_DEFAULTTONEAREST), &monitorInfo))
+		return 1.0f;
 
-	RECT m_windowBounds;
-	DwmGetWindowAttribute(parent, DWMWA_EXTENDED_FRAME_BOUNDS, &m_windowBounds, sizeof(m_windowBounds));
+	uint32_t numPaths{};
+	uint32_t numModes{};
+	if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &numPaths, &numModes) != ERROR_SUCCESS)
+		return 1.0f;
 
-	// not DPI aware		GetWindowRect(windowHandle, &m_windowBounds);
-	gmpi::drawing::RectL appWindowRect{ m_windowBounds.left, m_windowBounds.top, m_windowBounds.right, m_windowBounds.bottom };
+	std::vector<DISPLAYCONFIG_PATH_INFO> paths(numPaths);
+	std::vector<DISPLAYCONFIG_MODE_INFO> modes(numModes);
+	if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &numPaths, paths.data(), &numModes, modes.data(), nullptr) != ERROR_SUCCESS)
+		return 1.0f;
+	paths.resize(numPaths);
 
-	// get all the monitor paths.
-	uint32_t numPathArrayElements{};
-	uint32_t numModeArrayElements{};
-
-	GetDisplayConfigBufferSizes(
-		QDC_ONLY_ACTIVE_PATHS,
-		&numPathArrayElements,
-		&numModeArrayElements
-	);
-
-	std::vector<DISPLAYCONFIG_PATH_INFO> pathInfo;
-	std::vector<DISPLAYCONFIG_MODE_INFO> modeInfo;
-
-	pathInfo.resize(numPathArrayElements);
-	modeInfo.resize(numModeArrayElements);
-
-	QueryDisplayConfig(
-		QDC_ONLY_ACTIVE_PATHS,
-		&numPathArrayElements,
-		pathInfo.data(),
-		&numModeArrayElements,
-		modeInfo.data(),
-		nullptr
-	);
-
-	DISPLAYCONFIG_TARGET_DEVICE_NAME targetName{};
-	targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
-	targetName.header.size = sizeof(targetName);
-
-	DISPLAYCONFIG_SDR_WHITE_LEVEL white_level{};
-	white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
-	white_level.header.size = sizeof(white_level);
-
-	// check against each path (monitor)
-	float whiteMult{ 1.0f };
-	int bestIntersectArea = -1;
-	for(auto& path : pathInfo)
+	// Match by GDI device name, which (unlike desktop coordinates) needs no DPI reconciliation.
+	for (const auto& path : paths)
 	{
-		const int idx = path.sourceInfo.modeInfoIdx;
-
-		if(idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+		DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName{};
+		sourceName.header = { DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, sizeof(sourceName), path.sourceInfo.adapterId, path.sourceInfo.id };
+		if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS || std::wstring_view(sourceName.viewGdiDeviceName) != monitorInfo.szDevice)
 			continue;
 
-		const auto& sourceMode = modeInfo[idx].sourceMode;
+		DISPLAYCONFIG_SDR_WHITE_LEVEL whiteLevel{};
+		whiteLevel.header = { DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL, sizeof(whiteLevel), path.targetInfo.adapterId, path.targetInfo.id };
+		if (DisplayConfigGetDeviceInfo(&whiteLevel.header) == ERROR_SUCCESS)
+			return whiteLevel.SDRWhiteLevel / 1000.f; // SDRWhiteLevel is a multiple of 80 nits, times 1000
 
-		const gmpi::drawing::RectL outputRect
-		{
-			  sourceMode.position.x
-			, sourceMode.position.y
-			, static_cast<int32_t>(sourceMode.position.x + sourceMode.width)
-			, static_cast<int32_t>(sourceMode.position.y + sourceMode.height)
-		};
-
-		const auto intersectRect = gmpi::drawing::intersectRect(appWindowRect, outputRect);
-		const int intersectArea = getWidth(intersectRect) * getHeight(intersectRect);
-		if(intersectArea <= bestIntersectArea)
-			continue;
-
-		// Get monitor handle for this path's target
-		targetName.header.adapterId = path.targetInfo.adapterId;
-		white_level.header.adapterId = path.targetInfo.adapterId;
-		targetName.header.id = path.targetInfo.id;
-		white_level.header.id = path.targetInfo.id;
-
-		if(DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS)
-			continue;
-
-		if(DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
-			continue;
-
-		// divide by 1000 to get a factor
-		const auto lwhiteMult = white_level.SDRWhiteLevel / 1000.f;
-
-		//			_RPTWN(0, L"Monitor %s [%d, %d] white level %f\n", targetName.monitorFriendlyDeviceName, outputRect.left, outputRect.top, lwhiteMult);
-
-		bestIntersectArea = intersectArea;
-		whiteMult = lwhiteMult;
+		break;
 	}
-	//		_RPTWN(0, L"Best white level %f\n", whiteMult);
 
-	return whiteMult;
+	return 1.0f;
 }
 
 

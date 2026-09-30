@@ -1226,9 +1226,10 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 				auto hr = hdrWhiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_16BPC_FLOAT);
 			}
 
-			const D2D1_SIZE_F desiredSize = D2D1::SizeF(static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height));
+			// swapChainSize is in pixels; passed as a DIP size it oversized the target by the DPI scale squared.
+			const D2D1_SIZE_U desiredPixelSize{ static_cast<UINT32>(swapChainSize.width), static_cast<UINT32>(swapChainSize.height) };
 
-			d2dDeviceContext->CreateCompatibleRenderTarget(desiredSize, hdrRenderTarget.put());
+			d2dDeviceContext->CreateCompatibleRenderTarget(nullptr, &desiredPixelSize, nullptr, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, hdrRenderTarget.put());
 			hdrRenderTargetDC = hdrRenderTarget.as<ID2D1DeviceContext>();
 
 			_RPT0(0, "Using HDR White Adjustment filter\n");
@@ -1281,7 +1282,7 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 			auto hr = hdrWhiteScaleEffect->SetValue(D2D1_PROPERTY_PRECISION, D2D1_BUFFER_PRECISION_16BPC_FLOAT);
 		}
 
-		const D2D1_SIZE_F desiredSize{ static_cast<float>(swapChainSize.width), static_cast<float>(swapChainSize.height) };
+		const D2D1_SIZE_U desiredPixelSize{ static_cast<UINT32>(swapChainSize.width), static_cast<UINT32>(swapChainSize.height) };
 		D2D1_PIXEL_FORMAT desiredFormat
 		{
 			bestFormat
@@ -1289,8 +1290,8 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 		};
 
 		d2dDeviceContext->CreateCompatibleRenderTarget(
-			&desiredSize
-			, nullptr
+			nullptr
+			, &desiredPixelSize
 			, &desiredFormat
 			, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE
 			, hdrRenderTarget.put()

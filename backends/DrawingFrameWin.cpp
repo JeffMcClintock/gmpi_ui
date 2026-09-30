@@ -12,6 +12,7 @@
 
 #pragma comment(lib, "comdlg32.lib") // ChooseColor
 #pragma comment(lib, "comctl32.lib") // SetWindowSubclass/DefSubclassProc
+#pragma comment(lib, "dcomp.lib")    // DCompositionCreateDevice
 
 using namespace std;
 using namespace gmpi;
@@ -1319,6 +1320,10 @@ HRESULT DxDrawingFrameHwnd::createNativeSwapChain
 	IDXGISwapChain1** returnSwapChain
 )
 {
+	// Composition keeps the swap chain off overlay planes (lowDpiMode's stretched buffer would need a visual transform).
+	if (!lowDpiMode && SUCCEEDED(createCompositionSwapChain(factory, d3dDevice, desc, returnSwapChain)))
+		return S_OK;
+
 	return factory->CreateSwapChainForHwnd(
 		d3dDevice,
 		getWindowHandle(),
@@ -1327,6 +1332,73 @@ HRESULT DxDrawingFrameHwnd::createNativeSwapChain
 		nullptr,
 		returnSwapChain
 	);
+}
+
+// A swap chain under a not-quite-opaque visual, so DWM never puts it on an overlay plane
+// (entering/leaving one flickers the monitor).
+HRESULT DxDrawingFrameHwnd::createCompositionSwapChain(
+	IDXGIFactory2* factory,
+	ID3D11Device* d3dDevice,
+	const DXGI_SWAP_CHAIN_DESC1* desc,
+	IDXGISwapChain1** returnSwapChain
+)
+{
+	const auto hwnd = getWindowHandle();
+
+	// Unlike an HWND swap chain, a composition one can't take its size from the window.
+	RECT client{};
+	GetClientRect(hwnd, &client);
+
+	DXGI_SWAP_CHAIN_DESC1 compositionDesc{ *desc };
+	compositionDesc.Width = static_cast<UINT>((std::max)(1L, client.right - client.left));
+	compositionDesc.Height = static_cast<UINT>((std::max)(1L, client.bottom - client.top));
+	compositionDesc.Scaling = DXGI_SCALING_STRETCH; // the only scaling a composition swap chain supports
+
+	gmpi::directx::ComPtr<::IDXGISwapChain1> newSwapChain;
+	auto hr = factory->CreateSwapChainForComposition(d3dDevice, &compositionDesc, nullptr, newSwapChain.put());
+
+	// The composition objects outlive swap chains (no rendering device), so build them once per window.
+	if (SUCCEEDED(hr) && compositionWindow != hwnd)
+	{
+		compositionVisual = {};
+		compositionTarget = {};
+
+		gmpi::directx::ComPtr<IDCompositionEffectGroup> opacity;
+		hr = DCompositionCreateDevice(nullptr, __uuidof(IDCompositionDevice), compositionDevice.put_void());
+		if (SUCCEEDED(hr))
+			hr = compositionDevice->CreateTargetForHwnd(hwnd, FALSE, compositionTarget.put()); // behind child windows, e.g. the text editor
+		if (SUCCEEDED(hr))
+			hr = compositionDevice->CreateVisual(compositionVisual.put());
+		if (SUCCEEDED(hr))
+			hr = compositionDevice->CreateEffectGroup(opacity.put());
+		if (SUCCEEDED(hr))
+			hr = opacity->SetOpacity(0.99f);
+		if (SUCCEEDED(hr))
+			hr = compositionVisual->SetEffect(opacity.get());
+		if (SUCCEEDED(hr))
+			hr = compositionTarget->SetRoot(compositionVisual.get());
+		if (SUCCEEDED(hr))
+			compositionWindow = hwnd;
+	}
+
+	if (SUCCEEDED(hr))
+		hr = compositionVisual->SetContent(newSwapChain.get());
+	if (SUCCEEDED(hr))
+		hr = compositionDevice->Commit();
+
+	if (FAILED(hr))
+	{
+		// Tear down anything half-built so it can't sit over the fallback HWND swap chain.
+		compositionVisual = {};
+		compositionTarget = {};
+		compositionDevice = {};
+		compositionWindow = {};
+		return hr;
+	}
+
+	*returnSwapChain = newSwapChain.get();
+	(*returnSwapChain)->AddRef();
+	return S_OK;
 }
 
 void DxDrawingFrameBase::OnSwapChainCreated()
@@ -1385,6 +1457,10 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 	// and a size event can arrive before the pending rebuild has run. Nothing to do --
 	// CreateSwapPanel sizes the new swap chain from the window when the rebuild runs.
 	if (!swapChain || !d2dDeviceContext)
+		return;
+
+	// A composition swap chain rejects a zero size, which would read as device loss; there's nothing to show anyway.
+	if (width == 0 || height == 0)
 		return;
 
 	d2dDeviceContext->SetTarget(nullptr);

@@ -13,6 +13,7 @@
 #include <span>
 #include <dxgi1_6.h>
 #include <d3d11_1.h>
+#include <dcomp.h>
 #include <dwmapi.h>
 #include <Windowsx.h>
 #include "DirectXGfx.h"
@@ -593,6 +594,14 @@ protected:
 	ULONGLONG            lastLButtonDownTick = 0;
 	gmpi::drawing::Point lastLButtonDownPos  = { -1.f, -1.f };
 
+	// Hosts the swap chain in the window via DirectComposition; see createNativeSwapChain.
+	gmpi::directx::ComPtr<IDCompositionDevice> compositionDevice;
+	gmpi::directx::ComPtr<IDCompositionTarget> compositionTarget;
+	gmpi::directx::ComPtr<IDCompositionVisual> compositionVisual;
+	HWND compositionWindow = {};
+
+	HRESULT createCompositionSwapChain(IDXGIFactory2* factory, ID3D11Device* d3dDevice, const DXGI_SWAP_CHAIN_DESC1* desc, IDXGISwapChain1** returnSwapChain);
+
 public:
 	virtual ~DxDrawingFrameHwnd()
 	{
@@ -607,9 +616,9 @@ public:
 		WPARAM wParam,
 		LPARAM lParam);
 
-	// Swapchain creation for native HWND owners — uses CreateSwapChainForHwnd.
-	// HostedView (and any future SwapChainPanel host) overrides this with
-	// CreateSwapChainForComposition.
+	// Swapchain creation for native HWND owners — a composition swap chain shown in
+	// the window, falling back to CreateSwapChainForHwnd. HostedView (and any future
+	// SwapChainPanel host) overrides this with its own CreateSwapChainForComposition.
 	HRESULT createNativeSwapChain
 	(
 		IDXGIFactory2* factory,

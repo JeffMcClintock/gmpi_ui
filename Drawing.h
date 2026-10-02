@@ -979,6 +979,7 @@ protected:
 	static constexpr bool    isSRGBFromFormat(int32_t f)          { return (f & 0x800) != 0; }
 
 public:
+	// False after a failed lock: getAddress() is then null, the format getters and getSize() return 0, and getPixel/setPixel/blit must not be called.
 	operator bool() const
 	{
 		return native != nullptr;
@@ -991,13 +992,15 @@ public:
 	int32_t getBytesPerRow()
 	{
 		int32_t ret{};
-		native->getBytesPerRow(&ret);
+		if (native)
+			native->getBytesPerRow(&ret);
 		return ret;
 	}
 	int32_t getPixelFormat()
 	{
 		int32_t ret{};
-		native->getPixelFormat(&ret);
+		if (native)
+			native->getPixelFormat(&ret);
 		return ret;
 	}
 	int32_t getBytesPerPixel()
@@ -1110,12 +1113,14 @@ public:
 		return ret;
 	}
 
-    // Note: Not supported when Bitmap was created by createCompatibleRenderTarget()
+    // Returns an empty BitmapPixels (test with `if (!pixels)`) when the bitmap can't be locked, e.g. a GPU-only render target made without CpuReadable.
 	BitmapPixels lockPixels(BitmapLockFlags flags = BitmapLockFlags::Read)
 	{
         BitmapPixels ret;
+		if (native->lockPixels(AccessPtr::put(ret), static_cast<int32_t>(flags)) != gmpi::ReturnCode::Ok || !ret.native)
+			return {};
+
 		ret.bitmapSize = getSize();
-		native->lockPixels(AccessPtr::put(ret), static_cast<int32_t>(flags));
 		ret.init();
         return ret;
 	}

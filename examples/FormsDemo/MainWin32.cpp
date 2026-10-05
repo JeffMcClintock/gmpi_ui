@@ -32,23 +32,28 @@ constexpr wchar_t kWindowClassName[] = L"GmpiFormsDemoToplevel";
 constexpr int kClientWidthDips  = 460;
 constexpr int kClientHeightDips = 260;
 
+// DPI awareness + STA; App's first member, since DrawingFrame's construction needs COM for its WIC factory.
+struct ComApartment
+{
+    HRESULT hr;
+    ComApartment()
+    {
+        ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        hr = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    }
+    ~ComApartment()
+    {
+        if (SUCCEEDED(hr))
+            ::CoUninitialize();
+    }
+};
+
 class App
 {
 public:
-    // DPI awareness and the COM apartment, before any window exists and
-    // before anything asks for a DPI. STA, because this thread owns windows.
-    App()
-    {
-        ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        comInit_ = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    }
-
     ~App()
     {
         close();
-
-        if (SUCCEEDED(comInit_))
-            ::CoUninitialize();
     }
 
     bool create()
@@ -223,7 +228,7 @@ private:
     // counted and deletes itself when its count reaches zero, so it has to
     // have come from `new`. The shared_ptr adopts the count of 1 a fresh
     // object carries.
-    HRESULT                     comInit_{};
+    ComApartment                com_;
     gmpi::shared_ptr<DemoForm>  form_{ new DemoForm() };
     gmpi::hosting::DrawingFrame frame_;
     HWND                        hwnd_{};

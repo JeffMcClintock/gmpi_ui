@@ -1035,6 +1035,16 @@ public:
     // the frame's own surface; events naming it go to the IInputClient
     void setSurface(wl_surface* s) { surface_ = s; }
 
+    // While true, pointer and key events for this frame's own surface are dropped:
+    // the window is behind an app-modal child window. Registered targets (popups,
+    // message boxes) still get theirs.
+    void setBlocked(bool b) { blocked_ = b; }
+
+    // Deliver keys only while this frame's own surface (or a registered target) has
+    // keyboard focus. For a second toplevel with its own dispatcher: every
+    // wl_keyboard the client binds sees every key, whichever window is focused.
+    void setKeysRequireFocus(bool b) { keysRequireFocus_ = b; }
+
     void registerSurface(wl_surface* s, IPointerTarget* target)
     {
         if (s && target)
@@ -1248,6 +1258,9 @@ private:
     wl_surface*  pointerFocus_{};
     wl_surface*  keyboardFocus_{};
     wl_surface*  surface_{};
+    bool         blocked_ = false;
+    bool         keysRequireFocus_ = false;
+    bool         ownSurfaceFocused_ = false;   // keyboardFocus_ tracks registered targets only
     IKeySink*        keySink_{};
     WaylandClipboard clipboard_;
     wl_seat*     seat_{};      // our own proxy: see bindSeat
@@ -1365,7 +1378,7 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
         return;
     }
 
-    if (!in.overContent())
+    if (in.blocked_ || !in.overContent())
         return;
 
     if (in.onPointerActivity)
@@ -1392,6 +1405,9 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
         t->onButton(in.x_, in.y_, button, state == WL_POINTER_BUTTON_STATE_PRESSED, serial);
         return;
     }
+
+    if (in.blocked_)
+        return;
 
     // The click landed on our own window while a menu is up, so dismiss it.
     //
@@ -1466,7 +1482,7 @@ inline void InputDispatch::pointerAxis(void* data, wl_pointer*, uint32_t,
                                        uint32_t axis, wl_fixed_t value)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    if (!in.client_ || !in.overContent())
+    if (in.blocked_ || !in.client_ || !in.overContent())
         return;
 
     // Primary and Confidence on wheel events too - makeWheelFlags sends them.
@@ -1541,6 +1557,9 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
         return;
     }
 
+    if (in.blocked_ || (in.keysRequireFocus_ && !in.ownSurfaceFocused_))
+        return;
+
     // a key listener or text edit takes them next, down AND up: it is the only
     // thing here that needs key releases
     if (in.keySink_)
@@ -1562,6 +1581,8 @@ inline void InputDispatch::keyboardEnter(void* data, wl_keyboard*, uint32_t, wl_
     auto& in = *static_cast<InputDispatch*>(data);
     if (in.targetFor(surf))
         in.keyboardFocus_ = surf;
+    if (surf && surf == in.surface_)
+        in.ownSurfaceFocused_ = true;
 }
 inline void InputDispatch::keyboardLeave(void* data, wl_keyboard*, uint32_t, wl_surface* surf)
 {
@@ -1570,6 +1591,8 @@ inline void InputDispatch::keyboardLeave(void* data, wl_keyboard*, uint32_t, wl_
     auto& in = *static_cast<InputDispatch*>(data);
     if (in.keyboardFocus_ == surf || !surf)
         in.keyboardFocus_ = nullptr;
+    if (surf == in.surface_ || !surf)
+        in.ownSurfaceFocused_ = false;
 }
 
 inline void InputDispatch::keyboardModifiers(void* data, wl_keyboard*, uint32_t,
@@ -3533,10 +3556,20 @@ public:
         if (frameCb_) { wl_callback_destroy(frameCb_); frameCb_ = nullptr; }
 
         if (frame_) libdecor_frame_unref(frame_);
-        if (decor_) libdecor_unref(decor_);
+        if (decor_ && ownsDecor_) libdecor_unref(decor_);
     }
 
-    bool create(const char* title, const char* appId, int w, int h);
+    // With a parent, this is a child window: the compositor keeps it above the
+    // parent, and it shares the parent's libdecor context so the parent's event
+    // loop drives it (as message boxes do). The parent must outlive it.
+    bool create(const char* title, const char* appId, int w, int h,
+                WaylandToplevel* parent = nullptr);
+
+    Connection& connection() { return connection_; }
+
+    // runEventLoop pumps only its own window's clipboard; a child window's
+    // owner calls this from the loop's tick so copy/paste works in it too.
+    void pumpClipboard() { input_.clipboard().pump(connection_.display()); }
 
     // The parent an xdg_popup must be given. In a plugin this is the host's,
     // from IWaylandFrame::getParentSurface() - which is why menus take it as an
@@ -3641,6 +3674,7 @@ private:
     InputDispatch   input_;
     bool            running_ = true;
     bool            configured_ = false;
+    bool            ownsDecor_ = true;   // false for a child window: decor_ is the parent's
 };
 
 inline void WaylandToplevel::decorError(libdecor*, libdecor_error, const char* message)
@@ -3729,7 +3763,8 @@ inline void WaylandToplevel::requestFrameCallback()
     wl_callback_add_listener(frameCb_, &listener, this);
 }
 
-inline bool WaylandToplevel::create(const char* title, const char* appId, int w, int h)
+inline bool WaylandToplevel::create(const char* title, const char* appId, int w, int h,
+                                    WaylandToplevel* parent)
 {
     static libdecor_interface decorInterface = { decorError };
     static libdecor_frame_interface frameInterface = { configure, closed, commit, dismissPopup };
@@ -3744,7 +3779,15 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
 
     // GNOME does not do server-side decorations, so without libdecor the window
     // has no title bar, no border and no close button.
-    decor_ = libdecor_new(connection_.display(), &decorInterface);
+    if (parent)
+    {
+        decor_ = parent->decor_;
+        ownsDecor_ = false;
+    }
+    else
+    {
+        decor_ = libdecor_new(connection_.display(), &decorInterface);
+    }
     if (!decor_)
         return false;
 
@@ -3755,6 +3798,14 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
     libdecor_frame_set_app_id(frame_, appId);
     libdecor_frame_set_title(frame_, title);
     libdecor_frame_map(frame_);
+
+    if (parent)
+    {
+        setDecorParent(frame_, parent->frame_ ? libdecor_frame_get_xdg_toplevel(parent->frame_) : nullptr);
+
+        // Our wl_keyboard also sees the keys typed into the parent.
+        input_.setKeysRequireFocus(true);
+    }
 
     // NOT exportWindowHandle() here. libdecor_frame_map only REQUESTS mapping;
     // the xdg_toplevel role does not exist on the surface until libdecor has

@@ -19,7 +19,7 @@ done
 cd "$HERE"
 
 CXXFLAGS="-std=c++20 -O2 -I$ROOT -I$GMPI -I$HERE/gen"
-LIBS=$(pkg-config --cflags --libs wayland-client xkbcommon libdecor-0 dbus-1)
+LIBS=$(pkg-config --cflags --libs wayland-client wayland-cursor xkbcommon libdecor-0 dbus-1)
 
 # --demo builds the interactive app instead: the same backend, but driven by a
 # real compositor so menus, grabs and dialogs are actually exercised.

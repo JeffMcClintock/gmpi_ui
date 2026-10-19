@@ -1097,6 +1097,11 @@ struct IPointerTarget
 class InputDispatch
 {
 public:
+    InputDispatch() = default;
+    ~InputDispatch();
+    InputDispatch(const InputDispatch&) = delete;
+    InputDispatch& operator=(const InputDispatch&) = delete;
+
     void attachInputClient(gmpi::api::IInputClient* client) { client_ = client; }
 
     // the frame's own surface; events naming it go to the IInputClient
@@ -1792,6 +1797,48 @@ inline void InputDispatch::bindSeat(Connection& connection)
     {
         wl_seat_add_listener(seat_, &seatListener, this);
         clipboard_.bind(connection.display(), connection.dataDeviceManager(), seat_);
+    }
+}
+
+// Every proxy here carries `this` as its listener data, so one that outlives the
+// dispatcher delivers its next event into freed memory. A second toplevel (the
+// Export window) has its own dispatcher; while these leaked, closing it left a
+// live wl_keyboard behind, and the keyboard.enter that hands focus back to the
+// main window - sent to EVERY wl_keyboard the client holds - crashed the app.
+inline InputDispatch::~InputDispatch()
+{
+    if (cursorShape_) wp_cursor_shape_device_v1_destroy(cursorShape_);
+
+    if (pointer_)
+    {
+        if (wl_proxy_get_version(reinterpret_cast<wl_proxy*>(pointer_)) >= WL_POINTER_RELEASE_SINCE_VERSION)
+            wl_pointer_release(pointer_);
+        else
+            wl_pointer_destroy(pointer_);
+    }
+    if (keyboard_)
+    {
+        if (wl_proxy_get_version(reinterpret_cast<wl_proxy*>(keyboard_)) >= WL_KEYBOARD_RELEASE_SINCE_VERSION)
+            wl_keyboard_release(keyboard_);
+        else
+            wl_keyboard_destroy(keyboard_);
+    }
+
+    if (cursorSurface_) wl_surface_destroy(cursorSurface_);
+    if (cursorTheme_)   wl_cursor_theme_destroy(cursorTheme_);
+
+    if (xkbState_) xkb_state_unref(xkbState_);
+    if (keymap_)   xkb_keymap_unref(keymap_);
+    if (xkb_)      xkb_context_unref(xkb_);
+
+    // Last: the devices above were made from it. clipboard_'s own destructor,
+    // which runs after this, cleans up the data device it bound on this seat.
+    if (seat_)
+    {
+        if (wl_proxy_get_version(reinterpret_cast<wl_proxy*>(seat_)) >= WL_SEAT_RELEASE_SINCE_VERSION)
+            wl_seat_release(seat_);
+        else
+            wl_seat_destroy(seat_);
     }
 }
 

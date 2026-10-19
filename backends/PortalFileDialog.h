@@ -21,6 +21,7 @@
 
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -309,8 +310,12 @@ private:
 class PortalFileDialog : public gmpi::api::IFileDialog, private PortalBus::Waiter
 {
 public:
-    PortalFileDialog(PortalBus& bus, int32_t dialogType, std::string parentWindow)
-        : bus_(bus), save_(dialogType == 1), parentWindow_(std::move(parentWindow)) {}
+    // parentLease keeps whatever backs parentWindow (an xdg-foreign export) alive
+    // until the portal answers, and no longer.
+    PortalFileDialog(PortalBus& bus, int32_t dialogType, std::string parentWindow,
+                     std::shared_ptr<void> parentLease = {})
+        : bus_(bus), save_(dialogType == 1), parentWindow_(std::move(parentWindow))
+        , parentLease_(std::move(parentLease)) {}
 
     ~PortalFileDialog()
     {
@@ -356,6 +361,7 @@ private:
     void onPortalResponse(uint32_t response, const std::vector<std::string>& uris) override
     {
         requestPath_.clear();
+        parentLease_.reset();   // the dialog is gone; so is its need for a parent
 
         std::string path;
         if (response == 0 && !uris.empty())
@@ -377,6 +383,7 @@ private:
     PortalBus&  bus_;
     bool        save_{};
     std::string parentWindow_;
+    std::shared_ptr<void> parentLease_;
     std::string initialName_;
     std::string initialDir_;
     std::string requestPath_;

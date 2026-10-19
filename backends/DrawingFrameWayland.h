@@ -27,9 +27,10 @@
 //     stable/viewporter/viewporter
 //     staging/fractional-scale/fractional-scale-v1
 //     staging/cursor-shape/cursor-shape-v1
-// and link wayland-client, xkbcommon and libdecor-0.
+// and link wayland-client, wayland-cursor, xkbcommon and libdecor-0.
 
 #include <wayland-client.h>
+#include <wayland-cursor.h>
 #include <libdecor.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -38,6 +39,7 @@
 #include <poll.h>
 #include <unistd.h>
 #include <cerrno>
+#include <cstdlib>
 #include <cstdio>
 
 #include <chrono>
@@ -677,11 +679,40 @@ public:
     // for a modal question is a hang as far as the user is concerned.
     virtual xdg_toplevel* parentToplevel() const { return nullptr; }
 
+    // An xdg-foreign export of our toplevel, alive only while a portal dialog
+    // needs it. Shared between the frame (weakly) and the dialog (strongly), so
+    // whichever goes first, the export is destroyed exactly once.
+    //
+    // Why not export once and keep it, as this used to: mutter 46 crashes in
+    // xdg_exported_destroy when a client disconnects with an export still
+    // alive - it disconnects a signal on the already-freed surface. Any
+    // abnormal SynthEdit exit therefore took the whole GNOME session with it.
+    struct ExportLease
+    {
+        zxdg_exported_v2* exported{};
+        wl_display*       display{};
+        std::string       handle;   // "wayland:<handle>", empty if none arrived
+
+        void destroy()
+        {
+            if (!exported)
+                return;
+            zxdg_exported_v2_destroy(exported);
+            exported = nullptr;
+            wl_display_flush(display);
+        }
+        ~ExportLease() { destroy(); }
+    };
+
     static void onExported(void* data, zxdg_exported_v2*, const char* handle)
     {
-        auto& f = *static_cast<WaylandFrameBase*>(data);
-        f.parentWindowHandle_ = std::string("wayland:") + (handle ? handle : "");
+        auto& lease = *static_cast<ExportLease*>(data);
+        lease.handle = std::string("wayland:") + (handle ? handle : "");
     }
+
+    // Only a mapped xdg_toplevel may be exported: export_toplevel on anything
+    // else is a protocol error that kills the connection.
+    virtual bool canExportToplevel() const { return false; }
 
     // Menus draw their own text, so the host needs a format. The app supplies it for
     // the same reason it supplies the text engine: no font code in this layer.
@@ -691,16 +722,49 @@ public:
 
     PortalBus& portalBus() { return portalBus_; }
 
-    // Hand the compositor's exported handle to the portal so its dialog is parented
-    // to our window. Without it the chooser floats unattached and is not modal.
-    void exportWindowHandle()
+    // The compositor's exported handle, for the portal to parent its dialog to
+    // our window - without it the chooser floats unattached and is not modal.
+    // Hold the returned lease for as long as the dialog is up; null when the
+    // compositor has no xdg-foreign or this frame is not a toplevel.
+    //
+    // The handle arrives as an event, so this waits for it - on a private
+    // queue, which dispatches nothing but our own listener. A plain roundtrip
+    // here would run every other pending handler from inside whatever click
+    // opened the dialog.
+    std::shared_ptr<ExportLease> acquireExportLease()
     {
+        if (auto lease = exportLease_.lock())
+            return lease;
+
+        if (!connection_.exporter() || !surface_ || !canExportToplevel())
+            return {};
+
         static const zxdg_exported_v2_listener listener = { onExported };
-        if (exported_ || !connection_.exporter() || !surface_)
-            return;
-        exported_ = zxdg_exporter_v2_export_toplevel(connection_.exporter(), surface_);
-        if (exported_)
-            zxdg_exported_v2_add_listener(exported_, &listener, this);
+        auto lease = std::make_shared<ExportLease>();
+        lease->display = connection_.display();
+
+        wl_event_queue* queue = wl_display_create_queue(lease->display);
+        auto* exporter = static_cast<zxdg_exporter_v2*>(wl_proxy_create_wrapper(connection_.exporter()));
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(exporter), queue);
+        lease->exported = zxdg_exporter_v2_export_toplevel(exporter, surface_);
+        wl_proxy_wrapper_destroy(exporter);
+
+        if (lease->exported)
+        {
+            zxdg_exported_v2_add_listener(lease->exported, &listener, lease.get());
+            wl_display_roundtrip_queue(lease->display, queue);
+
+            // Nothing more is expected on it, but never leave a proxy on a
+            // queue that is about to be destroyed.
+            wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(lease->exported), nullptr);
+        }
+        wl_event_queue_destroy(queue);
+
+        if (lease->handle.empty())
+            return {};   // the lease's destructor drops the export
+
+        exportLease_ = lease;
+        return lease;
     }
 
     // --- IDialogHost ---
@@ -718,7 +782,9 @@ public:
         // exactly like the desktop having frozen.
         connection_.closeLivePopups();
 
-        auto* dlg = new PortalFileDialog(portalBus_, dialogType, parentWindowHandle_);
+        auto lease = acquireExportLease();
+        auto* dlg = new PortalFileDialog(portalBus_, dialogType,
+                                         lease ? lease->handle : std::string{}, lease);
         *returnDialog = static_cast<gmpi::api::IFileDialog*>(dlg);
         return gmpi::ReturnCode::Ok;
     }
@@ -757,7 +823,9 @@ public:
             client_->setHost(nullptr);
         client_ = {};
 
-        if (exported_) zxdg_exported_v2_destroy(exported_);
+        // A dialog may outlive us holding the lease; the export must not.
+        if (auto lease = exportLease_.lock())
+            lease->destroy();
         buffer_.release();
         if (viewport_) wp_viewport_destroy(viewport_);
         if (surface_)  wl_surface_destroy(surface_);
@@ -884,8 +952,7 @@ protected:
     class WaylandTextEdit* activeEdit_{};
 
     PortalBus    portalBus_;
-    zxdg_exported_v2* exported_{};
-    std::string  parentWindowHandle_;   // "wayland:<handle>", empty until exported
+    std::weak_ptr<ExportLease> exportLease_;   // see acquireExportLease
 
     gmpi::api::IDrawingClient* client_{};
     gmpi::drawing::api::ITextFormat* menuFont_{};
@@ -1244,11 +1311,80 @@ public:
     void setCursorShape(uint32_t shape)
     {
         desiredCursor_ = shape;
-        if (cursorShape_ && inside_)
-            wp_cursor_shape_device_v1_set_shape(cursorShape_, enterSerial_, desiredCursor_);
+        if (inside_)
+            applyCursor(enterSerial_, desiredCursor_);
     }
 
 private:
+    // Show `shape` for the surface the pointer entered with `serial`.
+    //
+    // cursor-shape-v1 is the easy route, but GNOME before 47 does not offer it,
+    // and with no fallback we never set a cursor at all: the compositor keeps
+    // showing whatever the pointer last had, so crossing libdecor's top or bottom
+    // border (or arriving from another app) left the editor wearing that cursor.
+    // The fallback is the classic one - load the XCursor theme, attach the image.
+    void applyCursor(uint32_t serial, uint32_t shape)
+    {
+        if (cursorShape_)
+        {
+            wp_cursor_shape_device_v1_set_shape(cursorShape_, serial, shape);
+            return;
+        }
+
+        if (!pointer_ || !loadCursorTheme())
+            return;
+
+        // CSS names first (current themes), X11 names after (older ones).
+        const char* names[2] = { "default", "left_ptr" };
+        switch (shape)
+        {
+        case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CROSSHAIR: names[0] = "crosshair"; names[1] = "cross";  break;
+        case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT:      names[0] = "text";      names[1] = "xterm";  break;
+        case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER:   names[0] = "pointer";   names[1] = "hand2";  break;
+        default: break;
+        }
+
+        wl_cursor* cursor = wl_cursor_theme_get_cursor(cursorTheme_, names[0]);
+        if (!cursor)
+            cursor = wl_cursor_theme_get_cursor(cursorTheme_, names[1]);
+        if (!cursor || cursor->image_count == 0)
+            return;
+
+        wl_cursor_image* image = cursor->images[0];
+        wl_buffer* buffer = wl_cursor_image_get_buffer(image);
+        if (!buffer)
+            return;
+
+        wl_surface_attach(cursorSurface_, buffer, 0, 0);
+        wl_surface_damage(cursorSurface_, 0, 0, int32_t(image->width), int32_t(image->height));
+        wl_surface_commit(cursorSurface_);
+        wl_pointer_set_cursor(pointer_, serial, cursorSurface_,
+                              int32_t(image->hotspot_x), int32_t(image->hotspot_y));
+    }
+
+    // Lazily, on first need: a compositor WITH cursor-shape never pays for it.
+    bool loadCursorTheme()
+    {
+        if (cursorTheme_)
+            return true;
+        if (!connection_ || !connection_->shm() || !connection_->compositor())
+            return false;
+
+        // The same variables GTK and Qt honour, so ours matches the desktop's.
+        const char* theme = getenv("XCURSOR_THEME");
+        int size = 24;
+        if (const char* s = getenv("XCURSOR_SIZE"))
+            if (int n = atoi(s); n > 0)
+                size = n;
+
+        cursorTheme_ = wl_cursor_theme_load(theme, size, connection_->shm());
+        if (!cursorTheme_)
+            return false;
+
+        cursorSurface_ = wl_compositor_create_surface(connection_->compositor());
+        return cursorSurface_ != nullptr;
+    }
+
     uint32_t desiredCursor_ = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
     uint32_t enterSerial_{};
     // Pointer and keyboard focus are DIFFERENT surfaces and must not share a
@@ -1267,6 +1403,8 @@ private:
     wl_pointer*  pointer_{};
     wl_keyboard* keyboard_{};
     wp_cursor_shape_device_v1* cursorShape_{};
+    wl_cursor_theme* cursorTheme_{};     // fallback when cursorShape_ is absent
+    wl_surface*      cursorSurface_{};
     Connection*  connection_{};
 
     xkb_context* xkb_{};
@@ -1301,6 +1439,9 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
 
     if (auto* t = in.targetFor(surf))
     {
+        // Popups and dialogs have no cursor of their own; without this, one
+        // entered across its libdecor border keeps that border's resize arrow.
+        in.applyCursor(serial, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
         t->onEnter(in.x_, in.y_, serial);
         return;
     }
@@ -1313,11 +1454,7 @@ inline void InputDispatch::pointerEnter(void* data, wl_pointer*, uint32_t serial
     in.x_ = wl_fixed_to_double(sx);
     in.y_ = wl_fixed_to_double(sy);
 
-    // cursor-shape-v1: name a shape and let the compositor theme it. The classic
-    // route - load an XCursor theme, build a wl_surface, attach the image - is
-    // about a hundred lines for the same result.
-    if (in.cursorShape_)
-        wp_cursor_shape_device_v1_set_shape(in.cursorShape_, serial, in.desiredCursor_);
+    in.applyCursor(serial, in.desiredCursor_);
 
     if (in.client_)
     {
@@ -2082,14 +2219,23 @@ inline void WaylandPopupMenu::onKey(uint32_t keysym, uint32_t)
 
 inline void WaylandPopupMenu::choose(const Item& item)
 {
-    auto callback = item.callback;   // copy: as<> is non-const
-    if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
-        cb->onComplete(gmpi::ReturnCode::Ok, item.id);
+    // Copies: as<> is non-const, and `item` dies with the menu.
+    auto callback = item.callback;
+    const auto id = item.id;
+    auto* display = connection_.display();
 
-    // Picking from a submenu closes the entire menu, not just that level. Dismiss
-    // from the root so teardown runs top-down; `this` may be gone after it, so
-    // touch nothing below.
+    // Close the menu BEFORE running the choice. A command that blocks (Stop
+    // Audio waits on the engine) or opens a dialog would otherwise run with the
+    // popup still mapped and holding the pointer grab - weston's shell has
+    // crashed on exactly that. Picking from a submenu closes the entire menu, so
+    // dismiss from the root, top-down; `this` may be gone after it, so touch
+    // nothing of ours below. The flush hands the compositor the destroy now,
+    // not whenever the command lets the event loop run again.
     rootMenu()->dismiss();
+    wl_display_flush(display);
+
+    if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
+        cb->onComplete(gmpi::ReturnCode::Ok, id);
 }
 
 inline WaylandPopupMenu* WaylandPopupMenu::rootMenu()
@@ -3540,6 +3686,9 @@ class WaylandToplevel : public WaylandFrameBase
 public:
     explicit WaylandToplevel(Connection& connection) : WaylandFrameBase(connection) {}
 
+    // libdecor has given the surface its xdg_toplevel role by the first configure.
+    bool canExportToplevel() const override { return configured_; }
+
     ~WaylandToplevel() override
     {
         // while this object is still complete, so inputDispatch() resolves
@@ -3704,11 +3853,6 @@ inline void WaylandToplevel::configure(libdecor_frame* frame,
     self.configured_ = true;
     self.surfaceConfigured_ = true;   // buffers are legal from here on
 
-    // The surface has its xdg_toplevel role by now, which export_toplevel
-    // requires (see create()). Cheap to call again - it returns early once the
-    // handle has been asked for.
-    self.exportWindowHandle();
-
     self.present();
     if (first)
         self.requestFrameCallback();
@@ -3807,16 +3951,13 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
         input_.setKeysRequireFocus(true);
     }
 
-    // NOT exportWindowHandle() here. libdecor_frame_map only REQUESTS mapping;
+    // No xdg-foreign export here. libdecor_frame_map only REQUESTS mapping;
     // the xdg_toplevel role does not exist on the surface until libdecor has
     // been through a dispatch, and zxdg_exporter_v2.export_toplevel on a
     // surface with no role is a protocol error that kills the connection
-    // ("surface must be an xdg_toplevel"). Compositors that do not implement
-    // xdg-foreign at all - WSLg's weston - never showed it, because the
-    // exporter is then null and the call is skipped; sway killed the client on
-    // startup every time. The export moved into configure(), which is the
-    // first point at which the role is guaranteed to exist, and is still long
-    // before the user can reach a File menu.
+    // ("surface must be an xdg_toplevel") - sway killed the client on startup
+    // every time. The export is made on demand when a file dialog opens (see
+    // acquireExportLease), gated on canExportToplevel(), i.e. configured.
 
     if (connection_.fractionalScale())
     {

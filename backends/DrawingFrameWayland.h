@@ -2279,7 +2279,8 @@ inline void WaylandPopupMenu::choose(const Item& item)
     // nothing of ours below. The flush hands the compositor the destroy now,
     // not whenever the command lets the event loop run again.
     rootMenu()->dismiss();
-    wl_display_flush(display);
+    if (display)                 // a never-opened Connection, as the headless tests use
+        wl_display_flush(display);
 
     if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
         cb->onComplete(gmpi::ReturnCode::Ok, id);

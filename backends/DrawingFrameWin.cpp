@@ -925,6 +925,37 @@ void tempSharedD2DBase::PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects)
 			d2dDeviceContext->EndDraw();
 		}
 
+		if (srgbTarget)
+		{
+			// Bit-copy what was painted into the back buffer; the rest is carried over by Present1's dirty rects.
+			gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
+			gmpi::directx::ComPtr<ID3D11DeviceContext> d3dContext;
+			gmpi::directx::ComPtr<ID3D11Texture2D> backBuffer;
+			swapChain->GetDevice(__uuidof(ID3D11Device), d3dDevice.put_void());
+			swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), backBuffer.put_void());
+			if (d3dDevice)
+				d3dDevice->GetImmediateContext(d3dContext.put());
+
+			if (d3dContext && backBuffer)
+			{
+				if (firstPresent)
+				{
+					d3dContext->CopyResource(backBuffer.get(), srgbTarget.get());
+				}
+				else
+				{
+					for (const auto& r : dirtyRects)
+					{
+						const D3D11_BOX box{
+							static_cast<UINT>((std::max)(int32_t{ 0 }, r.left)), static_cast<UINT>((std::max)(int32_t{ 0 }, r.top)), 0,
+							static_cast<UINT>((std::min)(swapChainSize.width, r.right)), static_cast<UINT>((std::min)(swapChainSize.height, r.bottom)), 1 };
+						if (box.left < box.right && box.top < box.bottom)
+							d3dContext->CopySubresourceRegion(backBuffer.get(), 0, box.left, box.top, 0, srgbTarget.get(), 0, &box);
+					}
+				}
+			}
+		}
+
 		if (firstPresent)
 		{
 			firstPresent = false;
@@ -1241,9 +1272,16 @@ void tempSharedD2DBase::setWhiteLevel(float whiteMult)
 			hdrWhiteScaleEffect = {};
 		}
 	}
+	else if (srgbTarget)
+	{
+		_RPT0(0, "8-bit sRGB target, no conversion filter\n");
+		hdrRenderTargetDC = {};
+		hdrRenderTarget = {};
+		hdrWhiteScaleEffect = {};
+	}
 	else
 	{
-		// new: render to 16-bit back-buffer, then copy to swapchain during present.
+		// render to 16-bit back-buffer, then convert into the swapchain during present.
 
 		// create color management effect to convert from linear to sRGB image
 		d2dDeviceContext->CreateEffect(CLSID_D2D1ColorManagement, hdrWhiteScaleEffect.put());
@@ -1430,15 +1468,49 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 	DXGI_SURFACE_DESC sufaceDesc;
 	surface->GetDesc(&sufaceDesc);
 
-	auto props2 = BitmapProperties1(
-		D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-		PixelFormat(sufaceDesc.Format, D2D1_ALPHA_MODE_IGNORE)
-		);
+	const bool using8bitSwapChain = (sufaceDesc.Format == fallbackFormat);
 
+	// 8-bit: Direct2D refuses an sRGB-typed view of the UNORM back buffer (E_INVALIDARG), so it draws into an
+	// sRGB-typed texture of the same size instead: linear blending, encoded on write, and the painted rects
+	// are bit-copied into the back buffer (same typeless family). No conversion pass, unlike rendering fp16.
 	gmpi::directx::ComPtr<ID2D1Bitmap1> bitmap;
-	d2dDeviceContext->CreateBitmapFromDxgiSurface(surface.get(),
-		props2,
-		bitmap.put());
+	srgbTarget = {};
+	if (using8bitSwapChain)
+	{
+		gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
+		swapChain->GetDevice(__uuidof(ID3D11Device), d3dDevice.put_void());
+
+		D3D11_TEXTURE2D_DESC textureDesc{};
+		textureDesc.Width = sufaceDesc.Width;
+		textureDesc.Height = sufaceDesc.Height;
+		textureDesc.MipLevels = 1;
+		textureDesc.ArraySize = 1;
+		textureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.Usage = D3D11_USAGE_DEFAULT;
+		textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+		if (d3dDevice && SUCCEEDED(d3dDevice->CreateTexture2D(&textureDesc, nullptr, srgbTarget.put())))
+		{
+			d2dDeviceContext->CreateBitmapFromDxgiSurface(srgbTarget.as<IDXGISurface>().get(),
+				BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW, PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, D2D1_ALPHA_MODE_IGNORE)),
+				bitmap.put());
+		}
+		if (!bitmap)
+			srgbTarget = {}; // fall back to drawing the back buffer through the conversion pass
+	}
+
+	if (!bitmap)
+	{
+		auto props2 = BitmapProperties1(
+			D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+			PixelFormat(sufaceDesc.Format, D2D1_ALPHA_MODE_IGNORE)
+			);
+
+		d2dDeviceContext->CreateBitmapFromDxgiSurface(surface.get(),
+			props2,
+			bitmap.put());
+	}
 
 	const auto bitmapsize = bitmap->GetSize();
 	swapChainSize.width = static_cast<int32_t>(bitmapsize.width);
@@ -1448,8 +1520,6 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 
 	// Now attach Device Context to swapchain bitmap.
 	d2dDeviceContext->SetTarget(bitmap.get());
-
-	const bool using8bitSwapChain = (sufaceDesc.Format == fallbackFormat);
 
 	// if we're reverting to 8-bit colour HDR white-mult is N/A.
 	const float whiteMult = using8bitSwapChain ? 1.0f : windowWhiteLevel; // the native white level.

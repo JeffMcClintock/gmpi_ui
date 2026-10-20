@@ -229,6 +229,9 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	inline static int m_fallbackStrategy = Fallback_Software;
 	bool reentrant = false;
 	bool lowDpiMode = {};
+	// 8-bit swap chain: Direct2D draws into this sRGB-typed texture (linear blending, encoded on write) and
+	// PaintFrame bit-copies the painted rects into the UNORM back buffer. See CreateDeviceSwapChainBitmap.
+	gmpi::directx::ComPtr<ID3D11Texture2D> srgbTarget;
 	bool firstPresent = false;
 	float windowWhiteLevel{};
 	bool monitorChanged = false;
@@ -311,6 +314,7 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 		hdrBitmap = nullptr;
 		hdrRenderTargetDC = nullptr;
 		hdrRenderTarget = nullptr;
+		srgbTarget = nullptr;
 		// Detach the swap-chain bitmap from the context. Bitmap wrappers can hold a
 		// reference to the context (see Bitmap::getNativeBitmap), which would
 		// otherwise keep the dead swap chain's back-buffer alive with it.

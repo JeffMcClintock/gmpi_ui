@@ -40,6 +40,13 @@ namespace directx
         return r == 0 ? gmpi::ReturnCode::Ok : gmpi::ReturnCode::Fail;
     }
 
+    // Which DXGI adapter gmpi_ui creates its D3D devices on: -1 (default) lets each call site choose
+    // (the default hardware adapter, or WARP). Set it in code, or GMPI_UI_ADAPTER=<index> in the environment.
+    int adapterOverride();
+    void setAdapterOverride(int adapterIndex);
+    // D3D11CreateDevice on adapterOverride(), or with driverType when there is none.
+    HRESULT createD3dDevice(D3D_DRIVER_TYPE driverType, UINT flags, const D3D_FEATURE_LEVEL* featureLevels, UINT featureLevelCount, ID3D11Device** returnDevice, D3D_FEATURE_LEVEL* returnFeatureLevel);
+
     // helpers for wide strings
     std::wstring Utf8ToWstring(std::string_view str);
     std::string WStringToUtf8(std::wstring_view p_cstring);
@@ -1369,7 +1376,7 @@ void createBitmapRenderTarget(
 class BitmapRenderTarget final : public GraphicsContext_base // emulated by careful layout: public IBitmapRenderTarget
 {
     gmpi::directx::ComPtr<IWICBitmap> wicBitmap;
-    gmpi::directx::ComPtr<ID3D11Device> d3dDevice_;    // 64bpp path: WARP D3D11 device
+    gmpi::directx::ComPtr<ID3D11Device> d3dDevice_;    // 64bpp path: WARP (or adapterOverride) D3D11 device
     gmpi::directx::ComPtr<ID3D11Texture2D> renderTex_; // 64bpp path: render target texture
     ID2D1DeviceContext* originalContext{};
 

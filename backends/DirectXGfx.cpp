@@ -6,10 +6,46 @@
 #include "./DirectXGfx.h"
 #include "d2d1helper.h"
 
+#pragma comment(lib, "dxgi.lib") // CreateDXGIFactory1
+
 namespace gmpi
 {
 namespace directx
 {
+namespace
+{
+int adapterOverrideIndex = []
+{
+	char value[16]{};
+	return GetEnvironmentVariableA("GMPI_UI_ADAPTER", value, sizeof(value)) ? atoi(value) : -1;
+}();
+}
+
+int adapterOverride()
+{
+	return adapterOverrideIndex;
+}
+
+void setAdapterOverride(int adapterIndex)
+{
+	adapterOverrideIndex = adapterIndex;
+}
+
+HRESULT createD3dDevice(D3D_DRIVER_TYPE driverType, UINT flags, const D3D_FEATURE_LEVEL* featureLevels, UINT featureLevelCount, ID3D11Device** returnDevice, D3D_FEATURE_LEVEL* returnFeatureLevel)
+{
+	ComPtr<IDXGIAdapter1> adapter;
+	if (adapterOverrideIndex >= 0)
+	{
+		ComPtr<IDXGIFactory1> factory;
+		if (SUCCEEDED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), factory.put_void())))
+			factory->EnumAdapters1(adapterOverrideIndex, adapter.put());
+	}
+
+	// An explicit adapter needs D3D_DRIVER_TYPE_UNKNOWN.
+	return D3D11CreateDevice(adapter.get(), adapter ? D3D_DRIVER_TYPE_UNKNOWN : driverType, nullptr, flags,
+		featureLevels, featureLevelCount, D3D11_SDK_VERSION, returnDevice, returnFeatureLevel, nullptr);
+}
+
 std::wstring Utf8ToWstring(std::string_view str)
 {
 	std::wstring res;
@@ -1435,13 +1471,9 @@ void createBitmapRenderTarget(
 			// (keeping stroke styles and path geometries compatible), and use a staging texture
 			// for CPU readback. After EndDraw(), pixels are copied to the WIC bitmap.
 
-			// 1. WARP D3D11 device (D3D11_CREATE_DEVICE_BGRA_SUPPORT required for D2D interop).
-			if (FAILED(D3D11CreateDevice(
-				nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
-				D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-				nullptr, 0, D3D11_SDK_VERSION,
-				returnD3dDevice.put(), nullptr, nullptr
-			))) return;
+			// 1. WARP D3D11 device, or the override adapter (D3D11_CREATE_DEVICE_BGRA_SUPPORT required for D2D interop).
+			if (FAILED(createD3dDevice(D3D_DRIVER_TYPE_WARP, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, returnD3dDevice.put(), nullptr)))
+				return;
 
 			// 2. D3D11 render target texture: R16G16B16A16_FLOAT, default usage, bindable as render target.
 			D3D11_TEXTURE2D_DESC texDesc = {};

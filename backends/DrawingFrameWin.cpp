@@ -991,19 +991,16 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	D3D_FEATURE_LEVEL supportedFeatureLevel;
 	gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
 	
-	// Create Hardware device.
+	// Create Hardware device (on gmpi::directx::adapterOverride() when set).
     HRESULT r = DXGI_ERROR_UNSUPPORTED;
 	do {
-		r = D3D11CreateDevice(nullptr,
+		r = gmpi::directx::createD3dDevice(
 			D3D_DRIVER_TYPE_HARDWARE,
-        	0,
 			creationFlags,
 			featureLevels,
-			std::size(featureLevels),
-			D3D11_SDK_VERSION,
+			static_cast<UINT>(std::size(featureLevels)),
 			d3dDevice.put(),
-			&supportedFeatureLevel,
-			nullptr);
+			&supportedFeatureLevel);
 
 			// Clear D3D11_CREATE_DEVICE_DEBUG
 			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
@@ -1025,7 +1022,8 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	// !!! this is shit, returns DEFAULT adaptor only. No good if you are using both shitty onboard GPU plus high-end PCI GPU. !!!
 	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
 	// Software renderer has no device memory, yet does support float pixels anyhow.
-	if (!m_disable_gpu)
+	// An explicitly chosen adapter is taken as-is: the guess is for the default one.
+	if (!m_disable_gpu && gmpi::directx::adapterOverride() < 0)
 	{
 		DXGI_ADAPTER_DESC adapterDesc{};
 		dxgiAdapter->GetDesc(&adapterDesc);

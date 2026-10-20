@@ -1332,8 +1332,8 @@ HRESULT DxDrawingFrameHwnd::createNativeSwapChain
 	);
 }
 
-// A swap chain under a not-quite-opaque visual, so DWM never puts it on an overlay plane
-// (entering/leaving one flickers the monitor).
+// A swap chain under a visual with a 3D transform, so DWM never puts it on an overlay plane
+// (entering/leaving one flickers the monitor). Verified with gimpi_ui_tests' colour probe.
 HRESULT DxDrawingFrameHwnd::createCompositionSwapChain(
 	IDXGIFactory2* factory,
 	ID3D11Device* d3dDevice,
@@ -1361,18 +1361,31 @@ HRESULT DxDrawingFrameHwnd::createCompositionSwapChain(
 		compositionVisual = {};
 		compositionTarget = {};
 
-		gmpi::directx::ComPtr<IDCompositionEffectGroup> opacity;
+		// The deterrent is a 3D rotation too small to move a pixel. It used to be 0.99 opacity,
+		// which blended 1% of the unpainted window beneath into every pixel (black read as 3).
+		gmpi::directx::ComPtr<IDCompositionEffectGroup> effect;
+		gmpi::directx::ComPtr<IDCompositionRotateTransform3D> rotate;
 		hr = DCompositionCreateDevice(nullptr, __uuidof(IDCompositionDevice), compositionDevice.put_void());
 		if (SUCCEEDED(hr))
 			hr = compositionDevice->CreateTargetForHwnd(hwnd, FALSE, compositionTarget.put()); // behind child windows, e.g. the text editor
 		if (SUCCEEDED(hr))
 			hr = compositionDevice->CreateVisual(compositionVisual.put());
 		if (SUCCEEDED(hr))
-			hr = compositionDevice->CreateEffectGroup(opacity.put());
+			hr = compositionDevice->CreateEffectGroup(effect.put());
 		if (SUCCEEDED(hr))
-			hr = opacity->SetOpacity(0.99f);
+			hr = compositionDevice->CreateRotateTransform3D(rotate.put());
 		if (SUCCEEDED(hr))
-			hr = compositionVisual->SetEffect(opacity.get());
+			hr = rotate->SetAxisX(0.0f);
+		if (SUCCEEDED(hr))
+			hr = rotate->SetAxisY(1.0f); // about Y: x scales by cos(0.01 deg), nothing shifts
+		if (SUCCEEDED(hr))
+			hr = rotate->SetAxisZ(0.0f);
+		if (SUCCEEDED(hr))
+			hr = rotate->SetAngle(0.01f);
+		if (SUCCEEDED(hr))
+			hr = effect->SetTransform3D(rotate.get());
+		if (SUCCEEDED(hr))
+			hr = compositionVisual->SetEffect(effect.get());
 		if (SUCCEEDED(hr))
 			hr = compositionTarget->SetRoot(compositionVisual.get());
 		if (SUCCEEDED(hr))

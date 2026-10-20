@@ -1361,8 +1361,9 @@ HRESULT DxDrawingFrameHwnd::createCompositionSwapChain(
 		compositionVisual = {};
 		compositionTarget = {};
 
-		// The deterrent is a 3D rotation too small to move a pixel. It used to be 0.99 opacity,
-		// which blended 1% of the unpainted window beneath into every pixel (black read as 3).
+		// The deterrent is a 3D rotation too small to move a pixel (0.006 px at the edge of a 4K
+		// window) yet 20x the angle DWM ignores (0.002 deg); 1 deg resamples. It used to be 0.99
+		// opacity, which blended 1% of the unpainted window beneath into every pixel (black read as 3).
 		gmpi::directx::ComPtr<IDCompositionEffectGroup> effect;
 		gmpi::directx::ComPtr<IDCompositionRotateTransform3D> rotate;
 		hr = DCompositionCreateDevice(nullptr, __uuidof(IDCompositionDevice), compositionDevice.put_void());
@@ -1377,11 +1378,11 @@ HRESULT DxDrawingFrameHwnd::createCompositionSwapChain(
 		if (SUCCEEDED(hr))
 			hr = rotate->SetAxisX(0.0f);
 		if (SUCCEEDED(hr))
-			hr = rotate->SetAxisY(1.0f); // about Y: x scales by cos(0.01 deg), nothing shifts
+			hr = rotate->SetAxisY(1.0f); // about Y: x scales by cos(0.1 deg), nothing shifts
 		if (SUCCEEDED(hr))
 			hr = rotate->SetAxisZ(0.0f);
 		if (SUCCEEDED(hr))
-			hr = rotate->SetAngle(0.01f);
+			hr = rotate->SetAngle(0.1f);
 		if (SUCCEEDED(hr))
 			hr = effect->SetTransform3D(rotate.get());
 		if (SUCCEEDED(hr))

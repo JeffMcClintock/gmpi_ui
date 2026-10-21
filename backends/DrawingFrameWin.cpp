@@ -1174,14 +1174,7 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	// and context.
     d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, d2dDeviceContext.put());
 
-	// disable DPI for testing.
-	const float dpiScale = lowDpiMode ? 1.0f : getRasterizationScale();
- 	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
-	WindowToDips = gmpi::drawing::invert(DipsToWindow);
-
-    d2dDeviceContext->SetDpi(dpiScale * 96.f, dpiScale * 96.f);
-
-	CreateDeviceSwapChainBitmap();
+	CreateDeviceSwapChainBitmap(); // also applies the DPI
 
 	// customisation point.
 	OnSwapChainCreated();
@@ -1521,6 +1514,14 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 	// Now attach Device Context to swapchain bitmap.
 	d2dDeviceContext->SetTarget(bitmap.get());
 
+	// The DPI, every time: a resize in place (OnSize) can be the window landing on a monitor with a
+	// different scale, and a rebuild can run before the host's scale has caught up with the move.
+	// lowDpiMode disables it for testing.
+	const float dpiScale = lowDpiMode ? 1.0f : getRasterizationScale();
+	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
+	WindowToDips = gmpi::drawing::invert(DipsToWindow);
+	d2dDeviceContext->SetDpi(dpiScale * 96.f, dpiScale * 96.f);
+
 	// if we're reverting to 8-bit colour HDR white-mult is N/A.
 	const float whiteMult = using8bitSwapChain ? 1.0f : windowWhiteLevel; // the native white level.
 
@@ -1549,6 +1550,12 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 
 	if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
 	{
+		// A composition swap chain keeps scaling its content by the monitor scale it was bound under, so after
+		// a move to a monitor with another scale the panes drew at 2/3 (SE16, 150% -> 100%). Resetting the
+		// transform with the size restores 1:1. Fails harmlessly on an HWND swap chain.
+		const DXGI_MATRIX_3X2_F identity{ 1, 0, 0, 1, 0, 0 };
+		swapChain->SetMatrixTransform(&identity);
+
 		CreateDeviceSwapChainBitmap();
 
 		const auto scale = 1.0 / getRasterizationScale();

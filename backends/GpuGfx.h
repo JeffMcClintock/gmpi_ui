@@ -64,18 +64,26 @@ public:
     bool rendered{ false }; // canvas.submit() has run since the last draw call
 
     // Raw fp16 buffers the canvas is drawing from. The atlas reads them again
-    // whenever it repacks, so they live as long as the bitmap does.
+    // whenever it repacks, so they live until the shapes using them are gone.
     std::vector<std::unique_ptr<std::vector<uint16_t>>> uploads;
 
     Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h)
         : factory(pfactory), width((std::max)(1, w)), height((std::max)(1, h))
     {
         canvas.setWindowless(width, height);
+        // Render-target semantics: pixels persist, each shape composites once.
+        canvas.setRetainPixels(true);
     }
 
+    // Draw the shapes recorded since the last submit, once, then forget them.
+    // Their uploads are safe to free: the atlas has copied them to the GPU
+    // and never re-reads an image whose shape is gone.
     void submit()
     {
+        canvas.invalidateContent();
         canvas.submit();
+        canvas.clearShapesKeepPixels();
+        uploads.clear();
         rendered = true;
     }
 
@@ -84,7 +92,7 @@ public:
     {
         if (!rendered)
             submit();
-        const visage::Screenshot& shot = canvas.takeScreenshot();
+        const visage::Screenshot& shot = canvas.takeScreenshot(false);
         std::vector<uint16_t> out(size_t(width) * size_t(height) * 4, 0);
         if (shot.halfFloat() && shot.width() == width && shot.height() == height)
             std::copy_n(shot.halfData(), out.size(), out.data());

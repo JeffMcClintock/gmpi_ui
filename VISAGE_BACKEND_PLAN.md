@@ -201,7 +201,12 @@ host falls back to cpugfx — there is no 8-bit-layer mode.
    `wl_surface*`; keep the X11 path. Vulkan swap chain: accept
    `VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT` for float formats (bgfx patch,
    carried in the fork's bgfx fetch as a patch step or a bgfx fork).
-5. Premultiplied-alpha blend states + shader premultiply; linear colour in.
+5. ~~Premultiplied-alpha blend states~~ Not needed: layer pixels are already
+   premultiplied by the SRC_ALPHA/ONE blend over a transparent clear. What
+   was wrong was compositing them with straight alpha — fixed (milestone 2).
+   DONE also: RGBA16F image atlas + `Canvas::halfImage` (raw premultiplied
+   fp16 upload), zero-filled atlas padding, headless composite clear, exact
+   coverage shaders.
 6. View-id base per Canvas and a host-driven `bgfx::frame()` so several
    Canvases (main window, popups, tooltips) submit within one frame instead of
    each calling `frame()` (`canvas.cpp:72-111`). The MultiWindow example only
@@ -292,6 +297,26 @@ Milestone 1 (2026-10-22), GPU backend through `gimpi_ui_tests`:
   not load (`DrawingTestFixture.h`, "Reference exists but could not be
   loaded").
 
+Milestone 2 (2026-10-22): 76 → 98 → 126 → 131 → 146 → 148 → **151 / 151**.
+Fork bugs found by the GMPI suite, each now pinned by a fork test in
+`precision_tests.cpp`:
+
+- **A texture created with data is immutable in bgfx**, and later
+  `updateTexture2D` calls are silently dropped. My zero-fill of atlas
+  textures (against NaN padding) did exactly that and blanked every image.
+  Create empty, then update with zeros.
+- **Coverage shader approximated area by edge distance**: a pixel half
+  covered in x and in y read 0.498, not 0.25. Replaced with exact
+  pixel∩triangle area (above). Edges and 45° diagonals were already exact.
+- **Headless composite layer never cleared**: a window's composite is
+  opaque so upstream never clears it; a transparent render target kept
+  showing last frame's pixels through transparent areas (write-back of a
+  masked buffer "did nothing"). Headless layers now clear invalid rects too.
+- **Intermediate layers composited with straight-alpha blending** although
+  their content is premultiplied: semi-transparent colour multiplied by
+  alpha twice, darker soft shadows (neumorphic tests, mean diff 20, every
+  differing pixel darker). `submitSampleRegions` now uses `Composite`.
+
 ## Landmines
 
 - **No real GPU in the dev VM.** `lspci` shows VMware SVGA II; ICDs present are
@@ -365,15 +390,46 @@ Each is verifiable on its own; nothing lands in SE16 before milestone 4.
    `DrawingTestContext_gpu.cpp` behind `-DGMPI_UI_TESTS_GPU_BACKEND=ON
    -DGMPI_GPU_GRAPHICS_FOLDER=<fork>`; build dir `/home/jef/SE/build-uitests-gpu`.
    **76 / 144 DrawingTest cases pass** headless under lavapipe; see "Measured".
-2. **Strokes, gradients, clips:** stroke styles mapped to Visage's stroker
-   (verify dash offset and miter semantics against the D2D references;
-   `cpu_vs_d2d_tests.cpp` is the pattern), gradient strips from cpugfx stop
-   code, axis-aligned clip → `ClampBounds`, `pushClipGeometry` via mask layer.
-   Target: `tests/` pixel battery parity with the CPU backend except text.
-3. **Bitmaps and offscreens:** `loadImageU`/`createImage` → textures (sRGB
-   sampled), `drawBitmap` sub-rects + interpolation modes, bitmap brush,
-   `createCompatibleRenderTarget` (default RGBA16F GPU layer; `CpuReadable` →
-   cpugfx bridge), `CachedBlur` drop shadows render. Fork changes 7–9.
+2. **Strokes, gradients, clips, bitmaps — DONE (Oct 2026): 151 / 151
+   DrawingTest pass**, the whole `gmpi_ui_tests` binary passes (82 + 2
+   skipped), 3 of 3 full runs clean. How:
+   - **One CPU-fallback seam** (`RenderTarget::viaCpu`): anything the GPU
+     path cannot express yet is rendered by a cpugfx target covering the
+     draw's device bounds, with this context's transform and geometry clips
+     replayed, then uploaded as RGBA16F and composited premultiplied. cpugfx's
+     `drawBitmap` is itself "fill a rect with a bitmap brush", so bitmaps,
+     bitmap brushes, gradients, opacity brushes and every draw under a
+     geometry clip all go through it unchanged and D2D-exact.
+   - **Strokes are GPU-native:** cpugfx's contour widener (D2D-exact caps,
+     joins, dashes, local-space widening) produces figures that the path
+     atlas fills nonzero.
+   - **Text goes through the fallback too**: on a cpugfx context the engine
+     takes its D2D-matching glyph-mask path; on this context it took the
+     plain-geometry path, which draws measurably lighter glyphs (13 multiline
+     tests at mean diff 31) even with exact coverage. Milestone 6 moves the
+     masks to a GPU atlas.
+   - **Write locks round-trip**: `lockPixels(ReadWrite/Write)` reads back,
+     the caller edits, release uploads the buffer and draws it Opaque over
+     the target (`CachedBlur`, `applyMask`, the Blur tests).
+   - **Exact coverage** (fork): the path-atlas fragment shader now clips the
+     pixel square against the triangle and takes the shoelace area, so
+     corners are exact (0.251 vs 0.498 before) and no conservative
+     rasterisation is needed — the fallback draws each triangle's bounding
+     box, which costs fill rate only. Fan anchor is the sub-path's first
+     point, so nothing is drawn outside the packed rect.
+   - **Flagged targets** (Mask / SRGBPixels) and `createCompatibleRenderTarget`
+     are cpugfx targets (decision 3); an unflagged `createCpuRenderTarget`
+     target is the GPU (CpuReadable is implied: read-back + write-back).
+   Still to do from the original scope, now optimisations with the suite as
+   oracle: GPU-native gradients (Visage's gradient atlas with 512-texel
+   strips from `GradientstopCollection::colorAt`), GPU-native `drawBitmap`
+   (the half-float atlas exists; sub-rects and interpolation flags needed),
+   geometry clips as shader masks, and a retained-pixels model for targets
+   drawn across several beginDraw/endDraw pairs (today a target re-renders
+   all shapes since creation and keeps every uploaded buffer alive).
+3. **Offscreens on the GPU:** `createCompatibleRenderTarget` without
+   `CpuReadable` becomes a fork layer; bitmap-to-texture caching keyed by
+   bitmap identity instead of a per-draw repack; the retained-pixels model.
 4. **Present on Linux:** `DrawingFrameWayland` and `DrawingFrameX11` grow a
    GPU present path: bgfx swap chain on the surface, dirty rect → Visage
    invalidation, frame-callback pacing, fallback to the shm path when bgfx

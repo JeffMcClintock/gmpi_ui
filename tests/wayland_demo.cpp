@@ -38,6 +38,7 @@ public:
 
     void setFont(drawing::api::ITextFormat* f) { font_ = f; }
     const std::string& status() const { return status_; }
+    void setStatus(const std::string& s) { status_ = s; invalidate(); }
 
     // --- IDrawingClient / IInputClient share setHost ---
     ReturnCode setHost(api::IUnknown* host) override
@@ -70,12 +71,17 @@ public:
         return ReturnCode::Ok;
     }
     ReturnCode hitTest(drawing::Point, int32_t) override { return ReturnCode::Ok; }
-    ReturnCode onPointerDown(drawing::Point p, int32_t) override
+    ReturnCode onPointerDown(drawing::Point p, int32_t flags) override
     {
         status_ = "pointer down at " + std::to_string(int(p.x)) + "," + std::to_string(int(p.y));
         printf("%s\n", status_.c_str());
         fflush(stdout);
         invalidate();
+        // The frame opens the context menu only for a right-click the client
+        // did NOT handle (as Windows does with WM_RBUTTONDOWN), so hand that
+        // one back.
+        if (flags & int32_t(api::PointerFlags::SecondButton))
+            return ReturnCode::Unhandled;
         return ReturnCode::Ok;
     }
     ReturnCode onPointerMove(drawing::Point, int32_t) override { return ReturnCode::Ok; }
@@ -118,8 +124,24 @@ private:
     void showMessageBox();
     void showFileDialog(bool save);
     void showColorDialog();
+public:
     void showTextEdit();
 
+    // Test hook (--edit TEXT): type into the open edit as key events would.
+    void typeIntoEdit(const std::string& text)
+    {
+        auto* edit = dynamic_cast<wayland::WaylandTextEdit*>(lastEdit_);
+        if (!edit)
+            return;
+        for (unsigned char c : text)
+        {
+            edit->handleKey(c, c, 0, true);
+            edit->handleKey(c, c, 0, false);
+        }
+    }
+
+private:
+    api::ITextEdit* lastEdit_{}; // not owned: the frame keeps the active edit alive
     wayland::WaylandToplevel& frame_;
     api::IUnknown* host_{};
     drawing::api::ITextFormat* font_{};
@@ -320,6 +342,7 @@ void DemoClient::showTextEdit()
     auto edit = owner.as<api::ITextEdit>();
     if (!edit)
         return;
+    lastEdit_ = edit.get();
 
     edit->setText("Oscillator 1");
     edit->setTextSize(14.f);
@@ -350,9 +373,14 @@ void DemoClient::showTextEdit()
 int main(int argc, char** argv)
 {
     int maxFrames = 0;
+    const char* editText = nullptr; // --edit TEXT: open the edit and type TEXT (a test hook)
     for (int i = 1; i < argc; ++i)
+    {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc)
             maxFrames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--edit") && i + 1 < argc)
+            editText = argv[++i];
+    }
 
     wayland::Connection connection;
     if (!connection.open())
@@ -399,7 +427,17 @@ int main(int argc, char** argv)
     int frames = 0;
     frame.runEventLoop(16, [&](int)
     {
-        if (maxFrames && ++frames >= maxFrames)
+        ++frames;
+        if (getenv("GMPI_DEMO_BLINK") && frames % 60 == 0)
+        {
+            client.setStatus("tick " + std::to_string(frames));
+        }
+        if (editText && frames == 10)
+        {
+            client.showTextEdit();
+            client.typeIntoEdit(editText);
+        }
+        if (maxFrames && frames >= maxFrames)
             frame.close();
     });
 

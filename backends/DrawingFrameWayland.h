@@ -1163,6 +1163,10 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
     if (viewport_)
         wp_viewport_set_destination(viewport_, logicalW_, logicalH_);
 
+    if (getenv("GMPI_UI_GPU_TRACE"))
+        fprintf(stderr, "[presentGpu t=%ld] %dx%d area %d,%d-%d,%d dirtyAll %d edit %p\n",
+                long(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() % 100000),
+                pw, ph, area.left, area.top, area.right, area.bottom, int(dirtyAll_), (void*)activeEdit_);
     gpuTarget_->beginDraw();
     gpuTarget_->invalidate(area);
     if (scale_ != 1.0f)

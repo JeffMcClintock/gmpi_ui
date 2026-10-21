@@ -205,8 +205,6 @@ inline float calcWhiteLevelForHwnd(HWND windowHandle)
 // hoisting them here removes the duplication on each parallel hierarchy.
 struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IInputHost
 {
-	enum { FallBack_8bit, Fallback_Software };
-
 	// https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
 	const DXGI_FORMAT bestFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // Proper gamma-correct blending.
 	const DXGI_FORMAT fallbackFormat = DXGI_FORMAT_B8G8R8A8_UNORM; // shitty linear blending.
@@ -224,9 +222,8 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	directx::ComPtr<::ID2D1DeviceContext> d2dDeviceContext;
 
 	gmpi::drawing::SizeL swapChainSize = {};
-	inline static bool m_disable_gpu = false;
-	inline static bool m_disable_deep_color = false;
-	inline static int m_fallbackStrategy = Fallback_Software;
+	inline static bool m_disable_gpu = false;        // WARP instead of the graphics card
+	inline static bool m_disable_deep_color = false; // the 8-bit swap chain instead of fp16
 	bool reentrant = false;
 	bool lowDpiMode = {};
 	// 8-bit swap chain: Direct2D draws into this sRGB-typed texture (linear blending, encoded on write) and

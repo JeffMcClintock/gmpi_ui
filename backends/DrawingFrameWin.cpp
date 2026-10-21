@@ -1022,21 +1022,46 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	D3D_FEATURE_LEVEL supportedFeatureLevel;
 	gmpi::directx::ComPtr<ID3D11Device> d3dDevice;
 	
-	// Create Hardware device (on gmpi::directx::adapterOverride() when set).
-    HRESULT r = DXGI_ERROR_UNSUPPORTED;
-	do {
-		r = gmpi::directx::createD3dDevice(
-			D3D_DRIVER_TYPE_HARDWARE,
-			creationFlags,
-			featureLevels,
-			static_cast<UINT>(std::size(featureLevels)),
-			d3dDevice.put(),
-			&supportedFeatureLevel);
+	// The graphics card (on gmpi::directx::adapterOverride() when set); WARP only when that fails or the user disabled acceleration.
+	HRESULT r = DXGI_ERROR_UNSUPPORTED;
+	if (!m_disable_gpu)
+	{
+		do {
+			r = gmpi::directx::createD3dDevice(
+				D3D_DRIVER_TYPE_HARDWARE,
+				creationFlags,
+				featureLevels,
+				static_cast<UINT>(std::size(featureLevels)),
+				d3dDevice.put(),
+				&supportedFeatureLevel);
 
-			// Clear D3D11_CREATE_DEVICE_DEBUG
-			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
+			creationFlags &= ~D3D11_CREATE_DEVICE_DEBUG;
+		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
+	}
 
-	} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
+	if (FAILED(r))
+	{
+		d3dDevice = nullptr;
+		do {
+			r = D3D11CreateDevice(nullptr,
+				D3D_DRIVER_TYPE_WARP,
+				nullptr,
+				creationFlags,
+				nullptr, 0,
+				D3D11_SDK_VERSION,
+				d3dDevice.put(),
+				&supportedFeatureLevel,
+				nullptr);
+
+			creationFlags &= ~D3D11_CREATE_DEVICE_DEBUG;
+		} while (r == 0x887a002d);
+
+		_RPT0(0, "Using Software Renderer\n");
+	}
+	else
+	{
+		_RPT0(0, "Using Hardware Renderer\n");
+	}
 
     // Get the Direct3D device.
     auto dxgiDevice = d3dDevice.as<::IDXGIDevice>();
@@ -1049,72 +1074,16 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	windowWhiteLevel = calcWhiteLevel(); // the native white level.
 	float whiteMult = windowWhiteLevel; // the swapchain white-level, that might be overriden by an 8-bit swapchain.
 
-	bool DX_support_sRGB{ true };
-	// !!! this is shit, returns DEFAULT adaptor only. No good if you are using both shitty onboard GPU plus high-end PCI GPU. !!!
-	// query adaptor memory. Assume small integrated graphics cards do not have the capacity for float pixels.
-	// Software renderer has no device memory, yet does support float pixels anyhow.
-	// An explicitly chosen adapter is taken as-is: the guess is for the default one.
-	if (!m_disable_gpu && gmpi::directx::adapterOverride() < 0)
+	// Deep colour needs a displayable, blendable fp16 format at feature level 11; otherwise the 8-bit swap
+	// chain on the same device, which blends in linear light too. No guessing from the adapter's memory:
+	// an integrated GPU reports little dedicated memory however capable it is (the UHD 770 passes here).
+	bool fp16Supported = D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
 	{
-		DXGI_ADAPTER_DESC adapterDesc{};
-		dxgiAdapter->GetDesc(&adapterDesc);
-
-		const auto dedicatedRamMB = adapterDesc.DedicatedVideoMemory / 0x100000;
-
-		// Intel HD Graphics on my Kogan has 128MB.
-		DX_support_sRGB &= (dedicatedRamMB >= 512); // MB
+		UINT support = 0;
+		const UINT required = D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_BLENDABLE;
+		fp16Supported = fp16Supported && SUCCEEDED(d3dDevice->CheckFormatSupport(bestFormat, &support)) && (support & required) == required;
 	}
-
-	{
-		UINT driverSrgbSupport = 0;
-		auto hr = d3dDevice->CheckFormatSupport(bestFormat, &driverSrgbSupport);
-
-		const UINT srgbflags = D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_BLENDABLE;
-
-		if (SUCCEEDED(hr))
-		{
-			DX_support_sRGB &= ((driverSrgbSupport & srgbflags) == srgbflags);
-		}
-
-		DX_support_sRGB &= D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
-	}
-
-	const bool useSoftwareRenderer = (!DX_support_sRGB && Fallback_Software == m_fallbackStrategy) || m_disable_gpu;
-	const bool useDeepColor = !m_disable_deep_color && (DX_support_sRGB || useSoftwareRenderer);
-
-	if (useSoftwareRenderer)
-	{
-		// release hardware device
-		d3dDevice = nullptr;
-		r = DXGI_ERROR_UNSUPPORTED;
-	}
-
-	// If hardware swapchain failed or we choose to, fallback to software rendering.
-	if (DXGI_ERROR_UNSUPPORTED == r)
-	{
-		do {
-		r = D3D11CreateDevice(nullptr,
-			D3D_DRIVER_TYPE_WARP,
-			nullptr,
-			creationFlags,
-			nullptr, 0,
-			D3D11_SDK_VERSION,
-			d3dDevice.put(),
-			&supportedFeatureLevel,
-			nullptr);
-
-			// Clear D3D11_CREATE_DEVICE_DEBUG
-			((creationFlags) &= (0xffffffff ^ (D3D11_CREATE_DEVICE_DEBUG)));
-
-		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
-
-		dxgiDevice = d3dDevice.as<::IDXGIDevice>();
-		_RPT0(0, "Using Software Renderer\n");
-	}
-	else
-	{
-		_RPT0(0, "Using Hardware Renderer\n");
-	}
+	const bool useDeepColor = !m_disable_deep_color && fp16Supported;
 
     // Get the DXGI factory.
     gmpi::directx::ComPtr<::IDXGIFactory2> dxgiFactory;

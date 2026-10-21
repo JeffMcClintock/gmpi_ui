@@ -1519,12 +1519,6 @@ void tempSharedD2DBase::OnSize(UINT width, UINT height)
 
 	if (S_OK == swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))
 	{
-		// A composition swap chain keeps scaling its content by the monitor scale it was bound under, so after
-		// a move to a monitor with another scale the panes drew at 2/3 (SE16, 150% -> 100%). Resetting the
-		// transform with the size restores 1:1. Fails harmlessly on an HWND swap chain.
-		const DXGI_MATRIX_3X2_F identity{ 1, 0, 0, 1, 0, 0 };
-		swapChain->SetMatrixTransform(&identity);
-
 		CreateDeviceSwapChainBitmap();
 
 		const auto scale = 1.0 / getRasterizationScale();

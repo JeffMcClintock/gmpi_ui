@@ -30,8 +30,11 @@
 
 #include "visage_graphics/canvas.h"
 #include "visage_graphics/path.h"
+#include "visage_graphics/renderer.h"
 #include "visage_graphics/screenshot.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -40,6 +43,39 @@ namespace gmpi::gpugfx
 {
 
 class Factory;
+
+// Opt-in for hosts while the backend is young: GMPI_UI_GPU=1 in the
+// environment. A host that cannot initialise the renderer keeps its CPU path.
+inline bool wanted()
+{
+    const char* v = std::getenv("GMPI_UI_GPU");
+    return v && *v && *v != '0';
+}
+
+// Initialise the (process-wide) renderer against a native window and
+// display. Returns false if the device cannot do RGBA16F, which the
+// backend requires. Safe to call more than once.
+inline bool initialize(void* nativeWindow, void* nativeDisplay, bool wayland)
+{
+    auto& renderer = visage::Renderer::instance();
+    if (!renderer.initialized())
+    {
+        renderer.setVsync(false); // the host paces frames (Wayland frame callbacks / X11 timer)
+        // nativeWindow is a MODEL window the host keeps alive and never shows
+        // (a role-less wl_surface, a hidden X11 window): bgfx's Vulkan renderer
+        // only reports swap-chain support when initialised on some window,
+        // and initialising on the host's real surface would put a second
+        // Vulkan surface on it when its canvas pairs to it. Every real window
+        // then gets its own swap chain through createWindowRenderTarget().
+        renderer.initialize(nativeWindow, nativeDisplay,
+                            wayland ? visage::Renderer::NativeWindowType::Wayland : visage::Renderer::NativeWindowType::Default);
+    }
+    if (!renderer.supported())
+        std::fprintf(stderr, "gmpi_ui GPU backend: %s\n", renderer.errorMessage().c_str());
+    else if (!renderer.swapChainSupported())
+        std::fprintf(stderr, "gmpi_ui GPU backend: renderer has no swap-chain support\n");
+    return renderer.supported() && renderer.swapChainSupported() && renderer.halfFloatFrameBuffers();
+}
 
 // Bytes of a cpugfx surface (fp16 premultiplied, rows padded to 8 px) packed
 // into width*height*8 bytes, optionally cropped.
@@ -67,12 +103,28 @@ public:
     // whenever it repacks, so they live until the shapes using them are gone.
     std::vector<std::unique_ptr<std::vector<uint16_t>>> uploads;
 
-    Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h)
-        : factory(pfactory), width((std::max)(1, w)), height((std::max)(1, h))
+    // A window bitmap is the swap chain of a native window: not lockable, and
+    // drawn frame by frame (the host invalidates, the client redraws).
+    void* window{};
+
+    Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h, void* windowHandle = nullptr)
+        : factory(pfactory), width((std::max)(1, w)), height((std::max)(1, h)), window(windowHandle)
     {
-        canvas.setWindowless(width, height);
-        // Render-target semantics: pixels persist, each shape composites once.
-        canvas.setRetainPixels(true);
+        if (window)
+            canvas.pairToWindow(window, width, height);
+        else
+        {
+            canvas.setWindowless(width, height);
+            // Render-target semantics: pixels persist, each shape composites once.
+            canvas.setRetainPixels(true);
+        }
+    }
+
+    void resize(int32_t w, int32_t h)
+    {
+        width = (std::max)(1, w);
+        height = (std::max)(1, h);
+        canvas.setDimensions(width, height); // recreates the swap chain at the new size
     }
 
     // Draw the shapes recorded since the last submit, once, then forget them.
@@ -80,7 +132,8 @@ public:
     // and never re-reads an image whose shape is gone.
     void submit()
     {
-        canvas.invalidateContent();
+        if (!window)
+            canvas.invalidateContent(); // a window's host invalidates what it wants redrawn
         canvas.submit();
         canvas.clearShapesKeepPixels();
         uploads.clear();
@@ -111,10 +164,11 @@ public:
         uploads.push_back(std::make_unique<std::vector<uint16_t>>(std::move(pixels)));
         const auto* data = reinterpret_cast<const unsigned char*>(uploads.back()->data());
 
+        static uint64_t nextImageId = 1; // the atlas caches by identity; a freed buffer's address is not one
         canvas.setClampBounds(clamp);
         canvas.setBlendMode(blend);
         canvas.setColor(visage::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
-        canvas.halfImage(data, w, h, x, y, dw, dh);
+        canvas.halfImage(data, w, h, x, y, dw, dh, nextImageId++);
         canvas.setBlendMode(visage::BlendMode::Alpha);
         rendered = false;
     }
@@ -198,6 +252,9 @@ public:
 
 inline ReturnCode Bitmap::lockPixels(drawing::api::IBitmapPixels** returnPixels, int32_t flags)
 {
+    *returnPixels = {};
+    if (window)
+        return ReturnCode::NoSupport; // a swap chain: "Not supported when Bitmap was created on GPU"
     *returnPixels = new BitmapPixels(this, flags);
     return ReturnCode::Ok;
 }
@@ -378,13 +435,26 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     }
 
 public:
-    RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size, int32_t /*flags*/, float dpi)
+    RenderTarget(drawing::api::IFactory* pfactory, drawing::SizeU size, int32_t /*flags*/, float dpi, void* windowHandle = nullptr)
         : factory(pfactory)
     {
         const float dpiScale = dpi / 96.0f;
         dpiTransform_._11 = dpiTransform_._22 = dpiScale;
         transform_ = dpiTransform_;
-        bitmap = new Bitmap(factory, int32_t(size.width), int32_t(size.height));
+        bitmap = new Bitmap(factory, int32_t(size.width), int32_t(size.height), windowHandle);
+    }
+
+    // --- window targets (hosts only) ----------------------------------------
+
+    bool isWindow() const { return bitmap->window != nullptr; }
+
+    void resize(int32_t width, int32_t height) { bitmap->resize(width, height); }
+
+    // Mark a device-space rect for redraw: it is cleared and the shapes the
+    // client records this frame are drawn into it. The rest keeps its pixels.
+    void invalidate(const drawing::RectL& r)
+    {
+        canvas().invalidateContentRect(r.left, r.top, r.right - r.left, r.bottom - r.top);
     }
 
     ~RenderTarget() override
@@ -722,6 +792,20 @@ public:
     {
         *returnPixelFormat = drawing::api::IBitmapPixels::RGBA_16f;
         return ReturnCode::Ok;
+    }
+
+    // Not an interface method: a host's swap-chain target for a native
+    // window (HWND / NSView / X11 Window / wl_surface*), after initialize().
+    RenderTarget* createWindowRenderTarget(void* nativeWindow, int32_t width, int32_t height, float dpi = 96.0f)
+    {
+        try
+        {
+            return new RenderTarget(this, { uint32_t(width), uint32_t(height) }, 0, dpi, nativeWindow);
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
     }
 
     ReturnCode createTextFormat(const char* fontFamilyName, drawing::FontWeight fontWeight, drawing::FontStyle fontStyle,

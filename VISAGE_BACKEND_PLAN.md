@@ -317,6 +317,33 @@ Fork bugs found by the GMPI suite, each now pinned by a fork test in
   alpha twice, darker soft shadows (neumorphic tests, mean diff 20, every
   differing pixel darker). `submitSampleRegions` now uses `Composite`.
 
+Retained pixels and Wayland present (2026-10-22), three more fork bugs found
+by running many canvases in one process (1 in 3 suite runs lost the blue
+channel in ~20 consecutive tests after the first test that read back and
+destroyed a second canvas; by the end of the run everything was correct
+again — a transient, which ruled out global state):
+
+- **Gradient atlas strip never uploaded.** `addGradient` uploads only if
+  the texture exists; a strip added before that was re-uploaded only after
+  a repack. The texture, created later on recycled GPU memory (the dead
+  canvas's atlas), kept the dead canvas's colours where the white strip
+  should be, so the composite's white tint read yellow = white minus blue.
+  Fix: zero-fill and re-upload every strip whenever the texture is created.
+  0 failing runs in 10, from 3–4.
+- **Pointer-keyed image cache.** Raw images were identified by data
+  pointer; the backend frees upload buffers after each submit and malloc
+  hands the next same-sized buffer the same address → "same image", stale
+  pixels. `Image::id` now carries an identity for transient images.
+- **Layout depends on NDEBUG.** `VISAGE_LEAK_CHECKER` adds a member only in
+  debug builds; the demo compiled without `NDEBUG` against a RelWithDebInfo
+  library found its `Layer` 24 bytes away and crashed. The member now
+  exists in both configurations.
+- Also: `bgfx::init` failure was ignored (crash at the next bgfx call);
+  `BGFX_CAPS_SWAP_CHAIN` is only reported when bgfx was initialised on a
+  window (hence the model surface); a frame buffer cannot be built from a
+  READ_BACK texture (lavapipe faults); `pkill -f` with the compositor's
+  command line kills the shell running it — use `pkill -x weston`.
+
 ## Landmines
 
 - **No real GPU in the dev VM.** `lspci` shows VMware SVGA II; ICDs present are
@@ -430,12 +457,27 @@ Each is verifiable on its own; nothing lands in SE16 before milestone 4.
 3. **Offscreens on the GPU:** `createCompatibleRenderTarget` without
    `CpuReadable` becomes a fork layer; bitmap-to-texture caching keyed by
    bitmap identity instead of a per-draw repack; the retained-pixels model.
-4. **Present on Linux:** `DrawingFrameWayland` and `DrawingFrameX11` grow a
-   GPU present path: bgfx swap chain on the surface, dirty rect → Visage
-   invalidation, frame-callback pacing, fallback to the shm path when bgfx
-   fails to init. SynthEditWayland editor and the VST3 subsurface editor run on
-   it; `gmpi_ui/tests/run.sh` headless Wayland tests pass under lavapipe.
-   Fork changes 3 and 6.
+4. **Present on Linux — Wayland DONE (Oct 2026), X11 to do.**
+   `WaylandFrameBase::present()` takes a GPU branch when `GMPI_UI_GPU=1`
+   (opt-in while young): bgfx is initialised once on a role-less model
+   `wl_surface` (its Vulkan renderer only reports swap-chain support when
+   initialised on *some* window, and it must not be a surface a canvas will
+   pair to), then the frame's own surface gets a swap chain through
+   `gpugfx::Factory::createWindowRenderTarget()`; the host's dirty rect
+   becomes `RenderTarget::invalidate()`, the client renders, `endDraw()`
+   submits and the swap chain's present commits the surface — no shm
+   buffer, no attach/damage. Frame pacing stays with the frame callbacks
+   (`Renderer::setVsync(false)`). The swap chain is 8-bit **sRGB**: Mesa's
+   Wayland WSI offers no float surface, so the GPU encodes linear→sRGB on
+   write and the content layers stay RGBA16F. Verified under a nested
+   `weston --backend=headless --renderer=pixman` with `weston-screenshooter`:
+   the GPU window matches the CPU window pixel for pixel on the background
+   ((97,101,108)) and renders text and decorations. Build with
+   `gmpi_ui/tests/run.sh --demo-gpu`.
+   Still to do: `DrawingFrameX11` (same shape: a hidden model window, swap
+   chain on the embedded window), popups/tooltips/dialogs (still shm —
+   fine, they are separate surfaces), SynthEditWayland editor and the VST3
+   subsurface editor on it, `tests/run.sh` under lavapipe.
 5. **Multi-window and lifetime:** popups, tooltips, dialogs as extra Canvases
    in one frame; editor open/close/reopen 100× with no bgfx handle leak
    (`bgfx::getStats()` counters); two plugin instances in Ardour; headless

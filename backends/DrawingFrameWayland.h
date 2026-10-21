@@ -54,6 +54,9 @@
 #include <vector>
 
 #include "backends/CpuGfx.h"
+#if GMPI_UI_GPU_BACKEND
+#include "backends/GpuGfx.h"
+#endif
 #include "backends/CpuEncode.h"
 #include "backends/PopupMenuModel.h"
 #include "backends/TextEditModel.h"
@@ -370,6 +373,13 @@ public:
     // --- IDrawingHost ---
     gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
     {
+#if GMPI_UI_GPU_BACKEND
+        if (gpuActive_)
+        {
+            *returnFactory = static_cast<gmpi::api::IUnknown*>(&gpuFactory_);
+            return gmpi::ReturnCode::Ok;
+        }
+#endif
         *returnFactory = static_cast<gmpi::api::IUnknown*>(&factory_);
         return gmpi::ReturnCode::Ok;
     }
@@ -426,7 +436,16 @@ public:
     GMPI_REFCOUNT_NO_DELETE;
 
 protected:
+#if GMPI_UI_GPU_BACKEND
+    // The GPU factory embeds the CPU one, so the text/decoder wiring that
+    // hosts do through drawingFactory() is unchanged; clients get the GPU
+    // factory once a frame presents through it.
+    gmpi::gpugfx::Factory  gpuFactory_;
+    gmpi::cpugfx::Factory& factory_{ gpuFactory_.cpu };
+    bool gpuActive_{};
+#else
     gmpi::cpugfx::Factory factory_;
+#endif
     gmpi::api::IUnknown*  parameterHost_{};
     gmpi::drawing::Rect   dirty_{};
     bool  dirtyAll_ = true;
@@ -814,6 +833,10 @@ public:
 
     ~WaylandFrameBase() override
     {
+#if GMPI_UI_GPU_BACKEND
+        if (gpuTarget_)
+            gpuTarget_->release();
+#endif
         // NOT detachClient(): it reaches inputDispatch(), which is pure virtual.
         // By the time a base destructor runs the derived override is gone, so
         // that call lands on __cxa_pure_virtual and aborts. Derived classes
@@ -838,7 +861,7 @@ public:
     void detachClient();
 
     // defined after WaylandTextEdit
-    void drawActiveTextEdit(gmpi::cpugfx::RenderTarget* rt);
+    void drawActiveTextEdit(gmpi::drawing::api::IDeviceContext* rt);
 
     wl_surface* surface() const { return surface_; }
 
@@ -864,6 +887,14 @@ public:
 
     // Render whatever is dirty and hand the pixels to the compositor.
     void present();
+#if GMPI_UI_GPU_BACKEND
+    // The GPU path: the surface is a Vulkan swap chain; no shm buffer, no
+    // attach/damage - the swap chain's present commits the surface.
+    void presentGpu(int pw, int ph);
+    gmpi::gpugfx::RenderTarget* gpuTarget_{};
+    int  gpuW_{}, gpuH_{};
+    bool gpuTried_{};
+#endif
 
     // The pixels last handed to the compositor - literally what is on screen.
     //
@@ -986,6 +1017,28 @@ inline void WaylandFrameBase::present()
     if (pw <= 0 || ph <= 0)
         return;
 
+#if GMPI_UI_GPU_BACKEND
+    if (gmpi::gpugfx::wanted())
+    {
+        if (!gpuTried_)
+        {
+            gpuTried_ = true;
+            // A role-less surface that lives for the process: bgfx needs SOME
+            // window to initialise on, and it must not be a surface a canvas
+            // will later pair to (see gpugfx::initialize).
+            static wl_surface* modelSurface = wl_compositor_create_surface(connection_.compositor());
+            gpuActive_ = gmpi::gpugfx::initialize(modelSurface, connection_.display(), /*wayland*/ true);
+            if (!gpuActive_)
+                fprintf(stderr, "gmpi_ui: GPU backend unavailable, presenting through the CPU path\n");
+        }
+        if (gpuActive_)
+        {
+            presentGpu(pw, ph);
+            return;
+        }
+    }
+#endif
+
     if (!buffer_.matches(pw, ph))
     {
         if (!buffer_.create(connection_.shm(), pw, ph))
@@ -1062,6 +1115,69 @@ inline void WaylandFrameBase::present()
     dirtyAll_ = false;
     dirty_ = {};
 }
+
+#if GMPI_UI_GPU_BACKEND
+inline void WaylandFrameBase::presentGpu(int pw, int ph)
+{
+    if (!gpuTarget_)
+    {
+        gpuTarget_ = gpuFactory_.createWindowRenderTarget(surface_, pw, ph, 96.0f);
+        gpuW_ = pw;
+        gpuH_ = ph;
+        dirtyAll_ = true;
+    }
+    else if (pw != gpuW_ || ph != gpuH_)
+    {
+        gpuTarget_->resize(pw, ph);
+        gpuW_ = pw;
+        gpuH_ = ph;
+        dirtyAll_ = true;
+    }
+    if (!gpuTarget_)
+    {
+        gpuActive_ = false;
+        return;
+    }
+
+    if (needsMeasure_)
+    {
+        gmpi::drawing::Size avail{ static_cast<float>(logicalW_), static_cast<float>(logicalH_) };
+        gmpi::drawing::Size desired{};
+        client_->measure(&avail, &desired);
+
+        const gmpi::drawing::Rect all{ 0, 0, avail.width, avail.height };
+        client_->arrange(&all);
+        needsMeasure_ = false;
+    }
+
+    gmpi::drawing::RectL area{ 0, 0, pw, ph };
+    if (!dirtyAll_ && !isEmpty(dirty_))
+    {
+        area.left   = (std::max)(0,  static_cast<int32_t>(dirty_.left   * scale_));
+        area.top    = (std::max)(0,  static_cast<int32_t>(dirty_.top    * scale_));
+        area.right  = (std::min)(pw, static_cast<int32_t>(dirty_.right  * scale_ + 1.0f));
+        area.bottom = (std::min)(ph, static_cast<int32_t>(dirty_.bottom * scale_ + 1.0f));
+    }
+
+    // Surface state for the commit the swap chain's present will make.
+    if (viewport_)
+        wp_viewport_set_destination(viewport_, logicalW_, logicalH_);
+
+    gpuTarget_->beginDraw();
+    gpuTarget_->invalidate(area);
+    if (scale_ != 1.0f)
+    {
+        const auto m = gmpi::drawing::makeScale(scale_, scale_);
+        gpuTarget_->setTransform(&m);
+    }
+    client_->render(static_cast<gmpi::drawing::api::IDeviceContext*>(gpuTarget_));
+    drawActiveTextEdit(gpuTarget_);
+    gpuTarget_->endDraw(); // submit + present
+
+    dirtyAll_ = false;
+    dirty_ = {};
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Input
@@ -2573,7 +2689,7 @@ public:
     bool active() const { return !finished_; }
     void commit() { finish(gmpi::ReturnCode::Ok); }
     const gmpi::drawing::Rect& rect() const { return rect_; }
-    void render(gmpi::cpugfx::RenderTarget* rt);
+    void render(gmpi::drawing::api::IDeviceContext* rt);
     void onPointer(double x, double y, bool pressed);
 
     // --- exposed so the editing model can be checked without a compositor ----
@@ -2693,7 +2809,7 @@ inline void WaylandTextEdit::onPointer(double x, double y, bool pressed)
     redraw();
 }
 
-inline void WaylandTextEdit::render(gmpi::cpugfx::RenderTarget* rt)
+inline void WaylandTextEdit::render(gmpi::drawing::api::IDeviceContext* rt)
 {
     if (finished_)
         return;
@@ -3610,7 +3726,7 @@ inline void WaylandStockDialog::complete(gmpi::api::StockDialogButton b)
     release();   // balances the addRef in showAsync
 }
 
-inline void WaylandFrameBase::drawActiveTextEdit(gmpi::cpugfx::RenderTarget* rt)
+inline void WaylandFrameBase::drawActiveTextEdit(gmpi::drawing::api::IDeviceContext* rt)
 {
     if (!activeEdit_)
         return;

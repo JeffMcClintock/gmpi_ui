@@ -351,6 +351,26 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // frame). Above this, the CPU rasteriser is the cheaper path anyway.
     static constexpr float kMaxAtlasPathTexels = 512.0f * 512.0f;
 
+    // Four corners (a closing repeat of the first allowed) with every edge
+    // horizontal or vertical.
+    static bool isAxisAlignedRect(const cpugfx::Figure& figure)
+    {
+        const auto& p = figure.points;
+        size_t n = p.size();
+        if (n == 5 && p[4].x == p[0].x && p[4].y == p[0].y)
+            n = 4;
+        if (n != 4 || !figure.filled)
+            return false;
+        for (size_t i = 0; i < 4; ++i)
+        {
+            const auto& a = p[i];
+            const auto& b = p[(i + 1) % 4];
+            if ((a.x == b.x) == (a.y == b.y))
+                return false; // diagonal, or a zero-length edge
+        }
+        return true;
+    }
+
     static bool tooLargeForAtlas(const drawing::Rect& deviceBounds)
     {
         const float w = deviceBounds.right - deviceBounds.left;
@@ -370,7 +390,27 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         const auto deviceBounds = figuresDeviceBounds(figures);
         if (tooLargeForAtlas(deviceBounds))
         {
-            trace("figures", deviceBounds, "cpu (too large for atlas)");
+            // The editor fills its whole virtual canvas (8000x8000) as one
+            // rectangle geometry every frame: an SDF rect, not a raster of
+            // the clip's worth of it uploaded each time.
+            if (axisAligned() && figures.size() == 1 && isAxisAlignedRect(figures[0]))
+            {
+                trace("figures", deviceBounds, "gpu sdf rect (rectangle figure)");
+                beginGpuShape(brush);
+                canvas().rectangle(deviceBounds.left, deviceBounds.top, deviceBounds.right - deviceBounds.left,
+                                   deviceBounds.bottom - deviceBounds.top);
+                return ReturnCode::Ok;
+            }
+            if (traceDraws())
+            {
+                size_t points = 0;
+                for (const auto& f : figures)
+                    points += f.points.size();
+                char how[96];
+                std::snprintf(how, sizeof(how), "cpu (too large for atlas; %zu figures, %zu points, first %s)",
+                              figures.size(), points, figures.empty() ? "-" : figures[0].filled ? "filled" : "hollow");
+                trace("figures", deviceBounds, how);
+            }
             return viaCpu(deviceBounds, cpuFill);
         }
         trace("figures", deviceBounds, "gpu path atlas");
@@ -689,6 +729,60 @@ public:
         return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::fillRectangle(rect, brush);
     }
 
+    // Same shortcut as cpugfx: an axis-aligned solid line with the default
+    // stroke style (solid, flat caps) is exactly an axis-aligned rectangle.
+    // The editor's canvas grid is ~100 of these in a frame; as strokes they
+    // were ~100 path-atlas entries, as rects they are one SDF quad each.
+    ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush,
+                        float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+    {
+        if (!strokeStyle && strokeWidth > 0.0f && std::isfinite(strokeWidth)
+            && (point0.x == point1.x) != (point0.y == point1.y))
+        {
+            const float h = strokeWidth * 0.5f;
+            const bool horizontal = point0.y == point1.y;
+            const drawing::Rect r{
+                (std::min)(point0.x, point1.x) - (horizontal ? 0.0f : h),
+                (std::min)(point0.y, point1.y) - (horizontal ? h : 0.0f),
+                (std::max)(point0.x, point1.x) + (horizontal ? 0.0f : h),
+                (std::max)(point0.y, point1.y) + (horizontal ? h : 0.0f) };
+            return fillRectangle(&r, brush);
+        }
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::drawLine(point0, point1, brush, strokeWidth, strokeStyle);
+    }
+
+    // A solid axis-aligned stroked rectangle with the default stroke style
+    // is four axis-aligned rectangles. As a geometry it widened to an
+    // annulus whose bounding box is the whole rectangle: the editor's
+    // border around its 8000x8000 canvas fell back to a CPU raster and
+    // upload of every module's worth of clip, every frame, for ink that
+    // was nowhere near.
+    ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth,
+                             drawing::api::IStrokeStyle* strokeStyle) override
+    {
+        if (auto* solid = gpuSolid(brush); solid && axisAligned() && !strokeStyle && strokeWidth > 0.0f
+            && std::isfinite(strokeWidth) && rect->right > rect->left && rect->bottom > rect->top)
+        {
+            const float h = strokeWidth * 0.5f;
+            const drawing::Rect top{ rect->left - h, rect->top - h, rect->right + h, rect->top + h };
+            const drawing::Rect bottom{ rect->left - h, rect->bottom - h, rect->right + h, rect->bottom + h };
+            const drawing::Rect left{ rect->left - h, rect->top + h, rect->left + h, rect->bottom - h };
+            const drawing::Rect right{ rect->right - h, rect->top + h, rect->right + h, rect->bottom - h };
+            if (top.bottom >= bottom.top || left.right >= right.left)
+            {
+                // Pen wider than the rectangle: the bands cover it entirely.
+                const drawing::Rect outer{ rect->left - h, rect->top - h, rect->right + h, rect->bottom + h };
+                return fillRectangle(&outer, brush);
+            }
+            fillRectangle(&top, brush);
+            fillRectangle(&bottom, brush);
+            fillRectangle(&left, brush);
+            fillRectangle(&right, brush);
+            return ReturnCode::Ok;
+        }
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::drawRectangle(rect, brush, strokeWidth, strokeStyle);
+    }
+
     ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
     {
         if (auto* solid = gpuSolid(brush); solid && uniformScale() && ellipse->radiusX == ellipse->radiusY && ellipse->radiusX > 0.0f)
@@ -738,13 +832,39 @@ public:
     // its layout rect, so the fallback covers the whole clip.
     cpugfx::ICpuTextEngine* textEngine() const;
 
+    // Device bounds for text drawn within `layoutRect` with extent `extent`.
+    // Text may overflow its layout rect on any side (alignment, no clip
+    // option), so the rect grows by the overflow on every side, plus a
+    // line's height for ink beyond the typographic box. The CPU fallback
+    // used to cover the whole clip for every text draw: the analyser's 26
+    // axis labels were each a 400x200 raster and upload per frame.
+    drawing::Rect textDeviceBounds(const drawing::Rect& layoutRect, drawing::Size extent) const
+    {
+        if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
+            return clipRectStack.back();
+        const float overflowW = (std::max)(0.0f, extent.width - (layoutRect.right - layoutRect.left));
+        const float overflowH = (std::max)(0.0f, extent.height - (layoutRect.bottom - layoutRect.top));
+        const float margin = extent.height + 1.0f;
+        const drawing::Rect grown{ layoutRect.left - overflowW - margin, layoutRect.top - overflowH - margin,
+                                   layoutRect.right + overflowW + margin, layoutRect.bottom + overflowH + margin };
+        return drawing::transformRect(transform_, grown);
+    }
+
     ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat,
                          const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options) override
     {
         auto* engine = textEngine();
         if (!engine || !textFormat || !layoutRect)
             return ReturnCode::NoSupport;
-        return viaCpu(clipRectStack.back(), [&](cpugfx::RenderTarget& cpu) {
+
+        // Measured both unwrapped and at the layout width: whichever way the
+        // format wraps, the larger of the two bounds the ink.
+        drawing::Size unwrapped{ 0, 0 }, wrapped{ 0, 0 };
+        textFormat->getTextExtentU(string, int32_t(stringLength), 100000.0f, &unwrapped);
+        textFormat->getTextExtentU(string, int32_t(stringLength), (std::max)(1.0f, layoutRect->right - layoutRect->left), &wrapped);
+        const drawing::Size extent{ (std::max)(unwrapped.width, wrapped.width), (std::max)(unwrapped.height, wrapped.height) };
+
+        return viaCpu(textDeviceBounds(*layoutRect, extent), [&](cpugfx::RenderTarget& cpu) {
             return engine->drawText(&cpu, textFormat, string, int32_t(stringLength), *layoutRect, brush, options);
         });
     }
@@ -755,7 +875,9 @@ public:
         auto* engine = textEngine();
         if (!engine || !richTextFormat || !layoutRect)
             return ReturnCode::NoSupport;
-        return viaCpu(clipRectStack.back(), [&](cpugfx::RenderTarget& cpu) {
+        drawing::Size extent{ 0, 0 };
+        richTextFormat->getTextExtentU(&extent);
+        return viaCpu(textDeviceBounds(*layoutRect, extent), [&](cpugfx::RenderTarget& cpu) {
             return engine->drawRichText(&cpu, richTextFormat, *layoutRect, brush, options);
         });
     }
@@ -766,6 +888,9 @@ public:
         auto* engine = textEngine();
         if (!engine || !textLayout)
             return ReturnCode::NoSupport;
+        // A layout's box (and so where alignment puts the text) is not
+        // exposed through ITextLayout, only its tight extent: the whole
+        // clip stays the bound here.
         return viaCpu(clipRectStack.back(), [&](cpugfx::RenderTarget& cpu) {
             return engine->drawTextLayout(&cpu, textLayout, point, brush, options);
         });

@@ -1193,6 +1193,13 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
                 pw, ph, area.left, area.top, area.right, area.bottom, int(dirtyAll_), (void*)activeEdit_);
     gpuTarget_->beginDraw();
     gpuTarget_->invalidate(area);
+    // Clip the client to the dirty area. The client paints the whole window
+    // every time; on the shm path a full re-raster is cheap enough to
+    // tolerate, but here every op outside the area would still cost an
+    // upload or a draw (a repainting analyser was re-drawing the module
+    // browser's 37 text rows and the whole canvas four times a second).
+    const gmpi::drawing::Rect areaF{ float(area.left), float(area.top), float(area.right), float(area.bottom) };
+    gpuTarget_->pushAxisAlignedClip(&areaF);
     if (scale_ != 1.0f)
     {
         const auto m = gmpi::drawing::makeScale(scale_, scale_);
@@ -1200,6 +1207,7 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
     }
     client_->render(static_cast<gmpi::drawing::api::IDeviceContext*>(gpuTarget_));
     drawActiveTextEdit(gpuTarget_);
+    gpuTarget_->popAxisAlignedClip();
     gpuTarget_->endDraw(); // submit + present
 
     dirtyAll_ = false;

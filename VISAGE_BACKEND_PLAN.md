@@ -355,6 +355,62 @@ again — a transient, which ruled out global state):
   READ_BACK texture (lavapipe faults); `pkill -f` with the compositor's
   command line kills the shell running it — use `pkill -x weston`.
 
+## Measured (editor on the GPU path, 2026-10-22, lavapipe)
+
+Jeff's first session in SynthEditWayland with `GMPI_UI_GPU=1`: fine lines on
+the Frequency Analyser, a crash inserting Slider, dragging an analyser at
+~5 Hz. Reproduced with `~/SynthEdit Projects/Frq Anal test.synthedit`
+under nested Weston (screenshots) and under a nested gnome-shell on Xvfb
+with xdotool (drag + insert; script in the session scratchpad, built from
+`SE16/SynthEditWayland/autotest.sh`).
+
+- **The lines were the path atlas's fan.** A filled or stroked graph was a
+  fan of several hundred slivers from its first point, and every exterior
+  pixel the fan swept received dozens of signed areas that should cancel.
+  Two separate errors kept them from cancelling: R16F accumulation (1/2048
+  per step; fixed by an R32F atlas where the device renders to it) and the
+  per-sliver area itself (Sutherland–Hodgman in fp32 on atlas coordinates:
+  ~1e-4 per triangle, ~3e-3 after a fan — still visible, so R32F alone was
+  not enough). Coverage is now accumulated **per edge** the way font
+  rasterisers do: each edge adds, to each pixel in the rows it spans, the
+  area of the pixel to its right. A pixel right of an edge gets exactly the
+  edge's overlap with its row, the overlaps of the edges meeting at a vertex
+  sum to exactly one in fp32 (Sterbenz), so the exterior is exactly zero;
+  only edge pixels carry rounding, and those are fractional anyway. The
+  vertex shader works in rect-local coordinates. No conservative
+  rasterisation path any more (`vs_conservative_path_fill.sc` deleted).
+  Tests: fork "Fan accumulation leaves a graph fill clean" (exterior 0,
+  interior 1, exactly; fails at 1/255 on the old R16F fan),
+  gimpi_ui_tests `GpuStrokedGraphLeavesTheBackgroundClean` (a 1 px stroked
+  400-point polyline, the analyser's case; leaked 0.003 with the fan).
+  Fragment cost per edge is (rect width − edge x) × rows, so a graph is
+  ~0.5 M fragments rather than the fan's ~50 M of bounding-box quads.
+- **Frame rate.** The host renders the whole client every present and only
+  the composite was limited to the dirty area; on the GPU path every op
+  outside it still cost a draw or an upload (a repainting analyser redrew
+  the module browser's 37 text rows and the whole canvas at 4.5 Hz). The
+  GPU presents now push an axis-aligned clip of the dirty area. Then: text
+  fell back over the whole clip (26 axis labels × a 400×200 raster and fp16
+  upload per frame) — bounded by the measured extent now; the canvas grid
+  was ~110 stroked lines per frame through the atlas — axis-aligned solid
+  lines are SDF rects now, as in cpugfx; the border stroked around the
+  8000×8000 canvas widened to an annulus whose bounding box covers every
+  module, so each module's frame fell back to a CPU raster and upload of
+  its whole clip for ink nowhere near it — a solid axis-aligned
+  `drawRectangle` is four SDF rects now (and a single axis-aligned
+  rectangle figure too large for the atlas is one). Analyser repaint
+  interval on lavapipe: 220 ms → ~100 ms median; a module drag 4 Hz →
+  13 Hz. What remains per frame is the CPU fallbacks for gradient fills,
+  bitmap draws and retained text layouts (a raster + upload of the clip
+  each) and lavapipe itself.
+- **Slider insert.** Inserting HSlider2 and Slider2 from the browser on the
+  GPU path did not crash in the scripted run (nor on the CPU path). Jeff's
+  first crash, after loading a project, reproduces on the CPU path too and
+  is `ModuleViewStruct`'s constructor dereferencing a null `moduleInfo` for
+  a module type missing from this install (`UnitTest/Projects/
+  WavetableSynth.synthedit`; "unregistered module type" in the log) — a
+  SynthEdit bug, not a backend one.
+
 ## Landmines
 
 - **No real GPU in the dev VM.** `lspci` shows VMware SVGA II; ICDs present are

@@ -1287,6 +1287,11 @@ void X11DrawingFrame::Impl::presentGpu()
                 area.right, area.bottom, int(d.dirtyAll));
     d.gpuTarget->beginDraw();
     d.gpuTarget->invalidate(area);
+    // Clip the client to the dirty area: it paints the whole window every
+    // time, and here every op outside the area would still cost an upload
+    // or a draw (see the Wayland present).
+    const gmpi::drawing::Rect areaF{ float(area.left), float(area.top), float(area.right), float(area.bottom) };
+    d.gpuTarget->pushAxisAlignedClip(&areaF);
     if (d.scale != 1.0f)
     {
         const auto m = gmpi::drawing::makeScale(d.scale, d.scale);
@@ -1295,6 +1300,7 @@ void X11DrawingFrame::Impl::presentGpu()
     d.client->render(static_cast<gmpi::drawing::api::IDeviceContext*>(d.gpuTarget));
     if (d.activeEdit)
         d.activeEdit->render(d.gpuTarget);
+    d.gpuTarget->popAxisAlignedClip();
     d.gpuTarget->endDraw(); // submit + present
 
     d.dirtyAll = false;

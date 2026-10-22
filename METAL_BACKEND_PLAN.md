@@ -1,6 +1,7 @@
 # Metal (metal-cpp) GPU backend plan
 
-Status: PROPOSAL v2, 2026-10-23. Companion to `VISAGE_BACKEND_PLAN.md`,
+Status: PROPOSAL v2, 2026-10-23. Milestone 0 DONE (see "Measured").
+Companion to `VISAGE_BACKEND_PLAN.md`,
 which this plan builds on and does not repeat. Surveyed gmpi_ui
 `gpu-backend` at `cd70e1c`, the Visage fork `JeffMcClintock/visage` branch
 `gmpi` at `4eeb51c`, gimpi_ui_tests `gpu-backend` at `730557e`.
@@ -37,8 +38,9 @@ Visage has a Metal path, but none of it is Visage code:
   hidden `CAMetalLayer` so that bgfx can initialise headless.
 
 Upstream Visage apps therefore render through Metal on a Mac. The gmpi fork's
-changes (fp16 layers, exact coverage, R32F atlas, the bug fixes) have only
-ever run under lavapipe. Nobody has run them on Metal.
+changes (fp16 layers, exact coverage, R32F atlas, the bug fixes) had only
+ever run under lavapipe until milestone 0 ran them on Metal: every
+`DrawingTest` case passes there unchanged (see "Measured").
 
 ## Shape of it
 
@@ -152,8 +154,13 @@ is then exactly zero. On Metal:
 
 - At init, query whether R32Float is renderable **and blendable** on this GPU
   family. Don't assume it: Metal's feature-set tables restrict 32-bit float
-  blending by family. This Mac is an M1 (Apple7), the lowest Apple-silicon
-  Mac.
+  blending by family. **Measured on the M1 (Apple7, the lowest Apple-silicon
+  Mac): it blends, at fp32 precision** (see "Measured"). Intel Macs with
+  AMD or Intel GPUs are not measured.
+- The renderer's `coverageFormat()` (`path.cpp:812`) takes R32F when bgfx
+  reports `TEXTURE_2D | FRAMEBUFFER` for it and never asks about blending.
+  The metal-cpp device must answer that query honestly: it reports
+  FRAMEBUFFER for R32F only where the blend probe passes.
 - If R32Float isn't blendable, Metal offers a fallback that beats R16F. On
   Apple-family GPUs the fragment shader can read the current attachment value
   (programmable blending, `[[color(0)]]`) and do the add in fp32 itself. That
@@ -222,29 +229,101 @@ succeed:
   on every push. These would be the project's first GPU numbers that are not
   lavapipe.
 
+## Measured (milestone 0, 2026-10-23, iMac M1, bgfx-Metal)
+
+Setup: Apple M1 (`MTLGPUFamilyApple7` and `Mac2`), macOS 26.3, SDK 26.5,
+Xcode clang, Ninja, RelWithDebInfo. Fork `gmpi` at `4eeb51c` with bgfx from
+its own pinned fetch, gmpi_ui `gpu-backend` (renderer code as of `cd70e1c`),
+gimpi_ui_tests `gpu-backend` at `00e9484` plus three Mac build fixes (below).
+Configured with `-DGMPI_UI_TESTS_GPU_BACKEND=ON
+-DGMPI_GPU_GRAPHICS_FOLDER=<fork>`. Every test ran headless through the fork's
+hidden `CAMetalLayer`.
+
+- **`DrawingTest.*`: 160 cases, 159 pass, 1 skipped, 0 fail.** The same
+  result in 4 separate runs and under Metal API validation
+  (`MTL_DEBUG_LAYER=1`, no assertion). No tolerance was loosened, and no
+  reference image was written or changed. The suite has grown since the Vulkan
+  plan's 151; the new cases are the GPU-against-cpugfx oracle tests.
+- **The skip is not Metal-specific.** `TextLayoutStyleRuns`: text goes through
+  `CpuTextEngine`, which declines styled runs ("renders run-free layouts
+  only"), the same on any non-D2D backend.
+- **Whole binary: 244 tests, 241 pass, 3 skipped.** The other two skips are
+  `CpuText.*` colour-emoji tests with no COLRv1 font on this Mac, which don't
+  involve the GPU.
+- **It really is the GPU, and really Metal.**
+  - A runtime print in the renderer (temporary, reverted) reported
+    `renderer=Metal`.
+  - The test binary prints "Metal API Validation Enabled" under the debug
+    layer.
+  - The draw trace (`GMPI_UI_GPU_TRACE_DRAWS=1`) over the suite shows 996 GPU
+    ops: 368 SDF rects, 345 path-atlas fills, 255 opaque clip fills and 28
+    atlas images. Text, CPU-only brushes and three bitmap draws took the
+    `viaCpu` seam, as they do on Linux.
+- **R32F coverage atlas, answered.** On Metal, bgfx reports R32F caps
+  `0x3e49` (includes `TEXTURE_2D` and `FRAMEBUFFER`), so the atlas is R32F.
+  `gimpi_ui_tests/tools/metal_r32f_blend_probe.m` adds 1/N into a 4×4 target
+  N times with ONE/ONE blending, under validation:
+
+  | Passes of 1/N | R32Float | R16Float |
+  |---|---|---|
+  | 3 | 1.000000000 | 0.999511719 |
+  | 400 | 0.999999166 (−8.3e-7) | 0.977539062 (−0.0225) |
+  | 2048 | 1.000000000 | 1.000000000 |
+
+  The M1 accepts the blending pipeline and accumulates at fp32. The R16F row
+  at 400 passes is the fan-line failure the Vulkan plan describes, reproduced
+  in isolation. The programmable-blending fallback is not needed on Apple
+  silicon.
+
+Mac build fixes the run needed (gimpi_ui_tests, none in the fork or gmpi_ui):
+
+- `enable_language(OBJC OBJCXX)` at the top level before adding the fork.
+  The fork enables them inside its own `project()`, which CMake ignores for a
+  subdirectory, so generation failed with `CMAKE_OBJCXX_COMPILE_OBJECT` unset.
+- `DrawingTestContext.mm` was live whenever the CPU backend was off, so a GPU
+  build had two `DrawingTestContext` definitions (duplicate symbols). It is
+  now off when the GPU backend is on. `DrawingTestContext.cpp` has the same
+  shape on Windows (`#ifdef _WIN32`) and will collide in a Windows GPU build.
+- `gpu_backend_tests.cpp` qualifies `Rect`/`Point` as `gmpi::drawing::`,
+  because macOS's QuickDraw `::Rect`/`::Point` (MacTypes.h, through ImageIO)
+  make the bare names ambiguous under `using namespace gmpi::drawing`. This is
+  the same fix `cpu_backend_tests.cpp:220` already carries.
+
+Notes for later milestones:
+
+- The committed `bin/macos/shaderc` is x86_64. It ran under Rosetta, so
+  Rosetta is a build requirement on Apple silicon until shaderc is built from
+  source (fork change 3), or until compiled shaders are committed.
+- bgfx's Vulkan renderer is compiled into the Mac build (431 symbols against
+  Metal's 154) and is dead weight there. That ends when bgfx leaves Apple
+  builds (M3).
+
+Triage: there is nothing to fix before the device work. The renderer, the
+fp16 rules and the coverage algorithm behave on an Apple GPU exactly as on
+lavapipe. From M3 on, any difference between bgfx-Metal and the metal-cpp
+device belongs to the device.
+
 ## Milestones
 
 Each one can be checked on its own. Nothing lands in SynthEdit before M4.
 
-0. **Baseline on bgfx-Metal (level A), on this Mac.** Run the suite through
-   bgfx's own Metal renderer, before or after absorption, whichever lands
-   first. This is measurement, not renderer work. Failures here belong to the
-   renderer on an Apple GPU (float blending, TBDR, sampler rounding), not to a
-   new device, so they get fixed before the device exists. Also answer the
-   R32Float-blend question. Exit: the pass count is recorded here and every
-   failure is triaged.
+0. **Baseline on bgfx-Metal (level A), on this Mac — DONE (Oct 2026).**
+   `DrawingTest.*` 159/160 pass, 1 engine-level skip, 0 fail. R32Float blends
+   at fp32 on the M1. See "Measured".
 1. **Absorption** (`VISAGE_BACKEND_PLAN.md`, "Absorbing Visage into gmpi_ui").
    This is shared with Linux and is a prerequisite for everything below. Exit:
-   151/151 under lavapipe (needs the Linux VM) and the M0 count on the Mac,
-   built from gmpi_ui alone.
+   the full `DrawingTest.*` set under lavapipe (needs the Linux VM) and the M0
+   result on the Mac (159 pass, 1 skip), built from gmpi_ui alone.
 2. **Device seam, no behaviour change.** `bgfx::` → the `gmpi::gpu` device
    API, with bgfx behind it everywhere. Exit: the same counts as M1.
 3. **metal-cpp device, headless.** Textures, frame buffers, first-pass clears,
    transient buffers, programs from parsed bgfx-Metal shaders, views,
    blend and sampler caches, blit, synchronous readback. Exit: the precision
    tests pass (300 passes of alpha 1/512 accumulate to ~112/255; an HDR 2.5
-   value reads back 2.5), then **gimpi_ui_tests 151/151 against the D2D
-   references**, in 3 clean full runs. bgfx leaves Apple builds at this point.
+   value reads back 2.5), then **gimpi_ui_tests `DrawingTest.*` against the
+   D2D references with the M0 result or better** (159 pass, 1 engine-level
+   skip at M0), in 3 clean full runs and under `MTL_DEBUG_LAYER=1`. bgfx leaves
+   Apple builds at this point.
 4. **Present on macOS and in SynthEdit.** The `DrawingFrameMac.mm` GPU branch
    above, opt-in through `GMPI_UI_GPU=1`. Exit:
    - The drawable format is confirmed RGBA16Float at runtime.
@@ -264,7 +343,9 @@ Each one can be checked on its own. Nothing lands in SynthEdit before M4.
 
 - **32-bit float blending is not universal** across Metal GPU families. Check
   caps at init (see "Coverage atlas precision"). A missing cap must never fall
-  back to R16F quietly; the test above catches it if it does.
+  back to R16F quietly; the test above catches it if it does. The M1 passes
+  (M0). Intel/AMD Macs are unmeasured: run `tools/metal_r32f_blend_probe.m`
+  on one before calling M4 done.
 - **ODR across plugins.** metal-cpp needs `NS_PRIVATE_IMPLEMENTATION`,
   `MTL_PRIVATE_IMPLEMENTATION` and `CA_PRIVATE_IMPLEMENTATION` in exactly one
   translation unit per binary, and its globals must be hidden. Check with

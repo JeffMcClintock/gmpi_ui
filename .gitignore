@@ -8,3 +8,4 @@ tests/x11_menu_test
 tests/build-mac/
 tests/build-x11/
 tests/wayland_demo_gpu
+tests/build-x11/

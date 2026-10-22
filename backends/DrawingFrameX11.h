@@ -30,6 +30,9 @@
 #include <memory>
 
 #include "backends/CpuGfx.h"
+#if GMPI_UI_GPU_BACKEND
+#include "backends/GpuGfx.h"
+#endif
 #include "backends/PopupMenuModel.h"
 #include "helpers/NativeUi.h"
 #include "GmpiSdkCommon.h"
@@ -103,6 +106,13 @@ public:
     // --- IDrawingHost ---
     gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
     {
+#if GMPI_UI_GPU_BACKEND
+        if (gpuActive_)
+        {
+            *returnFactory = static_cast<gmpi::api::IUnknown*>(&gpuFactory_);
+            return gmpi::ReturnCode::Ok;
+        }
+#endif
         *returnFactory = static_cast<gmpi::api::IUnknown*>(&factory_);
         return gmpi::ReturnCode::Ok;
     }
@@ -190,7 +200,15 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
+#if GMPI_UI_GPU_BACKEND
+    // The GPU factory embeds the CPU one, so drawingFactory() wiring is
+    // unchanged; clients get the GPU factory once the frame presents through it.
+    gmpi::gpugfx::Factory  gpuFactory_;
+    gmpi::cpugfx::Factory& factory_{ gpuFactory_.cpu };
+    bool gpuActive_{};
+#else
     gmpi::cpugfx::Factory factory_;
+#endif
     gmpi::api::IUnknown* parameterHost_{};
 };
 

@@ -46,12 +46,24 @@ namespace gmpi::gpugfx
 
 class Factory;
 
-// Opt-in for hosts while the backend is young: GMPI_UI_GPU=1 in the
-// environment. A host that cannot initialise the renderer keeps its CPU path.
+// A host's own choice (a preference setting), made before its first
+// window presents. Unset = the backend stays opt-in.
+enum class HostPreference { Unset, Gpu, Software };
+inline HostPreference& hostPreference()
+{
+    static HostPreference preference = HostPreference::Unset;
+    return preference;
+}
+
+// Whether to present through the GPU. GMPI_UI_GPU in the environment
+// overrides everything (1 = GPU, 0 = software), then the host's
+// preference; otherwise off while the backend is young. A host that cannot
+// initialise the renderer keeps its CPU path regardless.
 inline bool wanted()
 {
-    const char* v = std::getenv("GMPI_UI_GPU");
-    return v && *v && *v != '0';
+    if (const char* v = std::getenv("GMPI_UI_GPU"); v && *v)
+        return *v != '0';
+    return hostPreference() == HostPreference::Gpu;
 }
 
 // Initialise the (process-wide) renderer against a native window and

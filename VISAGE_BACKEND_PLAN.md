@@ -467,6 +467,29 @@ an fp16 upload.
   Snapping coordinates in the fragment shader could not fix it: the
   sampler re-derives the inexact texel index.
 
+## Renderer choice on Linux (2026-10-23)
+
+Jeff: "synthedit on windows has option for software of GPU rendering, can we
+do that for Linux?" The Linux editor's Preferences has a "Renderer (on
+restart)" combo, GPU or Software (no GPU), in builds with
+`SE_GPU_BACKEND=ON` only. It writes the same `GpuDisabled` attribute as
+Windows' "Compatibility (software renderer, no GPU)" mode, so the setting
+means the same thing on both. The default is GPU, as on Windows; a GPU that
+cannot start falls back to software on its own.
+
+- `gpugfx::hostPreference()` holds the host's choice; `wanted()` takes
+  `GMPI_UI_GPU` from the environment first (1 = GPU, 0 = software), then
+  the host preference, else off (other hosts stay opt-in).
+- The renderer starts once per process at the first present, which comes
+  before `InitInstance` loads settings, so `Main.cpp` reads `GpuDisabled`
+  off disk before any window exists, as the Windows app does for its
+  renderer. Hence "on restart".
+- Verified under nested Weston with a scratch `XDG_DATA_HOME`: no setting
+  presents through the GPU, `GpuDisabled="true"` through the CPU, and each
+  environment value overrides the file. Under the nested shell, choosing
+  Software in the combo wrote `GpuDisabled="true"` and the next start
+  presented through the CPU.
+
 ## Landmines
 
 - **No real GPU in the dev VM.** `lspci` shows VMware SVGA II; ICDs present are

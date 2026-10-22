@@ -338,6 +338,17 @@ again — a transient, which ruled out global state):
   debug builds; the demo compiled without `NDEBUG` against a RelWithDebInfo
   library found its `Layer` 24 bytes away and crashed. The member now
   exists in both configurations.
+- **Every window present was one frame late on Linux.** bgfx presents
+  frame N at the start of frame N+1 unless `BGFX_RESET_FLIP_AFTER_RENDER`
+  is set, and upstream sets it on Windows and macOS only. A UI presents on
+  demand, so after an idle period the frame that answered a keystroke only
+  appeared when the next keystroke produced another frame ("arrow keys work,
+  letters are ignored"). Linux now flips after render. Repro:
+  `wayland_demo_gpu --edit Hello` under nested Weston, screenshot at 5 s;
+  the demo's `--edit` and `GMPI_DEMO_BLINK` hooks and `GMPI_UI_GPU_TRACE`
+  came out of this. (The Wayland demo's right-click menu never worked on
+  any backend: the client returned `Ok` for the press, and the frame opens
+  the menu only on `Unhandled`. Fixed in the demo.)
 - Also: `bgfx::init` failure was ignored (crash at the next bgfx call);
   `BGFX_CAPS_SWAP_CHAIN` is only reported when bgfx was initialised on a
   window (hence the model surface); a frame buffer cannot be built from a

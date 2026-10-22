@@ -23,6 +23,16 @@ Rulings from Jeff, 2026-10-22:
   effects, live reload) is kept intact, not trimmed, so module authors can get
   user-authored shader effects through a new GMPI interface later (milestone 8).
 
+Ruling from Jeff, 2026-10-23 (supersedes decision 1 and the "GMPI glue stays
+in gmpi_ui" principle below):
+
+- **Visage is absorbed into gmpi_ui, not a dependency.** The renderer becomes
+  gmpi_ui source, customised only for gmpi_ui. Code is reused **where
+  pragmatic**: keep what is better than what gmpi_ui has, use gmpi_ui's own
+  code where Visage duplicates it, and never carry a subsystem just because it
+  came with the fork. The fork stops being a library with its own consumers.
+  See "Absorbing Visage into gmpi_ui".
+
 Guiding principles:
 
 - **Half-float is the default.** Every surface the backend owns — intermediate
@@ -30,7 +40,9 @@ Guiding principles:
   is **RGBA16F, premultiplied, linear-light scRGB**, exactly the working format
   decided for the CPU backend (PLAN.md "Pixel format"). 8-bit appears in one
   place only: the final encode to a display that cannot take fp16.
-- **GMPI glue stays in gmpi_ui.** `gmpi_ui/backends/GpuGfx.*` implements the
+- ~~**GMPI glue stays in gmpi_ui.**~~ *Superseded 2026-10-23: the renderer
+  is gmpi_ui code now and may use gmpi types wherever that removes a
+  conversion.* Was: `gmpi_ui/backends/GpuGfx.*` implements the
   GMPI interfaces over the fork's Canvas/Layer/Path; the fork does not know
   about GMPI types. That keeps the fork a plain graphics library with its own
   tests, and the backend a thin adaptor like `CpuGfx.h` and `DirectXGfx.h`.
@@ -44,7 +56,8 @@ Guiding principles:
 
 ## Decisions (v1, open to review)
 
-1. **Separate repo, fetched by CPM** pinned to a commit (same pattern as
+1. ~~**Separate repo, fetched by CPM**~~ *Superseded 2026-10-23: absorbed
+   into gmpi_ui, see "Absorbing Visage into gmpi_ui".* Was: pinned to a commit (same pattern as
    `SE16/CMakeLists.txt:98`), with a folder override for development like
    `GMPI_UI_FOLDER_OVERRIDE`. Only `visage_graphics`, `visage_utils` and
    `visage_file_embed` are built; `visage_ui`, `visage_windowing`, `visage_app`
@@ -180,7 +193,69 @@ host falls back to cpugfx — there is no 8-bit-layer mode.
   bloom chains, one Canvas per native window with its own swap chain
   (`examples/BringYourOwnWindow`, `examples/MultiWindow`).
 
+## Absorbing Visage into gmpi_ui (ruling 2026-10-23)
+
+Source: fork branch `gmpi` at `4eeb51c` (2026-10-22). Destination:
+`backends/gpu/` for the renderer and `backends/gpu/shaders/` for the `.sc`
+sources. `backends/GpuGfx.h` stays the GMPI adaptor. The namespace becomes
+`gmpi::gpu`, so fork change 11 happens once, here. Each file that came from
+Visage keeps its MIT notice at the top. `backends/gpu/README.md` names upstream,
+the fork commit absorbed and the licence.
+
+What each part of Visage becomes, judged on "reuse where pragmatic":
+
+| Visage | Fate | Why |
+|---|---|---|
+| Path coverage atlas, exact per-edge coverage (`path.cpp`) | keep | the hardest-won code; 151/151 rests on it |
+| Visage's stroker (`path.cpp:413-603`) | drop | cpugfx's widener is D2D-exact and is what the GPU path already strokes with (milestone 2) |
+| `Path` flattening | drop where gmpi already flattens | `Gfx_base`/cpugfx hand the atlas flattened, transformed figures; check each call site before deleting |
+| `shape_batcher`, `shapes` (SDF), `region`, `layer`, `canvas` | keep, thinned | batching, overlap detection and the persistent-layer dirty-rect model *are* the GPU path; trim `Canvas` to what `GpuGfx.h` calls |
+| Image atlas and gradient atlas | keep | fp16 atlases with this month's fixes in them |
+| Gradient stop evaluation | already gmpi | strips are filled from `GradientstopCollection::colorAt` |
+| `Color`, `Point`, `Bounds`, `Transform` | gmpi::drawing types at the `GpuGfx.h` boundary | removes conversions; internal vector maths stays if swapping it is churn |
+| Screenshot 8-bit resolve (`screenshot.*`) | `CpuEncode.h` | same encode, one implementation |
+| `post_effects`, `ShaderCache`, `ProgramCache` | keep | the shader ruling (milestone 8) |
+| `font`, `emoji`, `svg`, `theme`, `palette` | drop | decision 2; `CpuTextEngine` and `SvgParser` exist |
+| `visage_utils` (`space.h`, `dimension`, `clone_ptr`, `string_utils`, `thread_utils`, `time_utils`, `file_system`, `defines`) | std or gmpi helpers | copy a header only where replacing it costs more than it saves |
+| `visage_file_embed` | keep for now | CMake-only and small; drops out if compiled shaders are committed (below) |
+| `visage_ui`, `visage_windowing`, `visage_app`, `visage_widgets`, examples | not absorbed | gmpi_ui has its own |
+| `renderer.cpp` process singleton | becomes the device | see `METAL_BACKEND_PLAN.md`, "The device seam"; one per binary, not per process |
+| Committed shaderc binaries (`visage_graphics/bin`, 29 MB) | not absorbed | fork change 3 |
+
+Build. gmpi_ui has no CMake of its own: consumers list its sources. The
+renderer needs a shader step, so gmpi_ui gains a single fragment,
+`backends/gpu/gmpi_gpu.cmake`, defining a static library target. gimpi_ui_tests
+and SE16 include it in place of `GMPI_GPU_GRAPHICS_FOLDER` /
+`SE_GPU_GRAPHICS_FOLDER` + `add_subdirectory`. bgfx stays a CPM fetch for
+Linux and Windows. Apple builds stop fetching it once the Metal device lands.
+
+Shaders. Recommended: commit the compiled outputs per renderer
+(`backends/gpu/shaders/compiled/`), regenerated by a script when a `.sc`
+changes, so no consumer needs shaderc to build. shaderc is built from
+bgfx.cmake's tools only for regeneration. Check the outputs' size before
+committing them.
+
+Tests. The fork's Catch2 tests that pin bugs found here (`precision_tests.cpp`
+and the regressions under "Measured") move to gimpi_ui_tests as gtest cases,
+so one runner covers the renderer and the backend. Tests of dropped code go
+with it.
+
+Order. Absorb before any more renderer work, in steps that each pass the
+suite (151/151 under lavapipe, plus the bgfx-Metal count on the Mac):
+
+1. Copy the kept files, rename the namespace, add the build fragment, and
+   switch gimpi_ui_tests over to it.
+2. Drop the subsystems marked "drop" and `visage_utils`.
+3. Move the `GpuGfx.h` boundary to gmpi types.
+4. Port the pinning tests. Archive the fork read-only; don't delete it.
+
+History, open: a plain copy with the source commit recorded in the commit
+message and README (recommended: blame on absorbed code is rarely needed),
+or `git subtree add`, which keeps history but imports all of upstream's.
+
 ## Fork changes (branch `gmpi`)
+
+Made in the fork up to absorption; gmpi_ui changes after it.
 
 1. **RGBA16F layers by default — DONE (milestone 0).**
    `Renderer::setHalfFloatFrameBuffers()` (default on; `initialize()` clears

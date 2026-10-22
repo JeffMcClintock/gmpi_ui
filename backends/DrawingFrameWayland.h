@@ -1039,6 +1039,8 @@ inline void WaylandFrameBase::present()
     }
 #endif
 
+    if (getenv("GMPI_UI_GPU_TRACE"))
+        fprintf(stderr, "[present cpu] %dx%d dirtyAll %d\n", pw, ph, int(dirtyAll_));
     if (!buffer_.matches(pw, ph))
     {
         if (!buffer_.create(connection_.shm(), pw, ph))
@@ -1099,6 +1101,13 @@ inline void WaylandFrameBase::present()
 
         gmpi::cpugfx::encodeDirtyRect(src, dst, area);
 
+        if (getenv("GMPI_UI_GPU_TRACE"))
+        {
+            const uint8_t* px = buffer_.pixels() + size_t(ph / 2) * buffer_.stride() + size_t(pw - 20) * 4;
+            fprintf(stderr, "[present cpu] encoded pixel at (%d,%d) = %d,%d,%d  area %d,%d-%d,%d\n", pw - 20, ph / 2,
+                    px[2], px[1], px[0], area.left, area.top, area.right, area.bottom);
+        }
+
         wl_surface_attach(surface_, buffer_.buffer(), 0, 0);
         wl_surface_damage_buffer(surface_, area.left, area.top,
                                  area.right - area.left, area.bottom - area.top);
@@ -1119,12 +1128,14 @@ inline void WaylandFrameBase::present()
 #if GMPI_UI_GPU_BACKEND
 inline void WaylandFrameBase::presentGpu(int pw, int ph)
 {
+    bool sized = false;
     if (!gpuTarget_)
     {
         gpuTarget_ = gpuFactory_.createWindowRenderTarget(surface_, pw, ph, 96.0f);
         gpuW_ = pw;
         gpuH_ = ph;
         dirtyAll_ = true;
+        sized = true;
     }
     else if (pw != gpuW_ || ph != gpuH_)
     {
@@ -1132,11 +1143,22 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
         gpuW_ = pw;
         gpuH_ = ph;
         dirtyAll_ = true;
+        sized = true;
     }
     if (!gpuTarget_)
     {
         gpuActive_ = false;
         return;
+    }
+    if (sized)
+    {
+        // A swap-chain buffer carries alpha, and what the client does not
+        // paint is transparent; the shm path's XRGB buffer was opaque. Tell
+        // the compositor the whole surface is opaque, as it always was.
+        wl_region* opaque = wl_compositor_create_region(connection_.compositor());
+        wl_region_add(opaque, 0, 0, logicalW_, logicalH_);
+        wl_surface_set_opaque_region(surface_, opaque);
+        wl_region_destroy(opaque);
     }
 
     if (needsMeasure_)
@@ -1144,6 +1166,8 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
         gmpi::drawing::Size avail{ static_cast<float>(logicalW_), static_cast<float>(logicalH_) };
         gmpi::drawing::Size desired{};
         client_->measure(&avail, &desired);
+        if (getenv("GMPI_UI_GPU_TRACE"))
+            fprintf(stderr, "[presentGpu] measure avail %gx%g desired %gx%g\n", avail.width, avail.height, desired.width, desired.height);
 
         const gmpi::drawing::Rect all{ 0, 0, avail.width, avail.height };
         client_->arrange(&all);

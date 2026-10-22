@@ -307,14 +307,73 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         return visage::Color(c.a * opacity, c.r, c.g, c.b);
     }
 
+    // Draw tracing for hosts (GMPI_UI_GPU_TRACE_DRAWS=1): op, device rect, how it was drawn.
+    static bool traceDraws()
+    {
+        static const bool on = std::getenv("GMPI_UI_GPU_TRACE_DRAWS") != nullptr;
+        return on;
+    }
+    void trace(const char* op, const drawing::Rect& device, const char* how) const
+    {
+        if (traceDraws())
+            std::fprintf(stderr, "[gpugfx] %-14s %7.1f,%7.1f - %7.1f,%7.1f  %s  clip %.0f,%.0f-%.0f,%.0f\n", op,
+                         device.left, device.top, device.right, device.bottom, how,
+                         clipRectStack.back().left, clipRectStack.back().top, clipRectStack.back().right, clipRectStack.back().bottom);
+    }
+
     // --- GPU path -----------------------------------------------------------
 
+    // The transform maps axis-aligned rects to axis-aligned rects (no
+    // rotation or skew); uniform() also means circles stay circles.
+    bool axisAligned() const { return transform_._12 == 0.0f && transform_._21 == 0.0f; }
+    bool uniformScale() const { return axisAligned() && transform_._11 == transform_._22 && transform_._11 > 0.0f; }
+
+    // Solid brush, no opacity brush, no geometry clip: the GPU-native cases.
+    cpugfx::SolidColorBrush* gpuSolid(drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush = nullptr)
+    {
+        if (opacityBrush || geometryClipActive())
+            return nullptr;
+        auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush);
+        return (solid && solid->isPaintable()) ? solid : nullptr;
+    }
+
+    void beginGpuShape(const cpugfx::SolidColorBrush& brush)
+    {
+        auto& c = canvas();
+        c.setClampBounds(currentClamp());
+        c.setColor(toVisage(brush.color, brush.opacity));
+        bitmap->rendered = false;
+    }
+
+    // The path atlas stores a path's coverage at full pixel size, so a large
+    // path costs its whole bounding box in the R16F atlas and a window's worth
+    // of panels overflows it (seen: 32768x32768 requested, the editor's first
+    // frame). Above this, the CPU rasteriser is the cheaper path anyway.
+    static constexpr float kMaxAtlasPathTexels = 512.0f * 512.0f;
+
+    static bool tooLargeForAtlas(const drawing::Rect& deviceBounds)
+    {
+        const float w = deviceBounds.right - deviceBounds.left;
+        const float h = deviceBounds.bottom - deviceBounds.top;
+        return w * h > kMaxAtlasPathTexels || w > 4096.0f || h > 4096.0f;
+    }
+
     // Fill flattened figures through the path atlas. Points are transformed
-    // to device space here, on the CPU.
-    ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const cpugfx::SolidColorBrush& brush)
+    // to device space here, on the CPU. `cpuFill` draws the same thing through
+    // cpugfx, for figures too large for the atlas.
+    ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const cpugfx::SolidColorBrush& brush,
+                              const std::function<ReturnCode(cpugfx::RenderTarget&)>& cpuFill)
     {
         if (!brush.isPaintable())
             return ReturnCode::Ok;
+
+        const auto deviceBounds = figuresDeviceBounds(figures);
+        if (tooLargeForAtlas(deviceBounds))
+        {
+            trace("figures", deviceBounds, "cpu (too large for atlas)");
+            return viaCpu(deviceBounds, cpuFill);
+        }
+        trace("figures", deviceBounds, "gpu path atlas");
 
         visage::Path vpath;
         for (const auto& figure : figures)
@@ -340,11 +399,8 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
 
         vpath.setFillRule(fillMode == drawing::FillMode::Winding ? visage::Path::FillRule::NonZero
                                                                  : visage::Path::FillRule::EvenOdd);
-        auto& c = canvas();
-        c.setClampBounds(currentClamp());
-        c.setColor(toVisage(brush.color, brush.opacity));
-        c.fill(vpath, 0, 0);
-        bitmap->rendered = false;
+        beginGpuShape(brush);
+        canvas().fill(vpath, 0, 0);
         return ReturnCode::Ok;
     }
 
@@ -358,6 +414,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         deviceBounds = drawing::intersectRect(deviceBounds, drawing::intersectRect(clipRectStack.back(), surfaceBounds()));
         if (!(deviceBounds.right > deviceBounds.left) || !(deviceBounds.bottom > deviceBounds.top))
             return ReturnCode::Ok;
+        trace("viaCpu", deviceBounds, "cpu fallback");
 
         const int32_t left = int32_t(std::floor(deviceBounds.left));
         const int32_t top = int32_t(std::floor(deviceBounds.top));
@@ -568,11 +625,16 @@ public:
         if (!finite(*clearColor))
             return ReturnCode::Ok;
 
+        trace("clear", clipRectStack.back(), "gpu opaque fill of clip");
         auto& c = canvas();
-        c.setClampBounds(currentClamp());
+        const auto clamp = currentClamp();
+        c.setClampBounds(clamp);
         c.setBlendMode(visage::BlendMode::Opaque);
         c.setColor(toVisage(*clearColor, 1.0f));
-        c.fill(); // the whole clamp area
+        // Explicit rect: the fork's fill() with no arguments puts the quad at
+        // the canvas origin with the clamp's SIZE, which misses a clip that
+        // does not start at the origin (a panel at x = 1010 cleared nothing).
+        c.fill(clamp.left, clamp.top, clamp.right - clamp.left, clamp.bottom - clamp.top);
         c.setBlendMode(visage::BlendMode::Alpha);
         bitmap->rendered = false;
         return ReturnCode::Ok;
@@ -584,13 +646,10 @@ public:
         if (!path || !dynamic_cast<cpugfx::CpuBrush*>(brush))
             return ReturnCode::NoSupport;
 
-        auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush);
-        if (solid && !opacityBrush && !geometryClipActive())
-            return fillFiguresGpu(path->figures, path->fillMode, *solid);
-
-        return viaCpu(figuresDeviceBounds(path->figures), [&](cpugfx::RenderTarget& cpu) {
-            return cpu.fillGeometry(pathGeometry, brush, opacityBrush);
-        });
+        auto cpuFill = [&](cpugfx::RenderTarget& cpu) { return cpu.fillGeometry(pathGeometry, brush, opacityBrush); };
+        if (auto* solid = gpuSolid(brush, opacityBrush))
+            return fillFiguresGpu(path->figures, path->fillMode, *solid, cpuFill);
+        return viaCpu(figuresDeviceBounds(path->figures), cpuFill);
     }
 
     ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
@@ -606,16 +665,46 @@ public:
         std::vector<cpugfx::Figure> widened;
         cpugfx::stroke::widen(path->figures, strokeWidth, cpugfx::strokeParams(strokeStyle), widened);
 
-        auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush);
-        if (solid && !geometryClipActive())
-            return fillFiguresGpu(widened, drawing::FillMode::Winding, *solid);
+        auto cpuStroke = [&](cpugfx::RenderTarget& cpu) { return cpu.drawGeometry(pathGeometry, brush, strokeWidth, strokeStyle); };
+        if (auto* solid = gpuSolid(brush))
+            return fillFiguresGpu(widened, drawing::FillMode::Winding, *solid, cpuStroke);
+        return viaCpu(figuresDeviceBounds(widened), cpuStroke);
+    }
 
-        return viaCpu(figuresDeviceBounds(widened), [&](cpugfx::RenderTarget& cpu) {
-            return cpu.drawGeometry(pathGeometry, brush, strokeWidth, strokeStyle);
-        });
+    // Axis-aligned rectangles and circles are the fork's analytic SDF
+    // primitives: one quad each, nothing in the path atlas. Everything else
+    // goes through path geometry.
+    ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
+    {
+        if (auto* solid = gpuSolid(brush); solid && axisAligned())
+        {
+            const auto r = drawing::transformRect(transform_, *rect);
+            if (!(r.right > r.left) || !(r.bottom > r.top))
+                return ReturnCode::Ok;
+            trace("fillRectangle", r, "gpu sdf rect");
+            beginGpuShape(*solid);
+            canvas().rectangle(r.left, r.top, r.right - r.left, r.bottom - r.top);
+            return ReturnCode::Ok;
+        }
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::fillRectangle(rect, brush);
+    }
+
+    ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
+    {
+        if (auto* solid = gpuSolid(brush); solid && uniformScale() && ellipse->radiusX == ellipse->radiusY && ellipse->radiusX > 0.0f)
+        {
+            const auto c = drawing::transformPoint(transform_, ellipse->point);
+            const float r = ellipse->radiusX * transform_._11;
+            beginGpuShape(*solid);
+            canvas().circle(c.x - r, c.y - r, 2.0f * r);
+            return ReturnCode::Ok;
+        }
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::fillEllipse(ellipse, brush);
     }
 
     // Same construction as the CPU backend: four arcs the sink flattens.
+    // (Not the fork's SDF rounded rectangle: its corners differ from D2D's
+    // flattened arcs by ~20 code values - fillRoundedRectangle test.)
     ReturnCode fillRoundedRectangle(const drawing::RoundedRect* rr, drawing::api::IBrush* brush) override
     {
         auto geometry = roundedRectGeometry(rr);

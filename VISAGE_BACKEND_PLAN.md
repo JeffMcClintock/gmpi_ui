@@ -485,10 +485,26 @@ Each is verifiable on its own; nothing lands in SE16 before milestone 4.
    the GPU window matches the CPU window pixel for pixel on the background
    ((97,101,108)) and renders text and decorations. Build with
    `gmpi_ui/tests/run.sh --demo-gpu`.
-   Still to do: `DrawingFrameX11` (same shape: a hidden model window, swap
-   chain on the embedded window), popups/tooltips/dialogs (still shm —
-   fine, they are separate surfaces), SynthEditWayland editor and the VST3
-   subsurface editor on it, `tests/run.sh` under lavapipe.
+   **X11 DONE** the same way (`DrawingFrameX11::Impl::presentGpu`: bgfx
+   initialised on a hidden 1×1 model window, swap chain on the embedded
+   window); `tests/x11_gpu_screenshot.sh` runs `x11_menu_test` on both
+   paths under Xvfb and the GPU window is pixel-identical to the CPU one.
+   Popups, tooltips and dialogs stay on shm/XShm (separate surfaces; they
+   coexist with the GPU main surface in one process — verified on the
+   desktop). `SE_GPU_BACKEND` option on the SynthEditWayland target.
+   **SynthEditWayland on the GPU path (Oct 2026):** built with
+   `-DSE_GPU_BACKEND=ON -DSE_GPU_GRAPHICS_FOLDER=<fork>` (SE16 branch
+   `gpu-backend`), run with `GMPI_UI_GPU=1`: pixel-identical to the CPU path
+   under nested Weston (lavapipe). Getting there found: the editor's first
+   frame overflowed the path atlas (every rect fill is a path stored at full
+   pixel size; 32768² requested) — fixed with SDF fast paths for axis-aligned
+   rects and circles plus a CPU fallback for paths over 512×512 texels, and
+   the fork now refuses to bind an overflowed atlas; `clear()` under a clip
+   away from the origin painted nothing (fork `fill()` semantics); the GPU
+   surface needed an opaque region. Measured draw mix of the first frame:
+   135 path fills, 51 SDF rects, 48 CPU fallbacks (text, images), 2 clears.
+   Still to do: the VST3 subsurface editor on the GPU path, `tests/run.sh`
+   under lavapipe, a real GPU.
 5. **Multi-window and lifetime:** popups, tooltips, dialogs as extra Canvases
    in one frame; editor open/close/reopen 100× with no bgfx handle leak
    (`bgfx::getStats()` counters); two plugin instances in Ardour; headless

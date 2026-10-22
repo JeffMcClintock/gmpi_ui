@@ -1205,10 +1205,19 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
         const auto m = gmpi::drawing::makeScale(scale_, scale_);
         gpuTarget_->setTransform(&m);
     }
+    const auto tRender = std::chrono::steady_clock::now();
     client_->render(static_cast<gmpi::drawing::api::IDeviceContext*>(gpuTarget_));
     drawActiveTextEdit(gpuTarget_);
     gpuTarget_->popAxisAlignedClip();
+    const auto tSubmit = std::chrono::steady_clock::now();
     gpuTarget_->endDraw(); // submit + present
+    if (getenv("GMPI_UI_GPU_TRACE"))
+    {
+        const auto tDone = std::chrono::steady_clock::now();
+        using ms = std::chrono::duration<double, std::milli>;
+        fprintf(stderr, "[presentGpu] render %.1f ms, submit+present %.1f ms\n",
+                ms(tSubmit - tRender).count(), ms(tDone - tSubmit).count());
+    }
 
     dirtyAll_ = false;
     dirty_ = {};

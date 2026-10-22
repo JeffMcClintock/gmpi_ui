@@ -36,7 +36,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace gmpi::gpugfx
@@ -127,6 +129,64 @@ public:
         canvas.setDimensions(width, height); // recreates the swap chain at the new size
     }
 
+    // cpugfx bitmaps drawn into this target, resident in the canvas's
+    // half-float atlas: uploaded once per modification (cpugfx::Bitmap::
+    // generation), not per draw. The copy carries a one-texel replicated
+    // border so bilinear sampling at the edge of a stretched draw clamps to
+    // the edge texel, as Direct2D does, instead of blending with the atlas
+    // padding. Entries unused for kImageCacheFrames submits are dropped.
+    struct CachedImage
+    {
+        gmpi::shared_ptr<cpugfx::Bitmap> source;
+        uint64_t generation{};
+        std::vector<uint16_t> pixels; // (w+2) x (h+2) fp16 RGBA, never resized: the atlas keeps the pointer
+        uint64_t id{};
+        std::unique_ptr<visage::ImageAtlas::PackedImage> retained;
+        uint64_t lastUsed{};
+    };
+    static constexpr uint64_t kImageCacheFrames = 120;
+    std::map<cpugfx::Bitmap*, CachedImage> imageCache;
+    uint64_t submits{};
+
+    const CachedImage& cachedImage(cpugfx::Bitmap& bm)
+    {
+        auto it = imageCache.find(&bm);
+        if (it != imageCache.end() && it->second.generation == bm.generation)
+        {
+            it->second.lastUsed = submits;
+            return it->second;
+        }
+
+        static uint64_t nextId = 1;
+        CachedImage entry;
+        bm.addRef();
+        entry.source.attach(&bm);
+        entry.generation = bm.generation;
+        entry.id = nextId++;
+        entry.lastUsed = submits;
+
+        const auto& sf = bm.surface;
+        const int w = sf.width, h = sf.height;
+        const int pw = w + 2;
+        entry.pixels.resize(size_t(pw) * size_t(h + 2) * 4);
+        auto* dst = entry.pixels.data();
+        for (int y = -1; y <= h; ++y)
+        {
+            const int sy = (std::min)((std::max)(y, 0), h - 1);
+            const uint16_t* srcRow = sf.pixels + size_t(sy) * sf.stridePixels * 4;
+            uint16_t* dstRow = dst + size_t(y + 1) * pw * 4;
+            std::memcpy(dstRow + 4, srcRow, size_t(w) * 8);
+            std::memcpy(dstRow, srcRow, 8);                              // left border
+            std::memcpy(dstRow + size_t(w + 1) * 4, srcRow + size_t(w - 1) * 4, 8); // right border
+        }
+        entry.retained = std::make_unique<visage::ImageAtlas::PackedImage>(
+            canvas.retainHalfImage(reinterpret_cast<const unsigned char*>(entry.pixels.data()), pw, h + 2, entry.id));
+
+        auto& slot = imageCache[&bm];
+        slot = std::move(entry); // replacing an outdated copy frees its atlas rect
+        return slot;
+    }
+
     // Draw the shapes recorded since the last submit, once, then forget them.
     // Their uploads are safe to free: the atlas has copied them to the GPU
     // and never re-reads an image whose shape is gone.
@@ -138,6 +198,15 @@ public:
         canvas.clearShapesKeepPixels();
         uploads.clear();
         rendered = true;
+
+        ++submits;
+        for (auto it = imageCache.begin(); it != imageCache.end();)
+        {
+            if (it->second.lastUsed + kImageCacheFrames < submits)
+                it = imageCache.erase(it);
+            else
+                ++it;
+        }
     }
 
     // Composited pixels as premultiplied linear fp16 RGBA, tightly packed.
@@ -337,12 +406,118 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         return (solid && solid->isPaintable()) ? solid : nullptr;
     }
 
-    void beginGpuShape(const cpugfx::SolidColorBrush& brush)
+    void beginGpuShape(const visage::Brush& brush)
     {
         auto& c = canvas();
         c.setClampBounds(currentClamp());
-        c.setColor(toVisage(brush.color, brush.opacity));
+        c.setBrush(brush);
         bitmap->rendered = false;
+    }
+
+    void beginGpuShape(const cpugfx::SolidColorBrush& brush)
+    {
+        beginGpuShape(visage::Brush::solid(toVisage(brush.color, brush.opacity)));
+    }
+
+    // --- gradients ----------------------------------------------------------
+    // The fork samples a 512-texel RGBA16F strip per gradient: a lookup table
+    // over t in [0, 1], filled here from cpugfx's stop interpolation so both
+    // backends paint the same colours by construction. Straight colour; the
+    // fork premultiplies when it blends. Wrap and Mirror are the fork's own
+    // repeat/reflect (the strip spans a full atlas row and the sampler wraps).
+
+    static visage::Gradient gradientStrip(const cpugfx::GradientstopCollection& stops, float opacity)
+    {
+        auto strip = visage::Gradient::fromSampleFunction(visage::Gradient::kMaxGradientResolution, [&](float t) {
+            const auto c = stops.colorAt(t);
+            return visage::Color(c.a * opacity, c.r, c.g, c.b);
+        });
+        strip.setRepeat(stops.extendMode == drawing::ExtendMode::Wrap);
+        strip.setReflect(stops.extendMode == drawing::ExtendMode::Mirror);
+        return strip;
+    }
+
+    static visage::Brush solidStop(const cpugfx::GradientstopCollection& stops, float t, float opacity)
+    {
+        return visage::Brush::solid(toVisage(stops.colorAt(t), opacity));
+    }
+
+    static visage::Transform toVisageTransform(const drawing::Matrix3x2& m)
+    {
+        // GMPI is row-vector (x' = x*_11 + y*_21 + _31); the fork is column form.
+        return visage::Transform(m._11, m._21, m._31, m._12, m._22, m._32);
+    }
+
+    std::optional<visage::Brush> linearBrush(const cpugfx::LinearGradientBrush& b) const
+    {
+        const auto* stops = b.stopCollection();
+        const float opacity = b.brushOpacity();
+        const auto start = b.start();
+        const drawing::Point axis{ b.end().x - start.x, b.end().y - start.y };
+        const float lenSq = axis.x * axis.x + axis.y * axis.y;
+        if (!(lenSq > 0.0f))
+            return solidStop(*stops, 1.0f, opacity); // degenerate axis: D2D paints the last stop
+
+        // t is affine in device space: t = p . g + c. The fork's linear
+        // gradient is t = (p - p1) . (p2 - p1) / |p2 - p1|^2, so p1 is the
+        // point where t = 0 and p2 - p1 = g / |g|^2.
+        const auto inv = drawing::invert(b.brushTransformMatrix() * transform_); // device -> brush space
+        const float gx = (inv._11 * axis.x + inv._12 * axis.y) / lenSq;
+        const float gy = (inv._21 * axis.x + inv._22 * axis.y) / lenSq;
+        const float c = (inv._31 * axis.x + inv._32 * axis.y - (start.x * axis.x + start.y * axis.y)) / lenSq;
+        const float g2 = gx * gx + gy * gy;
+        if (!(g2 > 0.0f) || !std::isfinite(g2) || !std::isfinite(c))
+            return solidStop(*stops, 1.0f, opacity);
+        const visage::Point p1(-c * gx / g2, -c * gy / g2);
+        const visage::Point p2(p1.x + gx / g2, p1.y + gy / g2);
+        return visage::Brush::linear(gradientStrip(*stops, opacity), p1, p2);
+    }
+
+    std::optional<visage::Brush> radialBrush(const cpugfx::RadialGradientBrush& b) const
+    {
+        const auto* stops = b.stopCollection();
+        const float opacity = b.brushOpacity();
+        const float rx = b.radiusXValue(), ry = b.radiusYValue();
+        if (!(rx != 0.0f && ry != 0.0f) || !std::isfinite(rx) || !std::isfinite(ry))
+            return solidStop(*stops, 1.0f, opacity);
+
+        // As cpugfx: the focus (gradient origin) is kept strictly inside the
+        // ellipse, clamped by length in the ellipse's unit space.
+        const auto center = b.centerPoint();
+        const auto offset = b.gradientOriginOffset();
+        float fx = offset.x / rx, fy = offset.y / ry;
+        const float fLen = std::sqrt(fx * fx + fy * fy);
+        if (!(fLen < 0.999f))
+        {
+            const float k = std::isfinite(fLen) && fLen > 0.0f ? 0.999f / fLen : 0.0f;
+            fx *= k;
+            fy *= k;
+        }
+        const visage::Point c(center.x, center.y);
+        const visage::Point focal(center.x + fx * std::fabs(rx), center.y + fy * std::fabs(ry));
+        auto position = visage::GradientPosition::radial(c, std::fabs(rx), std::fabs(ry), focal);
+        position = position.transformed(toVisageTransform(b.brushTransformMatrix() * transform_));
+        return visage::Brush(gradientStrip(*stops, opacity), position);
+    }
+
+    // The brush as a fork brush, when the fork can paint it directly: solid,
+    // linear or radial gradient; no opacity brush, no geometry clip (bitmap
+    // brushes stay with cpugfx).
+    std::optional<visage::Brush> gpuBrush(drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush = nullptr) const
+    {
+        if (opacityBrush || geometryClipActive())
+            return std::nullopt;
+        if (auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush))
+        {
+            if (!solid->isPaintable())
+                return std::nullopt;
+            return visage::Brush::solid(toVisage(solid->color, solid->opacity));
+        }
+        if (auto* linear = dynamic_cast<cpugfx::LinearGradientBrush*>(brush))
+            return linear->isPaintable() ? linearBrush(*linear) : std::nullopt;
+        if (auto* radial = dynamic_cast<cpugfx::RadialGradientBrush*>(brush))
+            return radial->isPaintable() ? radialBrush(*radial) : std::nullopt;
+        return std::nullopt;
     }
 
     // The path atlas stores a path's coverage at full pixel size, so a large
@@ -381,12 +556,9 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // Fill flattened figures through the path atlas. Points are transformed
     // to device space here, on the CPU. `cpuFill` draws the same thing through
     // cpugfx, for figures too large for the atlas.
-    ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const cpugfx::SolidColorBrush& brush,
+    ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const visage::Brush& brush,
                               const std::function<ReturnCode(cpugfx::RenderTarget&)>& cpuFill)
     {
-        if (!brush.isPaintable())
-            return ReturnCode::Ok;
-
         const auto deviceBounds = figuresDeviceBounds(figures);
         if (tooLargeForAtlas(deviceBounds))
         {
@@ -411,7 +583,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
                               figures.size(), points, figures.empty() ? "-" : figures[0].filled ? "filled" : "hollow");
                 trace("figures", deviceBounds, how);
             }
-            return viaCpu(deviceBounds, cpuFill);
+            return viaCpu(deviceBounds, cpuFill, "figures too large for the atlas");
         }
         trace("figures", deviceBounds, "gpu path atlas");
 
@@ -449,12 +621,13 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // Render `draw` through a cpugfx target covering `deviceBounds` (clipped
     // to the current clip and the surface), with this context's transform and
     // geometry clips replayed, then composite the result premultiplied.
-    ReturnCode viaCpu(drawing::Rect deviceBounds, const std::function<ReturnCode(cpugfx::RenderTarget&)>& draw)
+    ReturnCode viaCpu(drawing::Rect deviceBounds, const std::function<ReturnCode(cpugfx::RenderTarget&)>& draw,
+                      const char* what = "cpu fallback")
     {
         deviceBounds = drawing::intersectRect(deviceBounds, drawing::intersectRect(clipRectStack.back(), surfaceBounds()));
         if (!(deviceBounds.right > deviceBounds.left) || !(deviceBounds.bottom > deviceBounds.top))
             return ReturnCode::Ok;
-        trace("viaCpu", deviceBounds, "cpu fallback");
+        trace("viaCpu", deviceBounds, what);
 
         const int32_t left = int32_t(std::floor(deviceBounds.left));
         const int32_t top = int32_t(std::floor(deviceBounds.top));
@@ -687,9 +860,9 @@ public:
             return ReturnCode::NoSupport;
 
         auto cpuFill = [&](cpugfx::RenderTarget& cpu) { return cpu.fillGeometry(pathGeometry, brush, opacityBrush); };
-        if (auto* solid = gpuSolid(brush, opacityBrush))
-            return fillFiguresGpu(path->figures, path->fillMode, *solid, cpuFill);
-        return viaCpu(figuresDeviceBounds(path->figures), cpuFill);
+        if (auto b = gpuBrush(brush, opacityBrush))
+            return fillFiguresGpu(path->figures, path->fillMode, *b, cpuFill);
+        return viaCpu(figuresDeviceBounds(path->figures), cpuFill, geometryClipActive() ? "fillGeometry under a geometry clip" : "fillGeometry with a CPU-only brush");
     }
 
     ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
@@ -706,9 +879,9 @@ public:
         cpugfx::stroke::widen(path->figures, strokeWidth, cpugfx::strokeParams(strokeStyle), widened);
 
         auto cpuStroke = [&](cpugfx::RenderTarget& cpu) { return cpu.drawGeometry(pathGeometry, brush, strokeWidth, strokeStyle); };
-        if (auto* solid = gpuSolid(brush))
-            return fillFiguresGpu(widened, drawing::FillMode::Winding, *solid, cpuStroke);
-        return viaCpu(figuresDeviceBounds(widened), cpuStroke);
+        if (auto b = gpuBrush(brush))
+            return fillFiguresGpu(widened, drawing::FillMode::Winding, *b, cpuStroke);
+        return viaCpu(figuresDeviceBounds(widened), cpuStroke, geometryClipActive() ? "drawGeometry under a geometry clip" : "drawGeometry with a CPU-only brush");
     }
 
     // Axis-aligned rectangles and circles are the fork's analytic SDF
@@ -716,13 +889,13 @@ public:
     // goes through path geometry.
     ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
     {
-        if (auto* solid = gpuSolid(brush); solid && axisAligned())
+        if (auto b = gpuBrush(brush); b && axisAligned())
         {
             const auto r = drawing::transformRect(transform_, *rect);
             if (!(r.right > r.left) || !(r.bottom > r.top))
                 return ReturnCode::Ok;
             trace("fillRectangle", r, "gpu sdf rect");
-            beginGpuShape(*solid);
+            beginGpuShape(*b);
             canvas().rectangle(r.left, r.top, r.right - r.left, r.bottom - r.top);
             return ReturnCode::Ok;
         }
@@ -760,7 +933,7 @@ public:
     ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth,
                              drawing::api::IStrokeStyle* strokeStyle) override
     {
-        if (auto* solid = gpuSolid(brush); solid && axisAligned() && !strokeStyle && strokeWidth > 0.0f
+        if (auto b = gpuBrush(brush); b && axisAligned() && !strokeStyle && strokeWidth > 0.0f
             && std::isfinite(strokeWidth) && rect->right > rect->left && rect->bottom > rect->top)
         {
             const float h = strokeWidth * 0.5f;
@@ -785,11 +958,11 @@ public:
 
     ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
     {
-        if (auto* solid = gpuSolid(brush); solid && uniformScale() && ellipse->radiusX == ellipse->radiusY && ellipse->radiusX > 0.0f)
+        if (auto b = gpuBrush(brush); b && uniformScale() && ellipse->radiusX == ellipse->radiusY && ellipse->radiusX > 0.0f)
         {
             const auto c = drawing::transformPoint(transform_, ellipse->point);
             const float r = ellipse->radiusX * transform_._11;
-            beginGpuShape(*solid);
+            beginGpuShape(*b);
             canvas().circle(c.x - r, c.y - r, 2.0f * r);
             return ReturnCode::Ok;
         }
@@ -819,9 +992,67 @@ public:
         if (!source)
             return ReturnCode::NoSupport;
 
+        if (drawBitmapGpu(*source, *destinationRectangle, opacity, interpolationMode, sourceRectangle))
+            return ReturnCode::Ok;
+
         return viaCpu(drawing::transformRect(transform_, *destinationRectangle), [&](cpugfx::RenderTarget& cpu) {
             return cpu.drawBitmap(source.get(), destinationRectangle, opacity, interpolationMode, sourceRectangle);
-        });
+        }, "drawBitmap");
+    }
+
+    // Bitmaps too big for the half-float atlas go through cpugfx.
+    static constexpr int kMaxGpuImageSide = 2048;
+
+    // Draw a cpugfx bitmap as a retained atlas image (see Bitmap::cachedImage)
+    // when the fork's bilinear quad gives Direct2D's result: an axis-aligned
+    // transform, and either a 1:1 integer-aligned draw (where nearest and
+    // linear sampling agree) or a linear-interpolated stretch of the whole
+    // bitmap (a cropped stretch would sample the neighbouring texels where
+    // Direct2D clamps to the crop).
+    bool drawBitmapGpu(cpugfx::Bitmap& bm, const drawing::Rect& dst, float opacity,
+                       drawing::BitmapInterpolationMode interpolationMode, const drawing::Rect* sourceRectangle)
+    {
+        const auto d = drawing::transformRect(transform_, dst);
+        auto no = [&](const char* why) {
+            trace("drawBitmap", d, why);
+            return false;
+        };
+        if (!axisAligned() || geometryClipActive() || !std::isfinite(opacity))
+            return no("cpu: transform or geometry clip");
+        const int w = bm.surface.width, h = bm.surface.height;
+        if (w <= 0 || h <= 0 || w > kMaxGpuImageSide || h > kMaxGpuImageSide)
+            return no("cpu: bitmap too large for the atlas");
+
+        const drawing::Rect full{ 0.0f, 0.0f, float(w), float(h) };
+        const drawing::Rect src = sourceRectangle ? *sourceRectangle : full;
+        if (!(src.right > src.left) || !(src.bottom > src.top) || src.left < 0.0f || src.top < 0.0f
+            || src.right > float(w) || src.bottom > float(h))
+            return no("cpu: inverted or out-of-bitmap source rect"); // mirroring etc.: cpugfx's rules
+        if (!(dst.right > dst.left) || !(dst.bottom > dst.top) || !(d.right > d.left) || !(d.bottom > d.top))
+            return no("cpu: inverted destination");
+
+        const float sw = src.right - src.left, sh = src.bottom - src.top;
+        const float dw = d.right - d.left, dh = d.bottom - d.top;
+
+        auto integral = [](float v) { return std::fabs(v - std::round(v)) < 1e-4f; };
+        const bool oneToOne = std::fabs(dw - sw) < 1e-4f && std::fabs(dh - sh) < 1e-4f
+                              && integral(d.left) && integral(d.top) && integral(src.left) && integral(src.top);
+        const bool whole = src.left == 0.0f && src.top == 0.0f && src.right == float(w) && src.bottom == float(h);
+        if (!oneToOne && (interpolationMode != drawing::BitmapInterpolationMode::Linear || !whole))
+            return no(interpolationMode == drawing::BitmapInterpolationMode::Linear ? "cpu: cropped stretch"
+                                                                                     : "cpu: nearest-neighbour stretch");
+
+        const auto& image = bitmap->cachedImage(bm);
+        trace("drawBitmap", d, oneToOne ? "gpu atlas image 1:1" : "gpu atlas image stretched");
+        auto& c = canvas();
+        c.setClampBounds(currentClamp());
+        c.setBlendMode(visage::BlendMode::Composite);
+        c.setColor(visage::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
+        c.halfImage(reinterpret_cast<const unsigned char*>(image.pixels.data()), w + 2, h + 2,
+                    d.left, d.top, dw, dh, image.id, 1.0f + src.left, 1.0f + src.top, sw, sh);
+        c.setBlendMode(visage::BlendMode::Alpha);
+        bitmap->rendered = false;
+        return true;
     }
 
     // Text: the engine (helpers/CpuTextEngine.h, HarfBuzz) renders through a
@@ -866,7 +1097,7 @@ public:
 
         return viaCpu(textDeviceBounds(*layoutRect, extent), [&](cpugfx::RenderTarget& cpu) {
             return engine->drawText(&cpu, textFormat, string, int32_t(stringLength), *layoutRect, brush, options);
-        });
+        }, "drawTextU");
     }
 
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect,
@@ -879,7 +1110,7 @@ public:
         richTextFormat->getTextExtentU(&extent);
         return viaCpu(textDeviceBounds(*layoutRect, extent), [&](cpugfx::RenderTarget& cpu) {
             return engine->drawRichText(&cpu, richTextFormat, *layoutRect, brush, options);
-        });
+        }, "drawRichTextU");
     }
 
     ReturnCode drawTextLayout(drawing::Point point, drawing::api::ITextLayout* textLayout,
@@ -888,12 +1119,19 @@ public:
         auto* engine = textEngine();
         if (!engine || !textLayout)
             return ReturnCode::NoSupport;
-        // A layout's box (and so where alignment puts the text) is not
-        // exposed through ITextLayout, only its tight extent: the whole
-        // clip stays the bound here.
-        return viaCpu(clipRectStack.back(), [&](cpugfx::RenderTarget& cpu) {
+        // ITextLayout exposes only the tight extent; the engine knows where
+        // the aligned block lands (module titles are laid out in a box the
+        // size of the module, and were costing a module's worth of raster
+        // and upload each).
+        drawing::Size extent{ 0, 0 };
+        textLayout->getTextExtentU(&extent);
+        drawing::Rect placed{};
+        drawing::Rect bounds = clipRectStack.back();
+        if (engine->getTextLayoutPlacement(textLayout, &placed) == ReturnCode::Ok)
+            bounds = textDeviceBounds({ point.x + placed.left, point.y + placed.top, point.x + placed.right, point.y + placed.bottom }, extent);
+        return viaCpu(bounds, [&](cpugfx::RenderTarget& cpu) {
             return engine->drawTextLayout(&cpu, textLayout, point, brush, options);
-        });
+        }, "drawTextLayout");
     }
 
     // Offscreen targets are cpugfx targets: a CpuReadable one by decision

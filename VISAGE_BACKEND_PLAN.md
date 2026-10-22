@@ -411,6 +411,62 @@ with xdotool (drag + insert; script in the session scratchpad, built from
   WavetableSynth.synthedit`; "unregistered module type" in the log) — a
   SynthEdit bug, not a backend one.
 
+## Measured (GPU gradients and bitmaps, 2026-10-22, lavapipe)
+
+Jeff: "go ahead with the GPU gradient and bitmap brushes". The CPU
+fallbacks left in an analyser frame were the graph's gradient fill, the
+module's bitmap draws and its text; each a raster of the clip's worth and
+an fp16 upload.
+
+- **Gradients are fork brushes.** `gpuBrush()` turns a cpugfx solid, linear
+  or radial brush into a `visage::Brush`: the strip is a 512-sample LUT
+  filled from `GradientstopCollection::colorAt` (straight colour × brush
+  opacity; the fork premultiplies when it blends), so both backends paint
+  the same stops by construction. Wrap and Mirror are the fork's own
+  repeat/reflect (the strip spans a full atlas row, the sampler wraps).
+  Linear: t is affine in device space, so the fork's two points are the
+  t = 0 point and that plus g/|g|² for the device-space gradient g of t —
+  any brush transform × context transform, no special cases. Radial: the
+  fork's focal radial (`GradientPosition::radial` + `transformed()`, the
+  quadratic form carries non-uniform scale and skew), with cpugfx's focus
+  clamp (|f| < 0.999 by length). Degenerate axis or radii: the last stop,
+  solid, as D2D. Opacity brushes and bitmap brushes stay with cpugfx.
+- **Bitmaps are retained atlas images.** `Bitmap::cachedImage` keeps a
+  cpugfx bitmap in the target's half-float atlas across frames, keyed by
+  the bitmap and its new `generation` counter (bumped by a write lock's
+  release and by a cpugfx `endDraw`), with a one-texel replicated border
+  so a stretched draw's bilinear edge clamps to the edge texel as D2D
+  does. Drawn as a 1:1 integer-aligned quad (nearest and linear agree) or
+  a linear stretch of the whole bitmap; nearest-neighbour stretches,
+  cropped stretches, mirrored or out-of-bitmap sources, transforms with
+  rotation and draws under a geometry clip go to cpugfx (the trace says
+  which). Entries unused for 120 submits are dropped. Fork: `halfImage`
+  takes a source sub-rect, `retainHalfImage` returns the atlas handle to
+  hold, `ImageWrapper` carries the sub-rect and per-axis texels-per-pixel
+  (the clamp adjustment in `vs_tinted_texture` was per-pixel = per-texel,
+  wrong for a stretched quad; text quads carry 1).
+- **Retained text layouts** fell back over the whole clip (ITextLayout has
+  no box accessor; module titles are laid out in a module-sized box):
+  `ICpuTextEngine::getTextLayoutPlacement` reports where the aligned block
+  lands and the fallback is bounded by that. Analyser frame fallbacks:
+  593 k → 47 k pixels. Render 1.4 ms, submit + present 14 ms on lavapipe;
+  the ~100 ms present interval is the analyser's own repaint rate, not
+  drawing.
+- **Oracle tests** (gimpi_ui_tests, GPU build): extend modes, a radial
+  with offset focus + brush transform + non-uniform context transform, a
+  linear stretch with opacity, and a write-lock redraw, each against a
+  cpugfx target of the same drawing. A 512-entry LUT and SDF edges give a
+  few thousandths; a wrapped gradient's seam and a fill's corners are
+  single-pixel outliers and are counted, not averaged.
+- **A single-image atlas was 65 × 50 texels** (the image plus padding):
+  texel-centre coordinates are inexact at those sizes and a 1:1 quad
+  sampled there mixes a neighbour in by one fp16 ulp on whichever rows
+  round unluckily, so byte-identical content read back differently by
+  image size (`TextLayoutMatchesDrawText` demands byte equality between
+  two fallbacks of different heights). Atlases are power-of-two sided now.
+  Snapping coordinates in the fragment shader could not fix it: the
+  sampler re-derives the inexact texel index.
+
 ## Landmines
 
 - **No real GPU in the dev VM.** `lspci` shows VMware SVGA II; ICDs present are

@@ -353,6 +353,12 @@ public:
     // What lockPixels() hands out. Rendering is fp16 regardless.
     int32_t lockFormat{ drawing::api::IBitmapPixels::RGBA_16f };
 
+    // Bumped whenever the pixels may have changed (a write lock released, a
+    // render target's endDraw), so a backend holding a GPU copy of this
+    // bitmap knows when to upload again.
+    uint64_t generation{ 1 };
+    void touch() { ++generation; }
+
     Bitmap(drawing::api::IFactory* pfactory, int32_t w, int32_t h, int32_t flags = 0)
         : factory(pfactory), lockFormat(lockFormatFromFlags(flags))
     {
@@ -504,8 +510,12 @@ public:
     }
     ~BitmapPixels()
     {
-        if (converts() && 0 != (lockFlags & int32_t(drawing::BitmapLockFlags::Write)))
-            stagingToSurface();
+        if (0 != (lockFlags & int32_t(drawing::BitmapLockFlags::Write)))
+        {
+            if (converts())
+                stagingToSurface();
+            bitmap->touch();
+        }
 
         bitmap->release();
     }
@@ -605,6 +615,16 @@ public:
                                       drawing::Point /*point*/, drawing::api::IBrush* /*brush*/,
                                       int32_t /*options*/)
     {
+        return ReturnCode::NoSupport;
+    }
+
+    // Where a retained layout's text lands, relative to the point it is
+    // drawn at: its lines' block after the alignment within the box the
+    // layout was created with. ITextLayout itself exposes only the tight
+    // extent, not the box. A backend bounding the layout's draw needs this.
+    virtual ReturnCode getTextLayoutPlacement(drawing::api::ITextLayout* /*textLayout*/, drawing::Rect* returnPlaced)
+    {
+        *returnPlaced = {};
         return ReturnCode::NoSupport;
     }
 };
@@ -1029,6 +1049,11 @@ protected:
     }
 
 public:
+    // For a backend that paints the gradient itself (GpuGfx.h).
+    const GradientstopCollection* stopCollection() const { return stops.get(); }
+    float brushOpacity() const { return opacity; }
+    const drawing::Matrix3x2& brushTransformMatrix() const { return brushTransform; }
+
     bool isPaintable() const override
     {
         return stops.get() != nullptr && stops->isPaintable() && std::isfinite(opacity)
@@ -1052,6 +1077,8 @@ public:
 
     void setStartPoint(drawing::Point p) override { startPoint = p; }
     void setEndPoint(drawing::Point p) override { endPoint = p; }
+    drawing::Point start() const { return startPoint; }
+    drawing::Point end() const { return endPoint; }
 
     void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const override
     {
@@ -1112,6 +1139,10 @@ public:
     void setGradientOriginOffset(drawing::Point p) override { originOffset = p; }
     void setRadiusX(float r) override { radiusX = r; }
     void setRadiusY(float r) override { radiusY = r; }
+    drawing::Point centerPoint() const { return center; }
+    drawing::Point gradientOriginOffset() const { return originOffset; }
+    float radiusXValue() const { return radiusX; }
+    float radiusYValue() const { return radiusY; }
 
     void evalSpan(const drawing::Matrix3x2& deviceToLocal, int x0, int y, int count, float* dst) const override
     {
@@ -2633,6 +2664,7 @@ public:
                 }
             }
         }
+        bitmap->touch();
         return ReturnCode::Ok;
     }
 

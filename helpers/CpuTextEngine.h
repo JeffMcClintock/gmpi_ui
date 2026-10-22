@@ -2057,6 +2057,48 @@ public:
         return ReturnCode::Ok;
     }
 
+    ReturnCode getTextLayoutPlacement(api::ITextLayout* textLayout, Rect* returnPlaced) override
+    {
+        auto* layout = dynamic_cast<RetainedLayout*>(textLayout);
+        if (!layout)
+        {
+            *returnPlaced = {};
+            return ReturnCode::NoSupport;
+        }
+        // The same arithmetic renderLaidOut applies to its rect, with the
+        // rect at the origin: the block's vertical placement from the
+        // paragraph alignment, the widest line's horizontal placement from
+        // the text alignment.
+        const auto& laid = layout->laid;
+        float blockHeight = 0.0f, widest = 0.0f;
+        for (const auto& l : laid.lines)
+        {
+            const float adv = l.advance > 0.0f ? l.advance : laid.defaultAdvance;
+            blockHeight += adv;
+            widest = (std::max)(widest, l.width);
+        }
+        float top = 0.0f;
+        switch (laid.paragraphAlignment)
+        {
+        case ParagraphAlignment::Far:    top = layout->boxHeight - blockHeight; break;
+        case ParagraphAlignment::Center: top = 0.5f * (layout->boxHeight - blockHeight); break;
+        default: break;
+        }
+        float left = 0.0f;
+        switch (laid.textAlignment)
+        {
+        case TextAlignment::Trailing: left = layout->boxWidth - widest; break;
+        case TextAlignment::Center:   left = 0.5f * (layout->boxWidth - widest); break;
+        default: break;
+        }
+        // Never smaller than the measured extent: a line's stored width is
+        // not always its ink.
+        const float w = (std::max)(widest, layout->extent.width);
+        const float h = (std::max)(blockHeight, layout->extent.height);
+        *returnPlaced = { left, top, left + w, top + h };
+        return ReturnCode::Ok;
+    }
+
     ReturnCode drawTextLayout(api::IDeviceContext* context, api::ITextLayout* textLayout,
                               Point point, api::IBrush* brush, int32_t options) override
     {

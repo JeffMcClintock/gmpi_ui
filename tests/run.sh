@@ -22,21 +22,18 @@ CXXFLAGS="-std=c++20 -O2 -I$ROOT -I$GMPI -I$HERE/gen"
 LIBS=$(pkg-config --cflags --libs wayland-client wayland-cursor xkbcommon libdecor-0 dbus-1)
 
 # --demo-gpu builds the demo against the GPU backend (backends/GpuGfx.h over
-# the gmpi graphics fork). Point GPU_BUILD at a configured gimpi_ui_tests build
-# with -DGMPI_UI_TESTS_GPU_BACKEND=ON: it holds the fork's static libraries.
-# Run with GMPI_UI_GPU=1 (and VK_ICD_FILENAMES for lavapipe on a GPU-less box).
+# the renderer in backends/gpu). Point GPU_BUILD at a configured
+# gimpi_ui_tests build with -DGMPI_UI_TESTS_GPU_BACKEND=ON: it holds
+# libgmpi_gpu.a and bgfx's static libraries. Run with GMPI_UI_GPU=1 (and
+# VK_ICD_FILENAMES for lavapipe on a GPU-less box).
 if [ "${1:-}" = "--demo-gpu" ]; then
-    FORK=${FORK_DIR:-$HOME/SE/visage}
     GPU_BUILD=${GPU_BUILD:-$HOME/SE/build-uitests-gpu}
     TEXTLIBS=$(pkg-config --cflags --libs fontconfig harfbuzz freetype2)
     BG="$GPU_BUILD/_deps/bgfx-build/cmake"
-    GPULIBS="$GPU_BUILD/gpu_graphics/libvisage.a $BG/bgfx/libbgfx.a $BG/bimg/libbimg.a $BG/bimg/libbimg_decode.a $BG/bx/libbx.a \
-        $GPU_BUILD/_deps/freetype-build/libfreetype.a \
-        $GPU_BUILD/gpu_graphics/visage_graphics/libVisageEmbeddedShaders.a \
-        $GPU_BUILD/gpu_graphics/visage_graphics/libVisageEmbeddedFonts.a \
-        $GPU_BUILD/gpu_graphics/visage_graphics/libVisageEmbeddedIcons.a \
+    BGFX_SRC="$GPU_BUILD/_deps/bgfx-src"
+    GPULIBS="$GPU_BUILD/libgmpi_gpu.a $BG/bgfx/libbgfx.a $BG/bimg/libbimg.a $BG/bx/libbx.a \
         -lX11 -lXext -lXrandr -lSM -lICE -lGL -ldl -lrt -lpthread"
-    g++ $CXXFLAGS -g -DNDEBUG -DVISAGE_LINUX=1 -DGMPI_UI_GPU_BACKEND=1 -isystem "$FORK" -isystem "$GPU_BUILD/gpu_graphics/include" \
+    g++ $CXXFLAGS -g -DNDEBUG -DGMPI_UI_GPU_BACKEND=1 -isystem "$BGFX_SRC/bgfx/include" -isystem "$BGFX_SRC/bx/include" \
         -o "$HERE/wayland_demo_gpu" "$HERE/wayland_demo.cpp" \
         "$HERE"/gen/*-protocol.o $LIBS $TEXTLIBS -lpng $GPULIBS
     echo "built $HERE/wayland_demo_gpu"

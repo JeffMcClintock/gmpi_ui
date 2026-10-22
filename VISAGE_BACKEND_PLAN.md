@@ -18,6 +18,10 @@ Rulings from Jeff, 2026-10-22:
   changed semantics. There is no obligation to stay rebase-able on upstream or
   to send changes back. MIT copyright notices stay on the files they came from.
   Fork: `JeffMcClintock/visage`, branch `gmpi`, checkout at `/home/jef/SE/visage`.
+  *Absorbed into gmpi_ui's `backends/gpu/` on 2026-10-23 (see "Absorbing
+  Visage into gmpi_ui", Result); the fork is history now, not a dependency.
+  Build lines below that pass `GMPI_GPU_GRAPHICS_FOLDER` or
+  `SE_GPU_GRAPHICS_FOLDER` describe how milestones were run at the time.*
 - **GPU shaders are a future gmpi-ui feature.** Visage's write-once shader
   pipeline (shaderc transpile to D3D/Metal/SPIR-V, `ShaderCache`, custom post
   effects, live reload) is kept intact, not trimmed, so module authors can get
@@ -252,6 +256,54 @@ suite (151/151 under lavapipe, plus the bgfx-Metal count on the Mac):
 History, open: a plain copy with the source commit recorded in the commit
 message and README (recommended: blame on absorbed code is rarely needed),
 or `git subtree add`, which keeps history but imports all of upstream's.
+
+Result (2026-10-23, Jeff: "fold the fork into gmpi_ui, then remove unused
+features"). Steps 1, 2 and 4 are done; step 3 (gmpi types at the boundary)
+is not, and the fork is not archived on GitHub.
+
+- **Where it is.** `backends/gpu/` as `gmpi::gpu`, absorbed from fork commit
+  `4eeb51c` by plain copy (the commit is recorded in `backends/gpu/README.md`
+  and the commit message). Macros are `GMPI_GPU_*`; the platform macros come
+  from `defines.h`, so no consumer passes `-DVISAGE_LINUX=1` any more.
+- **Build.** `backends/gpu/gmpi_gpu.cmake` defines the `gmpi_gpu` static
+  library and fetches and patches bgfx. gimpi_ui_tests and SynthEditWayland
+  include it; `GMPI_GPU_GRAPHICS_FOLDER` and `SE_GPU_GRAPHICS_FOLDER` are gone.
+  `tests/run.sh --demo-gpu` and `tests/x11_gpu_screenshot.sh` link
+  `libgmpi_gpu.a`.
+- **Shaders.** Compiled outputs are committed as C++
+  (`shaders/compiled/shaders_spirv.cpp`, `shaders_metal.cpp`, 476 KB
+  together), selected per platform by the fragment; `visage_file_embed` and
+  the 29 MB of prebuilt shaderc binaries are not absorbed.
+  `shaders/compile_shaders.cmake` regenerates them; `GMPI_GPU_BUILD_SHADERC=ON`
+  builds bgfx's shaderc from the fetched source. That matters: the fork's
+  prebuilt shaderc was version 1.18.112, older than the bgfx it ran against
+  (1.18.129), and the committed shaders are from the matching 1.18.129. The
+  Linux shaderc cannot compile HLSL, so `shaders_dx11.cpp` waits for a run on
+  Windows; a Windows build stops with that message until then.
+- **Dropped.** Text, fonts, emoji, SVG, theme, palette; the SDF shapes the
+  adaptor doesn't draw (rounded rectangle, squircle, arcs, segments, triangle,
+  quadratic, diamond), graph and heat-map shapes and their 15 shaders; the
+  Visage stroker, curve flattening and SVG path parsing (`Path` is flattened
+  polygons now); encoded-image decoding (bimg decode, stb resize), the 8-bit
+  and float atlases, screenshot PNG saving, colour/gradient/brush string
+  serialisation, the named colour maps, the background render thread, WebGL
+  shader preprocessing, and Visage's string, file, time, thread, clone and
+  dimension utilities. 7,600 lines against the fork's 16,000.
+- **Kept for shaders.** `post_effects`, `Shader`, `ShaderCache`,
+  `ProgramCache`, `Canvas::shader()`, regions and layers, the time uniform,
+  and the `.sc` include files. None of it is driven by the GMPI adaptor yet.
+- **Tests.** The fork's `precision_tests.cpp` (11 cases) is
+  `gimpi_ui_tests/tests/gpu_renderer_tests.cpp` as gtest `GpuRenderer.*`.
+  Under lavapipe: 252 / 252 pass, 3 skipped (text-engine capabilities), the
+  GPU demo and SynthEditWayland render as before, the scripted editor drag
+  and Slider2 insert run clean, analyser frame 0.6 ms render + 13 ms submit
+  and present. **macOS is not re-run** after absorption: the Metal shaders
+  are new output (shaderc 1.18.129) and the fragment's Apple branch is
+  untested.
+- **Found on the way, not caused by it.** On X11 the CPU and GPU paths
+  differ by one code value on a flat clear colour (154 vs 155 in one
+  channel); the commit before absorption shows the same, so it is the CPU
+  encode against the GPU's sRGB swap chain, open.
 
 ## Fork changes (branch `gmpi`)
 

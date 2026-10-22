@@ -1,25 +1,28 @@
 #pragma once
 
-// GPU backend over the gmpi-ui graphics fork (origin: VitalAudio/visage, bgfx
-// underneath: D3D11 / Metal / Vulkan). See VISAGE_BACKEND_PLAN.md.
+// GPU backend over gmpi_ui's GPU renderer, backends/gpu/ (absorbed from
+// VitalAudio/visage; bgfx underneath: D3D11 / Metal / Vulkan). See
+// VISAGE_BACKEND_PLAN.md. Build: backends/gpu/gmpi_gpu.cmake.
 //
-// Every surface is RGBA16F premultiplied linear (the fork's default), the
-// working format of the CPU backend and a D2D 64bppPRGBAHalf target.
+// Every surface is RGBA16F premultiplied linear, the working format of the
+// CPU backend and a D2D 64bppPRGBAHalf target.
 //
 // Two paths to pixels:
 //
-//   GPU   solid-brush fills and strokes go through the fork's analytic
-//         path-coverage atlas: figures are flattened already (Gfx_base sink),
-//         strokes are widened by the cpugfx contour stroker (D2D-exact caps,
-//         joins and dashes) and filled nonzero.
+//   GPU   fills and strokes with solid, linear and radial gradient brushes
+//         go through the renderer's exact path-coverage atlas: figures are
+//         flattened already (Gfx_base sink), strokes are widened by the
+//         cpugfx contour stroker (D2D-exact caps, joins and dashes) and
+//         filled nonzero. Axis-aligned rects and circles are SDF quads.
+//         Bitmaps are retained half-float atlas images.
 //
 //   CPU   anything the GPU path cannot express yet is rendered by a cpugfx
 //         render target the size of the draw's device bounds, uploaded as an
-//         RGBA16F image and composited premultiplied: gradient and bitmap
-//         brushes, opacity brushes, drawBitmap, and every draw under a
-//         geometry clip. Correct by construction (cpugfx matches D2D); the
-//         GPU-native versions replace these one at a time with the test
-//         suite as the oracle. See VISAGE_BACKEND_PLAN.md, milestone 2.
+//         RGBA16F image and composited premultiplied: bitmap and opacity
+//         brushes, text, the drawBitmap cases the atlas quad cannot match,
+//         and every draw under a geometry clip. Correct by construction
+//         (cpugfx matches D2D); GPU-native versions replace these one at a
+//         time with the test suite as the oracle.
 //
 // Geometry, stroke styles, brushes, images and flagged (Mask / SRGB /
 // CpuReadable) targets are the cpugfx classes: a PathGeometry is flattened
@@ -28,10 +31,10 @@
 
 #include "CpuGfx.h"
 
-#include "visage_graphics/canvas.h"
-#include "visage_graphics/path.h"
-#include "visage_graphics/renderer.h"
-#include "visage_graphics/screenshot.h"
+#include "gpu/canvas.h"
+#include "gpu/path.h"
+#include "gpu/renderer.h"
+#include "gpu/screenshot.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -71,7 +74,7 @@ inline bool wanted()
 // backend requires. Safe to call more than once.
 inline bool initialize(void* nativeWindow, void* nativeDisplay, bool wayland)
 {
-    auto& renderer = visage::Renderer::instance();
+    auto& renderer = gmpi::gpu::Renderer::instance();
     if (!renderer.initialized())
     {
         renderer.setVsync(false); // the host paces frames (Wayland frame callbacks / X11 timer)
@@ -82,7 +85,7 @@ inline bool initialize(void* nativeWindow, void* nativeDisplay, bool wayland)
         // Vulkan surface on it when its canvas pairs to it. Every real window
         // then gets its own swap chain through createWindowRenderTarget().
         renderer.initialize(nativeWindow, nativeDisplay,
-                            wayland ? visage::Renderer::NativeWindowType::Wayland : visage::Renderer::NativeWindowType::Default);
+                            wayland ? gmpi::gpu::Renderer::NativeWindowType::Wayland : gmpi::gpu::Renderer::NativeWindowType::Default);
     }
     if (!renderer.supported())
         std::fprintf(stderr, "gmpi_ui GPU backend: %s\n", renderer.errorMessage().c_str());
@@ -109,7 +112,7 @@ class Bitmap final : public drawing::api::IBitmap
 {
 public:
     drawing::api::IFactory* factory{};
-    visage::Canvas canvas;
+    gmpi::gpu::Canvas canvas;
     int32_t width{}, height{};
     bool rendered{ false }; // canvas.submit() has run since the last draw call
 
@@ -153,7 +156,7 @@ public:
         uint64_t generation{};
         std::vector<uint16_t> pixels; // (w+2) x (h+2) fp16 RGBA, never resized: the atlas keeps the pointer
         uint64_t id{};
-        std::unique_ptr<visage::ImageAtlas::PackedImage> retained;
+        std::unique_ptr<gmpi::gpu::ImageAtlas::PackedImage> retained;
         uint64_t lastUsed{};
     };
     static constexpr uint64_t kImageCacheFrames = 120;
@@ -191,7 +194,7 @@ public:
             std::memcpy(dstRow, srcRow, 8);                              // left border
             std::memcpy(dstRow + size_t(w + 1) * 4, srcRow + size_t(w - 1) * 4, 8); // right border
         }
-        entry.retained = std::make_unique<visage::ImageAtlas::PackedImage>(
+        entry.retained = std::make_unique<gmpi::gpu::ImageAtlas::PackedImage>(
             canvas.retainHalfImage(reinterpret_cast<const unsigned char*>(entry.pixels.data()), pw, h + 2, entry.id));
 
         auto& slot = imageCache[&bm];
@@ -226,7 +229,7 @@ public:
     {
         if (!rendered)
             submit();
-        const visage::Screenshot& shot = canvas.takeScreenshot(false);
+        const gmpi::gpu::Screenshot& shot = canvas.takeScreenshot(false);
         std::vector<uint16_t> out(size_t(width) * size_t(height) * 4, 0);
         if (shot.halfFloat() && shot.width() == width && shot.height() == height)
             std::copy_n(shot.halfData(), out.size(), out.data());
@@ -238,7 +241,7 @@ public:
     // given clamp. Composite = premultiplied over; Opaque = replace.
     void drawHalfImage(std::vector<uint16_t>&& pixels, int32_t w, int32_t h,
                        float x, float y, float dw, float dh, float opacity,
-                       const visage::ClampBounds& clamp, visage::BlendMode blend)
+                       const gmpi::gpu::ClampBounds& clamp, gmpi::gpu::BlendMode blend)
     {
         if (w <= 0 || h <= 0 || pixels.empty())
             return;
@@ -248,9 +251,9 @@ public:
         static uint64_t nextImageId = 1; // the atlas caches by identity; a freed buffer's address is not one
         canvas.setClampBounds(clamp);
         canvas.setBlendMode(blend);
-        canvas.setColor(visage::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
+        canvas.setColor(gmpi::gpu::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
         canvas.halfImage(data, w, h, x, y, dw, dh, nextImageId++);
-        canvas.setBlendMode(visage::BlendMode::Alpha);
+        canvas.setBlendMode(gmpi::gpu::BlendMode::Alpha);
         rendered = false;
     }
 
@@ -258,7 +261,7 @@ public:
     void writeBack(std::vector<uint16_t>&& pixels)
     {
         drawHalfImage(std::move(pixels), width, height, 0.0f, 0.0f, float(width), float(height), 1.0f,
-                      visage::ClampBounds{ 0.0f, 0.0f, float(width), float(height) }, visage::BlendMode::Opaque);
+                      gmpi::gpu::ClampBounds{ 0.0f, 0.0f, float(width), float(height) }, gmpi::gpu::BlendMode::Opaque);
     }
 
     ReturnCode getSizeU(drawing::SizeU* returnSize) override
@@ -366,12 +369,12 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
 
     bool geometryClipActive() const { return clipGeometryStack.back() != nullptr; }
 
-    visage::Canvas& canvas() { return bitmap->canvas; }
+    gmpi::gpu::Canvas& canvas() { return bitmap->canvas; }
 
     drawing::Rect surfaceBounds() const { return { 0.0f, 0.0f, float(bitmap->width), float(bitmap->height) }; }
 
     // The device-space clip as the canvas's clamp bounds.
-    visage::ClampBounds currentClamp() const
+    gmpi::gpu::ClampBounds currentClamp() const
     {
         const auto c = drawing::intersectRect(clipRectStack.back(), surfaceBounds());
         return { c.left, c.top, (std::max)(c.left, c.right), (std::max)(c.top, c.bottom) };
@@ -383,9 +386,9 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     }
 
     // GMPI colour is linear straight RGBA; the fork takes alpha first.
-    static visage::Color toVisage(const drawing::Color& c, float opacity)
+    static gmpi::gpu::Color toVisage(const drawing::Color& c, float opacity)
     {
-        return visage::Color(c.a * opacity, c.r, c.g, c.b);
+        return gmpi::gpu::Color(c.a * opacity, c.r, c.g, c.b);
     }
 
     // Draw tracing for hosts (GMPI_UI_GPU_TRACE_DRAWS=1): op, device rect, how it was drawn.
@@ -418,7 +421,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         return (solid && solid->isPaintable()) ? solid : nullptr;
     }
 
-    void beginGpuShape(const visage::Brush& brush)
+    void beginGpuShape(const gmpi::gpu::Brush& brush)
     {
         auto& c = canvas();
         c.setClampBounds(currentClamp());
@@ -428,7 +431,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
 
     void beginGpuShape(const cpugfx::SolidColorBrush& brush)
     {
-        beginGpuShape(visage::Brush::solid(toVisage(brush.color, brush.opacity)));
+        beginGpuShape(gmpi::gpu::Brush::solid(toVisage(brush.color, brush.opacity)));
     }
 
     // --- gradients ----------------------------------------------------------
@@ -438,29 +441,29 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // fork premultiplies when it blends. Wrap and Mirror are the fork's own
     // repeat/reflect (the strip spans a full atlas row and the sampler wraps).
 
-    static visage::Gradient gradientStrip(const cpugfx::GradientstopCollection& stops, float opacity)
+    static gmpi::gpu::Gradient gradientStrip(const cpugfx::GradientstopCollection& stops, float opacity)
     {
-        auto strip = visage::Gradient::fromSampleFunction(visage::Gradient::kMaxGradientResolution, [&](float t) {
+        auto strip = gmpi::gpu::Gradient::fromSampleFunction(gmpi::gpu::Gradient::kMaxGradientResolution, [&](float t) {
             const auto c = stops.colorAt(t);
-            return visage::Color(c.a * opacity, c.r, c.g, c.b);
+            return gmpi::gpu::Color(c.a * opacity, c.r, c.g, c.b);
         });
         strip.setRepeat(stops.extendMode == drawing::ExtendMode::Wrap);
         strip.setReflect(stops.extendMode == drawing::ExtendMode::Mirror);
         return strip;
     }
 
-    static visage::Brush solidStop(const cpugfx::GradientstopCollection& stops, float t, float opacity)
+    static gmpi::gpu::Brush solidStop(const cpugfx::GradientstopCollection& stops, float t, float opacity)
     {
-        return visage::Brush::solid(toVisage(stops.colorAt(t), opacity));
+        return gmpi::gpu::Brush::solid(toVisage(stops.colorAt(t), opacity));
     }
 
-    static visage::Transform toVisageTransform(const drawing::Matrix3x2& m)
+    static gmpi::gpu::Transform toVisageTransform(const drawing::Matrix3x2& m)
     {
         // GMPI is row-vector (x' = x*_11 + y*_21 + _31); the fork is column form.
-        return visage::Transform(m._11, m._21, m._31, m._12, m._22, m._32);
+        return gmpi::gpu::Transform(m._11, m._21, m._31, m._12, m._22, m._32);
     }
 
-    std::optional<visage::Brush> linearBrush(const cpugfx::LinearGradientBrush& b) const
+    std::optional<gmpi::gpu::Brush> linearBrush(const cpugfx::LinearGradientBrush& b) const
     {
         const auto* stops = b.stopCollection();
         const float opacity = b.brushOpacity();
@@ -480,12 +483,12 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         const float g2 = gx * gx + gy * gy;
         if (!(g2 > 0.0f) || !std::isfinite(g2) || !std::isfinite(c))
             return solidStop(*stops, 1.0f, opacity);
-        const visage::Point p1(-c * gx / g2, -c * gy / g2);
-        const visage::Point p2(p1.x + gx / g2, p1.y + gy / g2);
-        return visage::Brush::linear(gradientStrip(*stops, opacity), p1, p2);
+        const gmpi::gpu::Point p1(-c * gx / g2, -c * gy / g2);
+        const gmpi::gpu::Point p2(p1.x + gx / g2, p1.y + gy / g2);
+        return gmpi::gpu::Brush::linear(gradientStrip(*stops, opacity), p1, p2);
     }
 
-    std::optional<visage::Brush> radialBrush(const cpugfx::RadialGradientBrush& b) const
+    std::optional<gmpi::gpu::Brush> radialBrush(const cpugfx::RadialGradientBrush& b) const
     {
         const auto* stops = b.stopCollection();
         const float opacity = b.brushOpacity();
@@ -505,17 +508,17 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
             fx *= k;
             fy *= k;
         }
-        const visage::Point c(center.x, center.y);
-        const visage::Point focal(center.x + fx * std::fabs(rx), center.y + fy * std::fabs(ry));
-        auto position = visage::GradientPosition::radial(c, std::fabs(rx), std::fabs(ry), focal);
+        const gmpi::gpu::Point c(center.x, center.y);
+        const gmpi::gpu::Point focal(center.x + fx * std::fabs(rx), center.y + fy * std::fabs(ry));
+        auto position = gmpi::gpu::GradientPosition::radial(c, std::fabs(rx), std::fabs(ry), focal);
         position = position.transformed(toVisageTransform(b.brushTransformMatrix() * transform_));
-        return visage::Brush(gradientStrip(*stops, opacity), position);
+        return gmpi::gpu::Brush(gradientStrip(*stops, opacity), position);
     }
 
     // The brush as a fork brush, when the fork can paint it directly: solid,
     // linear or radial gradient; no opacity brush, no geometry clip (bitmap
     // brushes stay with cpugfx).
-    std::optional<visage::Brush> gpuBrush(drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush = nullptr) const
+    std::optional<gmpi::gpu::Brush> gpuBrush(drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush = nullptr) const
     {
         if (opacityBrush || geometryClipActive())
             return std::nullopt;
@@ -523,7 +526,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         {
             if (!solid->isPaintable())
                 return std::nullopt;
-            return visage::Brush::solid(toVisage(solid->color, solid->opacity));
+            return gmpi::gpu::Brush::solid(toVisage(solid->color, solid->opacity));
         }
         if (auto* linear = dynamic_cast<cpugfx::LinearGradientBrush*>(brush))
             return linear->isPaintable() ? linearBrush(*linear) : std::nullopt;
@@ -568,7 +571,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // Fill flattened figures through the path atlas. Points are transformed
     // to device space here, on the CPU. `cpuFill` draws the same thing through
     // cpugfx, for figures too large for the atlas.
-    ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const visage::Brush& brush,
+    ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const gmpi::gpu::Brush& brush,
                               const std::function<ReturnCode(cpugfx::RenderTarget&)>& cpuFill)
     {
         const auto deviceBounds = figuresDeviceBounds(figures);
@@ -599,7 +602,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         }
         trace("figures", deviceBounds, "gpu path atlas");
 
-        visage::Path vpath;
+        gmpi::gpu::Path vpath;
         for (const auto& figure : figures)
         {
             if (!figure.filled || figure.points.size() < 2)
@@ -621,8 +624,8 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         if (vpath.numPoints() == 0)
             return ReturnCode::Ok;
 
-        vpath.setFillRule(fillMode == drawing::FillMode::Winding ? visage::Path::FillRule::NonZero
-                                                                 : visage::Path::FillRule::EvenOdd);
+        vpath.setFillRule(fillMode == drawing::FillMode::Winding ? gmpi::gpu::Path::FillRule::NonZero
+                                                                 : gmpi::gpu::Path::FillRule::EvenOdd);
         beginGpuShape(brush);
         canvas().fill(vpath, 0, 0);
         return ReturnCode::Ok;
@@ -676,7 +679,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
             return ReturnCode::Fail;
 
         bitmap->drawHalfImage(packSurface(cb->surface, 0, 0, w, h), w, h, float(left), float(top), float(w), float(h),
-                              1.0f, currentClamp(), visage::BlendMode::Composite);
+                              1.0f, currentClamp(), gmpi::gpu::BlendMode::Composite);
         return result;
     }
 
@@ -854,13 +857,13 @@ public:
         auto& c = canvas();
         const auto clamp = currentClamp();
         c.setClampBounds(clamp);
-        c.setBlendMode(visage::BlendMode::Opaque);
+        c.setBlendMode(gmpi::gpu::BlendMode::Opaque);
         c.setColor(toVisage(*clearColor, 1.0f));
         // Explicit rect: the fork's fill() with no arguments puts the quad at
         // the canvas origin with the clamp's SIZE, which misses a clip that
         // does not start at the origin (a panel at x = 1010 cleared nothing).
         c.fill(clamp.left, clamp.top, clamp.right - clamp.left, clamp.bottom - clamp.top);
-        c.setBlendMode(visage::BlendMode::Alpha);
+        c.setBlendMode(gmpi::gpu::BlendMode::Alpha);
         bitmap->rendered = false;
         return ReturnCode::Ok;
     }
@@ -1058,11 +1061,11 @@ public:
         trace("drawBitmap", d, oneToOne ? "gpu atlas image 1:1" : "gpu atlas image stretched");
         auto& c = canvas();
         c.setClampBounds(currentClamp());
-        c.setBlendMode(visage::BlendMode::Composite);
-        c.setColor(visage::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
+        c.setBlendMode(gmpi::gpu::BlendMode::Composite);
+        c.setColor(gmpi::gpu::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
         c.halfImage(reinterpret_cast<const unsigned char*>(image.pixels.data()), w + 2, h + 2,
                     d.left, d.top, dw, dh, image.id, 1.0f + src.left, 1.0f + src.top, sw, sh);
-        c.setBlendMode(visage::BlendMode::Alpha);
+        c.setBlendMode(gmpi::gpu::BlendMode::Alpha);
         bitmap->rendered = false;
         return true;
     }

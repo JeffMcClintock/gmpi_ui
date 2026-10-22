@@ -314,6 +314,11 @@ Each one can be checked on its own. Nothing lands in SynthEdit before M4.
    This is shared with Linux and is a prerequisite for everything below. Exit:
    the full `DrawingTest.*` set under lavapipe (needs the Linux VM) and the M0
    result on the Mac (159 pass, 1 skip), built from gmpi_ui alone.
+   **Linux half DONE (2026-10-23):** 252 / 252 under lavapipe from gmpi_ui
+   alone. **Mac half open:** build gimpi_ui_tests with
+   `-DGMPI_UI_TESTS_GPU_BACKEND=ON` (no fork folder now) and expect 159 + 11
+   `GpuRenderer.*`; the committed Metal shaders are shaderc 1.18.129 output
+   that no Mac has run yet.
 2. **Device seam, no behaviour change.** `bgfx::` → the `gmpi::gpu` device
    API, with bgfx behind it everywhere. Exit: the same counts as M1.
 3. **metal-cpp device, headless.** Textures, frame buffers, first-pass clears,

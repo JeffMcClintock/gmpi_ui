@@ -1,32 +1,29 @@
 #!/bin/sh
 # Builds tests/x11_menu_test twice - CPU path and GPU path (backends/GpuGfx.h
-# over the gmpi graphics fork) - runs each under Xvfb, right-clicks for the
-# menu, and saves root screenshots as PNG for comparison. Needs the fork
-# build directory that gimpi_ui_tests made with -DGMPI_UI_TESTS_GPU_BACKEND=ON.
+# over the renderer in backends/gpu) - runs each under Xvfb, right-clicks for
+# the menu, and saves root screenshots as PNG for comparison. Needs a
+# gimpi_ui_tests build made with -DGMPI_UI_TESTS_GPU_BACKEND=ON (GPU_BUILD):
+# it holds libgmpi_gpu.a and bgfx's static libraries.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 GMPI=${GMPI_DIR:-$HOME/SE/GMPI}
 TOOLS=${WLTEST_TOOLS:-$HOME/.cache/wayland-testtools}
-FORK=${FORK_DIR:-$HOME/SE/visage}
 GPU_BUILD=${GPU_BUILD:-$HOME/SE/build-uitests-gpu}
 OUT=${WORKDIR:-$HERE/build-x11}
 mkdir -p "$OUT"
 [ -x "$TOOLS/usr/bin/Xvfb" ] || { echo "SKIP: no Xvfb in $TOOLS"; exit 77; }
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}:$TOOLS/usr/lib/x86_64-linux-gnu
-CXXFLAGS="-std=c++20 -O1 -g -DNDEBUG -DVISAGE_LINUX=1 -I$ROOT -I$ROOT/helpers -I$GMPI -I$GMPI/Core"
+CXXFLAGS="-std=c++20 -O1 -g -DNDEBUG -I$ROOT -I$ROOT/helpers -I$GMPI -I$GMPI/Core"
 LIBS=$(pkg-config --cflags --libs x11 xext fontconfig harfbuzz freetype2 dbus-1)
 BG="$GPU_BUILD/_deps/bgfx-build/cmake"
-GPULIBS="$GPU_BUILD/gpu_graphics/libvisage.a $BG/bgfx/libbgfx.a $BG/bimg/libbimg.a $BG/bimg/libbimg_decode.a $BG/bx/libbx.a \
-    $GPU_BUILD/_deps/freetype-build/libfreetype.a \
-    $GPU_BUILD/gpu_graphics/visage_graphics/libVisageEmbeddedShaders.a \
-    $GPU_BUILD/gpu_graphics/visage_graphics/libVisageEmbeddedFonts.a \
-    $GPU_BUILD/gpu_graphics/visage_graphics/libVisageEmbeddedIcons.a \
+BGFX_SRC="$GPU_BUILD/_deps/bgfx-src"
+GPULIBS="$GPU_BUILD/libgmpi_gpu.a $BG/bgfx/libbgfx.a $BG/bimg/libbimg.a $BG/bx/libbx.a \
     -lX11 -lXext -lXrandr -lSM -lICE -lGL -ldl -lrt -lpthread"
 echo "building cpu ..."
 g++ $CXXFLAGS -o "$OUT/x11_menu_test_cpu" "$HERE/x11_menu_test.cpp" "$ROOT/backends/DrawingFrameX11.cpp" $LIBS -lpng || exit 1
 echo "building gpu ..."
-g++ $CXXFLAGS -DGMPI_UI_GPU_BACKEND=1 -isystem "$FORK" -isystem "$GPU_BUILD/gpu_graphics/include" \
+g++ $CXXFLAGS -DGMPI_UI_GPU_BACKEND=1 -isystem "$BGFX_SRC/bgfx/include" -isystem "$BGFX_SRC/bx/include" \
     -o "$OUT/x11_menu_test_gpu" "$HERE/x11_menu_test.cpp" "$ROOT/backends/DrawingFrameX11.cpp" $LIBS -lpng $GPULIBS || exit 1
 
 DISP=""

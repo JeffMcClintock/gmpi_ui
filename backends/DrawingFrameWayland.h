@@ -362,6 +362,19 @@ public:
     // which is a silent and confusing failure - hence saying so here.
     gmpi::cpugfx::Factory& drawingFactory() { return factory_; }
 
+    // What the last present cost, for a host that shows it (examples/WaylandBench).
+    // renderMs is the client's render(); finishMs is everything after it that
+    // gets the frame to the compositor - on the CPU path the encode into the shm
+    // buffer, on the GPU path the submit and swap-chain present, which a client
+    // timing its own render() cannot see. `gpu` says which path ran.
+    struct PresentTiming
+    {
+        double renderMs{};
+        double finishMs{};
+        bool   gpu{};
+    };
+    const PresentTiming& lastPresentTiming() const { return lastTiming_; }
+
     // Anything this frame does not implement itself - IEditorHost above all -
     // is forwarded here. A plugin's parameter pins take their host from a
     // queryInterface for IEditorHost during setHost; leave it unset and the
@@ -448,6 +461,7 @@ protected:
 #endif
     gmpi::api::IUnknown*  parameterHost_{};
     gmpi::drawing::Rect   dirty_{};
+    PresentTiming         lastTiming_{};
     bool  dirtyAll_ = true;
     bool  needsMeasure_ = true;
     bool  captured_ = false;
@@ -1076,7 +1090,9 @@ inline void WaylandFrameBase::present()
         const auto m = gmpi::drawing::makeScale(scale_, scale_);
         rt->setTransform(&m);
     }
+    const auto tRender = std::chrono::steady_clock::now();
     client_->render(static_cast<gmpi::drawing::api::IDeviceContext*>(rt));
+    const auto tRendered = std::chrono::steady_clock::now();
     drawActiveTextEdit(rt);   // an in-place edit sits ON the client, after it
     rt->endDraw();
 
@@ -1115,6 +1131,12 @@ inline void WaylandFrameBase::present()
 
     if (bmRaw) bmRaw->release();
     if (rtRaw) rtRaw->release();
+
+    {
+        using ms = std::chrono::duration<double, std::milli>;
+        lastTiming_ = { ms(tRendered - tRender).count(),
+                        ms(std::chrono::steady_clock::now() - tRendered).count(), false };
+    }
 
     // viewporter maps the physical-pixel buffer onto the logical size, so the
     // compositor never rescales what we drew
@@ -1211,12 +1233,13 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
     gpuTarget_->popAxisAlignedClip();
     const auto tSubmit = std::chrono::steady_clock::now();
     gpuTarget_->endDraw(); // submit + present
-    if (getenv("GMPI_UI_GPU_TRACE"))
     {
         const auto tDone = std::chrono::steady_clock::now();
         using ms = std::chrono::duration<double, std::milli>;
-        fprintf(stderr, "[presentGpu] render %.1f ms, submit+present %.1f ms\n",
-                ms(tSubmit - tRender).count(), ms(tDone - tSubmit).count());
+        lastTiming_ = { ms(tSubmit - tRender).count(), ms(tDone - tSubmit).count(), true };
+        if (getenv("GMPI_UI_GPU_TRACE"))
+            fprintf(stderr, "[presentGpu] render %.1f ms, submit+present %.1f ms\n",
+                    lastTiming_.renderMs, lastTiming_.finishMs);
     }
 
     dirtyAll_ = false;

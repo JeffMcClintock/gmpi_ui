@@ -321,3 +321,19 @@ namespace gmpi
 		}
 
 } // namespace
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+// The Linux pump, reachable from OUTSIDE this binary.
+//
+// TimerManager::instance() is a function-local static: every shared object
+// that compiles this file gets its own manager. A plug-in loaded with dlopen
+// (RTLD_LOCAL, the default) therefore has a TimerManager the host's
+// pump(elapsedMs) never reaches - its timers start, mark themselves running,
+// and never fire. The host looks this symbol up with dlsym on each loaded
+// module and calls it from the same tick as its own pump.
+extern "C" __attribute__((visibility("default")))
+void gmpi_pump_timers(int elapsedMs)
+{
+	gmpi::TimerManager::instance()->pump(elapsedMs);
+}
+#endif

@@ -37,6 +37,7 @@
 #include "gpu/screenshot.h"
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -926,7 +927,15 @@ public:
         return ReturnCode::Ok;
     }
 
-    ReturnCode beginDraw() override { return ReturnCode::Ok; }
+    // u_time for shaders: seconds on one process-wide steady clock, so every
+    // target (and every shader instance) agrees on "now". Layers otherwise sit
+    // at t = 0 - Canvas::updateTime had no caller on this path.
+    ReturnCode beginDraw() override
+    {
+        static const auto epoch = std::chrono::steady_clock::now();
+        canvas().updateTime(std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count());
+        return ReturnCode::Ok;
+    }
 
     ReturnCode endDraw() override
     {

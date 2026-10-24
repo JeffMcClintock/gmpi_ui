@@ -261,7 +261,19 @@ Module logic, in order of `render()`:
    transform; a path fill (`fillGeometry`) is shaded; the clip is honoured; a
    rotated transform paints the fallback colour; the CPU factory answers
    NoSupport; two brushes from one blob table share one program.
-2. **The module, GPU path.** `GpuFx` bundle, `fs_fluid.sc`, spirv + metal
+2. **The module, GPU path - DONE 2026-10-24 (uncommitted, SynthEditLib branch
+   `fluid-module`).** `modules/GpuFx/` (`FluidGui.cpp`, `fluid.sh`,
+   `shaders/compiled/shaders_fluid.cpp` spirv + metal, 160 KB), registered in
+   `modules/CMakeLists.txt`; builds to `GpuFx.gmpi`. In SynthEditWayland on
+   the NVIDIA card: brush created, 163 shader-quad presents in 8 s at ~0.3 ms
+   render. Traps found: (a) the breadcrumb thumbnail renders every module
+   once through EditorScreenshot's CPU factory before the real view does, so
+   the first render always takes the fallback - probe per render, not once;
+   (b) a module placed near the canvas origin (CL's default 100,100) is
+   outside the structure view's initial scroll and never renders, so its
+   render-started timer never starts - test projects put it near 3900,3900;
+   (c) in the structure view the GUI is a 104x16 strip; the 100x100 control
+   is on the panel view. Original: `GpuFx` bundle, spirv + metal
    blobs committed. *Done when:* it appears in the browser, drops onto a
    panel, animates under `GMPI_UI_GPU=1` on the NVIDIA card, and the first
    frame's `[presentGpu]` trace stays in the ~2 ms band the editor is at

@@ -3,7 +3,7 @@
 # over the renderer in backends/gpu) - runs each under Xvfb, right-clicks for
 # the menu, and saves root screenshots as PNG for comparison. Needs a
 # gimpi_ui_tests build made with -DGMPI_UI_TESTS_GPU_BACKEND=ON (GPU_BUILD):
-# it holds libgmpi_gpu.a and bgfx's static libraries.
+# it holds libgmpi_gpu.a and the vendored bgfx's (libgmpi_bgfx.a, libgmpi_bimg.a, libgmpi_bx.a).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
@@ -16,10 +16,9 @@ mkdir -p "$OUT"
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}:$TOOLS/usr/lib/x86_64-linux-gnu
 CXXFLAGS="-std=c++20 -O1 -g -DNDEBUG -I$ROOT -I$ROOT/helpers -I$GMPI -I$GMPI/Core"
 LIBS=$(pkg-config --cflags --libs x11 xext fontconfig harfbuzz freetype2 dbus-1)
-BG="$GPU_BUILD/_deps/bgfx-build/cmake"
-BGFX_SRC="$GPU_BUILD/_deps/bgfx-src"
-GPULIBS="$GPU_BUILD/libgmpi_gpu.a $BG/bgfx/libbgfx.a $BG/bimg/libbimg.a $BG/bx/libbx.a \
-    -lX11 -lXext -lXrandr -lSM -lICE -lGL -ldl -lrt -lpthread"
+BGFX_SRC="$ROOT/backends/gpu/3rdparty/bgfx"  # vendored
+GPULIBS="$GPU_BUILD/libgmpi_gpu.a $GPU_BUILD/libgmpi_bgfx.a $GPU_BUILD/libgmpi_bimg.a $GPU_BUILD/libgmpi_bx.a \
+    -lX11 -lXext -ldl -lrt -lpthread"
 echo "building cpu ..."
 g++ $CXXFLAGS -o "$OUT/x11_menu_test_cpu" "$HERE/x11_menu_test.cpp" "$ROOT/backends/DrawingFrameX11.cpp" $LIBS -lpng || exit 1
 echo "building gpu ..."

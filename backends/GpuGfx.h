@@ -1649,7 +1649,7 @@ public:
         {
         case gmpi::gpu::Renderer::ShaderBinary::Spirv: wanted = drawing::api::ShaderRenderer::Spirv; break;
         case gmpi::gpu::Renderer::ShaderBinary::Metal: wanted = drawing::api::ShaderRenderer::Metal; break;
-        case gmpi::gpu::Renderer::ShaderBinary::Dx11:  wanted = drawing::api::ShaderRenderer::Dx11;  break;
+        case gmpi::gpu::Renderer::ShaderBinary::Dxbc:  wanted = drawing::api::ShaderRenderer::Dxbc;  break;
         default: return ReturnCode::NoSupport;
         }
 

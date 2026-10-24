@@ -24,15 +24,14 @@ LIBS=$(pkg-config --cflags --libs wayland-client wayland-cursor xkbcommon libdec
 # --demo-gpu builds the demo against the GPU backend (backends/GpuGfx.h over
 # the renderer in backends/gpu). Point GPU_BUILD at a configured
 # gimpi_ui_tests build with -DGMPI_UI_TESTS_GPU_BACKEND=ON: it holds
-# libgmpi_gpu.a and bgfx's static libraries. Run with GMPI_UI_GPU=1 (and
+# libgmpi_gpu.a and the vendored bgfx's (libgmpi_bgfx.a, libgmpi_bimg.a, libgmpi_bx.a). Run with GMPI_UI_GPU=1 (and
 # VK_ICD_FILENAMES for lavapipe on a GPU-less box).
 if [ "${1:-}" = "--demo-gpu" ]; then
     GPU_BUILD=${GPU_BUILD:-$HOME/SE/build-uitests-gpu}
     TEXTLIBS=$(pkg-config --cflags --libs fontconfig harfbuzz freetype2)
-    BG="$GPU_BUILD/_deps/bgfx-build/cmake"
-    BGFX_SRC="$GPU_BUILD/_deps/bgfx-src"
-    GPULIBS="$GPU_BUILD/libgmpi_gpu.a $BG/bgfx/libbgfx.a $BG/bimg/libbimg.a $BG/bx/libbx.a \
-        -lX11 -lXext -lXrandr -lSM -lICE -lGL -ldl -lrt -lpthread"
+    BGFX_SRC="$ROOT/backends/gpu/3rdparty/bgfx"  # vendored
+    GPULIBS="$GPU_BUILD/libgmpi_gpu.a $GPU_BUILD/libgmpi_bgfx.a $GPU_BUILD/libgmpi_bimg.a $GPU_BUILD/libgmpi_bx.a \
+        -lX11 -lXext -ldl -lrt -lpthread"
     g++ $CXXFLAGS -g -DNDEBUG -DGMPI_UI_GPU_BACKEND=1 -isystem "$BGFX_SRC/bgfx/include" -isystem "$BGFX_SRC/bx/include" \
         -o "$HERE/wayland_demo_gpu" "$HERE/wayland_demo.cpp" \
         "$HERE"/gen/*-protocol.o $LIBS $TEXTLIBS -lpng $GPULIBS

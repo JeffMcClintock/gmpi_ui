@@ -42,7 +42,7 @@ enum class ShaderRenderer : int32_t
 {
     Spirv = 1, // Vulkan: Linux
     Metal = 2, // macOS, iOS
-    Dx11  = 3, // Windows (Direct3D 11 and 12 share the HLSL 5 blob)
+    Dxbc  = 3, // Windows: Direct3D 12 (DXBC, shader model 5)
 };
 
 // Which host program the user function was compiled into.

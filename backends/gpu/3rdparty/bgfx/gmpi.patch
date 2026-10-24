@@ -1,0 +1,13 @@
+diff --git a/bgfx/src/renderer_vk.cpp b/bgfx/src/renderer_vk.cpp
+index 6c5c46fac..0a77815f9 100644
+--- a/bgfx/src/renderer_vk.cpp
++++ b/bgfx/src/renderer_vk.cpp
+@@ -135,7 +135,7 @@ namespace bgfx { namespace vk
+ 	{
+ 		{ VK_PRESENT_MODE_FIFO_KHR,         true,  "VK_PRESENT_MODE_FIFO_KHR"         },
+ 		{ VK_PRESENT_MODE_FIFO_RELAXED_KHR, true,  "VK_PRESENT_MODE_FIFO_RELAXED_KHR" },
+-		{ VK_PRESENT_MODE_MAILBOX_KHR,      true,  "VK_PRESENT_MODE_MAILBOX_KHR"      },
++		{ VK_PRESENT_MODE_MAILBOX_KHR,      false, "VK_PRESENT_MODE_MAILBOX_KHR"      }, // gmpi: a no-vsync mode (see backends/gpu/3rdparty/bgfx/VENDORED.md)
+ 		{ VK_PRESENT_MODE_IMMEDIATE_KHR,    false, "VK_PRESENT_MODE_IMMEDIATE_KHR"    },
+ 	};
+ 

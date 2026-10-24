@@ -108,13 +108,18 @@ namespace gmpi::gpu {
     uint8_t num_supported = bgfx::getSupportedRenderers(bgfx::RendererType::Count, supported_renderers);
 
 #if GMPI_GPU_WINDOWS
-    bgfx_init.type = bgfx::RendererType::Direct3D11;
-#if USE_DIRECTX12
+    // Direct3D 12 only (ruled 2026-10-24: one current API per platform, no
+    // D3D11). Without it the renderer reports unsupported and the host takes
+    // the CPU path, as a Linux machine without Vulkan does.
+    bgfx_init.type = bgfx::RendererType::Count;
     for (int i = 0; i < num_supported; ++i) {
       if (supported_renderers[i] == bgfx::RendererType::Direct3D12)
         bgfx_init.type = bgfx::RendererType::Direct3D12;
     }
-#endif
+    if (bgfx_init.type == bgfx::RendererType::Count) {
+      supported_ = false;
+      error_message_ = "Direct3D 12 is not available.";
+    }
 #elif GMPI_GPU_MAC
     bgfx_init.type = bgfx::RendererType::Metal;
     bgfx_init.resolution.width = 1;
@@ -167,8 +172,7 @@ namespace gmpi::gpu {
     switch (bgfx::getRendererType()) {
     case bgfx::RendererType::Vulkan: return ShaderBinary::Spirv;
     case bgfx::RendererType::Metal: return ShaderBinary::Metal;
-    case bgfx::RendererType::Direct3D11:
-    case bgfx::RendererType::Direct3D12: return ShaderBinary::Dx11;
+    case bgfx::RendererType::Direct3D12: return ShaderBinary::Dxbc;
     default: return ShaderBinary::None;
     }
   }

@@ -80,7 +80,7 @@ namespace gmpi::gpu {
     // Which compiled-shader format the running renderer loads: what a shader
     // brush's blobs (GmpiApiShaders.h) are matched against. None until
     // initialize() has run, or if it failed.
-    enum class ShaderBinary { None, Spirv, Metal, Dx11 };
+    enum class ShaderBinary { None, Spirv, Metal, Dxbc };
     ShaderBinary shaderBinary() const;
 
   private:

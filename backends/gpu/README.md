@@ -43,9 +43,12 @@ target_link_libraries(my_target PRIVATE gmpi_gpu)
 target_compile_definitions(my_target PRIVATE GMPI_UI_GPU_BACKEND=1)
 ```
 
-bgfx is fetched and patched at a pinned tag (`patch_bgfx.cmake` says what
-the patch does and why). Platform macros (`GMPI_GPU_LINUX` and so on) come
-from `defines.h`, so consumers pass nothing.
+bgfx is vendored: the subset the renderer compiles (one renderer per
+platform - Vulkan, Direct3D 12, Metal) lives in `3rdparty/bgfx/`, built as
+`gmpi_bx`, `gmpi_bimg` and `gmpi_bgfx`, so a build fetches nothing.
+`3rdparty/bgfx/VENDORED.md` says what is there, the one local change, and how
+to update it. Platform macros (`GMPI_GPU_LINUX` and so on) come from
+`defines.h`, so consumers pass nothing.
 
 ## Shaders
 
@@ -57,7 +60,7 @@ shaderc nor an embed step:
 |---|---|---|
 | Vulkan (SPIR-V) | `shaders_spirv.cpp` | Linux |
 | Metal | `shaders_metal.cpp` | macOS |
-| Direct3D 11 | `shaders_dx11.cpp` | Windows — not generated yet |
+| Direct3D 12 (DXBC) | `shaders_dxbc.cpp` | Windows — not generated yet |
 
 After changing a shader, regenerate them:
 
@@ -67,8 +70,9 @@ cmake -DSHADERC=/path/to/shaderc -P backends/gpu/shaders/compile_shaders.cmake
 
 shaderc must come from the same bgfx as the build, because the shader binary
 format is versioned. Configure any consumer with `-DGMPI_GPU_BUILD_SHADERC=ON`
-and build the `shaderc` target to get one. SPIR-V and Metal can be produced on
-any host. Direct3D needs shaderc on Windows (`-DRENDERERS=dx11`), because the
+and build the `shaderc` target to get one: `tools/shaderc.cmake` fetches
+bgfx.cmake at the vendored tag for that, and only that. SPIR-V and Metal can be produced on
+any host. Direct3D needs shaderc on Windows (`-DRENDERERS=dxbc`), because the
 HLSL compiler is Microsoft's.
 
 Custom shaders and post effects are kept for a future gmpi_ui feature; the

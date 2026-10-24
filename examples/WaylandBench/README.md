@@ -39,10 +39,13 @@ build-bench/wayland_bench --cpu
 | `--size WxH` | Window size (default 1000x700) |
 | `--report` | Print one line of stats a second on stdout |
 | `--frames N` | Quit after N presented frames |
+| `--paused` | Start with the animation frozen: every frame draws the same picture |
+| `--dump FILE` | Redraw frame N (`--frames N`, default 3) into an offscreen target of the same backend and write it: int32 width, height, pixel format, then the rows. With `--paused`, two runs compare pixel for pixel. |
 
 Keys: `1`-`6` scene, `+`/`-` double/halve the load, `]`/`[` double/halve path
 detail, `f` cycle the bounce fill (solid, linear, radial gradient), `o` outline,
-space pause, `q` quit.
+space freezes the animation (frames keep coming, so a static scene is
+measured), `q` quit.
 
 ## Reading the numbers
 

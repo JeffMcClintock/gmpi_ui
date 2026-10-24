@@ -2121,6 +2121,27 @@ public:
         return renderLaidOut(context, factory, layout->laid, layoutRect, brush, options);
     }
 
+    // Every CpuTextFormat field drawText reads, hashed. They are public and
+    // have setters, so a format can change between draws; a cache keyed on
+    // the pointer alone would keep serving the old layout.
+    uint64_t textFormatStateKey(api::ITextFormat* textFormat) override
+    {
+        auto* format = dynamic_cast<CpuTextFormat*>(textFormat);
+        if (!format)
+            return 0;
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; h ^= h >> 29; };
+        auto bits = [](float f) { uint32_t u; std::memcpy(&u, &f, sizeof u); return uint64_t(u); };
+        mix(reinterpret_cast<uintptr_t>(format->face.get()));
+        mix(bits(format->fontSize));
+        mix(uint64_t(format->textAlignment));
+        mix(uint64_t(format->paragraphAlignment));
+        mix(uint64_t(format->wordWrapping));
+        mix(bits(format->lineSpacing));
+        mix(bits(format->baseline));
+        return h | 1; // never 0, which means "do not cache"
+    }
+
     ReturnCode drawText(api::IDeviceContext* context, api::ITextFormat* textFormat,
                         const char* utf8, int32_t length, const Rect& layoutRect,
                         api::IBrush* brush, int32_t options) override

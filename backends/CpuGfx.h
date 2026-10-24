@@ -588,6 +588,12 @@ public:
         return ReturnCode::NoSupport;
     }
 
+    // A value that changes whenever anything that decides how `textFormat`
+    // lays out and draws text changes, so a backend can cache rendered text
+    // keyed on it (GpuGfx does). 0 means "cannot say": the caller must not
+    // cache. Optional, like the methods below.
+    virtual uint64_t textFormatStateKey(drawing::api::ITextFormat* /*textFormat*/) { return 0; }
+
     virtual ReturnCode drawRichText(drawing::api::IDeviceContext* /*context*/,
                                     drawing::api::IRichTextFormat* /*richTextFormat*/,
                                     const drawing::Rect& /*layoutRect*/, drawing::api::IBrush* /*brush*/,

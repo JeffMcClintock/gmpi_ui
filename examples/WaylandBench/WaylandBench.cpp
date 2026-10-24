@@ -7,7 +7,7 @@
 //
 //     wayland_bench [--cpu | --gpu] [--scene N] [--load N] [--detail N]
 //                   [--fill solid|linear|radial] [--no-outline] [--static-colors]
-//                   [--size WxH] [--frames N] [--report]
+//                   [--size WxH] [--frames N] [--report] [--paused] [--dump FILE]
 //
 //     --cpu / --gpu   the backend, chosen at launch because a frame picks its
 //                     renderer once (every brush and bitmap belongs to the
@@ -22,7 +22,8 @@
 //     ] / [   double / halve the path detail (bounce scene)
 //     f       bounce fill: solid, linear gradient, radial gradient
 //     o       bounce outline on / off
-//     space   pause the animation (stops repainting)
+//     space   freeze the animation; frames keep coming, so a static
+//             scene is measured (what caching helps)
 //     q       quit
 //
 // READING THE NUMBERS. Presents are paced by the compositor's frame callbacks,
@@ -80,6 +81,11 @@ Color hue(float h, float a = 1.f)
     const float b = 0.5f + 0.5f * cosf(2 * kPi * (h + 0.67f));
     return { r, g, b, a };
 }
+
+// Wall-to-wall cycles per second for the primitive scenes, times 1-2 per item:
+// a crossing every two to four seconds, fast enough to read as motion at a
+// glance (at a tenth of this they looked frozen).
+constexpr float kDrift = 0.125f;
 
 // A triangle wave in [0, 1): the bounce off a wall, without per-item state.
 float bounce(float t)
@@ -148,7 +154,6 @@ public:
     bool  report = false;
     int   framesPresented = 0;
 
-    bool animating() const { return !paused; }
 
     // --- IDrawingClient ---
     ReturnCode setHost(gmpi::api::IUnknown*) override { return ReturnCode::Ok; }
@@ -195,6 +200,13 @@ public:
 private:
     using Clock = std::chrono::steady_clock;
 
+public:
+    std::string dumpPath;
+    int dumpAtFrame = 0;
+
+private:
+    void drawScene(drawing::api::IDeviceContext* dc);
+    void dumpOffscreen(drawing::api::IDeviceContext* dc);
     void drawBounce(Graphics& g, const Matrix3x2& base, float t);
     void drawLines(Graphics& g, float t);
     void drawRects(Graphics& g, float t);
@@ -280,6 +292,15 @@ ReturnCode BenchClient::render(drawing::api::IDeviceContext* dc)
         lastAnim_ = now;
     }
 
+    drawScene(dc);
+
+    if (!dumpPath.empty() && framesPresented == dumpAtFrame)
+        dumpOffscreen(dc);
+    return ReturnCode::Ok;
+}
+
+void BenchClient::drawScene(drawing::api::IDeviceContext* dc)
+{
     Graphics g(dc);
     const auto base = g.getTransform();   // the frame's display scale
     g.clear(Color{ 0.07f, 0.08f, 0.10f, 1.f });
@@ -297,7 +318,46 @@ ReturnCode BenchClient::render(drawing::api::IDeviceContext* dc)
 
     g.setTransform(base);
     drawOverlay(g);
-    return ReturnCode::Ok;
+}
+
+// --dump: draw the same frame into an offscreen target from the window's own
+// factory - on the GPU path a GPU target, whose pixels can be read back
+// synchronously, which a swap chain's cannot - and write it out.
+void BenchClient::dumpOffscreen(drawing::api::IDeviceContext* dc)
+{
+    Graphics g(dc);
+    auto factory = g.getFactory();
+    const SizeU size{ uint32_t(bounds_.right - bounds_.left), uint32_t(bounds_.bottom - bounds_.top) };
+    auto target = factory.createCpuRenderTarget(size, 0);
+    if (!AccessPtr::get(target))
+    {
+        fprintf(stderr, "--dump: could not create an offscreen target\n");
+        return;
+    }
+    target.beginDraw();
+    drawScene(AccessPtr::get(target));
+    target.endDraw();
+
+    auto bitmap = target.getBitmap();
+    auto pixels = bitmap.lockPixels(BitmapLockFlags::Read);
+    if (!pixels)
+    {
+        fprintf(stderr, "--dump: could not read the offscreen target back\n");
+        return;
+    }
+    if (FILE* f = fopen(dumpPath.c_str(), "wb"))
+    {
+        const int32_t header[3] = { int32_t(size.width), int32_t(size.height), pixels.getPixelFormat() };
+        fwrite(header, sizeof header, 1, f);
+        const uint8_t* base = pixels.getAddress();
+        const int32_t rowBytes = pixels.getBytesPerRow();
+        const size_t pixelBytes = size_t(pixels.getBytesPerPixel());
+        for (uint32_t y = 0; y < size.height; ++y)
+            fwrite(base + size_t(y) * rowBytes, pixelBytes, size.width, f);
+        fclose(f);
+        printf("dumped %ux%u (format %d) to %s\n", size.width, size.height, header[2], dumpPath.c_str());
+        fflush(stdout);
+    }
 }
 
 void BenchClient::drawBounce(Graphics& g, const Matrix3x2& base, float t)
@@ -366,8 +426,9 @@ void BenchClient::drawLines(Graphics& g, float t)
     const float w = bounds_.right, h = bounds_.bottom;
     for (int i = 0; i < load; ++i)
     {
-        const float a = t * (0.2f + 0.6f * hash01(i, 1)) + 6.f * hash01(i, 2);
-        const Point c{ w * hash01(i, 3), h * hash01(i, 4) };
+        const float a = t * (0.6f + 1.8f * hash01(i, 1)) + 6.f * hash01(i, 2);
+        const Point c{ w * bounce(t * kDrift * (1 + hash01(i, 8)) + hash01(i, 3)),
+                       h * bounce(t * kDrift * (1 + hash01(i, 9)) + hash01(i, 4)) };
         const float len = 20.f + 120.f * hash01(i, 5);
         const Point d{ cosf(a) * len, sinf(a) * len };
         g.drawLine(Point{ c.x - d.x, c.y - d.y }, Point{ c.x + d.x, c.y + d.y },
@@ -382,8 +443,8 @@ void BenchClient::drawRects(Graphics& g, float t)
     for (int i = 0; i < load; ++i)
     {
         const float s = 10.f + 70.f * hash01(i, 1);
-        const float x = bounce(t * 0.05f * (1 + hash01(i, 2)) + hash01(i, 3)) * (w - s);
-        const float y = bounce(t * 0.05f * (1 + hash01(i, 4)) + hash01(i, 5)) * (h - s);
+        const float x = bounce(t * kDrift * (1 + hash01(i, 2)) + hash01(i, 3)) * (w - s);
+        const float y = bounce(t * kDrift * (1 + hash01(i, 4)) + hash01(i, 5)) * (h - s);
         const RoundedRect r{ Rect{ x, y, x + s, y + s * 0.7f }, 6.f, 6.f };
         g.fillRoundedRectangle(r, g.createSolidColorBrush(hue(hash01(i, 6), 0.7f)));
         g.drawRoundedRectangle(r, stroke, 1.f);
@@ -396,8 +457,8 @@ void BenchClient::drawEllipses(Graphics& g, float t)
     for (int i = 0; i < load; ++i)
     {
         const float r = 5.f + 45.f * hash01(i, 1);
-        const float x = r + bounce(t * 0.05f * (1 + hash01(i, 2)) + hash01(i, 3)) * (w - 2 * r);
-        const float y = r + bounce(t * 0.05f * (1 + hash01(i, 4)) + hash01(i, 5)) * (h - 2 * r);
+        const float x = r + bounce(t * kDrift * (1 + hash01(i, 2)) + hash01(i, 3)) * (w - 2 * r);
+        const float y = r + bounce(t * kDrift * (1 + hash01(i, 4)) + hash01(i, 5)) * (h - 2 * r);
         const Ellipse e{ Point{ x, y }, r, r * (0.6f + 0.4f * hash01(i, 6)) };
         g.fillEllipse(e, g.createSolidColorBrush(hue(hash01(i, 7), 0.6f)));
         g.drawEllipse(e, g.createSolidColorBrush(hue(hash01(i, 8), 1.f)), 1.5f);
@@ -413,8 +474,8 @@ void BenchClient::drawText(Graphics& g, float t)
                                          "Gain -6.0 dB", "440.00 Hz", "Attack 12 ms", "Mix 50%", "Voice 7" };
     for (int i = 0; i < load; ++i)
     {
-        const float x = bounce(t * 0.04f * (1 + hash01(i, 1)) + hash01(i, 2)) * (w - 120.f);
-        const float y = bounce(t * 0.04f * (1 + hash01(i, 3)) + hash01(i, 4)) * (h - 20.f);
+        const float x = bounce(t * kDrift * (1 + hash01(i, 1)) + hash01(i, 2)) * (w - 120.f);
+        const float y = bounce(t * kDrift * (1 + hash01(i, 3)) + hash01(i, 4)) * (h - 20.f);
         g.drawTextU(words[i % 10], small_, Rect{ x, y, x + 140.f, y + 20.f },
                     g.createSolidColorBrush(hue(hash01(i, 5), 1.f)));
     }
@@ -426,8 +487,8 @@ void BenchClient::drawGradients(Graphics& g, float t)
     for (int i = 0; i < load; ++i)
     {
         const float s = 20.f + 100.f * hash01(i, 1);
-        const float x = bounce(t * 0.05f * (1 + hash01(i, 2)) + hash01(i, 3)) * (w - s);
-        const float y = bounce(t * 0.05f * (1 + hash01(i, 4)) + hash01(i, 5)) * (h - s);
+        const float x = bounce(t * kDrift * (1 + hash01(i, 2)) + hash01(i, 3)) * (w - s);
+        const float y = bounce(t * kDrift * (1 + hash01(i, 4)) + hash01(i, 5)) * (h - s);
         const Rect r{ x, y, x + s, y + s };
         if (i & 1)
             g.fillRectangle(r, g.createLinearGradientBrush(Point{ x, y }, Point{ x + s, y + s },
@@ -478,8 +539,10 @@ int main(int argc, char** argv)
 #else
     bool wantGpu = false;
 #endif
+    bool paused = false;
     int scene = Bounce, load = 16, detail = 8, maxFrames = 0, width = 1000, height = 700;
     bool report = false, outline = true, staticColors = false;
+    const char* dumpPath = nullptr;
     int fill = Linear;
 
     for (int i = 1; i < argc; ++i)
@@ -491,6 +554,8 @@ int main(int argc, char** argv)
         else if (!strcmp(a, "--report")) report = true;
         else if (!strcmp(a, "--no-outline")) outline = false;
         else if (!strcmp(a, "--static-colors")) staticColors = true;
+        else if (!strcmp(a, "--paused")) paused = true;
+        else if (!strcmp(a, "--dump") && hasNext) dumpPath = argv[++i];
         else if (!strcmp(a, "--fill") && hasNext)
         {
             const char* f = argv[++i];
@@ -504,7 +569,7 @@ int main(int argc, char** argv)
         else
         {
             fprintf(stderr, "usage: %s [--cpu | --gpu] [--scene 1-6] [--load N] [--detail N] "
-                            "[--fill solid|linear|radial] [--no-outline] [--static-colors] [--size WxH] [--frames N] [--report]\n", argv[0]);
+                            "[--fill solid|linear|radial] [--no-outline] [--static-colors] [--paused] [--dump FILE] [--size WxH] [--frames N] [--report]\n", argv[0]);
             return 2;
         }
     }
@@ -559,18 +624,24 @@ int main(int argc, char** argv)
     client.fill   = BounceFill(fill);
     client.outline = outline;
     client.staticColors = staticColors;
+    client.paused = paused;
+    if (dumpPath)
+    {
+        client.dumpPath = dumpPath;
+        client.dumpAtFrame = maxFrames > 0 ? maxFrames : 3;
+    }
     frame.attachClient(&client);
 
     // A short tick keeps a repaint always pending, so every frame callback
     // presents and the compositor sets the pace.
     frame.runEventLoop(2, [&](int)
     {
-        if (client.animating())
-            frame.invalidateRect(nullptr);
+        frame.invalidateRect(nullptr);
         client.maybeReport();
         if (maxFrames && client.framesPresented >= maxFrames)
             frame.close();
     });
+
 
     return 0;
 }

@@ -779,7 +779,13 @@ Each is verifiable on its own; nothing lands in SE16 before milestone 4.
    existing `m_disable_gpu`/software-renderer switch
    (`SoftwareRendererOption.h`), as a third option. Lets the D2D references be
    compared against Visage on the machine that defines them.
-8. **User shaders (future gmpi-ui feature):** expose the fork's shader
+8. **User shaders - IN PROGRESS, see `SHADER_API_PLAN.md`.** Ruled a
+   BRUSH (`GmpiApiShaders.h`: `IShaderFactory::createShaderBrush`, an
+   immutable `IShaderBrush` usable with every fill; the module writes
+   `vec4 shade(vec2 p)`, compiled into `shaders/template_{quad,path}.sc` by
+   `compile_shaders.cmake`'s USER_SHADER mode). Milestone 1 of that plan is
+   on branch `shader-api`: 12 `GpuShader.*` tests pass under lavapipe and on
+   an NVIDIA card. Original note: expose the fork's shader
    pipeline to module authors — a new interface (own guid, `queryInterface`)
    that takes shader source written once in bgfx's `.sc` dialect and applies
    it as a post effect over a region or as a custom fill, with uniforms set

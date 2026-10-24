@@ -277,9 +277,13 @@ namespace gmpi::gpu {
     static const EmbeddedFile& vertexShader();
     static const EmbeddedFile& fragmentShader();
 
+    // `shader` null = the packed brush paints; set = a shader brush paints
+    // (its program, batched by Shader* like ShaderWrapper is).
     PathFillWrapper(const ClampBounds& clamp, const PackedBrush* brush, float x, float y,
-                    float width, float height, const Path& path, PathAtlas* atlas, float scale) :
-        Shape(batchId(), clamp, brush, x, y, width, height), path_atlas(atlas), scale(scale) {
+                    float width, float height, const Path& path, PathAtlas* atlas, float scale,
+                    Shader* shader = nullptr) :
+        Shape(shader ? static_cast<const void*>(shader) : batchId(), clamp, brush, x, y, width, height),
+        path_atlas(atlas), scale(scale), shader(shader) {
       Path adjusted_path = scale == 1.0f ? path : path.scaled(scale);
       Bounds bounding_box = adjusted_path.boundingBox();
       float new_x = static_cast<int>(x + bounding_box.x() - kBuffer);
@@ -307,6 +311,7 @@ namespace gmpi::gpu {
     PathAtlas* path_atlas = nullptr;
     float scale = 1.0f;
     PathAtlas::PackedPath packed_path;
+    Shader* shader = nullptr;
   };
 
   template<typename T>

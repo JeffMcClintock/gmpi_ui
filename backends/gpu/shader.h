@@ -24,6 +24,8 @@
 #include "graphics_utils.h"
 #include "embedded_file.h"
 
+#include <algorithm>
+
 namespace gmpi::gpu {
   class Canvas;
 
@@ -38,9 +40,28 @@ namespace gmpi::gpu {
     const EmbeddedFile& fragmentShader() const { return fragment_shader_; }
     BlendMode state() const { return state_; }
 
+    // Shader-brush inputs (GmpiApiShaders.h). Set per Shader, read at submit:
+    // shapes batch by Shader*, so one Shader is one (program, params,
+    // brush transform) combination.
+    static constexpr int kMaxParams = 8;
+    void setParams(const float* vec4s, int count) {
+      param_count_ = std::clamp(count, 0, kMaxParams);
+      std::fill(std::begin(params_), std::end(params_), 0.0f);
+      if (vec4s)
+        std::copy(vec4s, vec4s + param_count_ * 4, params_);
+    }
+    const float* params() const { return params_; }
+
+    // Device -> brush space, two vec4 rows: p = (r0.x*x + r0.y*y + r0.z, r1.x*x + r1.y*y + r1.z).
+    void setBrushTransform(const float rows[8]) { std::copy(rows, rows + 8, brush_transform_); }
+    const float* brushTransform() const { return brush_transform_; }
+
   private:
     EmbeddedFile vertex_shader_;
     EmbeddedFile fragment_shader_;
     BlendMode state_ = BlendMode::Alpha;
+    float params_[kMaxParams * 4] = {};
+    int param_count_ = 0;
+    float brush_transform_[8] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f };
   };
 }

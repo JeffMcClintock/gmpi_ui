@@ -35,6 +35,9 @@
 #include "gpu/path.h"
 #include "gpu/renderer.h"
 #include "gpu/screenshot.h"
+#include "gpu/shader.h"
+#include "gpu/shaders/compiled/shaders.h"
+#include "GmpiApiShaders.h"
 
 #include <array>
 #include <chrono>
@@ -433,12 +436,59 @@ inline ReturnCode Bitmap::lockPixels(drawing::api::IBitmapPixels** returnPixels,
 }
 
 // ---------------------------------------------------------------------------
+// Shader brush (GmpiApiShaders.h): the module's shade() compiled into the
+// host's quad and path programs, plus the inputs it reads. Immutable: a new
+// value is a new brush. Where a draw cannot run the program it paints
+// `fallback`, a plain solid brush, so the fill always shows something.
+// ---------------------------------------------------------------------------
+class ShaderBrush final : public drawing::api::IShaderBrush
+{
+public:
+    drawing::api::IFactory* factory{};
+    gmpi::gpu::EmbeddedFile quadFs{};
+    gmpi::gpu::EmbeddedFile pathFs{};
+    bool hasPath{};
+    float params[gmpi::gpu::Shader::kMaxParams * 4]{};
+    int32_t paramCount{};
+    drawing::BrushProperties properties{};
+    drawing::api::ISolidColorBrush* fallback{}; // owned (refcounted)
+
+    ~ShaderBrush()
+    {
+        if (fallback)
+            fallback->release();
+    }
+
+    ReturnCode getFactory(drawing::api::IFactory** returnFactory) override
+    {
+        *returnFactory = factory;
+        return ReturnCode::Ok;
+    }
+
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(drawing::api::IShaderBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IBrush);
+        GMPI_QUERYINTERFACE(drawing::api::IResource);
+        return ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+};
+
+// ---------------------------------------------------------------------------
 // Render target.
 // ---------------------------------------------------------------------------
 class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>
 {
     drawing::api::IFactory* factory{};
     Bitmap* bitmap{}; // owned (refcounted)
+
+    // One gmpi::gpu::Shader per shader-brush DRAW this frame: shapes batch by
+    // Shader*, and the device -> brush matrix depends on the transform at the
+    // draw, so two fills under different transforms must not share one.
+    // Freed after the canvas has submitted them (endDraw).
+    std::vector<std::unique_ptr<gmpi::gpu::Shader>> frameShaders;
 
     // Effective local -> device transform (client transform then DPI scale),
     // and what setTransform() was handed, which getTransform() must return.
@@ -521,6 +571,52 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     void beginGpuShape(const cpugfx::SolidColorBrush& brush)
     {
         beginGpuShape(gmpi::gpu::Brush::solid(toVisage(brush.color, brush.opacity)));
+    }
+
+    // --- shader brushes -----------------------------------------------------
+
+    static ShaderBrush* shaderBrushOf(drawing::api::IBrush* brush)
+    {
+        return dynamic_cast<ShaderBrush*>(brush);
+    }
+
+    // The brush a non-shader draw path should use: a shader brush's fallback
+    // colour, any other brush as it is. Every brush-taking method that does
+    // not take the shader route calls this first, so cpugfx never sees a
+    // brush type it cannot evaluate.
+    static drawing::api::IBrush* resolveBrush(drawing::api::IBrush* brush)
+    {
+        if (auto* sb = shaderBrushOf(brush))
+            return sb->fallback;
+        return brush;
+    }
+
+    // The Shader for one draw of `sb` under the current transform.
+    gmpi::gpu::Shader* frameShader(const ShaderBrush& sb, drawing::api::ShaderStage stage)
+    {
+        const bool path = stage == drawing::api::ShaderStage::Path;
+        auto s = std::make_unique<gmpi::gpu::Shader>(path ? gmpi::gpu::shaders::vs_sample_path : gmpi::gpu::shaders::vs_shape,
+                                                      path ? sb.pathFs : sb.quadFs, gmpi::gpu::BlendMode::Alpha);
+        s->setParams(sb.params, sb.paramCount);
+        // Brush -> local is the brush transform, local -> device is ours
+        // (row-vector composition, as the gradient brushes do it); the shader
+        // wants the inverse. TODO BrushProperties::opacity is not applied yet.
+        const auto m = drawing::invert(sb.properties.transform * transform_);
+        const float rows[8] = { m._11, m._21, m._31, 0.0f, m._12, m._22, m._32, 0.0f };
+        s->setBrushTransform(rows);
+        frameShaders.push_back(std::move(s));
+        return frameShaders.back().get();
+    }
+
+    // The packed brush a shader shape carries: white, so nothing the fixed
+    // part of the pipeline does tints the shader's output. The clamp is cut
+    // to the quad itself: vs_shape grows every quad by half a pixel for the
+    // SDF shapes' edge fade, and a shader quad has no fade to hide it.
+    void beginShaderShape(const drawing::Rect& deviceRect)
+    {
+        beginGpuShape(gmpi::gpu::Brush::solid(gmpi::gpu::Color(1.0f, 1.0f, 1.0f, 1.0f)));
+        canvas().setClampBounds(currentClamp().clamp(deviceRect.left, deviceRect.top, deviceRect.right - deviceRect.left,
+                                                     deviceRect.bottom - deviceRect.top));
     }
 
     // --- gradients ----------------------------------------------------------
@@ -660,8 +756,12 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // Fill flattened figures through the path atlas. Points are transformed
     // to device space here, on the CPU. `cpuFill` draws the same thing through
     // cpugfx, for figures too large for the atlas.
+    // `shaderBrush` set: the figures are painted by its program (quad stage
+    // for the rectangle shortcut, path stage through the atlas) and `brush`
+    // is the white packed brush; cpuFill must already use its fallback.
     ReturnCode fillFiguresGpu(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode, const gmpi::gpu::Brush& brush,
-                              const std::function<ReturnCode(cpugfx::RenderTarget&)>& cpuFill)
+                              const std::function<ReturnCode(cpugfx::RenderTarget&)>& cpuFill,
+                              const ShaderBrush* shaderBrush = nullptr)
     {
         const auto deviceBounds = figuresDeviceBounds(figures);
         if (tooLargeForAtlas(deviceBounds))
@@ -671,10 +771,17 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
             // the clip's worth of it uploaded each time.
             if (axisAligned() && figures.size() == 1 && isAxisAlignedRect(figures[0]))
             {
-                trace("figures", deviceBounds, "gpu sdf rect (rectangle figure)");
+                trace("figures", deviceBounds, shaderBrush ? "gpu shader quad (rectangle figure)" : "gpu sdf rect (rectangle figure)");
                 beginGpuShape(brush);
-                canvas().rectangle(deviceBounds.left, deviceBounds.top, deviceBounds.right - deviceBounds.left,
-                                   deviceBounds.bottom - deviceBounds.top);
+                if (shaderBrush)
+                    canvas().setClampBounds(currentClamp().clamp(deviceBounds.left, deviceBounds.top, deviceBounds.right - deviceBounds.left,
+                                                                 deviceBounds.bottom - deviceBounds.top));
+                if (shaderBrush)
+                    canvas().shader(frameShader(*shaderBrush, drawing::api::ShaderStage::Quad), deviceBounds.left, deviceBounds.top,
+                                    deviceBounds.right - deviceBounds.left, deviceBounds.bottom - deviceBounds.top);
+                else
+                    canvas().rectangle(deviceBounds.left, deviceBounds.top, deviceBounds.right - deviceBounds.left,
+                                       deviceBounds.bottom - deviceBounds.top);
                 return ReturnCode::Ok;
             }
             if (traceDraws())
@@ -716,7 +823,10 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         vpath.setFillRule(fillMode == drawing::FillMode::Winding ? gmpi::gpu::Path::FillRule::NonZero
                                                                  : gmpi::gpu::Path::FillRule::EvenOdd);
         beginGpuShape(brush);
-        canvas().fill(vpath, 0, 0);
+        if (shaderBrush)
+            canvas().fill(vpath, frameShader(*shaderBrush, drawing::api::ShaderStage::Path));
+        else
+            canvas().fill(vpath, 0, 0);
         return ReturnCode::Ok;
     }
 
@@ -940,6 +1050,7 @@ public:
     ReturnCode endDraw() override
     {
         bitmap->submit();
+        frameShaders.clear(); // the shapes that pointed at them are gone
         return ReturnCode::Ok;
     }
 
@@ -968,7 +1079,22 @@ public:
     ReturnCode fillGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush) override
     {
         auto* path = dynamic_cast<cpugfx::PathGeometry*>(pathGeometry);
-        if (!path || !dynamic_cast<cpugfx::CpuBrush*>(brush))
+        if (!path)
+            return ReturnCode::NoSupport;
+
+        if (auto* sb = shaderBrushOf(brush))
+        {
+            // The shader paints through the atlas when it can; the fallback
+            // colour fills where it cannot (no path stage, opacity brush,
+            // geometry clip, or the figures were too large for the atlas).
+            auto* fb = sb->fallback;
+            auto cpuFallback = [&](cpugfx::RenderTarget& cpu) { return cpu.fillGeometry(pathGeometry, fb, opacityBrush); };
+            if (sb->hasPath && !opacityBrush && !geometryClipActive())
+                return fillFiguresGpu(path->figures, path->fillMode,
+                                      gmpi::gpu::Brush::solid(gmpi::gpu::Color(1.0f, 1.0f, 1.0f, 1.0f)), cpuFallback, sb);
+            brush = fb;
+        }
+        if (!dynamic_cast<cpugfx::CpuBrush*>(brush))
             return ReturnCode::NoSupport;
 
         auto cpuFill = [&](cpugfx::RenderTarget& cpu) { return cpu.fillGeometry(pathGeometry, brush, opacityBrush); };
@@ -979,6 +1105,7 @@ public:
 
     ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
+        brush = resolveBrush(brush); // strokes: fallback colour (v1)
         auto* path = dynamic_cast<cpugfx::PathGeometry*>(pathGeometry);
         if (!path || !dynamic_cast<cpugfx::CpuBrush*>(brush))
             return ReturnCode::NoSupport;
@@ -1001,6 +1128,20 @@ public:
     // goes through path geometry.
     ReturnCode fillRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush) override
     {
+        if (auto* sb = shaderBrushOf(brush))
+        {
+            if (axisAligned() && !geometryClipActive())
+            {
+                const auto r = drawing::transformRect(transform_, *rect);
+                if (!(r.right > r.left) || !(r.bottom > r.top))
+                    return ReturnCode::Ok;
+                trace("fillRectangle", r, "gpu shader quad");
+                beginShaderShape(r);
+                canvas().shader(frameShader(*sb, drawing::api::ShaderStage::Quad), r.left, r.top, r.right - r.left, r.bottom - r.top);
+                return ReturnCode::Ok;
+            }
+            brush = sb->fallback; // rotated / skewed / geometry clip: the fallback colour
+        }
         if (auto b = gpuBrush(brush); b && axisAligned())
         {
             const auto r = drawing::transformRect(transform_, *rect);
@@ -1021,6 +1162,7 @@ public:
     ReturnCode drawLine(drawing::Point point0, drawing::Point point1, drawing::api::IBrush* brush,
                         float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
+        brush = resolveBrush(brush);
         if (!strokeStyle && strokeWidth > 0.0f && std::isfinite(strokeWidth)
             && (point0.x == point1.x) != (point0.y == point1.y))
         {
@@ -1045,6 +1187,7 @@ public:
     ReturnCode drawRectangle(const drawing::Rect* rect, drawing::api::IBrush* brush, float strokeWidth,
                              drawing::api::IStrokeStyle* strokeStyle) override
     {
+        brush = resolveBrush(brush);
         if (auto b = gpuBrush(brush); b && axisAligned() && !strokeStyle && strokeWidth > 0.0f
             && std::isfinite(strokeWidth) && rect->right > rect->left && rect->bottom > rect->top)
         {
@@ -1068,8 +1211,16 @@ public:
         return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::drawRectangle(rect, brush, strokeWidth, strokeStyle);
     }
 
+    // Brush-taking methods with no shader route of their own paint a shader
+    // brush's fallback colour (resolveBrush); the base class does the rest.
+    ReturnCode drawEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
+    {
+        return se::generic_graphics::GraphicsContextT<drawing::api::IBitmapRenderTarget>::drawEllipse(ellipse, resolveBrush(brush), strokeWidth, strokeStyle);
+    }
+
     ReturnCode fillEllipse(const drawing::Ellipse* ellipse, drawing::api::IBrush* brush) override
     {
+        brush = resolveBrush(brush); // circles: fallback colour (v1; a Quad-stage SDF circle is the obvious next step)
         if (auto b = gpuBrush(brush); b && uniformScale() && ellipse->radiusX == ellipse->radiusY && ellipse->radiusX > 0.0f)
         {
             const auto c = drawing::transformPoint(transform_, ellipse->point);
@@ -1086,12 +1237,13 @@ public:
     // flattened arcs by ~20 code values - fillRoundedRectangle test.)
     ReturnCode fillRoundedRectangle(const drawing::RoundedRect* rr, drawing::api::IBrush* brush) override
     {
-        auto geometry = roundedRectGeometry(rr);
+        auto geometry = roundedRectGeometry(rr); // a geometry: fillGeometry takes the shader route itself
         return fillGeometry(drawing::AccessPtr::get(geometry), brush, nullptr);
     }
 
     ReturnCode drawRoundedRectangle(const drawing::RoundedRect* rr, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
     {
+        brush = resolveBrush(brush);
         auto geometry = roundedRectGeometry(rr);
         return drawGeometry(drawing::AccessPtr::get(geometry), brush, strokeWidth, strokeStyle);
     }
@@ -1196,6 +1348,7 @@ public:
     ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat,
                          const drawing::Rect* layoutRect, drawing::api::IBrush* brush, int32_t options) override
     {
+        brush = resolveBrush(brush); // text: a shader brush paints its fallback colour (v1)
         auto* engine = textEngine();
         if (!engine || !textFormat || !layoutRect)
             return ReturnCode::NoSupport;
@@ -1344,6 +1497,7 @@ public:
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect,
                              drawing::api::IBrush* brush, int32_t options) override
     {
+        brush = resolveBrush(brush);
         auto* engine = textEngine();
         if (!engine || !richTextFormat || !layoutRect)
             return ReturnCode::NoSupport;
@@ -1357,6 +1511,7 @@ public:
     ReturnCode drawTextLayout(drawing::Point point, drawing::api::ITextLayout* textLayout,
                               drawing::api::IBrush* brush, int32_t options) override
     {
+        brush = resolveBrush(brush);
         auto* engine = textEngine();
         if (!engine || !textLayout)
             return ReturnCode::NoSupport;
@@ -1447,6 +1602,88 @@ public:
     //     factory.cpu.imageDecoder = gmpi::drawing::decodeImageFile;
     //     factory.cpu.textEngine   = &textEngine;
     cpugfx::Factory cpu;
+
+    // IShaderFactory, served by AGGREGATION (the GmpiUiToSDK3 ExtAdapter
+    // precedent): an extra base would not move IFactory's vtable here, but
+    // the extension is a separate object on principle, and its lifetime is
+    // the factory's.
+    class ShaderFactoryExt final : public drawing::api::IShaderFactory
+    {
+    public:
+        Factory* owner{};
+
+        ReturnCode createShaderBrush(const drawing::api::ShaderBlob* blobs, int32_t blobCount,
+                                     const float* params, int32_t paramCount,
+                                     const drawing::Color* fallbackColor,
+                                     const drawing::BrushProperties* brushProperties,
+                                     drawing::api::IShaderBrush** returnShaderBrush) override
+        {
+            return owner->createShaderBrush(blobs, blobCount, params, paramCount, fallbackColor, brushProperties, returnShaderBrush);
+        }
+
+        ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+        {
+            return owner->queryInterface(iid, returnInterface);
+        }
+        GMPI_REFCOUNT_NO_DELETE;
+    };
+    ShaderFactoryExt shaderExt;
+
+    Factory() { shaderExt.owner = this; }
+
+    ReturnCode createShaderBrush(const drawing::api::ShaderBlob* blobs, int32_t blobCount,
+                                 const float* params, int32_t paramCount,
+                                 const drawing::Color* fallbackColor,
+                                 const drawing::BrushProperties* brushProperties,
+                                 drawing::api::IShaderBrush** returnShaderBrush)
+    {
+        *returnShaderBrush = {};
+        if (!blobs || blobCount <= 0 || !fallbackColor)
+            return ReturnCode::Fail;
+
+        // The blobs for the renderer that is running. None before the
+        // renderer initialised: a brush cannot be made for a renderer that
+        // does not exist yet, and NoSupport is what a module falls back on.
+        drawing::api::ShaderRenderer wanted;
+        switch (gmpi::gpu::Renderer::instance().shaderBinary())
+        {
+        case gmpi::gpu::Renderer::ShaderBinary::Spirv: wanted = drawing::api::ShaderRenderer::Spirv; break;
+        case gmpi::gpu::Renderer::ShaderBinary::Metal: wanted = drawing::api::ShaderRenderer::Metal; break;
+        case gmpi::gpu::Renderer::ShaderBinary::Dx11:  wanted = drawing::api::ShaderRenderer::Dx11;  break;
+        default: return ReturnCode::NoSupport;
+        }
+
+        const drawing::api::ShaderBlob* quad{};
+        const drawing::api::ShaderBlob* path{};
+        for (int32_t i = 0; i < blobCount; ++i)
+        {
+            const auto& b = blobs[i];
+            if (b.renderer != wanted || !b.data || b.size <= 0)
+                continue;
+            if (b.stage == drawing::api::ShaderStage::Quad)
+                quad = &b;
+            else if (b.stage == drawing::api::ShaderStage::Path)
+                path = &b;
+        }
+        if (!quad)
+            return ReturnCode::NoSupport;
+
+        auto brush = new ShaderBrush();
+        brush->factory = this;
+        brush->quadFs = { "shader_brush_quad", quad->data, quad->size };
+        if (path)
+            brush->pathFs = { "shader_brush_path", path->data, path->size };
+        brush->hasPath = path != nullptr;
+        brush->paramCount = (std::min)((std::max)(paramCount, 0), drawing::api::kShaderBrushMaxParams);
+        if (params)
+            std::copy(params, params + brush->paramCount * 4, brush->params);
+        if (brushProperties)
+            brush->properties = *brushProperties;
+        brush->fallback = new cpugfx::SolidColorBrush(this, fallbackColor, brushProperties); // born with one reference, as createSolidColorBrush makes them
+        brush->addRef();
+        *returnShaderBrush = brush;
+        return ReturnCode::Ok;
+    }
 
     ReturnCode createPathGeometry(drawing::api::IPathGeometry** returnPathGeometry) override
     {
@@ -1542,7 +1779,18 @@ public:
                                     runFamilies, runFamilyCount, returnTextLayout);
     }
 
-    GMPI_QUERYINTERFACE_METHOD(drawing::api::IFactory);
+    ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(drawing::api::IFactory);
+        if (*iid == drawing::api::IShaderFactory::guid)
+        {
+            *returnInterface = static_cast<drawing::api::IShaderFactory*>(&shaderExt);
+            shaderExt.addRef();
+            return ReturnCode::Ok;
+        }
+        return ReturnCode::NoSupport;
+    }
     GMPI_REFCOUNT_NO_DELETE;
 };
 

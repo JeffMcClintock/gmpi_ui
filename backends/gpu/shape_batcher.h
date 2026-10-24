@@ -75,6 +75,7 @@ namespace gmpi::gpu {
   void setPathDataUniform(const BatchVector<PathFillWrapper>& batches);
 
   void submitShader(const BatchVector<ShaderWrapper>& batches, const Layer& layer, int submit_pass);
+  void submitShadedPathFills(const BatchVector<PathFillWrapper>& batches, const Layer& layer, int submit_pass);
   void submitSampleRegions(const BatchVector<SampleRegion>& batches, const Layer& layer, int submit_pass);
 
   template<typename V>
@@ -151,6 +152,11 @@ namespace gmpi::gpu {
     }
     setBlendMode(state);
     setPathDataUniform(batches);
+    // A shader brush's path fill: same coverage quad, its own program.
+    if (!batches.empty() && !batches[0].shapes->empty() && batches[0].shapes->front().shader) {
+      submitShadedPathFills(batches, layer, submit_pass);
+      return;
+    }
     submitBaseShapes(batches, state, layer, submit_pass);
   }
 

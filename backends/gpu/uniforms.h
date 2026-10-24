@@ -24,6 +24,8 @@
 namespace gmpi::gpu {
   struct Uniforms {
     static constexpr char kTime[] = "u_time";
+    static constexpr char kParams[] = "u_params";                   // vec4[8], shader brushes
+    static constexpr char kBrushTransform[] = "u_brush_transform";  // vec4[2], device -> brush space
     static constexpr char kMult[] = "u_mult";
     static constexpr char kTextureClamp[] = "u_texture_clamp";
     static constexpr char kBounds[] = "u_bounds";

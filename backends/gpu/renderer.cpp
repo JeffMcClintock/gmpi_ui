@@ -161,6 +161,18 @@ namespace gmpi::gpu {
     return Renderer::instance().halfFloatFrameBuffers() ? 1.0f : kHdrColorRange10Bit;
   }
 
+  Renderer::ShaderBinary Renderer::shaderBinary() const {
+    if (!initialized_ || !supported_)
+      return ShaderBinary::None;
+    switch (bgfx::getRendererType()) {
+    case bgfx::RendererType::Vulkan: return ShaderBinary::Spirv;
+    case bgfx::RendererType::Metal: return ShaderBinary::Metal;
+    case bgfx::RendererType::Direct3D11:
+    case bgfx::RendererType::Direct3D12: return ShaderBinary::Dx11;
+    default: return ShaderBinary::None;
+    }
+  }
+
   float hdrColorMultiplier() {
     return 1.0f / hdrColorRange();
   }

@@ -148,11 +148,24 @@ namespace gmpi::gpu {
                          pixels(width), pixels(height)));
     }
 
-    // A custom shader over a rect. Not driven by the GMPI adaptor yet: kept
-    // for the shader feature (VISAGE_BACKEND_PLAN.md, milestone 8).
+    // A custom shader over a rect: the shader brush's quad stage
+    // (GpuGfx.h fillRectangle with an IShaderBrush).
     void shader(Shader* shader, float x, float y, float width, float height) {
       addShape(ShaderWrapper(state_.clamp, state_.brush, state_.x + pixels(x), state_.y + pixels(y),
                              pixels(width), pixels(height), shader));
+    }
+
+    // A flattened path through the coverage atlas, painted by a shader
+    // instead of the brush: the shader brush's path stage.
+    void fill(const Path& path, Shader* shader) {
+      if (path.numPoints() == 0)
+        return;
+
+      auto bounding_box = path.boundingBox();
+      addShape(PathFillWrapper(state_.clamp, state_.brush, state_.x, state_.y,
+                               bounding_box.right() * state_.scale + 1.0f,
+                               bounding_box.bottom() * state_.scale + 1.0f, path, pathAtlas(),
+                               state_.scale, shader));
     }
 
     // Fill a flattened path through the coverage atlas.

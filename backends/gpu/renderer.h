@@ -77,6 +77,12 @@ namespace gmpi::gpu {
     void setHalfFloatFrameBuffers(bool half_float) { half_float_frame_buffers_ = half_float; }
     bool halfFloatFrameBuffers() const { return half_float_frame_buffers_; }
 
+    // Which compiled-shader format the running renderer loads: what a shader
+    // brush's blobs (GmpiApiShaders.h) are matched against. None until
+    // initialize() has run, or if it failed.
+    enum class ShaderBinary { None, Spirv, Metal, Dx11 };
+    ShaderBinary shaderBinary() const;
+
   private:
     bool initialized_ = false;
     bool supported_ = false;

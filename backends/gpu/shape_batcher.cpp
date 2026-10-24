@@ -31,6 +31,9 @@
 #include "uniforms.h"
 #include "space.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include <bgfx/bgfx.h>
 
 #include <cstdio>
@@ -86,6 +89,25 @@ namespace gmpi::gpu {
     static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, 1);
     float vec[4] = { value0, value1, value2, value3 };
     bgfx::setUniform(uniform, vec);
+  }
+
+  // A vec4 ARRAY uniform: `count` vec4s from `value`.
+  template<const char* name, int count>
+  void setUniformArray(const float* value) {
+    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, count);
+    bgfx::setUniform(uniform, value, count);
+  }
+
+  // The inputs a shader brush's program reads besides the standard ones.
+  void setShaderBrushUniforms(const Shader& shader, bool hdr) {
+    setUniformArray<Uniforms::kParams, Shader::kMaxParams>(shader.params());
+    // Row 0's spare .w carries the HDR range multiplier: a user colour must
+    // not go through u_color_mult, which also undoes the gradient atlas's
+    // storage scale (Color::kGradientNormalization).
+    float rows[8];
+    std::copy(shader.brushTransform(), shader.brushTransform() + 8, rows);
+    rows[3] = hdr ? hdrColorMultiplier() : 1.0f;
+    setUniformArray<Uniforms::kBrushTransform, 2>(rows);
   }
 
   template<const char* name>
@@ -203,6 +225,31 @@ namespace gmpi::gpu {
     setColorMult(layer.hdr());
     setOriginFlipUniform(layer.bottomLeftOrigin());
     Shader* shader = batches[0].shapes->front().shader;
+    setShaderBrushUniforms(*shader, layer.hdr());
+    auto program = ProgramCache::programHandle(shader->vertexShader(), shader->fragmentShader());
+    if (std::getenv("GMPI_GPU_SHADER_DEBUG"))
+      fprintf(stderr, "[gmpi::gpu] submitShader: vs valid %d fs valid %d program valid %d, %d quads\n",
+              bgfx::isValid(ShaderCache::shaderHandle(shader->vertexShader())),
+              bgfx::isValid(ShaderCache::shaderHandle(shader->fragmentShader())), bgfx::isValid(program), quads.num_shapes);
+    bgfx::submit(submit_pass, program);
+  }
+
+  void submitShadedPathFills(const BatchVector<PathFillWrapper>& batches, const Layer& layer, int submit_pass) {
+    auto quads = setupQuads(batches);
+    if (quads.vertices == nullptr)
+      return;
+
+    // What submitShapes(layer, vs, fs, ...) sets for a brush fill, plus the
+    // shader brush's own inputs. The path atlas texture was bound by
+    // setPathDataUniform.
+    setUniform<Uniforms::kRadialGradient>(quads.radial_gradient ? 1.0f : 0.0f);
+    setTimeUniform(layer.time());
+    setUniformDimensions(layer.width(), layer.height());
+    setTexture<Uniforms::kGradient>(0, layer.gradientAtlas()->colorTextureHandle());
+    setColorMult(layer.hdr());
+    setOriginFlipUniform(layer.bottomLeftOrigin());
+    Shader* shader = batches[0].shapes->front().shader;
+    setShaderBrushUniforms(*shader, layer.hdr());
     bgfx::submit(submit_pass,
                  ProgramCache::programHandle(shader->vertexShader(), shader->fragmentShader()));
   }

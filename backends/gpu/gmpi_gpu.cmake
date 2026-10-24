@@ -48,13 +48,28 @@ set(BGFX_CONFIG_MULTITHREADED 0 CACHE INTERNAL "" FORCE)
 # Vulkan presents on a wl_surface without bgfx's Wayland/EGL support.
 set(BGFX_WITH_WAYLAND OFF CACHE INTERNAL "" FORCE)
 
+# GMPI_BGFX_PATCH_LEVEL is in the command so that editing patch_bgfx.cmake and
+# bumping it re-applies the patch to an existing build tree: FetchContent
+# re-runs a patch step only when its command changes.
 FetchContent_Declare(bgfx GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
   GIT_SHALLOW TRUE
   GIT_TAG v1.129.8958-499
-  PATCH_COMMAND ${CMAKE_COMMAND} -DBGFX_SRC=<SOURCE_DIR> -P ${GMPI_GPU_DIR}/patch_bgfx.cmake
+  PATCH_COMMAND ${CMAKE_COMMAND} -DBGFX_SRC=<SOURCE_DIR> -DGMPI_BGFX_PATCH_LEVEL=2 -P ${GMPI_GPU_DIR}/patch_bgfx.cmake
   EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(bgfx)
+
+# Linux renders through Vulkan only (renderer.cpp asks for nothing else, and
+# a machine without it keeps the CPU path), so bgfx's OpenGL renderer is dead
+# code there - and the one thing that needed the GL development headers
+# (renderer_gl.h includes <GL/gl.h>). Naming any renderer switches bgfx's
+# config.h to "only what is named", so Vulkan is named too. patch_bgfx.cmake
+# drops the find_package(OpenGL REQUIRED) that went with it. Windows and
+# macOS keep bgfx's defaults.
+if (UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
+  target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_RENDERER_VULKAN=1 BGFX_CONFIG_RENDERER_OPENGL=0
+                                          BGFX_CONFIG_RENDERER_OPENGLES=0)
+endif ()
 
 if (MSVC)
   set(GMPI_GPU_NO_WARNINGS /W0)

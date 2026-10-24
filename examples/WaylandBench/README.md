@@ -10,8 +10,9 @@ then run the same scene on the other backend.
 
 Needs a Wayland session, `libwayland-dev wayland-protocols libxkbcommon-dev
 libdecor-0-dev libdbus-1-dev libfontconfig1-dev libharfbuzz-dev libfreetype-dev
-libpng-dev`, and for the GPU backend `libgl-dev` (bgfx's configure asks for it;
-rendering is Vulkan). The GMPI SDK is expected beside gmpi_ui (`../GMPI`);
+libpng-dev`. The GPU backend renders through Vulkan and needs no OpenGL
+development files: `gmpi_gpu.cmake` compiles bgfx's GL renderer out on Linux.
+The GMPI SDK is expected beside gmpi_ui (`../GMPI`);
 override with `-DGMPI_SDK=...`.
 
 ```sh

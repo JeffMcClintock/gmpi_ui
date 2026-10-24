@@ -16,3 +16,15 @@ if (NOT patched STREQUAL contents)
   file(WRITE "${file}" "${patched}")
   message(STATUS "gmpi: patched bgfx present-mode table")
 endif ()
+
+# No OpenGL on Linux: gmpi_gpu.cmake compiles bgfx's GL renderer out there,
+# but bgfx.cmake still demanded OpenGL's development files and linked its
+# libraries (which nothing called; bgfx dlopens libGL itself when GL is used).
+set(file "${BGFX_SRC}/cmake/bgfx/bgfx.cmake")
+file(READ "${file}" contents)
+string(REPLACE "\tfind_package(OpenGL REQUIRED)\n" "" patched "${contents}")
+string(REPLACE "\${X11_LIBRARIES} \${OPENGL_LIBRARIES}" "\${X11_LIBRARIES}" patched "${patched}")
+if (NOT patched STREQUAL contents)
+  file(WRITE "${file}" "${patched}")
+  message(STATUS "gmpi: patched bgfx.cmake (no OpenGL on Linux)")
+endif ()

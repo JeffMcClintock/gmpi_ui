@@ -19,16 +19,34 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#pragma once
+// macOS / iOS: a CAMetalLayer that is never attached to a view, so bgfx's
+// Metal renderer can come up headless. Was windowless_context.mm.
 
-#include "defines.h"
+#include "model_surface.h"
+
+#include <Carbon/Carbon.h>
+#include <MetalKit/MetalKit.h>
 
 namespace gmpi::gpu {
-#if GMPI_GPU_MAC
-  void* windowlessContext();
-#else
-  static void* windowlessContext() {
-    return nullptr;
+  class WindowlessMetalLayer {
+  public:
+    static CAMetalLayer* layer() { return instance().metal_layer_; }
+
+  private:
+    static WindowlessMetalLayer& instance() {
+      static WindowlessMetalLayer instance;
+      return instance;
+    }
+
+    WindowlessMetalLayer() {
+      metal_layer_ = [CAMetalLayer layer];
+      metal_layer_.colorspace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+    }
+
+    CAMetalLayer* metal_layer_ = nullptr;
+  };
+
+  ModelSurface modelSurface(void*, void*) {
+    return { (__bridge void*)WindowlessMetalLayer::layer(), nullptr, false };
   }
-#endif
 }

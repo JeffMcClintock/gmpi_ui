@@ -132,12 +132,9 @@ struct X11DrawingFrame::Impl
     // GPU present: bgfx initialised once on a hidden model window (it only
     // reports swap-chain support when initialised on some window, and it must
     // not be the window a canvas pairs to), then a swap chain on `window`.
-    gmpi::gpugfx::Factory*      gpuFactory{};   // the frame's, set at construction
-    bool*                       gpuActive{};    // the frame's flag, for getDrawingFactory
-    gmpi::gpugfx::RenderTarget* gpuTarget{};
-    int  gpuW = 0, gpuH = 0;
-    bool gpuTried = false;
-    Window modelWindow{};
+    std::unique_ptr<gmpi::gpugfx::WindowPresenter> gpuPresenter; // over the frame's factory, set at construction
+    bool* gpuActive{};    // the frame's flag, for getDrawingFactory
+    bool  gpuTried = false;
     void presentGpu();
 #endif
 
@@ -735,8 +732,8 @@ private:
 X11DrawingFrame::X11DrawingFrame() : impl_(std::make_unique<Impl>())
 {
 #if GMPI_UI_GPU_BACKEND
-    impl_->gpuFactory = &gpuFactory_;
-    impl_->gpuActive  = &gpuActive_;
+    impl_->gpuPresenter = std::make_unique<gmpi::gpugfx::WindowPresenter>(gpuFactory_);
+    impl_->gpuActive    = &gpuActive_;
 #endif
 }
 
@@ -874,8 +871,7 @@ void X11DrawingFrame::close()
     d.releaseImage();
 
 #if GMPI_UI_GPU_BACKEND
-    if (d.gpuTarget)   { d.gpuTarget->release(); d.gpuTarget = nullptr; d.gpuW = d.gpuH = 0; }
-    if (d.modelWindow) { XDestroyWindow(d.display, d.modelWindow); d.modelWindow = {}; }
+    d.gpuPresenter->release();
 #endif
 
     if (d.gc)     { XFreeGC(d.display, d.gc); d.gc = {}; }
@@ -1236,75 +1232,15 @@ void X11DrawingFrame::processEvents()
 void X11DrawingFrame::Impl::presentGpu()
 {
     auto& d = *this;
-    const int pw = d.width;
-    const int ph = d.height;
-
-    if (!d.gpuTarget)
-    {
-        d.gpuTarget = d.gpuFactory->createWindowRenderTarget(reinterpret_cast<void*>(uintptr_t(d.window)), pw, ph, 96.0f);
-        d.gpuW = pw;
-        d.gpuH = ph;
-        d.dirtyAll = true;
-    }
-    else if (pw != d.gpuW || ph != d.gpuH)
-    {
-        d.gpuTarget->resize(pw, ph);
-        d.gpuW = pw;
-        d.gpuH = ph;
-        d.dirtyAll = true;
-    }
-    if (!d.gpuTarget)
+    bool sized = false;
+    if (!d.gpuPresenter->ensureTarget(reinterpret_cast<void*>(uintptr_t(d.window)), d.width, d.height, sized))
     {
         *d.gpuActive = false;
         return;
     }
-
-    const float logicalW = pw / d.scale;
-    const float logicalH = ph / d.scale;
-
-    if (d.needsMeasure)
-    {
-        gmpi::drawing::Size avail{ logicalW, logicalH };
-        gmpi::drawing::Size desired{};
-        d.client->measure(&avail, &desired);
-
-        const gmpi::drawing::Rect all{ 0, 0, avail.width, avail.height };
-        d.client->arrange(&all);
-        d.needsMeasure = false;
-    }
-
-    gmpi::drawing::RectL area{ 0, 0, pw, ph };
-    if (!d.dirtyAll && !isEmptyRect(d.dirty))
-    {
-        area.left   = (std::max)(0,  static_cast<int32_t>(d.dirty.left   * d.scale));
-        area.top    = (std::max)(0,  static_cast<int32_t>(d.dirty.top    * d.scale));
-        area.right  = (std::min)(pw, static_cast<int32_t>(d.dirty.right  * d.scale + 1.0f));
-        area.bottom = (std::min)(ph, static_cast<int32_t>(d.dirty.bottom * d.scale + 1.0f));
-    }
-
-    if (getenv("GMPI_UI_GPU_TRACE"))
-        fprintf(stderr, "[presentGpu x11] %dx%d area %d,%d-%d,%d dirtyAll %d\n", pw, ph, area.left, area.top,
-                area.right, area.bottom, int(d.dirtyAll));
-    d.gpuTarget->beginDraw();
-    d.gpuTarget->invalidate(area);
-    // Clip the client to the dirty area: it paints the whole window every
-    // time, and here every op outside the area would still cost an upload
-    // or a draw (see the Wayland present).
-    const gmpi::drawing::Rect areaF{ float(area.left), float(area.top), float(area.right), float(area.bottom) };
-    d.gpuTarget->pushAxisAlignedClip(&areaF);
-    if (d.scale != 1.0f)
-    {
-        const auto m = gmpi::drawing::makeScale(d.scale, d.scale);
-        d.gpuTarget->setTransform(&m);
-    }
-    d.client->render(static_cast<gmpi::drawing::api::IDeviceContext*>(d.gpuTarget));
-    if (d.activeEdit)
-        d.activeEdit->render(d.gpuTarget);
-    d.gpuTarget->popAxisAlignedClip();
-    d.gpuTarget->endDraw(); // submit + present
-
-    d.dirtyAll = false;
-    d.dirty = {};
+    d.gpuPresenter->present(d.client, d.width / d.scale, d.height / d.scale, d.scale, d.needsMeasure, d.dirtyAll, d.dirty,
+                            [&d](gmpi::gpugfx::RenderTarget& target) { if (d.activeEdit) d.activeEdit->render(&target); },
+                            "presentGpu x11");
 }
 #endif
 
@@ -1370,8 +1306,7 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
         if (!d.gpuTried)
         {
             d.gpuTried = true;
-            d.modelWindow = XCreateSimpleWindow(d.display, DefaultRootWindow(d.display), 0, 0, 1, 1, 0, 0, 0);
-            *d.gpuActive = gmpi::gpugfx::initialize(reinterpret_cast<void*>(uintptr_t(d.modelWindow)), d.display, /*wayland*/ false);
+            *d.gpuActive = gmpi::gpugfx::initialize(d.display);
             if (!*d.gpuActive)
                 fprintf(stderr, "gmpi_ui: GPU backend unavailable, presenting through the CPU path\n");
         }

@@ -848,8 +848,7 @@ public:
     ~WaylandFrameBase() override
     {
 #if GMPI_UI_GPU_BACKEND
-        if (gpuTarget_)
-            gpuTarget_->release();
+        gpuPresenter_.release();
 #endif
         // NOT detachClient(): it reaches inputDispatch(), which is pure virtual.
         // By the time a base destructor runs the derived override is gone, so
@@ -905,8 +904,7 @@ public:
     // The GPU path: the surface is a Vulkan swap chain; no shm buffer, no
     // attach/damage - the swap chain's present commits the surface.
     void presentGpu(int pw, int ph);
-    gmpi::gpugfx::RenderTarget* gpuTarget_{};
-    int  gpuW_{}, gpuH_{};
+    gmpi::gpugfx::WindowPresenter gpuPresenter_{ gpuFactory_ };
     bool gpuTried_{};
 #endif
 
@@ -1037,11 +1035,7 @@ inline void WaylandFrameBase::present()
         if (!gpuTried_)
         {
             gpuTried_ = true;
-            // A role-less surface that lives for the process: bgfx needs SOME
-            // window to initialise on, and it must not be a surface a canvas
-            // will later pair to (see gpugfx::initialize).
-            static wl_surface* modelSurface = wl_compositor_create_surface(connection_.compositor());
-            gpuActive_ = gmpi::gpugfx::initialize(modelSurface, connection_.display(), /*wayland*/ true);
+            gpuActive_ = gmpi::gpugfx::initialize(connection_.display(), connection_.compositor());
             if (!gpuActive_)
                 fprintf(stderr, "gmpi_ui: GPU backend unavailable, presenting through the CPU path\n");
         }
@@ -1151,23 +1145,7 @@ inline void WaylandFrameBase::present()
 inline void WaylandFrameBase::presentGpu(int pw, int ph)
 {
     bool sized = false;
-    if (!gpuTarget_)
-    {
-        gpuTarget_ = gpuFactory_.createWindowRenderTarget(surface_, pw, ph, 96.0f);
-        gpuW_ = pw;
-        gpuH_ = ph;
-        dirtyAll_ = true;
-        sized = true;
-    }
-    else if (pw != gpuW_ || ph != gpuH_)
-    {
-        gpuTarget_->resize(pw, ph);
-        gpuW_ = pw;
-        gpuH_ = ph;
-        dirtyAll_ = true;
-        sized = true;
-    }
-    if (!gpuTarget_)
+    if (!gpuPresenter_.ensureTarget(surface_, pw, ph, sized))
     {
         gpuActive_ = false;
         return;
@@ -1182,68 +1160,14 @@ inline void WaylandFrameBase::presentGpu(int pw, int ph)
         wl_surface_set_opaque_region(surface_, opaque);
         wl_region_destroy(opaque);
     }
-
-    if (needsMeasure_)
-    {
-        gmpi::drawing::Size avail{ static_cast<float>(logicalW_), static_cast<float>(logicalH_) };
-        gmpi::drawing::Size desired{};
-        client_->measure(&avail, &desired);
-        if (getenv("GMPI_UI_GPU_TRACE"))
-            fprintf(stderr, "[presentGpu] measure avail %gx%g desired %gx%g\n", avail.width, avail.height, desired.width, desired.height);
-
-        const gmpi::drawing::Rect all{ 0, 0, avail.width, avail.height };
-        client_->arrange(&all);
-        needsMeasure_ = false;
-    }
-
-    gmpi::drawing::RectL area{ 0, 0, pw, ph };
-    if (!dirtyAll_ && !isEmpty(dirty_))
-    {
-        area.left   = (std::max)(0,  static_cast<int32_t>(dirty_.left   * scale_));
-        area.top    = (std::max)(0,  static_cast<int32_t>(dirty_.top    * scale_));
-        area.right  = (std::min)(pw, static_cast<int32_t>(dirty_.right  * scale_ + 1.0f));
-        area.bottom = (std::min)(ph, static_cast<int32_t>(dirty_.bottom * scale_ + 1.0f));
-    }
-
     // Surface state for the commit the swap chain's present will make.
     if (viewport_)
         wp_viewport_set_destination(viewport_, logicalW_, logicalH_);
 
-    if (getenv("GMPI_UI_GPU_TRACE"))
-        fprintf(stderr, "[presentGpu t=%ld] %dx%d area %d,%d-%d,%d dirtyAll %d edit %p\n",
-                long(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() % 100000),
-                pw, ph, area.left, area.top, area.right, area.bottom, int(dirtyAll_), (void*)activeEdit_);
-    gpuTarget_->beginDraw();
-    gpuTarget_->invalidate(area);
-    // Clip the client to the dirty area. The client paints the whole window
-    // every time; on the shm path a full re-raster is cheap enough to
-    // tolerate, but here every op outside the area would still cost an
-    // upload or a draw (a repainting analyser was re-drawing the module
-    // browser's 37 text rows and the whole canvas four times a second).
-    const gmpi::drawing::Rect areaF{ float(area.left), float(area.top), float(area.right), float(area.bottom) };
-    gpuTarget_->pushAxisAlignedClip(&areaF);
-    if (scale_ != 1.0f)
-    {
-        const auto m = gmpi::drawing::makeScale(scale_, scale_);
-        gpuTarget_->setTransform(&m);
-    }
-    const auto tRender = std::chrono::steady_clock::now();
-    client_->render(static_cast<gmpi::drawing::api::IDeviceContext*>(gpuTarget_));
-    drawActiveTextEdit(gpuTarget_);
-    gpuTarget_->popAxisAlignedClip();
-    const auto tSubmit = std::chrono::steady_clock::now();
-    gpuTarget_->endDraw(); // submit + present
-    {
-        const auto tDone = std::chrono::steady_clock::now();
-        using ms = std::chrono::duration<double, std::milli>;
-        lastTiming_ = { ms(tSubmit - tRender).count(), ms(tDone - tSubmit).count(), true };
-        if (getenv("GMPI_UI_GPU_TRACE"))
-            fprintf(stderr, "[presentGpu] render %.1f ms, submit+present %.1f ms\n",
-                    lastTiming_.renderMs, lastTiming_.finishMs);
-    }
-
-    dirtyAll_ = false;
-    dirty_ = {};
+    gpuPresenter_.present(client_, float(logicalW_), float(logicalH_), scale_, needsMeasure_, dirtyAll_, dirty_,
+                          [this](gmpi::gpugfx::RenderTarget& target) { drawActiveTextEdit(&target); });
+    const auto& t = gpuPresenter_.lastTiming();
+    lastTiming_ = { t.renderMs, t.finishMs, true };
 }
 #endif
 

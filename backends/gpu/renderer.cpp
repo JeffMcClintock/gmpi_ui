@@ -22,6 +22,7 @@
 #include "defines.h"
 #include "graphics_utils.h"
 #include "renderer.h"
+#include "platform/model_surface.h"
 
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
@@ -60,21 +61,23 @@ namespace gmpi::gpu {
   };
 
   uint32_t Renderer::resetFlags() const {
-    uint32_t vsync = (vsync_ ? BGFX_RESET_VSYNC : 0) |
-                     (srgb_window_swap_chains_ ? BGFX_RESET_SRGB_BACKBUFFER : 0);
-#if GMPI_GPU_WINDOWS
-    return BGFX_RESET_FLIP_AFTER_RENDER;
-#elif GMPI_GPU_MAC
-    return BGFX_RESET_FLIP_AFTER_RENDER | vsync;
-#elif GMPI_GPU_LINUX
     // Without FLIP_AFTER_RENDER bgfx presents frame N at the start of frame
     // N+1 (to overlap CPU and GPU), so a window that presents once after
     // being idle shows that frame one present late. A UI presents on demand,
-    // not continuously, so flip in the same frame, as on Windows and macOS.
-    return vsync | BGFX_RESET_FLIP_AFTER_RENDER;
-#else
-    return 0;
+    // not continuously, so flip in the same frame, everywhere.
+    uint32_t flags = BGFX_RESET_FLIP_AFTER_RENDER;
+#if !GMPI_GPU_WINDOWS
+    // Windows passed neither flag in the fork and no Windows build has run
+    // since; keep that until one does, then decide with a measurement.
+    flags |= (vsync_ ? BGFX_RESET_VSYNC : 0) |
+             (srgb_window_swap_chains_ ? BGFX_RESET_SRGB_BACKBUFFER : 0);
 #endif
+    return flags;
+  }
+
+  void Renderer::initializeWindowless() {
+    const ModelSurface model = modelSurface();
+    initialize(model.window, model.display, model.wayland ? NativeWindowType::Wayland : NativeWindowType::Default);
   }
 
   Renderer& Renderer::instance() {
@@ -104,36 +107,32 @@ namespace gmpi::gpu {
     bgfx_init.platformData.type = type == NativeWindowType::Wayland ? bgfx::NativeWindowHandleType::Wayland :
                                                                       bgfx::NativeWindowHandleType::Default;
 
-    bgfx::RendererType::Enum supported_renderers[bgfx::RendererType::Count];
-    uint8_t num_supported = bgfx::getSupportedRenderers(bgfx::RendererType::Count, supported_renderers);
-
+    // One current API per platform (ruled 2026-10-24), the only one compiled
+    // in (gmpi_gpu.cmake). Where it is not available the renderer reports
+    // unsupported and the host takes the CPU path.
 #if GMPI_GPU_WINDOWS
-    // Direct3D 12 only (ruled 2026-10-24: one current API per platform, no
-    // D3D11). Without it the renderer reports unsupported and the host takes
-    // the CPU path, as a Linux machine without Vulkan does.
-    bgfx_init.type = bgfx::RendererType::Count;
-    for (int i = 0; i < num_supported; ++i) {
-      if (supported_renderers[i] == bgfx::RendererType::Direct3D12)
-        bgfx_init.type = bgfx::RendererType::Direct3D12;
-    }
-    if (bgfx_init.type == bgfx::RendererType::Count) {
-      supported_ = false;
-      error_message_ = "Direct3D 12 is not available.";
-    }
+    constexpr auto kRenderer = bgfx::RendererType::Direct3D12;
 #elif GMPI_GPU_MAC
-    bgfx_init.type = bgfx::RendererType::Metal;
+    constexpr auto kRenderer = bgfx::RendererType::Metal;
+#elif GMPI_GPU_LINUX
+    constexpr auto kRenderer = bgfx::RendererType::Vulkan;
+#else
+    constexpr auto kRenderer = bgfx::RendererType::Noop;
+#endif
+    bgfx_init.type = kRenderer;
+#if GMPI_GPU_MAC
+    // Metal wants a drawable on the model layer to come up.
     bgfx_init.resolution.width = 1;
     bgfx_init.resolution.height = 1;
-#elif GMPI_GPU_LINUX
-    bgfx_init.type = bgfx::RendererType::Vulkan;
-#elif GMPI_GPU_EMSCRIPTEN
-    bgfx_init.type = bgfx::RendererType::OpenGLES;
 #endif
-
     bgfx_init.resolution.reset = resetFlags();
 
+    bgfx::RendererType::Enum supported_renderers[bgfx::RendererType::Count];
+    const uint8_t num_supported = bgfx::getSupportedRenderers(bgfx::RendererType::Count, supported_renderers);
     for (int i = 0; i < num_supported && !supported_; ++i)
-      supported_ = supported_renderers[i] == bgfx_init.type;
+      supported_ = supported_renderers[i] == kRenderer;
+    if (!supported_)
+      error_message_ = std::string(bgfx::getRendererName(kRenderer)) + " is not available.";
 
     if (!supported_) {
       GMPI_GPU_ASSERT(false);

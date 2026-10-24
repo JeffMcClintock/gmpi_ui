@@ -1,7 +1,7 @@
 #pragma once
 
 // GPU backend over gmpi_ui's GPU renderer, backends/gpu/ (absorbed from
-// VitalAudio/visage; bgfx underneath: D3D11 / Metal / Vulkan). See
+// VitalAudio/visage; bgfx underneath: Direct3D 12 / Metal / Vulkan). See
 // VISAGE_BACKEND_PLAN.md. Build: backends/gpu/gmpi_gpu.cmake.
 //
 // Every surface is RGBA16F premultiplied linear, the working format of the
@@ -34,12 +34,15 @@
 #include "gpu/canvas.h"
 #include "gpu/path.h"
 #include "gpu/renderer.h"
+#include "gpu/platform/model_surface.h"
 #include "gpu/screenshot.h"
 #include "gpu/shader.h"
 #include "gpu/shaders/compiled/shaders.h"
 #include "GmpiApiShaders.h"
+#include "helpers/NativeUi.h"
 
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -77,23 +80,22 @@ inline bool wanted()
     return hostPreference() == HostPreference::Gpu;
 }
 
-// Initialise the (process-wide) renderer against a native window and
-// display. Returns false if the device cannot do RGBA16F, which the
-// backend requires. Safe to call more than once.
-inline bool initialize(void* nativeWindow, void* nativeDisplay, bool wayland)
+// Initialise the (process-wide) renderer for a host that will show windows.
+// nativeDisplay is the host's display connection on Linux (wl_display* with
+// its wl_compositor*, or an X Display*); every window the host later hands
+// to createWindowRenderTarget() must be on it. The renderer comes up on the
+// process's model surface (gpu/platform/model_surface.h), never on a window
+// a canvas will pair to. Returns false if the device cannot do RGBA16F,
+// which the backend requires. Safe to call more than once.
+inline bool initialize(void* nativeDisplay = nullptr, void* waylandCompositor = nullptr)
 {
     auto& renderer = gmpi::gpu::Renderer::instance();
     if (!renderer.initialized())
     {
         renderer.setVsync(false); // the host paces frames (Wayland frame callbacks / X11 timer)
-        // nativeWindow is a MODEL window the host keeps alive and never shows
-        // (a role-less wl_surface, a hidden X11 window): bgfx's Vulkan renderer
-        // only reports swap-chain support when initialised on some window,
-        // and initialising on the host's real surface would put a second
-        // Vulkan surface on it when its canvas pairs to it. Every real window
-        // then gets its own swap chain through createWindowRenderTarget().
-        renderer.initialize(nativeWindow, nativeDisplay,
-                            wayland ? gmpi::gpu::Renderer::NativeWindowType::Wayland : gmpi::gpu::Renderer::NativeWindowType::Default);
+        const auto model = gmpi::gpu::modelSurface(nativeDisplay, waylandCompositor);
+        renderer.initialize(model.window, model.display,
+                            model.wayland ? gmpi::gpu::Renderer::NativeWindowType::Wayland : gmpi::gpu::Renderer::NativeWindowType::Default);
     }
     if (!renderer.supported())
         std::fprintf(stderr, "gmpi_ui GPU backend: %s\n", renderer.errorMessage().c_str());
@@ -1809,5 +1811,137 @@ inline ReturnCode RenderTarget::createCompatibleRenderTarget(drawing::Size desir
     const drawing::SizeU size{ uint32_t(std::ceil(desiredSize.width)), uint32_t(std::ceil(desiredSize.height)) };
     return f->cpu.createCpuRenderTarget(size, flags, returnBitmapRenderTarget, 96.0f);
 }
+
+
+// ---------------------------------------------------------------------------
+// WindowPresenter: the per-frame GPU present a platform frame runs. Owns the
+// window's swap-chain target; the frame keeps the native window, its
+// dirty-tracking flags and whatever surface state its window system needs
+// (a Wayland frame sets its opaque region when `sized` comes back true).
+// The Wayland and X11 frames ran this same ~50 lines each; Windows and
+// macOS frames run it too when they take the GPU path.
+// ---------------------------------------------------------------------------
+class WindowPresenter
+{
+public:
+    struct Timing
+    {
+        double renderMs{}; // client render, CPU side
+        double finishMs{}; // endDraw: submit + present
+    };
+
+    explicit WindowPresenter(Factory& factory) : factory_(factory) {}
+    ~WindowPresenter() { release(); }
+    WindowPresenter(const WindowPresenter&) = delete;
+    WindowPresenter& operator=(const WindowPresenter&) = delete;
+
+    RenderTarget* target() const { return target_; }
+    const Timing& lastTiming() const { return timing_; }
+
+    void release()
+    {
+        if (target_)
+            target_->release();
+        target_ = nullptr;
+        width_ = height_ = 0;
+    }
+
+    // Create the target on first use, resize it when the device size changes.
+    // False when no target could be made: the frame drops to its CPU path.
+    // `sized` is true when it was created or resized this call.
+    bool ensureTarget(void* nativeWindow, int pw, int ph, bool& sized)
+    {
+        sized = false;
+        if (!target_)
+        {
+            target_ = factory_.createWindowRenderTarget(nativeWindow, pw, ph, 96.0f);
+            if (!target_)
+                return false;
+            sized = true;
+        }
+        else if (pw != width_ || ph != height_)
+        {
+            target_->resize(pw, ph);
+            sized = true;
+        }
+        width_ = pw;
+        height_ = ph;
+        return true;
+    }
+
+    // One frame. `dirty` is in logical units and `scale` maps logical to
+    // device pixels; needsMeasure / dirtyAll / dirty are the frame's own
+    // flags, consumed here: measure + arrange run when needsMeasure is set,
+    // and all three are cleared after the present. `overlay` draws after the
+    // client inside the same clip (a text edit). Requires ensureTarget().
+    void present(gmpi::api::IDrawingClient* client, float logicalW, float logicalH, float scale,
+                 bool& needsMeasure, bool& dirtyAll, drawing::Rect& dirty,
+                 const std::function<void(RenderTarget&)>& overlay = {}, const char* traceTag = "presentGpu")
+    {
+        assert(target_);
+        const int pw = width_, ph = height_;
+        const bool trace = std::getenv("GMPI_UI_GPU_TRACE") != nullptr;
+
+        if (needsMeasure)
+        {
+            drawing::Size avail{ logicalW, logicalH };
+            drawing::Size desired{};
+            client->measure(&avail, &desired);
+            if (trace)
+                std::fprintf(stderr, "[%s] measure avail %gx%g desired %gx%g\n", traceTag, avail.width, avail.height, desired.width, desired.height);
+            const drawing::Rect all{ 0, 0, avail.width, avail.height };
+            client->arrange(&all);
+            needsMeasure = false;
+        }
+
+        drawing::RectL area{ 0, 0, pw, ph };
+        if (!dirtyAll && dirty.right > dirty.left && dirty.bottom > dirty.top)
+        {
+            area.left   = (std::max)(0,  static_cast<int32_t>(dirty.left   * scale));
+            area.top    = (std::max)(0,  static_cast<int32_t>(dirty.top    * scale));
+            area.right  = (std::min)(pw, static_cast<int32_t>(dirty.right  * scale + 1.0f));
+            area.bottom = (std::min)(ph, static_cast<int32_t>(dirty.bottom * scale + 1.0f));
+        }
+        if (trace)
+            std::fprintf(stderr, "[%s t=%ld] %dx%d area %d,%d-%d,%d dirtyAll %d\n", traceTag,
+                         long(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() % 100000),
+                         pw, ph, area.left, area.top, area.right, area.bottom, int(dirtyAll));
+
+        target_->beginDraw();
+        target_->invalidate(area);
+        // Clip the client to the dirty area. It paints the whole window every
+        // time, and here every op outside the area would still cost an upload
+        // or a draw (a repainting analyser was re-drawing the module browser's
+        // 37 text rows and the whole canvas four times a second).
+        const drawing::Rect areaF{ float(area.left), float(area.top), float(area.right), float(area.bottom) };
+        target_->pushAxisAlignedClip(&areaF);
+        if (scale != 1.0f)
+        {
+            const auto m = drawing::makeScale(scale, scale);
+            target_->setTransform(&m);
+        }
+        const auto tRender = std::chrono::steady_clock::now();
+        client->render(static_cast<drawing::api::IDeviceContext*>(target_));
+        if (overlay)
+            overlay(*target_);
+        target_->popAxisAlignedClip();
+        const auto tSubmit = std::chrono::steady_clock::now();
+        target_->endDraw(); // submit + present
+        const auto tDone = std::chrono::steady_clock::now();
+        using ms = std::chrono::duration<double, std::milli>;
+        timing_ = { ms(tSubmit - tRender).count(), ms(tDone - tSubmit).count() };
+        if (trace)
+            std::fprintf(stderr, "[%s] render %.1f ms, submit+present %.1f ms\n", traceTag, timing_.renderMs, timing_.finishMs);
+
+        dirtyAll = false;
+        dirty = {};
+    }
+
+private:
+    Factory& factory_;
+    RenderTarget* target_{};
+    int width_{}, height_{};
+    Timing timing_{};
+};
 
 } // namespace gmpi::gpugfx

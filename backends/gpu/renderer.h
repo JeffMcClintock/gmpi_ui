@@ -27,7 +27,6 @@
 #include <atomic>
 #include <memory>
 #include <string>
-#include "windowless_context.h"
 
 namespace gmpi::gpu {
   class GraphicsCallbackHandler;
@@ -48,7 +47,10 @@ namespace gmpi::gpu {
       Wayland, // wl_surface*, with display = wl_display*
     };
 
-    void initializeWindowless() { initialize(windowlessContext(), nullptr); }
+    // Initialise with no window of the host's: on the process's model
+    // surface (platform/model_surface.h). For offscreen rendering only; a
+    // host that will show windows initialises through its frame.
+    void initializeWindowless();
     void initialize(void* model_window, void* display, NativeWindowType type = NativeWindowType::Default);
 
     // Must be set before initialize(). Off lets a host pace frames itself

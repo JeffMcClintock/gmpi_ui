@@ -101,7 +101,12 @@ namespace gmpi::gpu {
     int prev_height = atlas_map_.height();
     atlas_map_.pack();
     repacked_ = true;
-    if (atlas_map_.width() != prev_width && atlas_map_.height() != prev_height)
+    // EITHER dimension, not both: the width is fixed at kMaxGradientResolution
+    // (see the constructor), so with && a taller atlas kept its shorter
+    // texture and updateGradient wrote strips past its last row - a GPU-side
+    // out-of-bounds copy that crashed in the driver once a frame brought
+    // ~22 new gradients (wayland_bench --fill linear --load 22).
+    if (atlas_map_.width() != prev_width || atlas_map_.height() != prev_height)
       texture_.reset();
 
     for (auto& gradient : gradients_) {

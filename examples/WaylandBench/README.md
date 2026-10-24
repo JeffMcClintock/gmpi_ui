@@ -34,6 +34,8 @@ build-bench/wayland_bench --cpu
 | `--scene N` | 1 bounce, 2 lines, 3 rects, 4 ellipses, 5 text, 6 gradients |
 | `--load N` | How many things the scene draws (default 16) |
 | `--detail N` | Curves per bouncing path (default 8) |
+| `--fill solid\|linear\|radial`, `--no-outline` | The bounce scene's fill and outline at launch |
+| `--static-colors` | Hold the bounce colours still. By default they drift, so every gradient is new each frame (atlas churn); this measures reused gradients instead. |
 | `--size WxH` | Window size (default 1000x700) |
 | `--report` | Print one line of stats a second on stdout |
 | `--frames N` | Quit after N presented frames |

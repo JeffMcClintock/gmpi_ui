@@ -6,7 +6,7 @@
 // frame rate falls, then relaunch on the other backend and compare.
 //
 //     wayland_bench [--cpu | --gpu] [--scene N] [--load N] [--detail N]
-//                   [--fill solid|linear|radial] [--no-outline]
+//                   [--fill solid|linear|radial] [--no-outline] [--static-colors]
 //                   [--size WxH] [--frames N] [--report]
 //
 //     --cpu / --gpu   the backend, chosen at launch because a frame picks its
@@ -140,6 +140,10 @@ public:
     int   detail = 8;
     BounceFill fill = Linear;
     bool  outline = true;
+    // The bounce colours drift by default, so every gradient is a NEW one each
+    // frame - the GPU atlas churn that exposed the gradient-atlas resize bug.
+    // --static-colors holds them, to measure gradients that are reused.
+    bool  staticColors = false;
     bool  paused = false;
     bool  report = false;
     int   framesPresented = 0;
@@ -336,7 +340,7 @@ void BenchClient::drawBounce(Graphics& g, const Matrix3x2& base, float t)
 
         g.setTransform(makeScale(pulse, pulse) * makeRotation(spin) * makeTranslation(cx, cy) * base);
 
-        const float h0 = hash01(i, 7) + 0.05f * t;
+        const float h0 = hash01(i, 7) + (staticColors ? 0.f : 0.05f * t);
         switch (fill)
         {
         case Solid:
@@ -475,7 +479,7 @@ int main(int argc, char** argv)
     bool wantGpu = false;
 #endif
     int scene = Bounce, load = 16, detail = 8, maxFrames = 0, width = 1000, height = 700;
-    bool report = false, outline = true;
+    bool report = false, outline = true, staticColors = false;
     int fill = Linear;
 
     for (int i = 1; i < argc; ++i)
@@ -486,6 +490,7 @@ int main(int argc, char** argv)
         else if (!strcmp(a, "--gpu")) wantGpu = true;
         else if (!strcmp(a, "--report")) report = true;
         else if (!strcmp(a, "--no-outline")) outline = false;
+        else if (!strcmp(a, "--static-colors")) staticColors = true;
         else if (!strcmp(a, "--fill") && hasNext)
         {
             const char* f = argv[++i];
@@ -499,7 +504,7 @@ int main(int argc, char** argv)
         else
         {
             fprintf(stderr, "usage: %s [--cpu | --gpu] [--scene 1-6] [--load N] [--detail N] "
-                            "[--fill solid|linear|radial] [--no-outline] [--size WxH] [--frames N] [--report]\n", argv[0]);
+                            "[--fill solid|linear|radial] [--no-outline] [--static-colors] [--size WxH] [--frames N] [--report]\n", argv[0]);
             return 2;
         }
     }
@@ -553,6 +558,7 @@ int main(int argc, char** argv)
     client.report = report;
     client.fill   = BounceFill(fill);
     client.outline = outline;
+    client.staticColors = staticColors;
     frame.attachClient(&client);
 
     // A short tick keeps a repaint always pending, so every frame callback

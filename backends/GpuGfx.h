@@ -1095,9 +1095,37 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     ReturnCode viaCpu(drawing::Rect deviceBounds, const std::function<ReturnCode(cpugfx::RenderTarget&)>& draw,
                       const char* what = "cpu fallback")
     {
+        auto layer = renderViaCpu(deviceBounds, draw, what);
+        if (!layer)
+            return ReturnCode::Ok;
+        compositeCpuLayer(*layer, gmpi::gpu::BlendMode::Composite);
+        return layer->result;
+    }
+
+    // What renderViaCpu drew: premultiplied RGBA16F for device pixels
+    // (left, top) to (left + w, top + h).
+    struct CpuLayer
+    {
+        std::vector<uint16_t> pixels;
+        int32_t left{}, top{}, w{}, h{};
+        ReturnCode result{ ReturnCode::Ok };
+    };
+
+    void compositeCpuLayer(CpuLayer& layer, gmpi::gpu::BlendMode blend)
+    {
+        bitmap->drawHalfImage(std::move(layer.pixels), layer.w, layer.h, float(layer.left), float(layer.top),
+                              float(layer.w), float(layer.h), 1.0f, currentClamp(), blend);
+    }
+
+    // viaCpu's first half: `draw` on a transparent cpugfx target with the
+    // transform and the CPU-only geometry clips replayed. Nothing when the
+    // bounds are empty after clipping.
+    std::optional<CpuLayer> renderViaCpu(drawing::Rect deviceBounds, const std::function<ReturnCode(cpugfx::RenderTarget&)>& draw,
+                                         const char* what)
+    {
         deviceBounds = drawing::intersectRect(deviceBounds, drawing::intersectRect(clipRectStack.back(), surfaceBounds()));
         if (!(deviceBounds.right > deviceBounds.left) || !(deviceBounds.bottom > deviceBounds.top))
-            return ReturnCode::Ok;
+            return std::nullopt;
         trace("viaCpu", deviceBounds, what);
         ++bitmap->cpuFallbacks;
 
@@ -1106,7 +1134,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         const int32_t w = int32_t(std::ceil(deviceBounds.right)) - left;
         const int32_t h = int32_t(std::ceil(deviceBounds.bottom)) - top;
         if (w <= 0 || h <= 0)
-            return ReturnCode::Ok;
+            return std::nullopt;
 
         gmpi::shared_ptr<cpugfx::RenderTarget> cpu;
         cpu.attach(new cpugfx::RenderTarget(factory, { uint32_t(w), uint32_t(h) }, 0, 96.0f));
@@ -1136,11 +1164,8 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         cpu->getBitmap(cpuBitmap.put());
         auto* cb = dynamic_cast<cpugfx::Bitmap*>(cpuBitmap.get());
         if (!cb)
-            return ReturnCode::Fail;
-
-        bitmap->drawHalfImage(packSurface(cb->surface, 0, 0, w, h), w, h, float(left), float(top), float(w), float(h),
-                              1.0f, currentClamp(), gmpi::gpu::BlendMode::Composite);
-        return result;
+            return CpuLayer{ {}, left, top, 0, 0, ReturnCode::Fail };
+        return CpuLayer{ packSurface(cb->surface, 0, 0, w, h), left, top, w, h, result };
     }
 
     drawing::Rect figuresDeviceBounds(const std::vector<cpugfx::Figure>& figures) const
@@ -1381,6 +1406,29 @@ public:
         auto& c = canvas();
         const auto clamp = currentClamp();
         c.setClampBounds(clamp);
+        if (cpuGeometryClipActive())
+        {
+            // A REPLACE under a clip only the CPU can apply (nested, or over
+            // the tile budget): the same two passes as the masked replace,
+            // with the coverage from cpugfx. Cleared on a transparent target
+            // under the replayed clips, white gives the coverage m and the
+            // colour gives colour * m, premultiplied; erase by the one, add
+            // the other. A GPU mask among the clips scales both, as it should.
+            const auto colour = *clearColor;
+            const auto bounds = clipRectStack.back();
+            auto coverage = renderViaCpu(bounds, [](cpugfx::RenderTarget& cpu) {
+                const drawing::Color white{ 1.0f, 1.0f, 1.0f, 1.0f };
+                return cpu.clear(&white);
+            }, "clear under a CPU clip: coverage");
+            auto painted = renderViaCpu(bounds, [&colour](cpugfx::RenderTarget& cpu) { return cpu.clear(&colour); },
+                                        "clear under a CPU clip: colour");
+            if (coverage)
+                compositeCpuLayer(*coverage, gmpi::gpu::BlendMode::Erase);
+            if (painted)
+                compositeCpuLayer(*painted, gmpi::gpu::BlendMode::PlusPremultiplied);
+            bitmap->rendered = false;
+            return ReturnCode::Ok;
+        }
         if (c.clipMask())
         {
             // A REPLACE under a shaped clip: only what the clip admits, with
@@ -1399,8 +1447,6 @@ public:
             bitmap->rendered = false;
             return ReturnCode::Ok;
         }
-        // TODO: under a clip only the CPU can apply (nested), this still fills
-        // the clip's bounding box; cpugfx replaces under the mask.
         trace("clear", clipRectStack.back(), "gpu opaque fill of clip");
         c.setBlendMode(gmpi::gpu::BlendMode::Opaque);
         c.setColor(toVisage(*clearColor, 1.0f));

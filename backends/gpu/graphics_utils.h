@@ -29,17 +29,7 @@
 #include <string>
 #include <vector>
 
-namespace bgfx {
-  struct VertexLayout;
-  struct TextureHandle;
-  struct ShaderHandle;
-  struct ProgramHandle;
-  struct UniformHandle;
-  struct IndexBufferHandle;
-  struct FrameBufferHandle;
-  struct TransientIndexBuffer;
-  struct TransientVertexBuffer;
-}
+#include "device/device_fwd.h"
 
 namespace gmpi::gpu {
   enum class BlendMode {
@@ -242,7 +232,7 @@ namespace gmpi::gpu {
     float u;
     float v;
 
-    static bgfx::VertexLayout& layout();
+    static gfx::VertexLayout& layout();
   };
 
   // One quad per path edge (see PathAtlas::updatePaths): the edge's two
@@ -258,7 +248,7 @@ namespace gmpi::gpu {
     float origin_x;
     float right;
 
-    static bgfx::VertexLayout& layout();
+    static gfx::VertexLayout& layout();
   };
 
   struct GradientTexturePosition {
@@ -302,7 +292,7 @@ namespace gmpi::gpu {
     float value1;
     float value2;
 
-    static bgfx::VertexLayout& layout();
+    static gfx::VertexLayout& layout();
   };
 
 
@@ -322,7 +312,7 @@ namespace gmpi::gpu {
     float clamp_right;
     float clamp_bottom;
 
-    static bgfx::VertexLayout& layout();
+    static gfx::VertexLayout& layout();
   };
 
   struct PostEffectVertex {
@@ -341,6 +331,6 @@ namespace gmpi::gpu {
     float clamp_right;
     float clamp_bottom;
 
-    static bgfx::VertexLayout& layout();
+    static gfx::VertexLayout& layout();
   };
 }

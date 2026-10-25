@@ -132,6 +132,20 @@ if (GMPI_GPU_BUILD_SHADERC)
 endif ()
 
 # --- the renderer ------------------------------------------------------------
+# The device seam (device/device.h): the renderer talks to the GPU through
+# gmpi::gpu::gfx only. A renderer source that names bgfx:: directly has gone
+# round the seam; refuse it here rather than find out when a second device
+# arrives.
+file(GLOB GMPI_GPU_SEAM_SOURCES ${GMPI_GPU_DIR}/*.cpp ${GMPI_GPU_DIR}/*.h ${GMPI_GPU_DIR}/*.mm
+                                ${GMPI_GPU_DIR}/platform/*.cpp ${GMPI_GPU_DIR}/platform/*.mm ${GMPI_GPU_DIR}/platform/*.h
+                                ${GMPI_GPU_DIR}/../GpuGfx.h)
+foreach (src ${GMPI_GPU_SEAM_SOURCES})
+  file(READ ${src} contents)
+  if (contents MATCHES "bgfx::")
+    message(FATAL_ERROR "gmpi_gpu: ${src} names bgfx:: directly; go through gmpi::gpu::gfx (backends/gpu/device/device.h)")
+  endif ()
+endforeach ()
+
 add_library(gmpi_gpu STATIC
   ${GMPI_GPU_DIR}/canvas.cpp
   ${GMPI_GPU_DIR}/color.cpp

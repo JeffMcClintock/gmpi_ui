@@ -26,16 +26,16 @@
 #include "shape_batcher.h"
 #include "uniforms.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 #include <memory>
 
 namespace gmpi::gpu {
   struct PathAtlasTexture {
-    bgfx::FrameBufferHandle handle = { bgfx::kInvalidHandle };
+    gfx::FrameBufferHandle handle = { gfx::kInvalidHandle };
 
     ~PathAtlasTexture() {
-      if (bgfx::isValid(handle))
-        bgfx::destroy(handle);
+      if (gfx::isValid(handle))
+        gfx::destroy(handle);
     }
   };
 
@@ -54,8 +54,8 @@ namespace gmpi::gpu {
   template<const char* name>
   void setPathUniform(float value0, float value1 = 0.0f, float value2 = 0.0f, float value3 = 0.0f) {
     float values[4] = { value0, value1, value2, value3 };
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, 1);
-    bgfx::setUniform(uniform, values);
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Vec4, 1);
+    gfx::setUniform(uniform, values);
   }
 
   bool PathAtlas::clearUpdatedPathAreas(int submit_pass) {
@@ -71,17 +71,17 @@ namespace gmpi::gpu {
     float width_scale = 2.0f / width_;
     float height_scale = 2.0f / height_;
 
-    bgfx::setViewMode(submit_pass, bgfx::ViewMode::Sequential);
-    bgfx::setViewRect(submit_pass, 0, 0, width_, height_);
+    gfx::setViewMode(submit_pass, gfx::ViewMode::Sequential);
+    gfx::setViewRect(submit_pass, 0, 0, width_, height_);
     // Only each path's own rect is ever cleared, but the sample quad has a
     // one-pixel buffer and LINEAR filtering reads the texels around it. A
     // new atlas holds whatever its memory held before; in R16F that can be
     // NaN, which fs_sample_path turns into NaN alpha and the blend spreads.
     // Clear the whole atlas once when it is created.
-    bgfx::setViewClear(submit_pass, fresh_frame_buffer_ ? BGFX_CLEAR_COLOR : BGFX_CLEAR_NONE, 0x00000000);
+    gfx::setViewClear(submit_pass, fresh_frame_buffer_ ? BGFX_CLEAR_COLOR : BGFX_CLEAR_NONE, 0x00000000);
     fresh_frame_buffer_ = false;
-    bgfx::setViewFrameBuffer(submit_pass, frame_buffer_->handle);
-    bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ZERO));
+    gfx::setViewFrameBuffer(submit_pass, frame_buffer_->handle);
+    gfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ZERO));
     auto clear_vertices = initQuadVertices<UvVertex>(total_need_update);
     int vertex_index = 0;
     for (auto& path : paths_) {
@@ -110,13 +110,13 @@ namespace gmpi::gpu {
       }
     }
 
-    if (bgfx::getCaps()->originBottomLeft) {
+    if (gfx::getCaps()->originBottomLeft) {
       for (int i = 0; i < vertex_index; ++i)
         clear_vertices[i].y = -clear_vertices[i].y;
     }
 
     setPathUniform<Uniforms::kColor>(0.0f);
-    bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_clear, shaders::fs_clear));
+    gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_clear, shaders::fs_clear));
 
     return true;
   }
@@ -141,12 +141,12 @@ namespace gmpi::gpu {
       }
     }
 
-    bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE));
-    bgfx::TransientVertexBuffer vertex_buffer {};
-    bgfx::TransientIndexBuffer index_buffer {};
+    gfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE));
+    gfx::TransientVertexBuffer vertex_buffer {};
+    gfx::TransientIndexBuffer index_buffer {};
     int num_vertices = num_edges * kVerticesPerEdge;
     int num_indices = num_edges * kIndicesPerEdge;
-    if (!bgfx::allocTransientBuffers(&vertex_buffer, PathVertex::layout(), num_vertices,
+    if (!gfx::allocTransientBuffers(&vertex_buffer, PathVertex::layout(), num_vertices,
                                      &index_buffer, num_indices, true)) {
       GMPI_GPU_LOG("PathAtlas::updatePaths: Failed to allocate transient buffers");
       return submit_pass + 1;
@@ -159,8 +159,8 @@ namespace gmpi::gpu {
       return submit_pass + 1;
     }
 
-    bgfx::setVertexBuffer(0, &vertex_buffer);
-    bgfx::setIndexBuffer(&index_buffer);
+    gfx::setVertexBuffer(0, &vertex_buffer);
+    gfx::setIndexBuffer(&index_buffer);
 
     // Coverage by signed-area accumulation, one quad per edge, as font
     // rasterisers do it: each edge adds to every pixel in the rows it spans
@@ -213,7 +213,7 @@ namespace gmpi::gpu {
     GMPI_GPU_ASSERT(vertex == num_vertices);
     GMPI_GPU_ASSERT(index == num_indices);
 
-    bool origin_flip = bgfx::getCaps()->originBottomLeft;
+    bool origin_flip = gfx::getCaps()->originBottomLeft;
     setPathUniform<Uniforms::kColor>(1.0f);
     setPathUniform<Uniforms::kOriginFlip>(origin_flip ? -1.0 : 1.0);
 
@@ -222,7 +222,7 @@ namespace gmpi::gpu {
     else
       setPathUniform<Uniforms::kBounds>(2.0f / width_, -2.0f / height_, -1.0f, 1.0f);
 
-    bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_path_fill, shaders::fs_path_fill));
+    gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_path_fill, shaders::fs_path_fill));
     return submit_pass + 1;
   }
 
@@ -237,13 +237,13 @@ namespace gmpi::gpu {
   // 400-point graph fill was left speckled with residues of ~1e-3, which an
   // sRGB display turns into visible fan lines from the anchor. fp32 blending
   // (every desktop GPU, lavapipe too) leaves ~1e-7, invisible.
-  static bgfx::TextureFormat::Enum coverageFormat() {
+  static gfx::TextureFormat::Enum coverageFormat() {
     static constexpr uint32_t kNeeded = BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER |
                                         BGFX_CAPS_FORMAT_TEXTURE_2D;
-    uint32_t caps = bgfx::getCaps()->formats[bgfx::TextureFormat::R32F];
+    uint32_t caps = gfx::getCaps()->formats[gfx::TextureFormat::R32F];
     if ((caps & kNeeded) == kNeeded)
-      return bgfx::TextureFormat::R32F;
-    return bgfx::TextureFormat::R16F;
+      return gfx::TextureFormat::R32F;
+    return gfx::TextureFormat::R16F;
   }
 
   void PathAtlas::checkInit() {
@@ -256,8 +256,8 @@ namespace gmpi::gpu {
     if (frame_buffer_ == nullptr)
       frame_buffer_ = std::make_unique<PathAtlasTexture>();
 
-    if (!bgfx::isValid(frame_buffer_->handle) && atlas_map_.width() && atlas_map_.height()) {
-      frame_buffer_->handle = bgfx::createFrameBuffer(atlas_map_.width(), atlas_map_.height(),
+    if (!gfx::isValid(frame_buffer_->handle) && atlas_map_.width() && atlas_map_.height()) {
+      frame_buffer_->handle = gfx::createFrameBuffer(atlas_map_.width(), atlas_map_.height(),
                                                       coverageFormat(), kFlags);
       width_ = atlas_map_.width();
       height_ = atlas_map_.height();
@@ -282,11 +282,11 @@ namespace gmpi::gpu {
     }
   }
 
-  const bgfx::FrameBufferHandle& PathAtlas::frameBufferHandle() {
+  const gfx::FrameBufferHandle& PathAtlas::frameBufferHandle() {
     return frame_buffer_->handle;
   }
 
   bool PathAtlas::hasFrameBuffer() const {
-    return frame_buffer_ && bgfx::isValid(frame_buffer_->handle);
+    return frame_buffer_ && gfx::isValid(frame_buffer_->handle);
   }
 }

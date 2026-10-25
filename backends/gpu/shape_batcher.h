@@ -59,10 +59,10 @@ namespace gmpi::gpu {
   void setOriginFlipUniform(bool origin_flip);
   void setBlendMode(BlendMode draw_state);
 
-  bool initTransientQuadBuffers(int num_quads, const bgfx::VertexLayout& layout,
-                                bgfx::TransientVertexBuffer* vertex_buffer,
-                                bgfx::TransientIndexBuffer* index_buffer);
-  uint8_t* initQuadVerticesWithLayout(int num_quads, const bgfx::VertexLayout& layout);
+  bool initTransientQuadBuffers(int num_quads, const gfx::VertexLayout& layout,
+                                gfx::TransientVertexBuffer* vertex_buffer,
+                                gfx::TransientIndexBuffer* index_buffer);
+  uint8_t* initQuadVerticesWithLayout(int num_quads, const gfx::VertexLayout& layout);
   template<typename T>
   T* initQuadVertices(int num_quads) {
     return reinterpret_cast<T*>(initQuadVerticesWithLayout(num_quads, T::layout()));

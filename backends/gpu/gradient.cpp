@@ -23,16 +23,16 @@
 
 #include <cstring>
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 
 namespace gmpi::gpu {
 
   struct GradientAtlasTexture {
-    bgfx::TextureHandle handle = { bgfx::kInvalidHandle };
+    gfx::TextureHandle handle = { gfx::kInvalidHandle };
 
     ~GradientAtlasTexture() {
-      if (bgfx::isValid(handle))
-        bgfx::destroy(handle);
+      if (gfx::isValid(handle))
+        gfx::destroy(handle);
     }
   };
 
@@ -50,7 +50,7 @@ namespace gmpi::gpu {
   GradientAtlas::~GradientAtlas() = default;
 
   void GradientAtlas::updateGradient(const PackedGradientRect* gradient) {
-    if (texture_ == nullptr || !bgfx::isValid(texture_->handle))
+    if (texture_ == nullptr || !gfx::isValid(texture_->handle))
       return;
 
     int resolution = gradient->gradient.resolution();
@@ -62,8 +62,8 @@ namespace gmpi::gpu {
     for (int i = 0; i < resolution; ++i)
       color_data[i] = gradient->gradient.sample(i * step).toABGR16F();
 
-    bgfx::updateTexture2D(texture_->handle, 0, 0, gradient->x, gradient->y, resolution, 1,
-                          bgfx::copy(color_data.get(), resolution * sizeof(uint64_t)));
+    gfx::updateTexture2D(texture_->handle, 0, 0, gradient->x, gradient->y, resolution, 1,
+                          gfx::copy(color_data.get(), resolution * sizeof(uint64_t)));
   }
 
   void GradientAtlas::checkInit() {
@@ -71,17 +71,17 @@ namespace gmpi::gpu {
       texture_ = std::make_unique<GradientAtlasTexture>();
 
     bool created = false;
-    if (!bgfx::isValid(texture_->handle)) {
-      texture_->handle = bgfx::createTexture2D(atlas_map_.width(), atlas_map_.height(), false, 1,
-                                               bgfx::TextureFormat::RGBA16F);
+    if (!gfx::isValid(texture_->handle)) {
+      texture_->handle = gfx::createTexture2D(atlas_map_.width(), atlas_map_.height(), false, 1,
+                                               gfx::TextureFormat::RGBA16F);
       // A new texture is recycled GPU memory, most likely a dead canvas's
       // atlas. Zero it, and re-upload every strip: a gradient added before
       // the texture existed was never uploaded (updateGradient returns early
       // without a handle), and upstream only re-uploaded after a repack.
       const int bytes = atlas_map_.width() * atlas_map_.height() * 8;
-      const bgfx::Memory* zeros = bgfx::alloc(bytes);
+      const gfx::Memory* zeros = gfx::alloc(bytes);
       std::memset(zeros->data, 0, zeros->size);
-      bgfx::updateTexture2D(texture_->handle, 0, 0, 0, 0, atlas_map_.width(), atlas_map_.height(), zeros);
+      gfx::updateTexture2D(texture_->handle, 0, 0, 0, 0, atlas_map_.width(), atlas_map_.height(), zeros);
       created = true;
     }
 
@@ -116,7 +116,7 @@ namespace gmpi::gpu {
     }
   }
 
-  const bgfx::TextureHandle& GradientAtlas::colorTextureHandle() {
+  const gfx::TextureHandle& GradientAtlas::colorTextureHandle() {
     checkInit();
     return texture_->handle;
   }

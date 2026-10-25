@@ -142,7 +142,7 @@ namespace gmpi::gpu {
 
     int width() const { return atlas_map_.width(); }
     int height() const { return atlas_map_.height(); }
-    const bgfx::TextureHandle& textureHandle();
+    const gfx::TextureHandle& textureHandle();
     void setImageCoordinates(TextureVertex* vertices, const PackedImage& image) const {
       setImageCoordinates(vertices, image, 0.0f, 0.0f, image.w(), image.h());
     }

@@ -40,7 +40,7 @@ namespace gmpi::gpu {
     void checkFrameBuffer();
     void destroyFrameBuffer();
 
-    bgfx::FrameBufferHandle& frameBuffer() const;
+    gfx::FrameBufferHandle& frameBuffer() const;
     int frameBufferFormat() const;
 
     GradientAtlas* gradientAtlas() const { return gradient_atlas_; }

@@ -252,7 +252,7 @@ namespace gmpi::gpu {
     int width() const { return width_; }
     int height() const { return height_; }
 
-    const bgfx::FrameBufferHandle& frameBufferHandle();
+    const gfx::FrameBufferHandle& frameBufferHandle();
     bool hasFrameBuffer() const; // false once the atlas overflowed
 
     void removePath(const PackedPathRect* packed_path_rect) {

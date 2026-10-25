@@ -34,7 +34,7 @@
 #include <algorithm>
 #include <cstdlib>
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 
 #include <cstdio>
 
@@ -75,27 +75,27 @@ namespace gmpi::gpu {
   }
 
   void setBlendMode(BlendMode blend_mode) {
-    bgfx::setState(blendModeValue(blend_mode));
+    gfx::setState(blendModeValue(blend_mode));
   }
 
   template<const char* name>
   void setUniform(const void* value) {
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, 1);
-    bgfx::setUniform(uniform, value);
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Vec4, 1);
+    gfx::setUniform(uniform, value);
   }
 
   template<const char* name>
   void setUniform(float value0, float value1 = 0.0f, float value2 = 0.0f, float value3 = 0.0f) {
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, 1);
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Vec4, 1);
     float vec[4] = { value0, value1, value2, value3 };
-    bgfx::setUniform(uniform, vec);
+    gfx::setUniform(uniform, vec);
   }
 
   // A vec4 ARRAY uniform: `count` vec4s from `value`.
   template<const char* name, int count>
   void setUniformArray(const float* value) {
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, count);
-    bgfx::setUniform(uniform, value, count);
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Vec4, count);
+    gfx::setUniform(uniform, value, count);
   }
 
   // The inputs a shader brush's program reads besides the standard ones.
@@ -111,11 +111,11 @@ namespace gmpi::gpu {
   }
 
   template<const char* name>
-  void setTexture(int stage, bgfx::TextureHandle handle) {
-    if (!bgfx::isValid(handle) || handle.idx >= 4096)
+  void setTexture(int stage, gfx::TextureHandle handle) {
+    if (!gfx::isValid(handle) || handle.idx >= 4096)
       fprintf(stderr, "[gmpi::gpu] setTexture stage %d: invalid texture handle %u\n", stage, unsigned(handle.idx));
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Sampler, 1);
-    bgfx::setTexture(stage, uniform, handle);
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Sampler, 1);
+    gfx::setTexture(stage, uniform, handle);
   }
 
   inline void setUniformBounds(int x, int y, int width, int height) {
@@ -144,12 +144,12 @@ namespace gmpi::gpu {
     setUniform<Uniforms::kOriginFlip>(origin_flip ? -1.0 : 1.0, origin_flip ? 1.0 : 0.0);
   }
 
-  bool initTransientQuadBuffers(int num_quads, const bgfx::VertexLayout& layout,
-                                bgfx::TransientVertexBuffer* vertex_buffer,
-                                bgfx::TransientIndexBuffer* index_buffer) {
+  bool initTransientQuadBuffers(int num_quads, const gfx::VertexLayout& layout,
+                                gfx::TransientVertexBuffer* vertex_buffer,
+                                gfx::TransientIndexBuffer* index_buffer) {
     int num_vertices = num_quads * kVerticesPerQuad;
     int num_indices = num_quads * kIndicesPerQuad;
-    if (!bgfx::allocTransientBuffers(vertex_buffer, layout, num_vertices, index_buffer, num_indices)) {
+    if (!gfx::allocTransientBuffers(vertex_buffer, layout, num_vertices, index_buffer, num_indices)) {
       GMPI_GPU_LOG("Not enough transient buffer memory for %d quads", num_quads);
       return false;
     }
@@ -165,14 +165,14 @@ namespace gmpi::gpu {
     return true;
   }
 
-  uint8_t* initQuadVerticesWithLayout(int num_quads, const bgfx::VertexLayout& layout) {
-    bgfx::TransientVertexBuffer vertex_buffer {};
-    bgfx::TransientIndexBuffer index_buffer {};
+  uint8_t* initQuadVerticesWithLayout(int num_quads, const gfx::VertexLayout& layout) {
+    gfx::TransientVertexBuffer vertex_buffer {};
+    gfx::TransientIndexBuffer index_buffer {};
     if (!initTransientQuadBuffers(num_quads, layout, &vertex_buffer, &index_buffer))
       return nullptr;
 
-    bgfx::setVertexBuffer(0, &vertex_buffer);
-    bgfx::setIndexBuffer(&index_buffer);
+    gfx::setVertexBuffer(0, &vertex_buffer);
+    gfx::setIndexBuffer(&index_buffer);
     return vertex_buffer.data;
   }
 
@@ -185,20 +185,20 @@ namespace gmpi::gpu {
     GradientAtlas* gradient_atlas = layer.gradientAtlas();
     setUniform<Uniforms::kRadialGradient>(radial_gradient ? 1.0f : 0.0f);
     setTexture<Uniforms::kGradient>(0, gradient_atlas->colorTextureHandle());
-    bgfx::submit(submit_pass, ProgramCache::programHandle(vertex_shader, fragment_shader));
+    gfx::submit(submit_pass, ProgramCache::programHandle(vertex_shader, fragment_shader));
   }
 
   void setImageAtlasUniform(ImageAtlas* atlas) {
-    if (!bgfx::isValid(atlas->textureHandle()))
+    if (!gfx::isValid(atlas->textureHandle()))
       fprintf(stderr, "[gmpi::gpu] image atlas texture invalid (atlas %dx%d)\n", atlas->width(), atlas->height());
     setTexture<Uniforms::kTexture>(1, atlas->textureHandle());
     setUniform<Uniforms::kAtlasScale>(1.0f / atlas->width(), 1.0f / atlas->height());
   }
 
   void setPathAtlasUniform(PathAtlas* atlas) {
-    if (!bgfx::isValid(atlas->frameBufferHandle()))
+    if (!gfx::isValid(atlas->frameBufferHandle()))
       fprintf(stderr, "[gmpi::gpu] path atlas frame buffer invalid (atlas %dx%d)\n", atlas->width(), atlas->height());
-    setTexture<Uniforms::kTexture>(1, bgfx::getTexture(atlas->frameBufferHandle()));
+    setTexture<Uniforms::kTexture>(1, gfx::getTexture(atlas->frameBufferHandle()));
     setUniform<Uniforms::kAtlasScale>(1.0f / atlas->width(), 1.0f / atlas->height());
   }
 
@@ -229,9 +229,9 @@ namespace gmpi::gpu {
     auto program = ProgramCache::programHandle(shader->vertexShader(), shader->fragmentShader());
     if (std::getenv("GMPI_GPU_SHADER_DEBUG"))
       fprintf(stderr, "[gmpi::gpu] submitShader: vs valid %d fs valid %d program valid %d, %d quads\n",
-              bgfx::isValid(ShaderCache::shaderHandle(shader->vertexShader())),
-              bgfx::isValid(ShaderCache::shaderHandle(shader->fragmentShader())), bgfx::isValid(program), quads.num_shapes);
-    bgfx::submit(submit_pass, program);
+              gfx::isValid(ShaderCache::shaderHandle(shader->vertexShader())),
+              gfx::isValid(ShaderCache::shaderHandle(shader->fragmentShader())), gfx::isValid(program), quads.num_shapes);
+    gfx::submit(submit_pass, program);
   }
 
   void submitShadedPathFills(const BatchVector<PathFillWrapper>& batches, const Layer& layer, int submit_pass) {
@@ -250,7 +250,7 @@ namespace gmpi::gpu {
     setOriginFlipUniform(layer.bottomLeftOrigin());
     Shader* shader = batches[0].shapes->front().shader;
     setShaderBrushUniforms(*shader, layer.hdr());
-    bgfx::submit(submit_pass,
+    gfx::submit(submit_pass,
                  ProgramCache::programHandle(shader->vertexShader(), shader->fragmentShader()));
   }
 
@@ -270,14 +270,14 @@ namespace gmpi::gpu {
     Layer* source_layer = batches[0].shapes->front().region->layer();
     setUniform<Uniforms::kAtlasScale>(1.0f / source_layer->width(), 1.0f / source_layer->height());
 
-    if (!bgfx::isValid(source_layer->frameBuffer()))
+    if (!gfx::isValid(source_layer->frameBuffer()))
       fprintf(stderr, "[gmpi::gpu] sampled layer frame buffer invalid (%dx%d)\n", source_layer->width(), source_layer->height());
-    setTexture<Uniforms::kTexture>(0, bgfx::getTexture(source_layer->frameBuffer()));
+    setTexture<Uniforms::kTexture>(0, gfx::getTexture(source_layer->frameBuffer()));
     setUniformDimensions(layer.width(), layer.height());
     float value = layer.hdr() ? hdrColorMultiplier() : 1.0f;
     setUniform<Uniforms::kColorMult>(value, value, value, 1.0f);
     setOriginFlipUniform(layer.bottomLeftOrigin());
-    bgfx::submit(submit_pass, ProgramCache::programHandle(SampleRegion::vertexShader(),
+    gfx::submit(submit_pass, ProgramCache::programHandle(SampleRegion::vertexShader(),
                                                           SampleRegion::fragmentShader()));
   }
 }

@@ -26,53 +26,53 @@
 #include "graphics_caches.h"
 #include "uniforms.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 
 namespace gmpi::gpu {
   template<const char* name>
   void setPostEffectUniform(float value0, float value1 = 0.0f, float value2 = 0.0f, float value3 = 0.0f) {
     float values[4] = { value0, value1, value2, value3 };
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Vec4, 1);
-    bgfx::setUniform(uniform, values);
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Vec4, 1);
+    gfx::setUniform(uniform, values);
   }
 
   template<const char* name>
-  void setPostEffectTexture(int stage, bgfx::TextureHandle handle) {
-    static const bgfx::UniformHandle uniform = bgfx::createUniform(name, bgfx::UniformType::Sampler, 1);
-    bgfx::setTexture(stage, uniform, handle);
+  void setPostEffectTexture(int stage, gfx::TextureHandle handle) {
+    static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Sampler, 1);
+    gfx::setTexture(stage, uniform, handle);
   }
 
   struct DownsampleHandles {
-    bgfx::IndexBufferHandle screen_index_buffer = BGFX_INVALID_HANDLE;
-    bgfx::VertexBufferHandle screen_vertex_buffer = BGFX_INVALID_HANDLE;
-    bgfx::VertexBufferHandle inv_screen_vertex_buffer = BGFX_INVALID_HANDLE;
-    bgfx::FrameBufferHandle downsample_buffers1[DownsamplePostEffect::kMaxDownsamples + 1] {};
-    bgfx::FrameBufferHandle downsample_buffers2[DownsamplePostEffect::kMaxDownsamples + 1] {};
+    gfx::IndexBufferHandle screen_index_buffer = BGFX_INVALID_HANDLE;
+    gfx::VertexBufferHandle screen_vertex_buffer = BGFX_INVALID_HANDLE;
+    gfx::VertexBufferHandle inv_screen_vertex_buffer = BGFX_INVALID_HANDLE;
+    gfx::FrameBufferHandle downsample_buffers1[DownsamplePostEffect::kMaxDownsamples + 1] {};
+    gfx::FrameBufferHandle downsample_buffers2[DownsamplePostEffect::kMaxDownsamples + 1] {};
 
     ~DownsampleHandles() { destroy(); }
 
     void destroy() {
-      if (bgfx::isValid(screen_index_buffer))
-        bgfx::destroy(screen_index_buffer);
-      if (bgfx::isValid(screen_vertex_buffer))
-        bgfx::destroy(screen_vertex_buffer);
+      if (gfx::isValid(screen_index_buffer))
+        gfx::destroy(screen_index_buffer);
+      if (gfx::isValid(screen_vertex_buffer))
+        gfx::destroy(screen_vertex_buffer);
       destroyFrameBuffers();
     }
 
     void destroyFrameBuffers() {
       for (auto& buffer : downsample_buffers1) {
-        if (bgfx::isValid(buffer))
-          bgfx::destroy(buffer);
+        if (gfx::isValid(buffer))
+          gfx::destroy(buffer);
         buffer = BGFX_INVALID_HANDLE;
       }
       for (auto& buffer : downsample_buffers2) {
-        if (bgfx::isValid(buffer))
-          bgfx::destroy(buffer);
+        if (gfx::isValid(buffer))
+          gfx::destroy(buffer);
         buffer = BGFX_INVALID_HANDLE;
       }
 
-      bgfx::frame();
-      bgfx::frame();
+      gfx::frame();
+      gfx::frame();
     }
   };
 
@@ -91,12 +91,12 @@ namespace gmpi::gpu {
     float width_scale = 1.0f / source_layer->width();
     float height_scale = 1.0f / source_layer->height();
     setPostEffectUniform<Uniforms::kAtlasScale>(width_scale, height_scale);
-    setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(source_layer->frameBuffer()));
+    setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(source_layer->frameBuffer()));
     setUniformDimensions(destination.width(), destination.height());
     float value = hdr() ? hdrColorRange() : 1.0f;
     setPostEffectUniform<Uniforms::kColorMult>(value, value, value, 1.0f);
     setOriginFlipUniform(destination.bottomLeftOrigin());
-    bgfx::submit(submit_pass, ProgramCache::programHandle(SampleRegion::vertexShader(),
+    gfx::submit(submit_pass, ProgramCache::programHandle(SampleRegion::vertexShader(),
                                                           SampleRegion::fragmentShader()));
   }
 
@@ -136,16 +136,16 @@ namespace gmpi::gpu {
 
     int full_width = region->width();
     int full_height = region->height();
-    bgfx::TextureFormat::Enum format = static_cast<bgfx::TextureFormat::Enum>(region->layer()->frameBufferFormat());
+    gfx::TextureFormat::Enum format = static_cast<gfx::TextureFormat::Enum>(region->layer()->frameBufferFormat());
 
-    if (!bgfx::isValid(handles_->screen_index_buffer)) {
-      handles_->screen_index_buffer = bgfx::createIndexBuffer(bgfx::makeRef(gmpi::gpu::kQuadTriangles,
+    if (!gfx::isValid(handles_->screen_index_buffer)) {
+      handles_->screen_index_buffer = gfx::createIndexBuffer(gfx::makeRef(gmpi::gpu::kQuadTriangles,
                                                                             sizeof(gmpi::gpu::kQuadTriangles)));
-      const bgfx::Memory* vertex_memory = bgfx::makeRef(screen_vertices_, sizeof(screen_vertices_));
-      handles_->screen_vertex_buffer = bgfx::createVertexBuffer(vertex_memory, UvVertex::layout());
-      const bgfx::Memory* inv_vertex_memory = bgfx::makeRef(inv_screen_vertices_,
+      const gfx::Memory* vertex_memory = gfx::makeRef(screen_vertices_, sizeof(screen_vertices_));
+      handles_->screen_vertex_buffer = gfx::createVertexBuffer(vertex_memory, UvVertex::layout());
+      const gfx::Memory* inv_vertex_memory = gfx::makeRef(inv_screen_vertices_,
                                                             sizeof(inv_screen_vertices_));
-      handles_->inv_screen_vertex_buffer = bgfx::createVertexBuffer(inv_vertex_memory, UvVertex::layout());
+      handles_->inv_screen_vertex_buffer = gfx::createVertexBuffer(inv_vertex_memory, UvVertex::layout());
     }
 
     if (full_width != full_width_ || full_height != full_height_ || format_ != format) {
@@ -155,23 +155,23 @@ namespace gmpi::gpu {
       handles_->destroyFrameBuffers();
     }
 
-    if (!bgfx::isValid(handles_->downsample_buffers1[1])) {
+    if (!gfx::isValid(handles_->downsample_buffers1[1])) {
       int start_index = full_resolution ? 0 : 1;
       for (int i = start_index; i <= kMaxDownsamples; ++i) {
         int scale = 1 << i;
         widths_[i] = std::max(1, (full_width + scale - 1) / scale);
         heights_[i] = std::max(1, (full_height + scale - 1) / scale);
-        handles_->downsample_buffers1[i] = bgfx::createFrameBuffer(widths_[i], heights_[i], format,
+        handles_->downsample_buffers1[i] = gfx::createFrameBuffer(widths_[i], heights_[i], format,
                                                                    kFrameBufferFlags);
-        handles_->downsample_buffers2[i] = bgfx::createFrameBuffer(widths_[i], heights_[i], format,
+        handles_->downsample_buffers2[i] = gfx::createFrameBuffer(widths_[i], heights_[i], format,
                                                                    kFrameBufferFlags);
       }
     }
   }
 
   void DownsamplePostEffect::setInitialVertices(Region* region) {
-    bgfx::TransientVertexBuffer first_sample_buffer {};
-    bgfx::allocTransientVertexBuffer(&first_sample_buffer, 4, UvVertex::layout());
+    gfx::TransientVertexBuffer first_sample_buffer {};
+    gfx::allocTransientVertexBuffer(&first_sample_buffer, 4, UvVertex::layout());
     UvVertex* uv_data = reinterpret_cast<UvVertex*>(first_sample_buffer.data);
     if (uv_data == nullptr)
       return;
@@ -204,11 +204,11 @@ namespace gmpi::gpu {
       uv_data[3].v = 1.0f - top;
     }
 
-    bgfx::setVertexBuffer(0, &first_sample_buffer);
+    gfx::setVertexBuffer(0, &first_sample_buffer);
   }
 
   void DownsamplePostEffect::setScreenVertexBuffer(bool inverted) {
-    bgfx::setVertexBuffer(0, inverted ? handles_->inv_screen_vertex_buffer : handles_->screen_vertex_buffer);
+    gfx::setVertexBuffer(0, inverted ? handles_->inv_screen_vertex_buffer : handles_->screen_vertex_buffer);
   }
 
   BlurPostEffect::BlurPostEffect() : DownsamplePostEffect(false) { }
@@ -235,7 +235,7 @@ namespace gmpi::gpu {
     int last_width = full_width_;
     int last_height = full_height_;
 
-    bgfx::FrameBufferHandle source = region->layer()->frameBuffer();
+    gfx::FrameBufferHandle source = region->layer()->frameBuffer();
     for (int i = 0; i <= downsample_stages_; ++i) {
       int downsample_width = widths_[i];
       int downsample_height = heights_[i];
@@ -244,24 +244,24 @@ namespace gmpi::gpu {
       last_width = downsample_width;
       last_height = downsample_height;
 
-      bgfx::FrameBufferHandle destination = handles_->downsample_buffers1[i];
+      gfx::FrameBufferHandle destination = handles_->downsample_buffers1[i];
       setBlendMode(BlendMode::Opaque);
-      setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(source));
+      setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(source));
       setPostEffectUniform<Uniforms::kPixelSize>(1.0f / last_width, 1.0f / last_height);
-      bgfx::setIndexBuffer(handles_->screen_index_buffer);
+      gfx::setIndexBuffer(handles_->screen_index_buffer);
 
-      bgfx::setViewFrameBuffer(submit_pass, destination);
-      bgfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
+      gfx::setViewFrameBuffer(submit_pass, destination);
+      gfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
 
       if (i == 0) {
         setInitialVertices(region);
         setPostEffectUniform<Uniforms::kResampleValues>(1.0f, 1.0f);
-        bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_sample));
+        gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_sample));
       }
       else {
         setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
         setPostEffectUniform<Uniforms::kResampleValues>(x_downsample_scale, y_downsample_scale);
-        bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_blur_sample));
+        gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_blur_sample));
       }
 
       submit_pass++;
@@ -269,26 +269,26 @@ namespace gmpi::gpu {
     }
 
     setBlendMode(BlendMode::Opaque);
-    setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(source));
+    setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(source));
     setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
 
-    bgfx::setIndexBuffer(handles_->screen_index_buffer);
-    bgfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers2[downsample_stages_]);
-    bgfx::setViewRect(submit_pass, 0, 0, last_width, last_height);
+    gfx::setIndexBuffer(handles_->screen_index_buffer);
+    gfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers2[downsample_stages_]);
+    gfx::setViewRect(submit_pass, 0, 0, last_width, last_height);
     setPostEffectUniform<Uniforms::kPixelSize>(transition / last_width, 0.0f);
-    bgfx::submit(submit_pass,
+    gfx::submit(submit_pass,
                  ProgramCache::programHandle(shaders::vs_full_screen_texture, shaders::fs_blur));
     submit_pass++;
 
     setBlendMode(BlendMode::Opaque);
-    setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(handles_->downsample_buffers2[downsample_stages_]));
+    setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(handles_->downsample_buffers2[downsample_stages_]));
     setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
 
-    bgfx::setIndexBuffer(handles_->screen_index_buffer);
-    bgfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers1[downsample_stages_]);
-    bgfx::setViewRect(submit_pass, 0, 0, last_width, last_height);
+    gfx::setIndexBuffer(handles_->screen_index_buffer);
+    gfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers1[downsample_stages_]);
+    gfx::setViewRect(submit_pass, 0, 0, last_width, last_height);
     setPostEffectUniform<Uniforms::kPixelSize>(0.0f, transition / last_height);
-    bgfx::submit(submit_pass,
+    gfx::submit(submit_pass,
                  ProgramCache::programHandle(shaders::vs_full_screen_texture, shaders::fs_blur));
     submit_pass++;
 
@@ -296,16 +296,16 @@ namespace gmpi::gpu {
       int dest_width = widths_[i - 1];
       int dest_height = heights_[i - 1];
 
-      setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(handles_->downsample_buffers1[i]));
+      setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(handles_->downsample_buffers1[i]));
       setPostEffectUniform<Uniforms::kResampleValues>(dest_width * 0.5f / widths_[i],
                                                       dest_height * 0.5f / heights_[i]);
       setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
-      bgfx::setIndexBuffer(handles_->screen_index_buffer);
-      bgfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers1[i - 1]);
-      bgfx::setViewRect(submit_pass, 0, 0, dest_width, dest_height);
+      gfx::setIndexBuffer(handles_->screen_index_buffer);
+      gfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers1[i - 1]);
+      gfx::setViewRect(submit_pass, 0, 0, dest_width, dest_height);
 
       setBlendMode(BlendMode::Opaque);
-      bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_sample));
+      gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_sample));
       submit_pass++;
     }
 
@@ -331,7 +331,7 @@ namespace gmpi::gpu {
     setPostEffectUniform<Uniforms::kAtlasScale>(width_scale, height_scale);
 
     int source_index = downsample_stages_ ? 1 : 0;
-    setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(handles_->downsample_buffers1[source_index]));
+    setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(handles_->downsample_buffers1[source_index]));
 
     for (int i = 0; i < quads.num_shapes; ++i) {
       quads.vertices[i * kVerticesPerQuad].texture_x = 0.0f;
@@ -348,7 +348,7 @@ namespace gmpi::gpu {
     float value = destination.hdr() ? hdrColorMultiplier() : 1.0f;
     setPostEffectUniform<Uniforms::kColorMult>(value, value, value, 1.0f);
     setOriginFlipUniform(false);
-    bgfx::submit(submit_pass, ProgramCache::programHandle(SampleRegion::vertexShader(),
+    gfx::submit(submit_pass, ProgramCache::programHandle(SampleRegion::vertexShader(),
                                                           SampleRegion::fragmentShader()));
   }
 
@@ -367,59 +367,59 @@ namespace gmpi::gpu {
     setBlendMode(BlendMode::Opaque);
     setInitialVertices(region);
     setPostEffectUniform<Uniforms::kResampleValues>(1.0f, 1.0f);
-    setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(region->layer()->frameBuffer()));
+    setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(region->layer()->frameBuffer()));
 
-    bgfx::setIndexBuffer(handles_->screen_index_buffer);
-    bgfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers1[1]);
-    bgfx::setViewRect(submit_pass, 0, 0, widths_[1], heights_[1]);
+    gfx::setIndexBuffer(handles_->screen_index_buffer);
+    gfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers1[1]);
+    gfx::setViewRect(submit_pass, 0, 0, widths_[1], heights_[1]);
     float mult_val = hdr_range * bloom_intensity_;
     setPostEffectUniform<Uniforms::kMult>(mult_val, mult_val, mult_val, 1.0f);
     float hdr_mult = hdr() ? hdrColorMultiplier() : 1.0f;
     setPostEffectUniform<Uniforms::kThreshold>(hdr_mult);
 
-    bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_mult_threshold));
+    gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_mult_threshold));
     submit_pass++;
 
-    bgfx::FrameBufferHandle source = handles_->downsample_buffers1[1];
+    gfx::FrameBufferHandle source = handles_->downsample_buffers1[1];
     for (int i = 1; i < downsamples_; ++i) {
       int downsample_width = widths_[i + 1];
       int downsample_height = heights_[i + 1];
       float x_downsample_scale = downsample_width * 2.0f / widths_[i];
       float y_downsample_scale = downsample_height * 2.0f / heights_[i];
 
-      bgfx::FrameBufferHandle destination = handles_->downsample_buffers1[i + 1];
+      gfx::FrameBufferHandle destination = handles_->downsample_buffers1[i + 1];
       setBlendMode(BlendMode::Opaque);
-      setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(source));
-      bgfx::setIndexBuffer(handles_->screen_index_buffer);
+      setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(source));
+      gfx::setIndexBuffer(handles_->screen_index_buffer);
       setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
       setPostEffectUniform<Uniforms::kResampleValues>(x_downsample_scale, y_downsample_scale);
 
-      bgfx::setViewFrameBuffer(submit_pass, destination);
-      bgfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
+      gfx::setViewFrameBuffer(submit_pass, destination);
+      gfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
 
-      bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_sample));
+      gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_sample));
       submit_pass++;
 
       setBlendMode(BlendMode::Opaque);
-      setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(destination));
+      setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(destination));
       setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
-      bgfx::setIndexBuffer(handles_->screen_index_buffer);
-      bgfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers2[i + 1]);
-      bgfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
+      gfx::setIndexBuffer(handles_->screen_index_buffer);
+      gfx::setViewFrameBuffer(submit_pass, handles_->downsample_buffers2[i + 1]);
+      gfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
       setPostEffectUniform<Uniforms::kPixelSize>(1.0f / downsample_width);
 
-      bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_full_screen_texture,
+      gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_full_screen_texture,
                                                             shaders::fs_small_blur));
       submit_pass++;
 
       setBlendMode(BlendMode::Opaque);
-      setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(handles_->downsample_buffers2[i + 1]));
+      setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(handles_->downsample_buffers2[i + 1]));
       setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
-      bgfx::setIndexBuffer(handles_->screen_index_buffer);
-      bgfx::setViewFrameBuffer(submit_pass, destination);
-      bgfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
+      gfx::setIndexBuffer(handles_->screen_index_buffer);
+      gfx::setViewFrameBuffer(submit_pass, destination);
+      gfx::setViewRect(submit_pass, 0, 0, downsample_width, downsample_height);
       setPostEffectUniform<Uniforms::kPixelSize>(0.0f, 1.0f / downsample_height);
-      bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_full_screen_texture,
+      gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_full_screen_texture,
                                                             shaders::fs_small_blur));
       submit_pass++;
 
@@ -427,22 +427,22 @@ namespace gmpi::gpu {
     }
 
     for (int i = downsamples_ - 1; i > 0; --i) {
-      bgfx::FrameBufferHandle destination = handles_->downsample_buffers1[i];
+      gfx::FrameBufferHandle destination = handles_->downsample_buffers1[i];
       int dest_width = widths_[i];
       int dest_height = heights_[i];
 
       setBlendMode(BlendMode::Add);
 
-      setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(handles_->downsample_buffers1[i + 1]));
+      setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(handles_->downsample_buffers1[i + 1]));
       setPostEffectUniform<Uniforms::kResampleValues>(dest_width * 0.5f / widths_[i + 1],
                                                       dest_height * 0.5f / heights_[i + 1]);
       setPostEffectUniform<Uniforms::kMult>(2.0f, 2.0f, 2.0f, 1.0f);
       setScreenVertexBuffer(region->layer()->bottomLeftOrigin());
-      bgfx::setIndexBuffer(handles_->screen_index_buffer);
-      bgfx::setViewFrameBuffer(submit_pass, destination);
-      bgfx::setViewRect(submit_pass, 0, 0, dest_width, dest_height);
+      gfx::setIndexBuffer(handles_->screen_index_buffer);
+      gfx::setViewFrameBuffer(submit_pass, destination);
+      gfx::setViewRect(submit_pass, 0, 0, dest_width, dest_height);
 
-      bgfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_mult));
+      gfx::submit(submit_pass, ProgramCache::programHandle(shaders::vs_sample, shaders::fs_mult));
       submit_pass++;
     }
 
@@ -479,9 +479,9 @@ namespace gmpi::gpu {
     float mult = bloom_intensity_ * Color::kGradientNormalization;
     setPostEffectUniform<Uniforms::kColorMult>(mult, mult, mult, 1.0f);
     setPostEffectTexture<Uniforms::kGradient>(0, destination.gradientAtlas()->colorTextureHandle());
-    setPostEffectTexture<Uniforms::kTexture>(1, bgfx::getTexture(handles_->downsample_buffers1[1]));
+    setPostEffectTexture<Uniforms::kTexture>(1, gfx::getTexture(handles_->downsample_buffers1[1]));
     setUniformDimensions(destination.width(), destination.height());
-    bgfx::submit(submit_pass,
+    gfx::submit(submit_pass,
                  ProgramCache::programHandle(shaders::vs_tinted_texture, shaders::fs_tinted_texture));
   }
 
@@ -500,7 +500,7 @@ namespace gmpi::gpu {
     float width_scale = 1.0f / source_layer->width();
     float height_scale = 1.0f / source_layer->height();
     setPostEffectUniform<Uniforms::kAtlasScale>(width_scale, height_scale);
-    setPostEffectTexture<Uniforms::kTexture>(0, bgfx::getTexture(source_layer->frameBuffer()));
+    setPostEffectTexture<Uniforms::kTexture>(0, gfx::getTexture(source_layer->frameBuffer()));
     float value = hdr() ? hdrColorRange() : 1.0f;
     setPostEffectUniform<Uniforms::kColorMult>(value, value, value, 1.0f);
     setOriginFlipUniform(destination.bottomLeftOrigin());
@@ -519,9 +519,9 @@ namespace gmpi::gpu {
     setUniformDimensions(destination.width(), destination.height());
 
     for (const auto& uniform : uniforms_)
-      bgfx::setUniform(UniformCache::uniformHandle(uniform.first.c_str()), uniform.second.data);
+      gfx::setUniform(UniformCache::uniformHandle(uniform.first.c_str()), uniform.second.data);
 
-    bgfx::ProgramHandle program = ProgramCache::programHandle(vertexShader(), fragmentShader());
-    bgfx::submit(submit_pass, program);
+    gfx::ProgramHandle program = ProgramCache::programHandle(vertexShader(), fragmentShader());
+    gfx::submit(submit_pass, program);
   }
 }

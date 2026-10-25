@@ -36,11 +36,11 @@ namespace gmpi::gpu {
       return &cache;
     }
 
-    static bgfx::ShaderHandle& shaderHandle(const EmbeddedFile& file) {
+    static gfx::ShaderHandle& shaderHandle(const EmbeddedFile& file) {
       return instance()->handle(file);
     }
 
-    static bgfx::ShaderHandle& shaderHandle(const char* data) { return instance()->handle(data); }
+    static gfx::ShaderHandle& shaderHandle(const char* data) { return instance()->handle(data); }
 
     static bool swapShader(const EmbeddedFile& file, const char* data, int size) {
       return instance()->swap(file, data, size);
@@ -60,8 +60,8 @@ namespace gmpi::gpu {
     ShaderCache();
     ~ShaderCache();
 
-    bgfx::ShaderHandle& handle(const EmbeddedFile& file) const;
-    bgfx::ShaderHandle& handle(const char* data) const;
+    gfx::ShaderHandle& handle(const EmbeddedFile& file) const;
+    gfx::ShaderHandle& handle(const char* data) const;
     bool swap(const char* original_data, const char* data, int size) const;
     bool swap(const EmbeddedFile& file, const char* data, int size) const;
     bool swap(const std::string& name, const char* data, int size) const;
@@ -83,7 +83,7 @@ namespace gmpi::gpu {
       return &cache;
     }
 
-    static bgfx::ProgramHandle& programHandle(const EmbeddedFile& vertex, const EmbeddedFile& fragment) {
+    static gfx::ProgramHandle& programHandle(const EmbeddedFile& vertex, const EmbeddedFile& fragment) {
       return instance()->handle(vertex, fragment);
     }
 
@@ -111,7 +111,7 @@ namespace gmpi::gpu {
 
     std::vector<ShaderPair> listPrograms() const;
 
-    bgfx::ProgramHandle& handle(const EmbeddedFile& vertex, const EmbeddedFile& fragment) const;
+    gfx::ProgramHandle& handle(const EmbeddedFile& vertex, const EmbeddedFile& fragment) const;
     void reload(const EmbeddedFile& vertex, const EmbeddedFile& fragment) const;
     void reloadAll(const char* shader_data) const;
     void reloadAll(const std::string& shader_name) const;
@@ -135,7 +135,7 @@ namespace gmpi::gpu {
       return &cache;
     }
 
-    static bgfx::UniformHandle& uniformHandle(const char* name, Type type = Vec4) {
+    static gfx::UniformHandle& uniformHandle(const char* name, Type type = Vec4) {
       return instance()->handle(name, type);
     }
 
@@ -143,7 +143,7 @@ namespace gmpi::gpu {
     UniformCache();
     ~UniformCache();
 
-    bgfx::UniformHandle& handle(const char* name, Type type, int size = 1) const;
+    gfx::UniformHandle& handle(const char* name, Type type, int size = 1) const;
 
     std::unique_ptr<UniformCacheMap> cache_;
   };

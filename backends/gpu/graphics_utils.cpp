@@ -21,7 +21,7 @@
 
 #include "graphics_utils.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 #include <vector>
 
 #define STB_RECT_PACK_IMPLEMENTATION
@@ -82,85 +82,85 @@ namespace gmpi::gpu {
     return packed_;
   }
 
-  bgfx::VertexLayout& UvVertex::layout() {
-    static bgfx::VertexLayout layout;
+  gfx::VertexLayout& UvVertex::layout() {
+    static gfx::VertexLayout layout;
     static bool initialized = false;
 
     if (!initialized) {
       initialized = true;
-      layout.begin().add(bgfx::Attrib::Position, 4, bgfx::AttribType::Float).end();
+      layout.begin().add(gfx::Attrib::Position, 4, gfx::AttribType::Float).end();
     }
 
     return layout;
   }
 
-  bgfx::VertexLayout& PathVertex::layout() {
-    static bgfx::VertexLayout layout;
+  gfx::VertexLayout& PathVertex::layout() {
+    static gfx::VertexLayout layout;
     static bool initialized = false;
 
     if (!initialized) {
       initialized = true;
       layout.begin()
-          .add(bgfx::Attrib::Position, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord0, 4, bgfx::AttribType::Float)
+          .add(gfx::Attrib::Position, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord0, 4, gfx::AttribType::Float)
           .end();
     }
 
     return layout;
   }
 
-  bgfx::VertexLayout& ShapeVertex::layout() {
-    static bgfx::VertexLayout layout;
+  gfx::VertexLayout& ShapeVertex::layout() {
+    static gfx::VertexLayout layout;
     static bool initialized = false;
 
     if (!initialized) {
       initialized = true;
       layout.begin()
-          .add(bgfx::Attrib::Position, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord0, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord1, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord2, 4, bgfx::AttribType::Float)
+          .add(gfx::Attrib::Position, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color1, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color2, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord1, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord2, 4, gfx::AttribType::Float)
           .end();
     }
 
     return layout;
   }
 
-  bgfx::VertexLayout& TextureVertex::layout() {
-    static bgfx::VertexLayout layout;
+  gfx::VertexLayout& TextureVertex::layout() {
+    static gfx::VertexLayout layout;
     static bool initialized = false;
 
     if (!initialized) {
       initialized = true;
       layout.begin()
-          .add(bgfx::Attrib::Position, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord0, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord1, 4, bgfx::AttribType::Float)
+          .add(gfx::Attrib::Position, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color1, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color2, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord1, 4, gfx::AttribType::Float)
           .end();
     }
 
     return layout;
   }
 
-  bgfx::VertexLayout& PostEffectVertex::layout() {
-    static bgfx::VertexLayout layout;
+  gfx::VertexLayout& PostEffectVertex::layout() {
+    static gfx::VertexLayout layout;
     static bool initialized = false;
 
     if (!initialized) {
       initialized = true;
       layout.begin()
-          .add(bgfx::Attrib::Position, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord0, 4, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::TexCoord1, 4, bgfx::AttribType::Float)
+          .add(gfx::Attrib::Position, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color1, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color2, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord1, 4, gfx::AttribType::Float)
           .end();
     }
 

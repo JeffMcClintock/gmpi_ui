@@ -89,6 +89,19 @@ programs, views (rect, frame buffer, clear, mode), `setState` blend flags,
 
 ### The device seam (`backends/gpu/device/`)
 
+**Status 2026-10-25 (branch `device-seam`): the seam exists.** `device.h`
+selects the implementation; `device_bgfx.h` is `gmpi::gpu::gfx` as 25 type
+aliases and 46 inline forwards to bgfx - the measured surface, one entry
+per thing the renderer calls, each with only the arguments the renderer
+passes; `device_fwd.h` keeps renderer headers free of device headers. The
+move was a mechanical `bgfx::` → `gfx::` across `backends/gpu/*.cpp,*.h`
+(no behaviour change: 264/264 on NVIDIA, 263 + the known case on lavapipe,
+SynthEdit 181/181, SE Fluid presenting), and `gmpi_gpu.cmake` now refuses
+a renderer source that names `bgfx::`. Still bgfx-shaped by design of this
+first cut: the `BGFX_*` flag constants (bgfx/defines.h, self-contained) and
+`gfx::CallbackI`, which renderer.cpp's callback derives from. A metal-cpp
+device provides the same 71 names; both narrow once it says what it needs.
+
 - `device.h` is a small `gmpi::gpu` API shaped like the subset of bgfx the
   renderer uses: handles, views, `submit(view, program, state)`, transient
   buffers. Keeping it bgfx-shaped makes the first commit a mechanical

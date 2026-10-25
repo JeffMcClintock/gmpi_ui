@@ -21,7 +21,7 @@
 
 #include "image.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 #include <cstring>
 
 namespace gmpi::gpu {
@@ -33,39 +33,39 @@ namespace gmpi::gpu {
     ~ImageAtlasTexture() { destroyHandle(); }
 
     void destroyHandle() {
-      if (bgfx::isValid(texture_handle_))
-        bgfx::destroy(texture_handle_);
+      if (gfx::isValid(texture_handle_))
+        gfx::destroy(texture_handle_);
 
       texture_handle_ = BGFX_INVALID_HANDLE;
     }
 
-    bool hasHandle() const { return bgfx::isValid(texture_handle_); }
+    bool hasHandle() const { return gfx::isValid(texture_handle_); }
 
-    bgfx::TextureHandle& handle() { return texture_handle_; }
+    gfx::TextureHandle& handle() { return texture_handle_; }
 
     void checkHandle() {
-      if (!bgfx::isValid(texture_handle_)) {
+      if (!gfx::isValid(texture_handle_)) {
         // Zero-filled: the padding texels around each image are never written
         // but LINEAR filtering reads them, and uninitialised float memory can
         // be NaN. Filled by an update, not at creation: a texture created with
         // data is immutable in bgfx and silently ignores every later update.
-        texture_handle_ = bgfx::createTexture2D(width_, height_, false, 1, bgfx::TextureFormat::RGBA16F);
-        const bgfx::Memory* zeros = bgfx::alloc(width_ * height_ * ImageAtlas::kBytesPerPixel);
+        texture_handle_ = gfx::createTexture2D(width_, height_, false, 1, gfx::TextureFormat::RGBA16F);
+        const gfx::Memory* zeros = gfx::alloc(width_ * height_ * ImageAtlas::kBytesPerPixel);
         std::memset(zeros->data, 0, zeros->size);
-        bgfx::updateTexture2D(texture_handle_, 0, 0, 0, 0, width_, height_, zeros);
+        gfx::updateTexture2D(texture_handle_, 0, 0, 0, 0, width_, height_, zeros);
       }
     }
 
     void updateTexture(const unsigned char* data, int x, int y, int width, int height) {
-      GMPI_GPU_ASSERT(bgfx::isValid(texture_handle_));
-      bgfx::updateTexture2D(texture_handle_, 0, 0, x, y, width, height,
-                            bgfx::copy(data, width * height * ImageAtlas::kBytesPerPixel));
+      GMPI_GPU_ASSERT(gfx::isValid(texture_handle_));
+      gfx::updateTexture2D(texture_handle_, 0, 0, x, y, width, height,
+                            gfx::copy(data, width * height * ImageAtlas::kBytesPerPixel));
     }
 
   private:
     int width_ = 0;
     int height_ = 0;
-    bgfx::TextureHandle texture_handle_ = BGFX_INVALID_HANDLE;
+    gfx::TextureHandle texture_handle_ = BGFX_INVALID_HANDLE;
   };
 
   ImageAtlas::PackedImageReference::~PackedImageReference() {
@@ -129,14 +129,14 @@ namespace gmpi::gpu {
   }
 
   void ImageAtlas::updateImage(const PackedImageRect* image) const {
-    if (texture_ == nullptr || !bgfx::isValid(texture_->handle()))
+    if (texture_ == nullptr || !gfx::isValid(texture_->handle()))
       return;
 
     PackedRect packed_rect = atlas_map_.rectForId(image);
     texture_->updateTexture(image->image.data, packed_rect.x, packed_rect.y, packed_rect.w, packed_rect.h);
   }
 
-  const bgfx::TextureHandle& ImageAtlas::textureHandle() {
+  const gfx::TextureHandle& ImageAtlas::textureHandle() {
     GMPI_GPU_ASSERT(texture_.get());
     if (!texture_->hasHandle() || repacked_) {
       texture_->checkHandle();

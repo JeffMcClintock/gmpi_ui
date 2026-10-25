@@ -25,13 +25,13 @@
 #include "region.h"
 #include "renderer.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 
 namespace gmpi::gpu {
   struct FrameBufferData {
-    bgfx::TextureHandle read_back_handle = BGFX_INVALID_HANDLE;
-    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
-    bgfx::TextureFormat::Enum format = bgfx::TextureFormat::RGBA16F;
+    gfx::TextureHandle read_back_handle = BGFX_INVALID_HANDLE;
+    gfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
+    gfx::TextureFormat::Enum format = gfx::TextureFormat::RGBA16F;
   };
 
   struct RegionPosition {
@@ -165,57 +165,57 @@ namespace gmpi::gpu {
     static constexpr uint64_t kFrameBufferFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP |
                                                   BGFX_SAMPLER_V_CLAMP;
 
-    if (bgfx::isValid(frame_buffer_data_->handle))
+    if (gfx::isValid(frame_buffer_data_->handle))
       return;
 
     const bool half_float = Renderer::instance().halfFloatFrameBuffers();
     if (half_float)
-      frame_buffer_data_->format = bgfx::TextureFormat::RGBA16F;
+      frame_buffer_data_->format = gfx::TextureFormat::RGBA16F;
     else if (hdr_)
-      frame_buffer_data_->format = bgfx::TextureFormat::RGB10A2;
+      frame_buffer_data_->format = gfx::TextureFormat::RGB10A2;
     else
-      frame_buffer_data_->format = bgfx::TextureFormat::RGBA8;
+      frame_buffer_data_->format = gfx::TextureFormat::RGBA8;
 
     if (window_handle_) {
       // The swap chain's format; the content layers stay as chosen above.
-      bgfx::TextureFormat::Enum swap_chain_format = frame_buffer_data_->format;
+      gfx::TextureFormat::Enum swap_chain_format = frame_buffer_data_->format;
       if (Renderer::instance().srgbWindowSwapChains())
-        swap_chain_format = bgfx::TextureFormat::BGRA8; // sRGB variant via BGFX_RESET_SRGB_BACKBUFFER
-      frame_buffer_data_->handle = bgfx::createFrameBuffer(window_handle_, width_, height_, swap_chain_format);
+        swap_chain_format = gfx::TextureFormat::BGRA8; // sRGB variant via BGFX_RESET_SRGB_BACKBUFFER
+      frame_buffer_data_->handle = gfx::createFrameBuffer(window_handle_, width_, height_, swap_chain_format);
     }
     else {
-      bool read_back = (bgfx::getCaps()->supported & BGFX_CAPS_TEXTURE_BLIT) &&
-                       (bgfx::getCaps()->supported & BGFX_CAPS_TEXTURE_READ_BACK);
+      bool read_back = (gfx::getCaps()->supported & BGFX_CAPS_TEXTURE_BLIT) &&
+                       (gfx::getCaps()->supported & BGFX_CAPS_TEXTURE_READ_BACK);
       if (headless_render_ && read_back) {
         // A separate read-back copy: a frame buffer cannot be built from a
         // READ_BACK texture (lavapipe faults in vkCmdBeginRenderPass on the
         // linear-tiled image). Blit needs matching formats, so it follows
         // the layer's format.
         uint64_t flags = BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK;
-        frame_buffer_data_->read_back_handle = bgfx::createTexture2D(width_, height_, false, 1,
+        frame_buffer_data_->read_back_handle = gfx::createTexture2D(width_, height_, false, 1,
                                                                      frame_buffer_data_->format, flags);
       }
-      frame_buffer_data_->handle = bgfx::createFrameBuffer(width_, height_, frame_buffer_data_->format,
+      frame_buffer_data_->handle = gfx::createFrameBuffer(width_, height_, frame_buffer_data_->format,
                                                            kFrameBufferFlags);
     }
 
-    bottom_left_origin_ = bgfx::getCaps()->originBottomLeft;
+    bottom_left_origin_ = gfx::getCaps()->originBottomLeft;
     fresh_frame_buffer_ = true;
   }
 
   void Layer::destroyFrameBuffer() {
-    if (bgfx::isValid(frame_buffer_data_->handle)) {
-      bgfx::destroy(frame_buffer_data_->handle);
+    if (gfx::isValid(frame_buffer_data_->handle)) {
+      gfx::destroy(frame_buffer_data_->handle);
       frame_buffer_data_->handle = BGFX_INVALID_HANDLE;
     }
     // Upstream leaked the read-back texture once per Layer.
-    if (bgfx::isValid(frame_buffer_data_->read_back_handle)) {
-      bgfx::destroy(frame_buffer_data_->read_back_handle);
+    if (gfx::isValid(frame_buffer_data_->read_back_handle)) {
+      gfx::destroy(frame_buffer_data_->read_back_handle);
       frame_buffer_data_->read_back_handle = BGFX_INVALID_HANDLE;
     }
   }
 
-  bgfx::FrameBufferHandle& Layer::frameBuffer() const {
+  gfx::FrameBufferHandle& Layer::frameBuffer() const {
     return frame_buffer_data_->handle;
   }
 
@@ -332,17 +332,17 @@ namespace gmpi::gpu {
     std::vector<PositionedBatch> batches;
     std::vector<RegionPosition> done_regions;
 
-    bgfx::setViewMode(submit_pass, bgfx::ViewMode::Sequential);
-    bgfx::setViewRect(submit_pass, 0, 0, width_, height_);
+    gfx::setViewMode(submit_pass, gfx::ViewMode::Sequential);
+    gfx::setViewRect(submit_pass, 0, 0, width_, height_);
     // A new frame buffer holds whatever its memory held before (a dead
     // layer's atlas, typically). Only the regions' own rects are ever drawn,
     // so clear the whole target once; otherwise stale texels bleed into edge
     // samples.
-    bgfx::setViewClear(submit_pass, fresh_frame_buffer_ ? BGFX_CLEAR_COLOR : BGFX_CLEAR_NONE, 0x00000000);
+    gfx::setViewClear(submit_pass, fresh_frame_buffer_ ? BGFX_CLEAR_COLOR : BGFX_CLEAR_NONE, 0x00000000);
     fresh_frame_buffer_ = false;
 
-    if (bgfx::isValid(frame_buffer_data_->handle))
-      bgfx::setViewFrameBuffer(submit_pass, frame_buffer_data_->handle);
+    if (gfx::isValid(frame_buffer_data_->handle))
+      gfx::setViewFrameBuffer(submit_pass, frame_buffer_data_->handle);
 
     // A window's composite layer is never cleared: a window is opaque, and its
     // regions overwrite it. A headless composite is a render target whose
@@ -382,22 +382,22 @@ namespace gmpi::gpu {
       current_batch = next_batch;
     }
 
-    if (screenshot_requested_ && bgfx::isValid(frame_buffer_data_->read_back_handle)) {
+    if (screenshot_requested_ && gfx::isValid(frame_buffer_data_->read_back_handle)) {
       screenshot_requested_ = false;
 
       // Blit in the NEXT view, so it runs after this view's draws: bgfx
       // executes a view's blits before its draw calls, and upstream's blit at
       // submit_pass captured whatever the composite held BEFORE this frame.
-      bgfx::blit(submit_pass + 1, frame_buffer_data_->read_back_handle, 0, 0,
-                 bgfx::getTexture(frame_buffer_data_->handle), 0, 0, width_, height_);
+      gfx::blit(submit_pass + 1, frame_buffer_data_->read_back_handle, 0, 0,
+                 gfx::getTexture(frame_buffer_data_->handle), 0, 0, width_, height_);
 
-      bool half_float = frame_buffer_data_->format == bgfx::TextureFormat::RGBA16F;
+      bool half_float = frame_buffer_data_->format == gfx::TextureFormat::RGBA16F;
       screenshot_.setDimensions(width_, height_, half_float);
       // readTexture is asynchronous: pump frames until the frame it names, or
       // the caller samples a buffer bgfx has not filled yet (seen 1 in 4 runs).
-      uint32_t ready_frame = bgfx::readTexture(frame_buffer_data_->read_back_handle,
+      uint32_t ready_frame = gfx::readTexture(frame_buffer_data_->read_back_handle,
                                                screenshot_.rawData());
-      while (bgfx::frame() < ready_frame) { }
+      while (gfx::frame() < ready_frame) { }
     }
 
     submit_pass = submit_pass + 1;
@@ -451,7 +451,7 @@ namespace gmpi::gpu {
       screenshot_requested_ = true;
     else {
       Renderer::resetResolution(width_, height_);
-      bgfx::requestScreenShot(frame_buffer_data_->handle, "screenshot.png");
+      gfx::requestScreenShot(frame_buffer_data_->handle, "screenshot.png");
     }
     invalidate();
   }

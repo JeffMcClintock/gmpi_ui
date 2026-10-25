@@ -23,11 +23,11 @@
 
 #include "renderer.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 
 namespace gmpi::gpu {
   bool Canvas::swapChainSupported() {
-    return bgfx::getCaps()->supported & BGFX_CAPS_SWAP_CHAIN;
+    return gfx::getCaps()->supported & BGFX_CAPS_SWAP_CHAIN;
   }
 
   Canvas::Canvas() :
@@ -53,7 +53,7 @@ namespace gmpi::gpu {
     setDimensions(width, height);
     composite_layer_.setWindowlessRender(width, height);
     Renderer::instance().initializeWindowless();
-    bgfx::reset(0, 0, BGFX_RESET_FLUSH_AFTER_RENDER | BGFX_RESET_FLIP_AFTER_RENDER);
+    gfx::reset(0, 0, BGFX_RESET_FLUSH_AFTER_RENDER | BGFX_RESET_FLIP_AFTER_RENDER);
   }
 
   void Canvas::setDimensions(int width, int height) {
@@ -92,9 +92,9 @@ namespace gmpi::gpu {
     if (submission > submit_pass || composite_layer_.anyInvalidRects()) {
       composite_layer_.invalidate();
       submission = composite_layer_.submit(submission, 0);
-      bgfx::frame();
+      gfx::frame();
       if (render_frame_ == 0)
-        bgfx::frame();
+        gfx::frame();
 
       render_frame_++;
       gradient_atlas_.clearStaleGradients();
@@ -102,7 +102,7 @@ namespace gmpi::gpu {
     }
     else if (last_skipped_frame_ != render_frame_) {
       last_skipped_frame_ = render_frame_;
-      bgfx::frame();
+      gfx::frame();
     }
     return submission;
   }
@@ -186,13 +186,13 @@ namespace gmpi::gpu {
       { BGFX_CAPS_VIEWPORT_LAYER_ARRAY, "Viewport layer is available in vertex shader." },
     };
 
-    const bgfx::Caps* caps = bgfx::getCaps();
+    const gfx::Caps* caps = gfx::getCaps();
     std::vector<std::string> result;
-    result.push_back(std::string("Graphics API: ") + bgfx::getRendererName(caps->rendererType));
+    result.push_back(std::string("Graphics API: ") + gfx::getRendererName(caps->rendererType));
     float hz = 1.0f / std::max(0.001f, refresh_time_);
     result.push_back("Refresh Rate : " + std::to_string(hz) + " Hz");
 
-    const bgfx::Stats* stats = bgfx::getStats();
+    const gfx::Stats* stats = gfx::getStats();
     result.push_back("Render wait: " + std::to_string(stats->waitRender));
     result.push_back("Submit wait: " + std::to_string(stats->waitSubmit));
     result.push_back("Draw number: " + std::to_string(stats->numDraw));

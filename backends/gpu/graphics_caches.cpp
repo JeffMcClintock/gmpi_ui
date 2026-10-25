@@ -21,13 +21,13 @@
 
 #include "graphics_caches.h"
 
-#include <bgfx/bgfx.h>
+#include "device/device.h"
 #include <map>
 
 namespace gmpi::gpu {
   struct ShaderCacheMap {
-    std::map<const char*, bgfx::ShaderHandle> cache;
-    std::map<const char*, bgfx::ShaderHandle> originals;
+    std::map<const char*, gfx::ShaderHandle> cache;
+    std::map<const char*, gfx::ShaderHandle> originals;
     std::map<std::string, const char*> name_lookup;
   };
 
@@ -37,30 +37,30 @@ namespace gmpi::gpu {
 
   ShaderCache::~ShaderCache() {
     for (const auto& shader : cache_->cache)
-      bgfx::destroy(shader.second);
+      gfx::destroy(shader.second);
   }
 
-  bgfx::ShaderHandle& ShaderCache::handle(const EmbeddedFile& file) const {
+  gfx::ShaderHandle& ShaderCache::handle(const EmbeddedFile& file) const {
     auto file_data = reinterpret_cast<const char*>(file.data);
     if (cache_->cache.count(file_data))
       return cache_->cache[file_data];
 
-    const bgfx::Memory* shader_memory = bgfx::copy(file.data, file.size);
+    const gfx::Memory* shader_memory = gfx::copy(file.data, file.size);
     cache_->name_lookup[file.name] = file_data;
-    cache_->cache[file_data] = bgfx::createShader(shader_memory);
+    cache_->cache[file_data] = gfx::createShader(shader_memory);
     cache_->originals[file_data] = cache_->cache[file_data];
 
     return cache_->cache[file_data];
   }
 
-  bgfx::ShaderHandle& ShaderCache::handle(const char* data) const {
+  gfx::ShaderHandle& ShaderCache::handle(const char* data) const {
     GMPI_GPU_ASSERT(cache_->cache.count(data));
     return cache_->cache[data];
   }
 
   bool ShaderCache::swap(const char* original_data, const char* data, int size) const {
-    bgfx::ShaderHandle handle = bgfx::createShader(bgfx::copy(data, size));
-    if (!bgfx::isValid(handle))
+    gfx::ShaderHandle handle = gfx::createShader(gfx::copy(data, size));
+    if (!gfx::isValid(handle))
       return false;
 
     cache_->cache[original_data] = handle;
@@ -86,8 +86,8 @@ namespace gmpi::gpu {
 
   struct ProgramCacheMap {
     std::map<const char*, std::map<const char*, ProgramCache::ShaderPair>> shader_lookup;
-    std::map<const char*, std::map<const char*, bgfx::ProgramHandle>> cache;
-    std::map<const char*, std::map<const char*, bgfx::ProgramHandle>> originals;
+    std::map<const char*, std::map<const char*, gfx::ProgramHandle>> cache;
+    std::map<const char*, std::map<const char*, gfx::ProgramHandle>> originals;
   };
 
   ProgramCache::ProgramCache() {
@@ -97,8 +97,8 @@ namespace gmpi::gpu {
   ProgramCache::~ProgramCache() {
     for (const auto& programs : cache_->cache) {
       for (const auto& program : programs.second) {
-        if (bgfx::isValid(program.second))
-          bgfx::destroy(program.second);
+        if (gfx::isValid(program.second))
+          gfx::destroy(program.second);
       }
     }
   }
@@ -112,14 +112,14 @@ namespace gmpi::gpu {
     return results;
   }
 
-  bgfx::ProgramHandle& ProgramCache::handle(const EmbeddedFile& vertex, const EmbeddedFile& fragment) const {
+  gfx::ProgramHandle& ProgramCache::handle(const EmbeddedFile& vertex, const EmbeddedFile& fragment) const {
     auto vertex_data = reinterpret_cast<const char*>(vertex.data);
     auto fragment_data = reinterpret_cast<const char*>(fragment.data);
 
     if (cache_->cache.count(vertex_data) && cache_->cache[vertex_data].count(fragment_data))
       return cache_->cache[vertex_data][fragment_data];
 
-    bgfx::ProgramHandle program = bgfx::createProgram(ShaderCache::shaderHandle(vertex),
+    gfx::ProgramHandle program = gfx::createProgram(ShaderCache::shaderHandle(vertex),
                                                       ShaderCache::shaderHandle(fragment), false);
     cache_->cache[vertex_data][fragment_data] = program;
     cache_->shader_lookup[vertex_data][fragment_data] = { vertex, fragment };
@@ -129,12 +129,12 @@ namespace gmpi::gpu {
   }
 
   void ProgramCache::reload(const EmbeddedFile& vertex, const EmbeddedFile& fragment) const {
-    bgfx::ProgramHandle handle = bgfx::createProgram(ShaderCache::shaderHandle(vertex),
+    gfx::ProgramHandle handle = gfx::createProgram(ShaderCache::shaderHandle(vertex),
                                                      ShaderCache::shaderHandle(fragment), false);
     auto vertex_data = reinterpret_cast<const char*>(vertex.data);
     auto fragment_data = reinterpret_cast<const char*>(fragment.data);
 
-    if (bgfx::isValid(handle))
+    if (gfx::isValid(handle))
       cache_->cache[vertex_data][fragment_data] = handle;
   }
 
@@ -142,10 +142,10 @@ namespace gmpi::gpu {
     for (const auto& vertex : cache_->cache) {
       for (const auto& fragment : vertex.second) {
         if (shader_data == vertex.first || shader_data == fragment.first) {
-          bgfx::ProgramHandle handle = bgfx::createProgram(ShaderCache::shaderHandle(vertex.first),
+          gfx::ProgramHandle handle = gfx::createProgram(ShaderCache::shaderHandle(vertex.first),
                                                            ShaderCache::shaderHandle(fragment.first),
                                                            false);
-          if (bgfx::isValid(handle))
+          if (gfx::isValid(handle))
             cache_->cache[vertex.first][fragment.first] = handle;
         }
       }
@@ -166,7 +166,7 @@ namespace gmpi::gpu {
   }
 
   struct UniformCacheMap {
-    std::map<std::string, bgfx::UniformHandle> cache;
+    std::map<std::string, gfx::UniformHandle> cache;
   };
 
   UniformCache::UniformCache() {
@@ -175,22 +175,22 @@ namespace gmpi::gpu {
 
   UniformCache::~UniformCache() {
     for (const auto& uniform : cache_->cache)
-      bgfx::destroy(uniform.second);
+      gfx::destroy(uniform.second);
   }
 
-  bgfx::UniformHandle& UniformCache::handle(const char* name, Type type, int size) const {
+  gfx::UniformHandle& UniformCache::handle(const char* name, Type type, int size) const {
     if (cache_->cache.count(name))
       return cache_->cache[name];
 
-    bgfx::UniformType::Enum bgfx_type = bgfx::UniformType::Vec4;
+    gfx::UniformType::Enum bgfx_type = gfx::UniformType::Vec4;
     switch (type) {
-    case Sampler: bgfx_type = bgfx::UniformType::Sampler; break;
-    case Vec4: bgfx_type = bgfx::UniformType::Vec4; break;
-    case Mat3: bgfx_type = bgfx::UniformType::Mat3; break;
-    case Mat4: bgfx_type = bgfx::UniformType::Mat4; break;
+    case Sampler: bgfx_type = gfx::UniformType::Sampler; break;
+    case Vec4: bgfx_type = gfx::UniformType::Vec4; break;
+    case Mat3: bgfx_type = gfx::UniformType::Mat3; break;
+    case Mat4: bgfx_type = gfx::UniformType::Mat4; break;
     }
 
-    cache_->cache[name] = bgfx::createUniform(name, bgfx_type, size);
+    cache_->cache[name] = gfx::createUniform(name, bgfx_type, size);
     return cache_->cache[name];
   }
 }

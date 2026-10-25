@@ -229,9 +229,13 @@ scrolling or zooming view, retaining atlas entries keyed by
    `DrawingFrameX11.cpp` compiles with the GPU define (no X11 host to run);
    the GPU Wayland demo presents. A5 (the windowless reset flags) is
    unchanged and still to test.
-2. **The device seam** (Metal plan, "device.h"): the 61-symbol surface the
-   renderer actually uses, bgfx as one implementation. Mechanical rename on
-   Linux, no behaviour change, pinned by the existing 264 tests.
+2. **The device seam - DONE 2026-10-25 (uncommitted, gmpi_ui `device-seam`,
+   on `gpu-presenter`).** `backends/gpu/device/{device,device_bgfx,device_fwd}.h`:
+   `gmpi::gpu::gfx`, 25 type aliases + 46 inline forwards, each with only the
+   arguments the renderer passes; mechanical `bgfx::` → `gfx::` across the
+   renderer (18 files, +350/-347); a configure-time check refuses `bgfx::`
+   in renderer sources. Same results on every suite. Left bgfx-shaped on
+   purpose: `BGFX_*` constants and `gfx::CallbackI`.
 3. **B2 geometry clips** then **B1 text coverage atlas**: the two changes
    that turn "GPU path with CPU holes" into "GPU path". B1 is also the
    prerequisite for Mac/Windows to leave their native text rasterisers.

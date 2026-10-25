@@ -73,7 +73,7 @@ namespace gmpi::gpu {
     setDimensions(width, height);
     composite_layer_.setWindowlessRender(width, height);
     Renderer::instance().initializeWindowless();
-    gfx::reset(0, 0, BGFX_RESET_FLUSH_AFTER_RENDER | BGFX_RESET_FLIP_AFTER_RENDER);
+    Renderer::reset(0, 0, BGFX_RESET_FLUSH_AFTER_RENDER);
   }
 
   void Canvas::setDimensions(int width, int height) {

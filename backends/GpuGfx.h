@@ -229,6 +229,29 @@ public:
         std::unique_ptr<gmpi::gpu::ImageAtlas::PackedImage> retained;
         uint64_t lastUsed{};
     };
+    // Gradient strips (RenderTarget::gradientStrip), per stop collection and
+    // brush opacity: a strip is 512 evaluations of colorAt, and a gradient
+    // brush used to rebuild one on every draw. A collection cannot change
+    // through the API, so it is keyed by identity and held while cached.
+    struct CachedStrip
+    {
+        gmpi::shared_ptr<drawing::api::IGradientstopCollection> stops;
+        gmpi::gpu::Gradient strip;
+        uint64_t lastUsed{};
+    };
+    std::map<std::pair<const void*, uint32_t>, CachedStrip> gradientCache;
+
+    void trimGradientCache()
+    {
+        for (auto it = gradientCache.begin(); it != gradientCache.end();)
+        {
+            if (it->second.lastUsed + kImageCacheFrames < submits)
+                it = gradientCache.erase(it);
+            else
+                ++it;
+        }
+    }
+
     static constexpr int kTextPhases = 4;
     static constexpr size_t kTextCacheBudgetBytes = size_t(64) << 20;
     static constexpr int64_t kMaxCachedTextPixels = int64_t(1) << 20; // a bigger block is drawn uncached
@@ -336,6 +359,7 @@ public:
                 ++it;
         }
         trimTextCache();
+        trimGradientCache();
     }
 
     // Composited pixels as premultiplied linear fp16 RGBA, tightly packed.
@@ -678,7 +702,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // fork premultiplies when it blends. Wrap and Mirror are the fork's own
     // repeat/reflect (the strip spans a full atlas row and the sampler wraps).
 
-    static gmpi::gpu::Gradient gradientStrip(const cpugfx::GradientstopCollection& stops, float opacity)
+    static gmpi::gpu::Gradient buildGradientStrip(const cpugfx::GradientstopCollection& stops, float opacity)
     {
         auto strip = gmpi::gpu::Gradient::fromSampleFunction(gmpi::gpu::Gradient::kMaxGradientResolution, [&](float t) {
             const auto c = stops.colorAt(t);
@@ -687,6 +711,27 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         strip.setRepeat(stops.extendMode == drawing::ExtendMode::Wrap);
         strip.setReflect(stops.extendMode == drawing::ExtendMode::Mirror);
         return strip;
+    }
+
+    // The strip for `stops` at `opacity`, built once and reused while the
+    // collection is in use (Bitmap::gradientCache).
+    const gmpi::gpu::Gradient& gradientStrip(const cpugfx::GradientstopCollection& stops, float opacity) const
+    {
+        uint32_t opacityBits;
+        std::memcpy(&opacityBits, &opacity, sizeof opacityBits);
+        auto& cache = bitmap->gradientCache;
+        const auto key = std::make_pair(static_cast<const void*>(&stops), opacityBits);
+        auto it = cache.find(key);
+        if (it == cache.end())
+        {
+            Bitmap::CachedStrip entry{ {}, buildGradientStrip(stops, opacity), 0 };
+            auto* collection = const_cast<cpugfx::GradientstopCollection*>(&stops);
+            collection->addRef();
+            entry.stops.attach(static_cast<drawing::api::IGradientstopCollection*>(collection));
+            it = cache.emplace(key, std::move(entry)).first;
+        }
+        it->second.lastUsed = bitmap->submits;
+        return it->second.strip;
     }
 
     static gmpi::gpu::Brush solidStop(const cpugfx::GradientstopCollection& stops, float t, float opacity)
@@ -1407,19 +1452,19 @@ public:
         auto integral = [](float v) { return std::fabs(v - std::round(v)) < 1e-4f; };
         const bool oneToOne = std::fabs(dw - sw) < 1e-4f && std::fabs(dh - sh) < 1e-4f
                               && integral(d.left) && integral(d.top) && integral(src.left) && integral(src.top);
-        const bool whole = src.left == 0.0f && src.top == 0.0f && src.right == float(w) && src.bottom == float(h);
-        if (!oneToOne && (interpolationMode != drawing::BitmapInterpolationMode::Linear || !whole))
-            return no(interpolationMode == drawing::BitmapInterpolationMode::Linear ? "cpu: cropped stretch"
-                                                                                     : "cpu: nearest-neighbour stretch");
+        // Any stretch, cropped or not, filtered or nearest: the shader clamps
+        // the sample coordinate to the source rect and snaps to the texel
+        // centre for nearest, which is cpugfx's (and D2D's) sampling rule.
+        const bool nearest = !oneToOne && interpolationMode == drawing::BitmapInterpolationMode::NearestNeighbor;
 
         const auto& image = bitmap->cachedImage(bm);
-        trace("drawBitmap", d, oneToOne ? "gpu atlas image 1:1" : "gpu atlas image stretched");
+        trace("drawBitmap", d, oneToOne ? "gpu atlas image 1:1" : nearest ? "gpu atlas image, nearest" : "gpu atlas image stretched");
         auto& c = canvas();
         c.setClampBounds(currentClamp());
         c.setBlendMode(gmpi::gpu::BlendMode::Composite);
         c.setColor(gmpi::gpu::Color(opacity, opacity, opacity, opacity)); // premultiplied scale
         c.halfImage(reinterpret_cast<const unsigned char*>(image.pixels.data()), w + 2, h + 2,
-                    d.left, d.top, dw, dh, image.id, 1.0f + src.left, 1.0f + src.top, sw, sh);
+                    d.left, d.top, dw, dh, image.id, 1.0f + src.left, 1.0f + src.top, sw, sh, nearest);
         c.setBlendMode(gmpi::gpu::BlendMode::Alpha);
         bitmap->rendered = false;
         return true;

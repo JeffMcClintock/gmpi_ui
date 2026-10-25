@@ -144,6 +144,10 @@ foreach (src ${GMPI_GPU_SEAM_SOURCES})
   if (contents MATCHES "bgfx::")
     message(FATAL_ERROR "gmpi_gpu: ${src} names bgfx:: directly; go through gmpi::gpu::gfx (backends/gpu/device/device.h)")
   endif ()
+  # One reset path, so no caller drops a flag windows rely on (Renderer::reset).
+  if (contents MATCHES "gfx::reset\\(" AND NOT src MATCHES "/renderer\\.cpp$")
+    message(FATAL_ERROR "gmpi_gpu: ${src} calls gfx::reset directly; use gmpi::gpu::Renderer::reset")
+  endif ()
 endforeach ()
 
 add_library(gmpi_gpu STATIC

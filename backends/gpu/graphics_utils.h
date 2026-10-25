@@ -322,6 +322,21 @@ namespace gmpi::gpu {
     static gfx::VertexLayout& layout();
   };
 
+  // TextureVertex plus what only images need (ImageWrapper): the source rect
+  // in atlas texels, which the sample coordinate is clamped to (cpugfx's
+  // rule: a cropped draw never reads outside its crop), and 1 to sample the
+  // nearest texel. Path fills keep the smaller TextureVertex.
+  struct ImageVertex : TextureVertex {
+    float source_left;
+    float source_top;
+    float source_right;
+    float source_bottom;
+    float nearest;
+    float unused[3];
+
+    static gfx::VertexLayout& layout();
+  };
+
   struct PostEffectVertex {
     float x;
     float y;

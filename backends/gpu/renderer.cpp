@@ -125,6 +125,7 @@ namespace gmpi::gpu {
     bgfx_init.resolution.height = 1;
 #endif
     bgfx_init.resolution.reset = resetFlags();
+    last_reset_flags_ = bgfx_init.resolution.reset;
 
     gfx::RendererType::Enum supported_renderers[gfx::RendererType::Count];
     const uint8_t num_supported = gfx::getSupportedRenderers(gfx::RendererType::Count, supported_renderers);
@@ -181,8 +182,14 @@ namespace gmpi::gpu {
 
   void Renderer::resetResolution(int width, int height) {
 #if GMPI_GPU_MAC
-    gfx::reset(width, height, instance().resetFlags());
+    reset(width, height);
 #endif
+  }
+
+  void Renderer::reset(int width, int height, uint32_t extra) {
+    auto& renderer = instance();
+    renderer.last_reset_flags_ = renderer.resetFlags() | extra;
+    gfx::reset(width, height, renderer.last_reset_flags_);
   }
 
   void Renderer::setScreenshotData(const uint8_t* data, int width, int height, int pitch, bool blue_red) {

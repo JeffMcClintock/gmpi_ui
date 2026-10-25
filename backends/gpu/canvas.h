@@ -229,14 +229,17 @@ namespace gmpi::gpu {
 
     // The same, drawing only source_width x source_height texels of the
     // image from (source_x, source_y).
+    // `nearest`: sample the nearest texel instead of filtering.
     void halfImage(const unsigned char* data, int width, int height, float x, float y,
                    float dest_width, float dest_height, uint64_t id, float source_x, float source_y,
-                   float source_width, float source_height) {
+                   float source_width, float source_height, bool nearest = false) {
       Image image(data, width * height * 8, width, height);
       image.id = id;
-      addShape(ImageWrapper(state_.clamp, state_.brush, state_.x + x, state_.y + y, dest_width,
-                            dest_height, image, halfImageAtlas(), source_x, source_y, source_width,
-                            source_height));
+      ImageWrapper shape(state_.clamp, state_.brush, state_.x + x, state_.y + y, dest_width,
+                         dest_height, image, halfImageAtlas(), source_x, source_y, source_width,
+                         source_height);
+      shape.nearest = nearest;
+      addShape(std::move(shape));
     }
 
     // Keep raw fp16 pixels resident in the half-float atlas for as long as

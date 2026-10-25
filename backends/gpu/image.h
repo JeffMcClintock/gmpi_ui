@@ -143,12 +143,12 @@ namespace gmpi::gpu {
     int width() const { return atlas_map_.width(); }
     int height() const { return atlas_map_.height(); }
     const gfx::TextureHandle& textureHandle();
-    void setImageCoordinates(TextureVertex* vertices, const PackedImage& image) const {
+    void setImageCoordinates(ImageVertex* vertices, const PackedImage& image) const {
       setImageCoordinates(vertices, image, 0.0f, 0.0f, image.w(), image.h());
     }
     // Texture coordinates for `width` x `height` texels of the image from
     // (x, y) within it.
-    void setImageCoordinates(TextureVertex* vertices, const PackedImage& image, float x, float y,
+    void setImageCoordinates(ImageVertex* vertices, const PackedImage& image, float x, float y,
                              float width, float height) const;
 
   private:

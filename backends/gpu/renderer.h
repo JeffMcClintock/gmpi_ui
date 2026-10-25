@@ -42,6 +42,13 @@ namespace gmpi::gpu {
 
     static void resetResolution(int width, int height);
 
+    // Every bgfx reset goes through here, with resetFlags() plus `extra`, so
+    // no caller can drop a flag the others rely on (a windowless canvas used
+    // to reset without SRGB_BACKBUFFER, and every window made after it came
+    // up linear). The flags last applied, for tests.
+    static void reset(int width, int height, uint32_t extra = 0);
+    uint32_t lastResetFlags() const { return last_reset_flags_; }
+
     enum class NativeWindowType {
       Default, // HWND, NSView, X11 Window
       Wayland, // wl_surface*, with display = wl_display*
@@ -90,7 +97,11 @@ namespace gmpi::gpu {
     bool supported_ = false;
     bool swap_chain_supported_ = false;
     bool half_float_frame_buffers_ = true;
-    bool vsync_ = true;
+    // Off by default: every gmpi_ui host paces its own frames (Wayland frame
+    // callbacks, the X11 timer), and whichever creates the renderer first -
+    // an offscreen canvas, say - must not impose vsync on windows made later.
+    bool vsync_ = false;
+    uint32_t last_reset_flags_ = 0;
 #if GMPI_GPU_LINUX
     bool srgb_window_swap_chains_ = true;
 #else

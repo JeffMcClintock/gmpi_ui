@@ -148,6 +148,28 @@ namespace gmpi::gpu {
     return layout;
   }
 
+  gfx::VertexLayout& ImageVertex::layout() {
+    static gfx::VertexLayout layout;
+    static bool initialized = false;
+
+    if (!initialized) {
+      initialized = true;
+      layout.begin()
+          .add(gfx::Attrib::Position, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color1, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::Color2, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord0, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord1, 4, gfx::AttribType::Float)
+          .add(gfx::Attrib::TexCoord2, 4, gfx::AttribType::Float) // source rect
+          .add(gfx::Attrib::TexCoord3, 4, gfx::AttribType::Float) // x: nearest
+          .end();
+      GMPI_GPU_ASSERT(layout.getStride() == sizeof(ImageVertex));
+    }
+
+    return layout;
+  }
+
   gfx::VertexLayout& PostEffectVertex::layout() {
     static gfx::VertexLayout layout;
     static bool initialized = false;

@@ -149,7 +149,7 @@ namespace gmpi::gpu {
     return texture_->handle();
   }
 
-  void ImageAtlas::setImageCoordinates(TextureVertex* vertices, const PackedImage& image, float x,
+  void ImageAtlas::setImageCoordinates(ImageVertex* vertices, const PackedImage& image, float x,
                                        float y, float width, float height) const {
     float left = image.x() + x;
     float top = image.y() + y;

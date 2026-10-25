@@ -221,7 +221,7 @@ namespace gmpi::gpu {
     void setVertexData(Vertex* vertices) const { setPrimitiveData(vertices); }
   };
 
-  struct ImageWrapper : Shape<TextureVertex> {
+  struct ImageWrapper : Shape<ImageVertex> {
     static const EmbeddedFile& vertexShader();
     static const EmbeddedFile& fragmentShader();
 
@@ -252,6 +252,15 @@ namespace gmpi::gpu {
     void setVertexData(Vertex* vertices) const {
       image_atlas->setImageCoordinates(vertices, packed_image, source_x, source_y, source_width,
                                        source_height);
+      const float left = packed_image.x() + source_x;
+      const float top = packed_image.y() + source_y;
+      for (int i = 0; i < kVerticesPerQuad; ++i) {
+        vertices[i].source_left = left;
+        vertices[i].source_top = top;
+        vertices[i].source_right = left + source_width;
+        vertices[i].source_bottom = top + source_height;
+        vertices[i].nearest = nearest ? 1.0f : 0.0f;
+      }
       // Texels per pixel, per axis: the vertex shader moves the texture
       // coordinate by this much for every pixel the clamp moves a corner.
       // (setQuadPositions put the quad size here; this shader reads it as
@@ -266,6 +275,7 @@ namespace gmpi::gpu {
 
     ImageAtlas::PackedImage packed_image;
     ImageAtlas* image_atlas = nullptr;
+    bool nearest = false;
     float source_x = 0.0f;
     float source_y = 0.0f;
     float source_width = 0.0f;

@@ -94,6 +94,13 @@ providing `modelSurface(display)`; `initialize()` loses its handle parameter.
 
 ### A5. One thing to check, not to assume
 
+**Status 2026-10-25: FIXED (same branches).** Every reset now goes through
+`Renderer::reset(w, h, extra)` = `resetFlags() | extra`, and a
+configure-time check refuses `gfx::reset(` outside renderer.cpp (verified to
+fire). vsync now defaults OFF: every gmpi_ui host paces its own frames, and
+whichever creates the renderer first (an offscreen canvas) must not impose
+vsync on later windows. Test: `GpuRenderer.WindowlessCanvasKeepsTheWindowResetFlags`.
+
 `Canvas::setWindowless` (`canvas.cpp:52-57`) ends with
 `bgfx::reset(0, 0, FLUSH_AFTER_RENDER | FLIP_AFTER_RENDER)`, which is **not
 `Renderer::resetFlags()`**: it drops `VSYNC` and, on Linux,
@@ -216,6 +223,23 @@ and uploaded every frame. Two routes, both cross-platform:
 
 ### B4. `drawBitmap`: three small shader cases (removes per-draw uploads)
 
+**Status 2026-10-25: cropped and nearest DONE, rotation not; uncommitted on
+`bitmap-gradient` branches** (gmpi_ui on `text-atlas`; gimpi_ui_tests).
+Images have their own vertex type, `ImageVertex` (TextureVertex + the
+source rect in atlas texels + a nearest flag); `fs_tinted_texture` clamps
+the sample coordinate to the source rect and, for nearest, snaps to the
+texel centre - cpugfx's sampling rule, which it turns out clamps the
+*coordinate* to the crop (not half a texel in) and then filters normally.
+Cropped Linear stretches match cpugfx with 0 outliers; nearest matches
+except at exact texel-boundary ties, where cpugfx's own pick depends on
+float rounding of its scale, row by row (a 1/1024-texel bias agrees on
+most; the test allows exactly the tie lines). Open question found on the
+way: widening the SHARED TextureVertex (path fills use it too) by two
+attributes made path fills vanish even with the old shaders - not
+explained; giving images their own vertex type avoided it, and it matters
+for the Metal device (a layout with attributes its vertex shader does not
+read). Rotated bitmaps still go to the CPU.
+
 GPU only for 1:1 integer-aligned or a Linear stretch of the **whole**
 bitmap (`:1276-1320`). Cropped stretches (bilinear bleed past the crop),
 nearest-neighbour, rotation, mirrored source rects all go to the CPU and
@@ -229,6 +253,11 @@ An opacity brush refuses the GPU everywhere (`:555-561`). It is a mask
 texture multiplied into alpha — the same sampler slot B2 adds.
 
 ### B6. Gradients: stop re-evaluating 512 stops per draw
+
+**Status 2026-10-25: DONE (same branches).** `Bitmap::gradientCache` keeps
+each strip per (stop collection, brush opacity), the collection held by
+reference; trimmed with the text cache. The atlas's 512-colour compare on
+lookup remains. Not measured on its own.
 
 `gradientStrip` (`:629-638`) calls `colorAt` 512 times per draw and compares
 the strip against the atlas map every time; the upload is deduplicated, the

@@ -12,6 +12,7 @@ using namespace gmpi::drawing;
 */
 
 #include <cmath> // linearToSRGB01
+#include <compare> // the defaulted operator<=> below; MSVC and libc++ do not bring it in transitively
 
 #include "GmpiApiCommon.h"
 

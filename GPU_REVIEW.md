@@ -216,9 +216,17 @@ bounded; past it the CPU path as before. Brushes are device-space, so
 gradients and shader brushes need nothing per tile; tiles batch under a
 GPU clip mask like any shape. `GMPI_UI_GPU_TILES=0` restores the old
 behaviour; `Bitmap::cpuFallbacks` counts viaCpu draws. StructureBench: its
-last 2 CPU fallbacks -> 0 (2 tiles each). Still CPU: a geometry CLIP over
-the limit (one mask entry, sampled by frame-buffer pixel; could be cut to
-the visible part the same way), and the SDF route below is not taken.
+last 2 CPU fallbacks -> 0 (2 tiles each). The SDF route below is not taken.
+
+**Geometry clips over the limit DONE 2026-10-26 (uncommitted, gmpi_ui
+`large-clips` on `large-paths`; gimpi_ui_tests `large-clips`).** A clip
+over 512² is one mask entry of only its visible part (`visibleClipMask`:
+cut to bounds ∩ clip rect ∩ surface, charged to the same frame budget).
+The clip rect narrows to the cut polygon's whole-pixel bounds: the cut
+polygon can be far smaller than the rect it was cut to, and a fragment
+past the mask's entry would sample a neighbouring entry (test
+GpuHugeGeometryClipCutToVisible fails without it). A clip with nothing
+visible empties the clip rect. Nested shaped clips are still CPU.
 
 `tooLargeForAtlas` (`:727, 749-754`) sends any figure whose bbox exceeds 512²
 texels (or a side > 4096) to cpugfx, except one axis-aligned rect. A 600 px

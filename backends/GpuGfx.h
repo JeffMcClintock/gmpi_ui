@@ -825,7 +825,8 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // path costs its whole bounding box in the R16F atlas and a window's worth
     // of panels overflows it (seen: 32768x32768 requested, the editor's first
     // frame). Above this a figure is drawn as tiles over its visible part
-    // (fillTiled), and a geometry clip is still a CPU clip.
+    // (fillTiled), and a geometry clip is a mask of its visible part
+    // (visibleClipMask).
     static constexpr float kMaxAtlasPathTexels = 512.0f * 512.0f;
 
     // Four corners (a closing repeat of the first allowed) with every edge
@@ -935,23 +936,37 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     static constexpr float kMaxTiledTexelsPerFrame = 2048.0f * 2048.0f;
     float tiledTexelsThisFrame = 0.0f; // reset by endDraw
 
-    std::optional<ReturnCode> fillTiled(const gmpi::gpu::Path& vpath, const drawing::Rect& deviceBounds,
-                                        const gmpi::gpu::Brush& brush, const ShaderBrush* shaderBrush)
+    // The part of `deviceBounds` that can be seen (within the clip rect and
+    // the surface), out to whole pixels, charged to this frame's tile
+    // budget. Empty when nothing can be seen; nullopt when over the budget.
+    std::optional<drawing::Rect> reserveVisibleTexels(const drawing::Rect& deviceBounds)
     {
         const auto visible = drawing::intersectRect(deviceBounds, drawing::intersectRect(clipRectStack.back(), surfaceBounds()));
         if (!(visible.right > visible.left) || !(visible.bottom > visible.top))
-            return ReturnCode::Ok;
-        const float left = std::floor(visible.left);
-        const float top = std::floor(visible.top);
-        const float right = std::ceil(visible.right);
-        const float bottom = std::ceil(visible.bottom);
-        const float texels = (right - left) * (bottom - top);
+            return drawing::Rect{};
+        const drawing::Rect whole{ std::floor(visible.left), std::floor(visible.top), std::ceil(visible.right), std::ceil(visible.bottom) };
+        const float texels = (whole.right - whole.left) * (whole.bottom - whole.top);
         if (tiledTexelsThisFrame + texels > kMaxTiledTexelsPerFrame)
+            return std::nullopt;
+        tiledTexelsThisFrame += texels;
+        return whole;
+    }
+
+    std::optional<ReturnCode> fillTiled(const gmpi::gpu::Path& vpath, const drawing::Rect& deviceBounds,
+                                        const gmpi::gpu::Brush& brush, const ShaderBrush* shaderBrush)
+    {
+        const auto visible = reserveVisibleTexels(deviceBounds);
+        if (!visible)
         {
             trace("figures", deviceBounds, "cpu (too large for atlas; over this frame's tile budget)");
             return std::nullopt;
         }
-        tiledTexelsThisFrame += texels;
+        const float left = visible->left;
+        const float top = visible->top;
+        const float right = visible->right;
+        const float bottom = visible->bottom;
+        if (!(right > left) || !(bottom > top))
+            return ReturnCode::Ok;
 
         beginGpuShape(brush);
         gmpi::gpu::Shader* shader = shaderBrush ? frameShader(*shaderBrush, drawing::api::ShaderStage::Path) : nullptr;
@@ -974,7 +989,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         {
             char how[64];
             std::snprintf(how, sizeof(how), "gpu path atlas (%d tiles)", tiles);
-            trace("figures", visible, how);
+            trace("figures", *visible, how);
         }
         return ReturnCode::Ok;
     }
@@ -1266,18 +1281,51 @@ public:
         clip->transform = transform_;
 
         const auto deviceBounds = figuresDeviceBounds(path->figures);
-        if (!geometryClipActive() && !tooLargeForAtlas(deviceBounds) && gpuMasksEnabled())
+        auto clipRect = drawing::intersectRect(clipRectStack.back(), deviceBounds);
+        if (!geometryClipActive() && gpuMasksEnabled())
         {
             gmpi::gpu::Path vpath;
             if (devicePath(path->figures, path->fillMode, transform_, vpath) && vpath.numPoints() > 0)
-                clip->mask = canvas().createClipMask(vpath);
+            {
+                if (!tooLargeForAtlas(deviceBounds))
+                    clip->mask = canvas().createClipMask(vpath);
+                else if (tilesEnabled())
+                    clip->mask = visibleClipMask(vpath, deviceBounds, clipRect);
+            }
         }
-        trace("pushClipGeometry", deviceBounds, clip->mask ? "gpu mask" : "cpu (nested, too large, or empty)");
+        trace("pushClipGeometry", deviceBounds, clip->mask ? "gpu mask" : "cpu (nested, over budget, or empty)");
 
-        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), deviceBounds));
+        clipRectStack.push_back(clipRect);
         clipGeometryStack.push_back(std::move(clip));
         syncClipMask();
         return ReturnCode::Ok;
+    }
+
+    // A clip too large for one atlas entry as a mask of only its visible
+    // part: the clip cut to its bounds within the clip rect and the surface
+    // (clipPathToRect), one entry, charged to the frame's tile budget. The
+    // mask is sampled at each fragment's own pixel (clip_mask.sh), and
+    // every fragment under the clip lies within the clip rect - which is
+    // narrowed here to the cut clip's whole-pixel bounds, since the cut
+    // polygon can be smaller than the rect it was cut to and texels past
+    // its atlas entry belong to other entries. Exact: the clip's coverage
+    // outside those bounds is zero. Null over the budget (a CPU clip, as
+    // before); an empty `clipRect` when nothing of the clip can be seen.
+    std::shared_ptr<gmpi::gpu::ClipMask> visibleClipMask(const gmpi::gpu::Path& vpath, const drawing::Rect& deviceBounds,
+                                                         drawing::Rect& clipRect)
+    {
+        const auto visible = reserveVisibleTexels(deviceBounds);
+        if (!visible)
+            return nullptr;
+        const auto cut = clipPathToRect(vpath, visible->left, visible->top, visible->right, visible->bottom);
+        if (cut.numPoints() == 0)
+        {
+            clipRect = { clipRect.left, clipRect.top, clipRect.left, clipRect.top };
+            return nullptr;
+        }
+        const auto b = cut.boundingBox();
+        clipRect = drawing::intersectRect(clipRect, { std::floor(b.x()), std::floor(b.y()), std::ceil(b.right()), std::ceil(b.bottom()) });
+        return canvas().createClipMask(cut);
     }
 
     // GMPI_UI_GPU_CLIP_MASKS=0 keeps every geometry clip on the CPU, as before

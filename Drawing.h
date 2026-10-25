@@ -1956,10 +1956,12 @@ public:
 		native->drawGeometry(AccessPtr::get(geometry), brush.getBrush(), strokeWidth, AccessPtr::get(strokeStyle));
 	}
 
-	void fillGeometry(PathGeometry& geometry, const IHasBrush& brush, const IHasBrush& opacityBrush)
+	/* supported only on D2D backend
+	void fillGeometry(PathGeometry& geometry, const IHasBrush& brush) , const IHasBrush& opacityBrush)
 	{
 		native->fillGeometry(AccessPtr::get(geometry), brush.getBrush(), opacityBrush.getBrush());
 	}
+	*/
 
 	void fillGeometry(PathGeometry& geometry, const IHasBrush& brush)
 	{

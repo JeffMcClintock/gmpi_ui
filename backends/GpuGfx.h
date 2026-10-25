@@ -2493,13 +2493,16 @@ public:
         // time, and here every op outside the area would still cost an upload
         // or a draw (a repainting analyser was re-drawing the module browser's
         // 37 text rows and the whole canvas four times a second).
+        // The clip is in device pixels, so it goes on under identity: a target
+        // keeps its transform across frames, and the last frame left the scale
+        // (or the client's own transform) on it, which put a partial repaint's
+        // clip at twice its place on a Retina display and redrew nothing.
+        const drawing::Matrix3x2 identity;
+        target_->setTransform(&identity);
         const drawing::Rect areaF{ float(area.left), float(area.top), float(area.right), float(area.bottom) };
         target_->pushAxisAlignedClip(&areaF);
-        if (scale != 1.0f)
-        {
-            const auto m = drawing::makeScale(scale, scale);
-            target_->setTransform(&m);
-        }
+        const auto m = drawing::makeScale(scale, scale);
+        target_->setTransform(&m);
         const auto tRender = std::chrono::steady_clock::now();
         client->render(static_cast<drawing::api::IDeviceContext*>(target_));
         if (overlay)

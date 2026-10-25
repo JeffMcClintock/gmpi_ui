@@ -102,7 +102,11 @@ namespace gmpi::gpu {
     // an offscreen canvas, say - must not impose vsync on windows made later.
     bool vsync_ = false;
     uint32_t last_reset_flags_ = 0;
-#if GMPI_GPU_LINUX
+    // Linear content into a window needs an encoding step. Windows gets an
+    // RGBA16F (scRGB) swap chain. bgfx's Metal swap chain ignores the format
+    // asked for and is BGRA8Unorm, where linear values present too dark (a
+    // mid-grey 128 showed as 55); its sRGB variant encodes in hardware.
+#if GMPI_GPU_LINUX || GMPI_GPU_MAC
     bool srgb_window_swap_chains_ = true;
 #else
     bool srgb_window_swap_chains_ = false;

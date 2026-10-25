@@ -137,7 +137,7 @@ namespace gmpi::gpu {
         return;
       resolved_ = true;
       for (size_t i = 0; i < half_data_.size(); ++i) {
-        float value = std::min(1.0f, std::max(0.0f, halfToFloat(half_data_[i])));
+        float value = (std::min)(1.0f, (std::max)(0.0f, halfToFloat(half_data_[i])));
         data_[i] = static_cast<uint8_t>(value * 255.0f + 0.5f);
       }
     }

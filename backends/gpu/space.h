@@ -296,7 +296,7 @@ namespace gmpi::gpu {
     int yCenter() const { return y_ + height_ / 2; }
     IPoint topLeft() const { return { x_, y_ }; }
     IPoint clampPoint(const IPoint& point) const {
-      return { std::max(x_, std::min(right(), point.x)), std::max(y_, std::min(bottom(), point.y)) };
+      return { (std::max)(x_, (std::min)(right(), point.x)), (std::max)(y_, (std::min)(bottom(), point.y)) };
     }
 
     void setX(int x) { x_ = x; }
@@ -309,7 +309,7 @@ namespace gmpi::gpu {
     }
 
     IBounds trimTop(int amount) {
-      amount = std::min(amount, height_);
+      amount = (std::min)(amount, height_);
       const IBounds trimmed(x_, y_, width_, amount);
       y_ += amount;
       height_ -= amount;
@@ -317,14 +317,14 @@ namespace gmpi::gpu {
     }
 
     IBounds trimBottom(int amount) {
-      amount = std::min(amount, height_);
+      amount = (std::min)(amount, height_);
       const IBounds trimmed(x_, y_ + height_ - amount, width_, amount);
       height_ -= amount;
       return trimmed;
     }
 
     IBounds trimLeft(int amount) {
-      amount = std::min(amount, width_);
+      amount = (std::min)(amount, width_);
       const IBounds trimmed(x_, y_, amount, height_);
       x_ += amount;
       width_ -= amount;
@@ -332,21 +332,21 @@ namespace gmpi::gpu {
     }
 
     IBounds trimRight(int amount) {
-      amount = std::min(amount, width_);
+      amount = (std::min)(amount, width_);
       const IBounds trimmed(x_ + width_ - amount, y_, amount, height_);
       width_ -= amount;
       return trimmed;
     }
 
     IBounds reduced(int amount) const {
-      const auto newWidth = std::max(0, width_ - 2 * amount);
-      const auto newHeight = std::max(0, height_ - 2 * amount);
+      const auto newWidth = (std::max)(0, width_ - 2 * amount);
+      const auto newHeight = (std::max)(0, height_ - 2 * amount);
       return { x_ + amount, y_ + amount, newWidth, newHeight };
     }
 
     IBounds reduced(int left, int right, int top, int bottom) const {
-      const auto newWidth = std::max(0, width_ - left - right);
-      const auto newHeight = std::max(0, height_ - top - bottom);
+      const auto newWidth = (std::max)(0, width_ - left - right);
+      const auto newHeight = (std::max)(0, height_ - top - bottom);
       return { x_ + left, y_ + top, newWidth, newHeight };
     }
 
@@ -372,18 +372,18 @@ namespace gmpi::gpu {
       if (other.width() <= 0)
         return *this;
 
-      auto x = std::min(x_, other.x_);
-      auto y = std::min(y_, other.y_);
-      auto r = std::max(right(), other.right());
-      auto b = std::max(bottom(), other.bottom());
+      auto x = (std::min)(x_, other.x_);
+      auto y = (std::min)(y_, other.y_);
+      auto r = (std::max)(right(), other.right());
+      auto b = (std::max)(bottom(), other.bottom());
       return { x, y, r - x, b - y };
     }
 
     IBounds intersection(const IBounds& other) const {
-      int x = std::max(x_, other.x_);
-      int y = std::max(y_, other.y_);
-      int r = std::min(right(), other.right());
-      int b = std::min(bottom(), other.bottom());
+      int x = (std::max)(x_, other.x_);
+      int y = (std::max)(y_, other.y_);
+      int r = (std::min)(right(), other.right());
+      int b = (std::min)(bottom(), other.bottom());
       return { x, y, r - x, b - y };
     }
 
@@ -494,7 +494,7 @@ namespace gmpi::gpu {
     Point topLeft() const { return { x_, y_ }; }
     Point bottomRight() const { return { x_ + width_, y_ + height_ }; }
     Point clampPoint(const Point& point) const {
-      return { std::max(x_, std::min(right(), point.x)), std::max(y_, std::min(bottom(), point.y)) };
+      return { (std::max)(x_, (std::min)(right(), point.x)), (std::max)(y_, (std::min)(bottom(), point.y)) };
     }
 
     void setX(float x) { x_ = x; }
@@ -507,7 +507,7 @@ namespace gmpi::gpu {
     }
 
     Bounds trimTop(float amount) {
-      amount = std::min(amount, height_);
+      amount = (std::min)(amount, height_);
       const Bounds trimmed(x_, y_, width_, amount);
       y_ += amount;
       height_ -= amount;
@@ -515,14 +515,14 @@ namespace gmpi::gpu {
     }
 
     Bounds trimBottom(float amount) {
-      amount = std::min(amount, height_);
+      amount = (std::min)(amount, height_);
       const Bounds trimmed(x_, y_ + height_ - amount, width_, amount);
       height_ -= amount;
       return trimmed;
     }
 
     Bounds trimLeft(float amount) {
-      amount = std::min(amount, width_);
+      amount = (std::min)(amount, width_);
       const Bounds trimmed(x_, y_, amount, height_);
       x_ += amount;
       width_ -= amount;
@@ -530,21 +530,21 @@ namespace gmpi::gpu {
     }
 
     Bounds trimRight(float amount) {
-      amount = std::min(amount, width_);
+      amount = (std::min)(amount, width_);
       const Bounds trimmed(x_ + width_ - amount, y_, amount, height_);
       width_ -= amount;
       return trimmed;
     }
 
     Bounds reduced(float amount) const {
-      const auto newWidth = std::max(0.0f, width_ - 2.0f * amount);
-      const auto newHeight = std::max(0.0f, height_ - 2.0f * amount);
+      const auto newWidth = (std::max)(0.0f, width_ - 2.0f * amount);
+      const auto newHeight = (std::max)(0.0f, height_ - 2.0f * amount);
       return { x_ + amount, y_ + amount, newWidth, newHeight };
     }
 
     Bounds reduced(float left, float right, float top, float bottom) const {
-      const auto newWidth = std::max(0.0f, width_ - left - right);
-      const auto newHeight = std::max(0.0f, height_ - top - bottom);
+      const auto newWidth = (std::max)(0.0f, width_ - left - right);
+      const auto newHeight = (std::max)(0.0f, height_ - top - bottom);
       return { x_ + left, y_ + top, newWidth, newHeight };
     }
 
@@ -572,18 +572,18 @@ namespace gmpi::gpu {
       if (other.width() <= 0.0f)
         return *this;
 
-      float x = std::min(x_, other.x_);
-      float y = std::min(y_, other.y_);
-      float r = std::max(right(), other.right());
-      float b = std::max(bottom(), other.bottom());
+      float x = (std::min)(x_, other.x_);
+      float y = (std::min)(y_, other.y_);
+      float r = (std::max)(right(), other.right());
+      float b = (std::max)(bottom(), other.bottom());
       return { x, y, r - x, b - y };
     }
 
     Bounds intersection(const Bounds& other) const {
-      float x = std::max(x_, other.x_);
-      float y = std::max(y_, other.y_);
-      float r = std::min(right(), other.right());
-      float b = std::min(bottom(), other.bottom());
+      float x = (std::max)(x_, other.x_);
+      float y = (std::max)(y_, other.y_);
+      float r = (std::min)(right(), other.right());
+      float b = (std::min)(bottom(), other.bottom());
       return { x, y, r - x, b - y };
     }
 
@@ -609,16 +609,16 @@ namespace gmpi::gpu {
   static Point adjustBoundsForAspectRatio(Point current, Point min_bounds, Point max_bounds,
                                           float aspect_ratio, bool horizontal_resize,
                                           bool vertical_resize) {
-    float min_x = std::max(min_bounds.x, min_bounds.y * aspect_ratio);
-    float min_y = std::max(min_bounds.y, min_bounds.x / aspect_ratio);
-    float max_x = std::min(max_bounds.x, max_bounds.y * aspect_ratio);
-    float max_y = std::min(max_bounds.y, max_bounds.x / aspect_ratio);
+    float min_x = (std::max)(min_bounds.x, min_bounds.y * aspect_ratio);
+    float min_y = (std::max)(min_bounds.y, min_bounds.x / aspect_ratio);
+    float max_x = (std::min)(max_bounds.x, max_bounds.y * aspect_ratio);
+    float max_y = (std::min)(max_bounds.y, max_bounds.x / aspect_ratio);
 
-    float width = std::max(min_x, std::min(max_x, current.x));
-    float height = std::max(min_y, std::min(max_y, current.y));
+    float width = (std::max)(min_x, (std::min)(max_x, current.x));
+    float height = (std::max)(min_y, (std::min)(max_y, current.y));
 
-    float width_from_height = std::max(min_x, std::min(max_x, height * aspect_ratio));
-    float height_from_width = std::max(min_y, std::min(max_y, width / aspect_ratio));
+    float width_from_height = (std::max)(min_x, (std::min)(max_x, height * aspect_ratio));
+    float height_from_width = (std::max)(min_y, (std::min)(max_y, width / aspect_ratio));
 
     if (horizontal_resize && !vertical_resize)
       return { width, height_from_width };

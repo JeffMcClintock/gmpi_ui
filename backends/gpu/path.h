@@ -117,16 +117,16 @@ namespace gmpi::gpu {
     FillRule fillRule() const { return fill_rule_; }
 
     Bounds boundingBox() const {
-      float min_x = std::numeric_limits<float>::max();
-      float min_y = std::numeric_limits<float>::max();
+      float min_x = (std::numeric_limits<float>::max)();
+      float min_y = (std::numeric_limits<float>::max)();
       float max_x = std::numeric_limits<float>::lowest();
       float max_y = std::numeric_limits<float>::lowest();
       for (const auto& path : paths_) {
         for (const auto& point : path.points) {
-          min_x = std::min(min_x, point.x);
-          min_y = std::min(min_y, point.y);
-          max_x = std::max(max_x, point.x);
-          max_y = std::max(max_y, point.y);
+          min_x = (std::min)(min_x, point.x);
+          min_y = (std::min)(min_y, point.y);
+          max_x = (std::max)(max_x, point.x);
+          max_y = (std::max)(max_y, point.y);
         }
       }
       if (min_x > max_x || min_y > max_y)

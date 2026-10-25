@@ -65,7 +65,7 @@ namespace gmpi::gpu {
       Gradient result;
       result.colors_.reserve(resolution);
 
-      float normalization = 1.0f / std::max(1.0f, resolution - 1.0f);
+      float normalization = 1.0f / (std::max)(1.0f, resolution - 1.0f);
       for (int i = 0; i < resolution; ++i)
         result.colors_.emplace_back(sample_function(i * normalization));
       result.evenlySpace();
@@ -74,7 +74,7 @@ namespace gmpi::gpu {
 
     static Gradient interpolate(const Gradient& from, const Gradient& to, float t) {
       auto sample_function = [&](float s) { return from.sample(s).interpolateWith(to.sample(s), t); };
-      return fromSampleFunction(std::max(from.resolution(), to.resolution()), sample_function);
+      return fromSampleFunction((std::max)(from.resolution(), to.resolution()), sample_function);
     }
 
     Gradient() = default;
@@ -123,7 +123,7 @@ namespace gmpi::gpu {
       int index = std::distance(positions_.begin(), it);
       float t0 = positions_[index - 1];
       float t1 = positions_[index];
-      float local_t = (t - t0) / std::max(0.000001f, t1 - t0);
+      float local_t = (t - t0) / (std::max)(0.000001f, t1 - t0);
       return colors_[index - 1].interpolateWith(colors_[index], local_t);
     }
 
@@ -178,7 +178,7 @@ namespace gmpi::gpu {
 
     Gradient operator*(const Gradient& other) const {
       auto sample_function = [&](float s) { return sample(s) * other.sample(s); };
-      return fromSampleFunction(std::max(resolution(), other.resolution()), sample_function);
+      return fromSampleFunction((std::max)(resolution(), other.resolution()), sample_function);
     }
 
 
@@ -411,8 +411,8 @@ namespace gmpi::gpu {
 
     static GradientPosition radial(const Point& center, float radius_x, float radius_y,
                                    Point focal_center, float focal_radius = 0.0f) {
-      radius_x = std::max(0.0001f, radius_x);
-      radius_y = std::max(0.0001f, radius_y);
+      radius_x = (std::max)(0.0001f, radius_x);
+      radius_y = (std::max)(0.0001f, radius_y);
 
       GradientPosition position;
       position.point1 = center;

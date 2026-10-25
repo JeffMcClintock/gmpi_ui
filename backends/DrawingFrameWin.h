@@ -269,6 +269,8 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	void CreateSwapPanel(ID2D1Factory1* d2dFactory);
 	void CreateDeviceSwapChainBitmap();
 	void OnSize(UINT width, UINT height);
+	// The GPU present (DxDrawingFrameHwnd) takes over resizing; true when it did.
+	virtual bool onSizeGpu(UINT /*width*/, UINT /*height*/) { return false; }
 	void PaintFrame(std::span<gmpi::drawing::RectL> dirtyRects);
 
 	// Shared dirty-rect render loop. Caller is responsible for beginDraw/endDraw —
@@ -467,9 +469,16 @@ public:
 	// IDrawingHost
 	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;
 	float getRasterizationScale() override; // DPI scaling
+	// The factory the client draws with: Direct2D's, or the GPU backend's when the
+	// frame presents through it (DxDrawingFrameHwnd::startGpu). A hook rather than
+	// an override of getDrawingFactory, which SynthEditLib's frame overrides too.
+	virtual gmpi::api::IUnknown* gpuFactory() { return nullptr; }
 	gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override
 	{
-		*returnFactory = &DrawingFactory;
+		if (auto* gpu = gpuFactory())
+			*returnFactory = gpu;
+		else
+			*returnFactory = &DrawingFactory;
 		return gmpi::ReturnCode::Ok;
 	}
 
@@ -544,6 +553,19 @@ protected:
 	HWND compositionWindow = {};
 
 	HRESULT createCompositionSwapChain(IDXGIFactory2* factory, ID3D11Device* d3dDevice, const DXGI_SWAP_CHAIN_DESC1* desc, IDXGISwapChain1** returnSwapChain);
+
+	// GPU present. Opt in with GMPI_UI_GPU=1 in a build that defines
+	// GMPI_UI_GPU_BACKEND: the window is then presented by gmpi_ui's renderer
+	// (Direct3D 12) through gmpi::gpugfx::WindowPresenter, and no Direct2D device,
+	// swap chain or composition target is made. The client gets the GPU factory.
+	// Direct2D stays the default and the fallback when the renderer will not start.
+	struct GpuState;
+	std::shared_ptr<GpuState> gpu_;
+	bool startGpu(int width, int height); // call in place of CreateSwapPanel; false = use Direct2D
+	void stopGpu();                       // before the window is destroyed
+	void paintGpu(std::span<gmpi::drawing::RectL> dirtyRects);
+	bool onSizeGpu(UINT width, UINT height) override;
+	gmpi::api::IUnknown* gpuFactory() override;
 
 public:
 	virtual ~DxDrawingFrameHwnd()

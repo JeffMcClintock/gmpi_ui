@@ -103,6 +103,32 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ole32                             # COM apartment for the file/colour dialogs
 )
 
+# The GPU backend (Direct3D 12): built in, and used when GMPI_UI_GPU=1 is set.
+# Without it the demo draws through Direct2D as before.
+option(FORMSDEMO_GPU "Build in gmpi_ui's GPU backend (run with GMPI_UI_GPU=1 to use it)" OFF)
+if(FORMSDEMO_GPU)
+    include(${GMPI_UI_SDK}/backends/gpu/gmpi_gpu.cmake)
+    target_link_libraries(${PROJECT_NAME} PRIVATE gmpi_gpu)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE GMPI_UI_GPU_BACKEND=1)
+
+    # The GPU path lays text out with CpuTextEngine, which shapes with HarfBuzz
+    # (the amalgamation, compiled here as gimpi_ui_tests does).
+    FetchContent_Declare(
+        harfbuzz
+        GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz
+        GIT_TAG        14.2.1
+        GIT_SHALLOW    ON
+        SOURCE_SUBDIR  do-not-configure
+    )
+    FetchContent_MakeAvailable(harfbuzz)
+    add_library(gmpi_harfbuzz STATIC ${harfbuzz_SOURCE_DIR}/src/harfbuzz.cc)
+    target_include_directories(gmpi_harfbuzz PUBLIC ${harfbuzz_SOURCE_DIR}/src)
+    target_compile_definitions(gmpi_harfbuzz PUBLIC HB_NO_MT)
+    set_target_properties(gmpi_harfbuzz PROPERTIES CXX_STANDARD 17)
+    target_compile_options(gmpi_harfbuzz PRIVATE /wd4244 /wd4267 /wd4996 /bigobj)
+    target_link_libraries(${PROJECT_NAME} PRIVATE gmpi_harfbuzz)
+endif()
+
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
 endif()

@@ -111,7 +111,7 @@ namespace gmpi::gpu {
 
       int index = packed_rects_.size();
       lookup_[id] = index;
-      packed_rects_.push_back({ 0, 0, std::max(0, width), std::max(0, height) });
+      packed_rects_.push_back({ 0, 0, (std::max)(0, width), (std::max)(0, height) });
       return packer_.addRect(packed_rects_.back());
     }
 
@@ -132,18 +132,18 @@ namespace gmpi::gpu {
         // and a 1:1 quad sampled there mixes in a neighbour by one fp16
         // ulp on whichever rows round unluckily. Byte-identical pixels
         // then read back differently depending on image size.
-        width_ = nextPowerOfTwo(std::max(1, packed_rects_[0].w + packer_.padding()));
-        height_ = nextPowerOfTwo(std::max(1, packed_rects_[0].h + packer_.padding()));
+        width_ = nextPowerOfTwo((std::max)(1, packed_rects_[0].w + packer_.padding()));
+        height_ = nextPowerOfTwo((std::max)(1, packed_rects_[0].h + packer_.padding()));
         if (!packer_.pack(packed_rects_, width_, height_))
           GMPI_GPU_ASSERT(false);
       }
       else if (!packed_rects_.empty()) {
-        width_ = std::max(kDefaultWidth, start_width);
-        height_ = std::max(kDefaultWidth, start_height);
+        width_ = (std::max)(kDefaultWidth, start_width);
+        height_ = (std::max)(kDefaultWidth, start_height);
 
         while (width_ < kMaxDimension * 2 || height_ < kMaxDimension * 2) {
-          width_ = fixed_width_ ? fixed_width_ : std::min(kMaxDimension, width_);
-          height_ = std::min(kMaxDimension, height_);
+          width_ = fixed_width_ ? fixed_width_ : (std::min)(kMaxDimension, width_);
+          height_ = (std::min)(kMaxDimension, height_);
           if (packer_.pack(packed_rects_, width_, height_))
             return;
 

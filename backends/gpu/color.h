@@ -185,9 +185,9 @@ namespace gmpi::gpu {
       std::swap(values_[kBlue], values_[kRed]);
     }
 
-    void setAlpha(float alpha) { values_[kAlpha] = std::max(0.0f, std::min(1.0f, alpha)); }
+    void setAlpha(float alpha) { values_[kAlpha] = (std::max)(0.0f, (std::min)(1.0f, alpha)); }
 
-    void setHdr(float hdr) { hdr_ = std::max(0.0f, hdr); }
+    void setHdr(float hdr) { hdr_ = (std::max)(0.0f, hdr); }
 
     void multRgb(float amount) {
       for (int i = 0; i < kAlpha; ++i)
@@ -251,7 +251,7 @@ namespace gmpi::gpu {
     float hdr() const { return hdr_; }
 
     float value() const {
-      return std::max(values_[kRed], std::max(values_[kGreen], values_[kBlue]));
+      return (std::max)(values_[kRed], (std::max)(values_[kGreen], values_[kBlue]));
     }
 
     float saturation() const {
@@ -351,11 +351,11 @@ namespace gmpi::gpu {
 
   private:
     static unsigned int floatToHex(float value) {
-      return std::round(std::max(0.0f, std::min(1.0f, value)) * 0xff);
+      return std::round((std::max)(0.0f, (std::min)(1.0f, value)) * 0xff);
     }
 
     static uint64_t floatToHex16(float value) {
-      return std::round(std::max(0.0f, std::min(1.0f, value)) * 0xffff);
+      return std::round((std::max)(0.0f, (std::min)(1.0f, value)) * 0xffff);
     }
 
     static uint64_t floatToHalf(float value) {
@@ -400,7 +400,7 @@ namespace gmpi::gpu {
     }
 
     float minColor() const {
-      return std::min(values_[kRed], std::min(values_[kGreen], values_[kBlue]));
+      return (std::min)(values_[kRed], (std::min)(values_[kGreen], values_[kBlue]));
     }
 
     float values_[kNumChannels] {};

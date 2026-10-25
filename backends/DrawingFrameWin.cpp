@@ -9,6 +9,12 @@
 #include <cmath> // std::abs
 #include "Core/GmpiApiEditor.h" // for gmpi::api::IEditor in attachClient
 #include "./DrawingFrameWin.h"
+#if GMPI_UI_GPU_BACKEND
+#include "backends/GpuGfx.h"
+#include "helpers/CpuTextEngine.h"
+#include "helpers/DecodeImage.h"
+#include "helpers/FontProvider.h"
+#endif
 
 #pragma comment(lib, "comdlg32.lib") // ChooseColor
 #pragma comment(lib, "comctl32.lib") // SetWindowSubclass/DefSubclassProc
@@ -18,6 +24,7 @@ using namespace std;
 using namespace gmpi;
 using namespace gmpi::drawing;
 using namespace D2D1;
+
 
 namespace gmpi
 {
@@ -382,7 +389,8 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 	if (!windowHandle)
 		return;
 
-	CreateSwapPanel(DrawingFactory.getD2dFactory());
+	if (!startGpu(r.right - r.left, r.bottom - r.top))
+		CreateSwapPanel(DrawingFactory.getD2dFactory());
 
 	initTooltip();
 
@@ -402,6 +410,7 @@ void DrawingFrame::open(void* pParentWnd, const gmpi::drawing::SizeL* overrideSi
 void DrawingFrame::close()
 {
 	stopTimer();
+	stopGpu(); // its swap chain belongs to the window
 
 	// Clear GWLP_USERDATA first so messages delivered during DestroyWindow
 	// (WM_DESTROY, WM_NCDESTROY, etc.) fall through to DefWindowProc rather
@@ -638,7 +647,7 @@ bool DxDrawingFrameHwnd::onTimer()
 	// mode or moves the window between monitors with different SDR-white-level.
 	// Promoted from SynthEditLib in Phase 4c-5; gmpi_ui consumers gain the same
 	// adaptive behaviour. Cheap (~1.5s interval).
-	if (pollHdrChangesCount-- < 0)
+	if (!gpu_ && pollHdrChangesCount-- < 0)
 	{
 		pollHdrChangesCount = 100; // ~1.5s at 15ms timer
 		if (windowWhiteLevel != calcWhiteLevel())
@@ -792,8 +801,126 @@ void DxDrawingFrameHwnd::OnPaint()
 	ValidateRect(getWindowHandle(), nullptr);
 
 	auto dirtyRects = updateRegion_native.getUpdateRects();
+	if (gpu_)
+	{
+		paintGpu({ dirtyRects.data(), dirtyRects.size() });
+		return;
+	}
 	PaintFrame({ dirtyRects.data(), dirtyRects.size() });
 }
+
+#if GMPI_UI_GPU_BACKEND
+struct DxDrawingFrameHwnd::GpuState
+{
+	gmpi::gpugfx::Factory         factory;
+	gmpi::drawing::CpuTextEngine  textEngine{ gmpi::drawing::findFont };
+	gmpi::gpugfx::WindowPresenter presenter{ factory };
+	bool                          needsMeasure{ true };
+	const void*                   measuredClient{};
+};
+
+bool DxDrawingFrameHwnd::startGpu(int width, int height)
+{
+	if (!gmpi::gpugfx::wanted() || width <= 0 || height <= 0)
+		return false;
+
+	if (!gmpi::gpugfx::initialize())
+	{
+		fprintf(stderr, "gmpi_ui: GPU backend unavailable, presenting through Direct2D\n");
+		return false;
+	}
+
+	auto state = std::make_shared<GpuState>();
+	state->textEngine.imageDecoder = gmpi::drawing::decodeImageMemory;
+	state->factory.cpu.imageDecoder = gmpi::drawing::decodeImageFile;
+	state->factory.cpu.textEngine = &state->textEngine;
+	gpu_ = std::move(state);
+
+	onSizeGpu(static_cast<UINT>(width), static_cast<UINT>(height));
+	return true;
+}
+
+void DxDrawingFrameHwnd::stopGpu()
+{
+	if (gpu_)
+		gpu_->presenter.release();
+}
+
+bool DxDrawingFrameHwnd::onSizeGpu(UINT width, UINT height)
+{
+	if (!gpu_)
+		return false;
+
+	if (width == 0 || height == 0)
+		return true;
+
+	// The input transforms and the dirty-rect clip follow the window and its DPI.
+	const float dpiScale = getRasterizationScale();
+	DipsToWindow = gmpi::drawing::makeScale(dpiScale, dpiScale);
+	WindowToDips = gmpi::drawing::invert(DipsToWindow);
+	swapChainSize = { static_cast<int32_t>(width), static_cast<int32_t>(height) };
+
+	// Queued, not InvalidateRect: WM_SIZE's DefWindowProc clears the update region.
+	gpu_->needsMeasure = true;
+	invalidateAll();
+	return true;
+}
+
+void DxDrawingFrameHwnd::paintGpu(std::span<gmpi::drawing::RectL> dirtyRects)
+{
+	const auto hwnd = getWindowHandle();
+	if (!gpu_ || !hwnd || !drawingClient || dirtyRects.empty())
+		return;
+
+	RECT client{};
+	::GetClientRect(hwnd, &client);
+	const int pw = client.right - client.left;
+	const int ph = client.bottom - client.top;
+	if (pw <= 0 || ph <= 0)
+		return;
+
+	bool sized = false;
+	if (!gpu_->presenter.ensureTarget(hwnd, pw, ph, sized))
+	{
+		fprintf(stderr, "gmpi_ui: no GPU window target\n"); // the client already holds GPU resources, so Direct2D is not an option now
+		return;
+	}
+
+	// A new client has never been laid out, and a resize invalidates the layout.
+	if (gpu_->measuredClient != drawingClient.get())
+	{
+		gpu_->measuredClient = drawingClient.get();
+		gpu_->needsMeasure = true;
+	}
+
+	const float scale = getRasterizationScale();
+	gmpi::drawing::RectL box = dirtyRects[0];
+	for (const auto& r : dirtyRects.subspan(1))
+	{
+		box.left = (std::min)(box.left, r.left);
+		box.top = (std::min)(box.top, r.top);
+		box.right = (std::max)(box.right, r.right);
+		box.bottom = (std::max)(box.bottom, r.bottom);
+	}
+	bool dirtyAll = sized || gpu_->needsMeasure || (box.left <= 0 && box.top <= 0 && box.right >= pw && box.bottom >= ph);
+	gmpi::drawing::Rect dirty{ box.left / scale, box.top / scale, box.right / scale, box.bottom / scale };
+
+	gpu_->presenter.present(drawingClient.get(), pw / scale, ph / scale, scale, gpu_->needsMeasure, dirtyAll, dirty);
+}
+
+gmpi::api::IUnknown* DxDrawingFrameHwnd::gpuFactory()
+{
+	return gpu_ ? static_cast<gmpi::api::IUnknown*>(&gpu_->factory) : nullptr;
+}
+#else
+// Built without the GPU backend: Direct2D only.
+struct DxDrawingFrameHwnd::GpuState {};
+bool DxDrawingFrameHwnd::startGpu(int, int) { return false; }
+void DxDrawingFrameHwnd::stopGpu() {}
+bool DxDrawingFrameHwnd::onSizeGpu(UINT, UINT) { return false; }
+void DxDrawingFrameHwnd::paintGpu(std::span<gmpi::drawing::RectL>) {}
+gmpi::api::IUnknown* DxDrawingFrameHwnd::gpuFactory() { return nullptr; }
+#endif
 
 void tempSharedD2DBase::paintLoop(
 	gmpi::drawing::api::IDeviceContext* deviceContext,
@@ -1505,6 +1632,9 @@ void tempSharedD2DBase::CreateDeviceSwapChainBitmap()
 
 void tempSharedD2DBase::OnSize(UINT width, UINT height)
 {
+	if (onSizeGpu(width, height))
+		return;
+
 	// The device can legitimately be gone here: it is released on a failed present,
 	// and a size event can arrive before the pending rebuild has run. Nothing to do --
 	// CreateSwapPanel sizes the new swap chain from the window when the rebuild runs.
@@ -1552,6 +1682,13 @@ void DrawingFrame::reSize(int left, int top, int right, int bottom)
 	// refuse it rather than discovering that inside DXGI.
 	if (width <= 0 || height <= 0 || width > maxSwapChainDimension || height > maxSwapChainDimension)
 		return;
+
+	if (gpu_)
+	{
+		// WM_SIZE follows and resizes the target; there is no swap chain here to touch.
+		SetWindowPos(windowHandle, nullptr, 0, 0, width, height, SWP_NOZORDER);
+		return;
+	}
 
 	if (!d2dDeviceContext || (swapChainSize.width == width && swapChainSize.height == height))
 		return;

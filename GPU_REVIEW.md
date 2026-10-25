@@ -451,10 +451,31 @@ Branches, none merged: gmpi_ui `d3d12-fixes` (on `dxbc-shaders`), gimpi_ui_tests
   nothing on a bitmap render target here, whatever the antialias mode, and
   `EndDraw` still says Ok. The test is committed `DISABLED_`; the one-word fix on
   main is therefore unverified.
-- **Not done**: A1 (the present under `DrawingFrameWin`) and with it the mid-grey
-  `resetFlags()` check, first-frame submit+present times with the cache cold and
-  warm, and CPU-fallback counts on a real document. The Windows frame owns its
-  swap chain through D2D / DirectComposition, so it is a design change, not a hook.
+- **A1, the present under `DrawingFrameWin`** (branch `win-gpu-present`): done for
+  the native-HWND frame (`DxDrawingFrameHwnd`, which `gmpi::hosting::DrawingFrame`
+  and the GMPI Windows wrappers use). With `GMPI_UI_GPU=1` in a build that defines
+  `GMPI_UI_GPU_BACKEND`, `open()` takes `WindowPresenter` on the HWND instead of
+  `CreateSwapPanel` (no D2D device, swap chain or DirectComposition target); the
+  client gets the GPU factory through a `gpuFactory()` hook on `DxDrawingFrameBase`
+  (not an override of `getDrawingFactory`, which SynthEditLib's `DrawingFrameBase2`
+  overrides too); WM_SIZE and WM_PAINT feed the presenter; the HDR poll is skipped.
+  Direct2D remains the default and the fallback. FormsDemo: `-DFORMSDEMO_GPU=ON`.
+  Measured off-screen on FormsDemo (`PrintWindow` of the frame, nothing on screen):
+  - Renders the whole UI; the window background (44) and field (56) are exactly
+    Direct2D's, so a mid-grey presents as mid-grey with `resetFlags()` as it is.
+    Mean difference 1.1 / 255 per channel over the frame; text is greyscale where
+    Direct2D uses ClearType.
+  - First frame 3-24 ms render + 21-28 ms submit+present (90 ms the very first
+    time on the machine); a partial repaint 0.2-1.5 ms + 1.0-1.4 ms.
+  - Cold vs warm app pipeline cache: 20.6 ms vs 22.0 ms, so no measurable gain
+    here (the driver has its own cache); 7 cache files, the same on every run.
+  - 0 `viaCpu` fallbacks over 50 draw ops.
+  - **Not covered**: SynthEdit's own frames (`DrawingFrameBase2`, HostedView / WinUI3
+    SwapChainPanel) and the GMPI VST3 wrapper do not start it; SE's SDK3 modules
+    would need the GPU factory bridged. Untested: DPI change between monitors,
+    interactive resize, a text edit overlay, HDR displays.
+- Also needed: `std::min/max` in the GPU headers are now parenthesised, since
+  `Windows.h` (without NOMINMAX) is included ahead of them in the frame.
 
 ## What is already right
 

@@ -64,10 +64,10 @@ namespace gmpi::gpu {
     }
 
     ClampBounds clamp(float x, float y, float width, float height) const {
-      float new_top = std::max(top, y);
-      float new_left = std::max(left, x);
-      return { new_left, new_top, std::max(new_left, std::min(right, x + width)),
-               std::max(new_top, std::min(bottom, y + height)) };
+      float new_top = (std::max)(top, y);
+      float new_left = (std::max)(left, x);
+      return { new_left, new_top, (std::max)(new_left, (std::min)(right, x + width)),
+               (std::max)(new_top, (std::min)(bottom, y + height)) };
     }
   };
 

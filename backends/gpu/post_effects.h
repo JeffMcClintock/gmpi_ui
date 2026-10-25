@@ -76,7 +76,7 @@ namespace gmpi::gpu {
     void submit(const BatchVector<SampleRegion>& batches, Layer& destination, int submit_pass) override;
 
     float blurRadius() const { return blur_radius_; }
-    void setBlurRadius(float size) { blur_radius_ = std::max(0.0f, size); }
+    void setBlurRadius(float size) { blur_radius_ = (std::max)(0.0f, size); }
 
   private:
     float blur_radius_ = 0.0f;
@@ -96,7 +96,7 @@ namespace gmpi::gpu {
     void submitBloom(const BatchVector<SampleRegion>& batches, const Layer& destination,
                      int submit_pass) const;
 
-    void setBloomSize(float size) { bloom_size_ = std::log2(std::max(1.0f, size)); }
+    void setBloomSize(float size) { bloom_size_ = std::log2((std::max)(1.0f, size)); }
     void setBloomIntensity(float intensity) { bloom_intensity_ = intensity; }
 
   private:

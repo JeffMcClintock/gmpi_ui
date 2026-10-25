@@ -18,7 +18,7 @@ CXXFLAGS="-std=c++20 -O1 -g -DNDEBUG -I$ROOT -I$ROOT/helpers -I$GMPI -I$GMPI/Cor
 LIBS=$(pkg-config --cflags --libs x11 xext fontconfig harfbuzz freetype2 dbus-1)
 BGFX_SRC="$ROOT/backends/gpu/3rdparty/bgfx"  # vendored
 GPULIBS="$GPU_BUILD/libgmpi_gpu.a $GPU_BUILD/libgmpi_bgfx.a $GPU_BUILD/libgmpi_bimg.a $GPU_BUILD/libgmpi_bx.a \
-    -lX11 -lXext -ldl -lrt -lpthread"
+    -lX11 -lXext -lwayland-client -ldl -lrt -lpthread"
 echo "building cpu ..."
 g++ $CXXFLAGS -o "$OUT/x11_menu_test_cpu" "$HERE/x11_menu_test.cpp" "$ROOT/backends/DrawingFrameX11.cpp" $LIBS -lpng || exit 1
 echo "building gpu ..."

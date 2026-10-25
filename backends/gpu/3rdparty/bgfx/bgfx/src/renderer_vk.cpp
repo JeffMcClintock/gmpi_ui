@@ -2144,6 +2144,7 @@ VK_IMPORT_DEVICE
 			m_pipelineStateCache.invalidate();
 			m_descriptorSetLayoutCache.invalidate();
 			m_renderPassCache.invalidate();
+			m_renderPassKey.clear();
 			m_samplerCache.invalidate();
 			m_samplerBorderColorCache.invalidate();
 			m_imageViewCache.invalidate();
@@ -3218,6 +3219,7 @@ VK_IMPORT_DEVICE
 
 			if (VK_NULL_HANDLE != renderPass)
 			{
+				m_renderPassKey[renderPassId(renderPass)] = hashKey; // gmpi: see renderPassKey()
 				*_renderPass = renderPass;
 				return result;
 			}
@@ -3353,6 +3355,7 @@ VK_IMPORT_DEVICE
 			}
 
 			m_renderPassCache.add(hashKey, renderPass);
+			m_renderPassKey[renderPassId(renderPass)] = hashKey; // gmpi: see renderPassKey()
 
 			*_renderPass = renderPass;
 
@@ -3638,7 +3641,12 @@ VK_IMPORT_DEVICE
 
 			murmur.add(layout.m_attributes, sizeof(layout.m_attributes) );
 			murmur.add(_numInstanceData);
-			murmur.add(frameBuffer.m_renderPass);
+			// gmpi: the render pass's DESCRIPTION (formats, samples, resolve), not
+			// its handle. The handle is a pointer that differs every run, which
+			// made this hash - also the key of the on-disk pipeline cache - new
+			// every run, so the cache never hit. Render passes are cached by this
+			// description, so within a run it is as unique as the handle was.
+			murmur.add(renderPassKey(frameBuffer.m_renderPass));
 			const uint32_t hash = murmur.end();
 
 			VkPipeline pipeline = m_pipelineStateCache.find(hash);
@@ -4602,6 +4610,27 @@ VK_IMPORT_DEVICE
 		StateCacheT<VkPipeline> m_pipelineStateCache;
 		StateCacheT<VkDescriptorSetLayout> m_descriptorSetLayoutCache;
 		StateCacheT<VkRenderPass> m_renderPassCache;
+
+		// gmpi: each render pass's description hash (getRenderPass), by handle.
+		stl::unordered_map<uint64_t, uint32_t> m_renderPassKey;
+
+		static uint64_t renderPassId(const VkRenderPass& _renderPass)
+		{
+			uint64_t id = 0;
+			bx::memCopy(&id, &_renderPass, bx::min<uint32_t>(sizeof(id), sizeof(_renderPass) ) );
+			return id;
+		}
+
+		uint32_t renderPassKey(const VkRenderPass& _renderPass) const
+		{
+			const auto it = m_renderPassKey.find(renderPassId(_renderPass) );
+			if (it != m_renderPassKey.end() )
+				return it->second;
+			bx::HashMurmur2A murmur; // not made by getRenderPass: fall back to the handle
+			murmur.begin();
+			murmur.add(_renderPass);
+			return murmur.end();
+		}
 		StateCacheT<VkSampler> m_samplerCache;
 		StateCacheT<uint32_t> m_samplerBorderColorCache;
 		StateCacheLru<VkImageView, 1024> m_imageViewCache;

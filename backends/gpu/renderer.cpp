@@ -24,6 +24,13 @@
 #include "renderer.h"
 #include "platform/model_surface.h"
 
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
 #include "device/device.h"
 
 namespace gmpi::gpu {
@@ -45,9 +52,99 @@ namespace gmpi::gpu {
     void profilerBegin(const char*, uint32_t, const char*, uint16_t) override { }
     void profilerBeginLiteral(const char*, uint32_t, const char*, uint16_t) override { }
     void profilerEnd() override { }
-    uint32_t cacheReadSize(uint64_t) override { return 0; }
-    bool cacheRead(uint64_t, void*, uint32_t) override { return false; }
-    void cacheWrite(uint64_t, const void*, uint32_t) override { }
+    // Pipeline cache on disk. The Vulkan and Direct3D 12 renderers hand
+    // over each pipeline's driver cache blob after compiling it and ask for
+    // it back before compiling it again, so a second run skips the compile.
+    // The driver validates every blob (device, driver version), so a stale
+    // one only costs a recompile. One file per pipeline hash in a per-user
+    // cache folder; GMPI_UI_GPU_PIPELINE_CACHE names another folder, or
+    // "0" turns it off.
+    uint32_t cacheReadSize(uint64_t id) override {
+      std::error_code ec;
+      const auto path = cachePath(id);
+      if (path.empty())
+        return 0;
+      const auto size = std::filesystem::file_size(path, ec);
+      return ec || size > UINT32_MAX ? 0 : uint32_t(size);
+    }
+
+    bool cacheRead(uint64_t id, void* data, uint32_t size) override {
+      const auto path = cachePath(id);
+      std::ifstream file(path, std::ios::binary);
+      if (!file.read(static_cast<char*>(data), size))
+        return false;
+      ++cache_hits_;
+      return true;
+    }
+
+    void cacheWrite(uint64_t id, const void* data, uint32_t size) override {
+      const auto path = cachePath(id);
+      if (path.empty())
+        return;
+      std::error_code ec;
+      std::filesystem::create_directories(path.parent_path(), ec);
+      // Write then rename: two processes compiling the same pipeline must
+      // never leave a half-written blob for a third to read.
+      auto temp = path;
+      temp += ".tmp" + std::to_string(reinterpret_cast<uintptr_t>(this));
+      {
+        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+        if (!file.write(static_cast<const char*>(data), size))
+          return;
+      }
+      std::filesystem::rename(temp, path, ec);
+      if (ec)
+        std::filesystem::remove(temp, ec);
+      ++cache_writes_;
+    }
+
+  public:
+    int cacheHits() const { return cache_hits_; }
+    int cacheWrites() const { return cache_writes_; }
+
+  private:
+    static std::filesystem::path cacheFolder() {
+      static const std::filesystem::path folder = [] {
+        if (const char* v = std::getenv("GMPI_UI_GPU_PIPELINE_CACHE"); v && *v)
+          return std::string(v) == "0" ? std::filesystem::path() : std::filesystem::path(v);
+#if GMPI_GPU_WINDOWS
+        if (const char* local = std::getenv("LOCALAPPDATA"); local && *local)
+          return std::filesystem::path(local) / "gmpi_ui" / "pipelines";
+#elif GMPI_GPU_MAC
+        if (const char* home = std::getenv("HOME"); home && *home)
+          return std::filesystem::path(home) / "Library" / "Caches" / "gmpi_ui" / "pipelines";
+#else
+        if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg)
+          return std::filesystem::path(xdg) / "gmpi_ui" / "pipelines";
+        if (const char* home = std::getenv("HOME"); home && *home)
+          return std::filesystem::path(home) / ".cache" / "gmpi_ui" / "pipelines";
+#endif
+        return std::filesystem::path();
+      }();
+      return folder;
+    }
+
+    // One subfolder per renderer and GPU: the keys do not include the
+    // device, and two GPUs in one machine (or a software renderer beside a
+    // real one) would otherwise overwrite each other's blobs forever - each
+    // driver rejects the other's, correctly, and recompiles.
+    static std::filesystem::path cachePath(uint64_t id) {
+      const auto folder = cacheFolder();
+      if (folder.empty())
+        return {};
+      const gfx::Caps* caps = gfx::getCaps();
+      char device[64];
+      std::snprintf(device, sizeof(device), "%s-%04x-%04x", caps ? gfx::getRendererName(caps->rendererType) : "unknown",
+                    caps ? unsigned(caps->vendorId) : 0u, caps ? unsigned(caps->deviceId) : 0u);
+      char name[32];
+      std::snprintf(name, sizeof(name), "%016llx.bin", static_cast<unsigned long long>(id));
+      return folder / device / name;
+    }
+
+    int cache_hits_ = 0;
+    int cache_writes_ = 0;
+
+  public:
 
     void screenShot(const char* file_path, uint32_t width, uint32_t height, uint32_t pitch,
                     const void* data, uint32_t size, bool y_flip) override {

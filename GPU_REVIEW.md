@@ -307,6 +307,22 @@ What is left by measurement: first frames cost 15-25 ms submit+present
 7-25 ms render; B3 for the occasional large figure. Rich text (B1 tail) did
 not appear in these documents.
 
+## First-frame cost: pipeline compilation (2026-10-25)
+
+Measured with NVIDIA's own shader cache off (`__GL_SHADER_DISK_CACHE=0`,
+which is what a fresh install or the first run after a driver update
+looks like): a cold first frame is ~74-94 ms of submit+present, against
+~15-20 ms with the driver's cache - pipeline compilation is most of a cold
+open. bgfx has a pipeline-cache callback (Vulkan and D3D12 use it); ours
+returned nothing, and bgfx's Vulkan pipeline key included the render pass
+HANDLE, so it could never hit anyway. Done on `pipeline-cache`
+(uncommitted, gmpi_ui on `gpu-text-misc`): `gpu/renderer.cpp` keeps the
+blobs on disk (per-user cache folder, one subfolder per renderer + GPU,
+write-then-rename; `GMPI_UI_GPU_PIPELINE_CACHE` = folder or 0), and
+`gmpi.patch` makes the key stable. Result, driver cache off: 94 -> 15 ms.
+D3D12's key is unchecked (no Windows build). Not done: render time on a
+first frame (7-25 ms) is CPU - text rasterisation on cache misses.
+
 ## Suggested order
 
 1. **A2 + A3 + A4 - DONE 2026-10-25 (uncommitted, gmpi_ui branch

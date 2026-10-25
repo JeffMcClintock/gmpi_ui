@@ -42,9 +42,18 @@ dependency records (see `GPU_SINGLE_DEPENDENCY_PLAN.md`, milestone 0), about
 - `gmpi/amalgamated.cpp` / `.mm`: the single translation unit, listing only
   the vendored sources (bgfx's own `amalgamated.cpp` includes every renderer).
 - `gmpi/renderer_stubs.cpp`: see above.
-- `gmpi.patch`: the only change to upstream source, applied by the vendoring
-  script. It marks `VK_PRESENT_MODE_MAILBOX_KHR` as a no-vsync mode in
-  `renderer_vk.cpp`: bgfx's table treats MAILBOX as vsync, so "no vsync"
+- `gmpi.patch`: the changes to upstream source, applied by the vendoring
+  script. Two, both in `renderer_vk.cpp`:
+  1. **A stable pipeline key** (2026-10-25). bgfx hashed each pipeline with
+     its render pass's *handle*, a pointer that differs every run, and the
+     same hash keys the on-disk pipeline cache (`CallbackI::cacheRead/Write`,
+     which `gpu/renderer.cpp` implements) - so that cache could never hit.
+     The patch hashes the render pass's description (formats, samples,
+     resolve: what Vulkan render-pass compatibility means), which
+     `getRenderPass` already computes and caches by. Measured: a cold first
+     frame with NVIDIA's own shader cache off drops from 94 ms to 15 ms of
+     submit+present. Worth offering upstream.
+  2. It marks `VK_PRESENT_MODE_MAILBOX_KHR` as a no-vsync mode: bgfx's table treats MAILBOX as vsync, so "no vsync"
   accepts only IMMEDIATE, which Mesa's Wayland WSI does not offer, and the
   swap chain falls back to FIFO. Mesa's FIFO throttles on frame callbacks:
   the commit of frame N happens inside the NEXT WSI call, so a window that

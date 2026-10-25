@@ -117,6 +117,9 @@ a window target, check a mid-grey.
 - `drawGeometry` on CPU fallback widens the stroke **twice** (`GpuGfx.h:1118`,
   then `cpu.drawGeometry` widens again); the first result is only used for
   bounds.
+  **DONE 2026-10-26:** the fallback fills the figures already widened
+  (`cpugfx::RenderTarget::fillFlattenedFigures`); test
+  GpuStrokeOnTheCpuPathMatchesCpu.
 - `asCpuBitmap` (`:901-919`) does a synchronous GPU read-back to feed a GPU
   draw: a GPU target drawn as a bitmap should be a texture-to-texture blit.
 
@@ -380,6 +383,41 @@ first frame (7-25 ms) is CPU - text rasterisation on cache misses.
 5. **A1**: D3D12 under `DrawingFrameWin`, Metal under `DrawingFrameMac`;
    retire `DirectXGfx`/`CocoaGfx` as renderers.
 6. **B3, B7, B8** as the measurements say.
+
+## State on main, 2026-10-26
+
+Everything above marked DONE is on `main` (gmpi_ui, gimpi_ui_tests,
+SynthEditLib), fast-forwarded from the branch stack. Measured: real
+documents draw with no CPU fallbacks; StructureBench's steady frames are
+~0.1 ms render, ~1 ms submit+present. Since the stack:
+
+- **clear() under a CPU-only clip** (nested shaped clips, or over the tile
+  budget) filled the clip's bounding box, and with an outer GPU mask the
+  masked replace ignored the inner clip. Now cpugfx supplies the coverage
+  and the GPU does the same erase/add as the masked replace (`viaCpu` split
+  into `renderViaCpu` + `compositeCpuLayer`). With
+  `GMPI_UI_GPU_CLIP_MASKS=0` every picture test matches cpugfx.
+- **A6 stroke widened twice** on the CPU path: fixed (above).
+- **X11 run for the first time**, on a private rootless Xwayland with no
+  window manager (nothing reaches the screen): `tests/x11_modal_test.sh`
+  (modal queue, 16 checks) and `tests/x11_present_test.sh` (CPU and GPU
+  present; the GPU one presents on NVIDIA and lavapipe). That server gives
+  back no window contents, so pixels are checked only under Xvfb.
+- **CI**: `GmpiApiDrawing.h` now includes `<compare>` (MSVC / libc++), and
+  the GPU tests sit inside their `GMPI_UI_TESTS_BACKEND_GPU` guard;
+  gimpi_ui_tests CI green on macOS and Windows.
+
+Left, and why:
+- **A1** (D3D12 under DrawingFrameWin, Metal under DrawingFrameMac) and the
+  D3D12 pipeline-cache key: need a Windows / Mac build.
+- **B3 SDF route** for large rounded rects / circles: a decision for Jeff
+  (hold D2D's flattened arcs or re-baseline to the analytic answer).
+- **B4 rotation, B5 opacity brushes, B7 offscreen targets / blur, B8 path
+  retention, nested shaped clips on the GPU**: no measured user. Offscreen
+  targets are used only by CachedBlur, once per invalidate; nothing in the
+  six documents nests shaped clips or rotates a bitmap.
+- **xdg-dialog-v1 set_modal**: GNOME 46 here does not offer it, so it
+  could not be tested.
 
 ## What is already right
 

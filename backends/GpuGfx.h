@@ -289,17 +289,22 @@ public:
                 ++it;
         }
         // Over budget (text that changes every frame, a scrolling log): drop
-        // the least recently used until under. Rare, so a scan is fine.
-        while (textCacheBytes > kTextCacheBudgetBytes && !textCache.empty())
+        // the least recently used until under. One sort, not a scan per
+        // eviction: a frame of a thousand distinct strings evicts a thousand.
+        if (textCacheBytes > kTextCacheBudgetBytes)
         {
-            auto oldest = textCache.begin();
+            std::vector<std::map<TextKey, CachedText>::iterator> byAge;
+            byAge.reserve(textCache.size());
             for (auto it = textCache.begin(); it != textCache.end(); ++it)
-                if (it->second.lastUsed < oldest->second.lastUsed)
-                    oldest = it;
-            if (oldest->second.lastUsed == submits)
-                break; // everything left is in this frame
-            textCacheBytes -= oldest->second.pixels.size() * sizeof(uint16_t);
-            textCache.erase(oldest);
+                byAge.push_back(it);
+            std::sort(byAge.begin(), byAge.end(), [](const auto& a, const auto& b) { return a->second.lastUsed < b->second.lastUsed; });
+            for (auto it : byAge)
+            {
+                if (textCacheBytes <= kTextCacheBudgetBytes || it->second.lastUsed == submits)
+                    break; // under budget, or everything left is in this frame
+                textCacheBytes -= it->second.pixels.size() * sizeof(uint16_t);
+                textCache.erase(it);
+            }
         }
     }
 

@@ -173,6 +173,7 @@ namespace gmpi::gpu {
       int w = 0;
       int h = 0;
       bool needs_update = true;
+      size_t slot = 0; // index in PathAtlas::paths_, so a removal need not search
     };
 
     struct PackedPathReference {
@@ -240,6 +241,7 @@ namespace gmpi::gpu {
       packed_path_rect->w = rect.w;
       packed_path_rect->h = rect.h;
       auto packed_rect = packed_path_rect.get();
+      packed_path_rect->slot = paths_.size();
       paths_.push_back(std::move(packed_path_rect));
 
       auto reference = std::make_shared<PackedPathReference>(reference_, packed_rect);
@@ -258,11 +260,15 @@ namespace gmpi::gpu {
     void removePath(const PackedPathRect* packed_path_rect) {
       atlas_map_.removeRect(packed_path_rect);
       references_.erase(packed_path_rect);
-      paths_.erase(std::remove_if(paths_.begin(), paths_.end(),
-                                  [&](const std::unique_ptr<PackedPathRect>& ptr) {
-                                    return ptr.get() == packed_path_rect;
-                                  }),
-                   paths_.end());
+      // Swap-and-pop: thousands of paths can expire in a frame, and a search for each was O(n^2).
+      // Nothing depends on the order of paths_.
+      const size_t slot = packed_path_rect->slot;
+      GMPI_GPU_ASSERT(slot < paths_.size() && paths_[slot].get() == packed_path_rect);
+      if (slot + 1 != paths_.size()) {
+        paths_[slot] = std::move(paths_.back());
+        paths_[slot]->slot = slot;
+      }
+      paths_.pop_back();
     }
 
     static void setPathAtlasCoordinates(TextureVertex* vertices, const PackedPath& rect) {

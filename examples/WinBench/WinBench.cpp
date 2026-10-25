@@ -7,7 +7,11 @@
 // The scenes are those of examples/WaylandBench (the same hash-driven motion), so
 // a run here is like for like with that benchmark.
 //
-//     win_bench --backend d2d|gpu [--size WxH] [--frames N] [--only SCENE]
+//     win_bench --backend d2d|gpu [--size WxH] [--frames N] [--only SCENE] [--static-colors]
+//
+// --static-colors  hold the bounce scene's colours still. By default they drift, so every
+//                  gradient is new each frame (a stress test of the GPU's gradient atlas);
+//                  this measures gradients that are reused, as in a UI.
 //
 // One line per (scene, load):
 //
@@ -82,6 +86,7 @@ struct Scenes
     int        starDetail = -1;
     int        load = 16;
     int        detail = 8;
+    bool       staticColors = false; // else the bounce colours drift, so every gradient is new each frame
 
     void bounceScene(Graphics& g, float t, int fill /*0 solid, 1 linear, 2 radial*/, bool outline)
     {
@@ -118,7 +123,7 @@ struct Scenes
             const float pulse = size * (0.75f + 0.25f * sinf(t * (1.f + hash01(i, 6)) + float(i)));
             g.setTransform(makeScale(pulse, pulse) * makeRotation(spin) * makeTranslation(cx, cy) * base);
 
-            const float h0 = hash01(i, 7) + 0.05f * t; // the colours drift: every gradient is new each frame
+            const float h0 = hash01(i, 7) + (staticColors ? 0.f : 0.05f * t);
             switch (fill)
             {
             case 0: g.fillGeometry(star, g.createSolidColorBrush(hue(h0, 0.85f))); break;
@@ -255,6 +260,7 @@ void drain(BitmapRenderTarget& rt)
 int main(int argc, char** argv)
 {
     std::string backend = "d2d", only;
+    bool staticColors = false;
     int width = 1000, height = 700, frames = 240;
     for (int i = 1; i < argc; ++i)
     {
@@ -262,6 +268,7 @@ int main(int argc, char** argv)
         if (!strcmp(argv[i], "--backend") && more)      backend = argv[++i];
         else if (!strcmp(argv[i], "--frames") && more)  frames = std::max(kSyncEvery, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--only") && more)    only = argv[++i];
+        else if (!strcmp(argv[i], "--static-colors"))   staticColors = true;
         else if (!strcmp(argv[i], "--size") && more)    sscanf(argv[++i], "%dx%d", &width, &height);
         else { fprintf(stderr, "usage: win_bench --backend d2d|gpu [--size WxH] [--frames N] [--only SCENE]\n"); return 2; }
     }
@@ -307,6 +314,7 @@ int main(int argc, char** argv)
 
     Scenes scenes;
     scenes.bounds = Rect{ 0, 0, float(width), float(height) };
+    scenes.staticColors = staticColors;
     const std::string_view family = "Segoe UI";
     scenes.text = factory.createTextFormat(14.f, { &family, 1 });
 

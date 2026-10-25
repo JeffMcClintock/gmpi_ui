@@ -477,6 +477,35 @@ Branches, none merged: gmpi_ui `d3d12-fixes` (on `dxbc-shaders`), gimpi_ui_tests
 - Also needed: `std::min/max` in the GPU headers are now parenthesised, since
   `Windows.h` (without NOMINMAX) is included ahead of them in the frame.
 
+## Where the GPU backend's CPU time goes (Windows profile, 2026-10-26)
+
+`examples/WinBench` (Direct2D vs D3D12, offscreen, no vsync) showed the GPU backend
+slower than Direct2D on everything but gradients, and almost all of its frame time
+was CPU-side recording (cpu_ms ~ frame_ms). Profiled with VSDiagnostics + xperf
+(RelWithDebInfo):
+
+- **Rounded rects / ellipses / strokes (the "rects" scene)**: ~1/5 of the time was
+  `PathAtlas::removePath` scanning `paths_` to find the entry to erase (O(n^2) when
+  thousands expire per frame): fixed, swap-and-pop with a stored slot (5000 rects
+  76 -> 59 ms). What is left is by design: every rounded rect is built as a geometry
+  (heap churn: figure vectors, flattened arcs, widened stroke), packed into the path
+  atlas by a skyline packer (~11 %, repacked as paths come and go) and rendered by
+  coverage accumulation. Rects moving every frame are the worst case, since the atlas
+  keeps paths that repeat. The structural fix is B3 (analytic SDF rounded rects and
+  circles, no path, no atlas), which changes pixels against Direct2D.
+- **Text**: a key per string, per 1/4-pixel phase in x AND y (16 variants), per
+  opaque-colour luminance; each entry is the layout box as RGBA16F (22 KB for a
+  140 x 20 label). A thousand strings of distinct colours moving every frame blow the
+  64 MB budget and re-rasterise and re-upload each frame (~60 % of the time is the
+  driver and kernel: texture uploads). `trimTextCache` also scanned for the oldest
+  entry once per eviction (25 % of the profile): now one sort. A static UI is
+  unaffected (one entry per string). Cheaper entries (R16F coverage, ink-sized
+  boxes: noted above) and a coarser luminance key would cut it further.
+- **Gradients**: `WinBench` drifts the bounce colours every frame by default, so every
+  gradient is new and the strip texture is uploaded again (60 % driver and kernel).
+  With `--static-colors` (colours reused, as in a UI) the GPU beats Direct2D on the
+  same scene by 1.7x (4 stars), 2.3x (16) and 3.4x (64: 2.3 vs 7.7 ms).
+
 ## What is already right
 
 No platform `#if` in the adaptor; one `.sc` per shader for three APIs; one

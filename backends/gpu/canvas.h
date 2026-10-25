@@ -25,6 +25,7 @@
 #include "graphics_utils.h"
 #include "layer.h"
 #include "path.h"
+#include "clip_mask.h"
 #include "region.h"
 #include "screenshot.h"
 #include "shape_batcher.h"
@@ -52,6 +53,7 @@ namespace gmpi::gpu {
       ClampBounds clamp;
       BlendMode blend_mode = BlendMode::Alpha;
       Region* current_region = nullptr;
+      const ClipMask* clip_mask = nullptr; // stamped on every shape added (clip_mask.h)
     };
 
     Canvas();
@@ -64,7 +66,31 @@ namespace gmpi::gpu {
     // submits and each submit composites only the shapes added since the
     // last one. Pair with clearShapesKeepPixels() after every submit.
     void setRetainPixels(bool retain) { default_region_.setPreserveContents(retain); }
-    void clearShapesKeepPixels() { default_region_.clear(); }
+    void clearShapesKeepPixels() {
+      default_region_.clear();
+      frame_clip_masks_.clear(); // their shapes are gone; the atlas may drop their coverage
+    }
+
+    // Shaped clips (clip_mask.h). createClipMask puts a device-space path's
+    // coverage in the path atlas; setClipMask makes it current for every
+    // shape added after (null: none). The canvas keeps each mask it was given
+    // alive until the shapes that use it are submitted, so the caller may
+    // drop its own reference as soon as it pops the clip.
+    std::shared_ptr<ClipMask> createClipMask(const Path& device_path);
+    void setClipMask(std::shared_ptr<ClipMask> mask) {
+      state_.clip_mask = mask.get();
+      if (mask && (frame_clip_masks_.empty() || frame_clip_masks_.back() != mask))
+        frame_clip_masks_.push_back(std::move(mask));
+    }
+    const ClipMask* clipMask() const { return state_.clip_mask; }
+    // Run `draw` with no clip current (a write-back replaces the whole target).
+    template<typename F>
+    void withoutClipMask(F&& draw) {
+      const ClipMask* saved = state_.clip_mask;
+      state_.clip_mask = nullptr;
+      draw();
+      state_.clip_mask = saved;
+    }
     // Shapes do not invalidate anything by themselves (the UI layer does);
     // call before submit() so the content layer draws what was recorded.
     void invalidateContent() { default_region_.invalidate(); }
@@ -290,6 +316,7 @@ namespace gmpi::gpu {
 
     template<typename T>
     void addShape(T shape) {
+      shape.clip = state_.clip_mask;
       state_.current_region->shape_batcher_.addShape(std::move(shape), state_.blend_mode);
     }
 
@@ -304,6 +331,7 @@ namespace gmpi::gpu {
 
     GradientAtlas gradient_atlas_;
     PathAtlas path_atlas_;
+    std::vector<std::shared_ptr<ClipMask>> frame_clip_masks_;
     ImageAtlas image_atlas_half_;
 
     Region window_region_;

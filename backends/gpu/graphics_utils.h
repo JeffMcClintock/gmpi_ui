@@ -41,6 +41,13 @@ namespace gmpi::gpu {
     Mult,
     MaskAdd,
     MaskRemove,
+    // The two halves of a REPLACE under a shaped clip (a masked clear):
+    // Erase scales the destination by (1 - source alpha), then
+    // PlusPremultiplied adds a premultiplied source. Together, with the clip
+    // coverage m in the source alpha: dst * (1 - m) + colour * m, exact for
+    // any clear colour, transparent included.
+    Erase,
+    PlusPremultiplied,
   };
 
   // Range hack for 10-bit HDR layers: colours are scaled by 1/4 into RGB10A2

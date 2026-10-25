@@ -32,6 +32,7 @@
 #include "CpuGfx.h"
 
 #include "gpu/canvas.h"
+#include "gpu/clip_mask.h"
 #include "gpu/path.h"
 #include "gpu/renderer.h"
 #include "gpu/platform/model_surface.h"
@@ -354,8 +355,11 @@ public:
     // Replace the whole target with these pixels (a write lock's result).
     void writeBack(std::vector<uint16_t>&& pixels)
     {
-        drawHalfImage(std::move(pixels), width, height, 0.0f, 0.0f, float(width), float(height), 1.0f,
-                      gmpi::gpu::ClampBounds{ 0.0f, 0.0f, float(width), float(height) }, gmpi::gpu::BlendMode::Opaque);
+        // The whole target is replaced, whatever clip a draw has current.
+        canvas.withoutClipMask([&] {
+            drawHalfImage(std::move(pixels), width, height, 0.0f, 0.0f, float(width), float(height), 1.0f,
+                          gmpi::gpu::ClampBounds{ 0.0f, 0.0f, float(width), float(height) }, gmpi::gpu::BlendMode::Opaque);
+        });
     }
 
     ReturnCode getSizeU(drawing::SizeU* returnSize) override
@@ -501,14 +505,41 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // Geometry clips, parallel to clipRectStack: null means "rect clip only
     // at this depth". Each remembers the transform it was pushed under, so
     // the fallback can replay it exactly.
+    //
+    // A geometry clip pushed when no other is active becomes a GPU coverage
+    // mask (`mask`, gpu/clip_mask.h): every draw under it stays on the GPU
+    // and the shaders multiply the clip's coverage in. A clip that cannot be
+    // one - nested inside another geometry clip, or too large for the path
+    // atlas - has no mask, and draws under it take the CPU fallback, which
+    // replays the mask-less clips; a GPU mask further out still applies to
+    // what the fallback uploads.
     struct GeometryClip
     {
         gmpi::shared_ptr<cpugfx::PathGeometry> geometry;
         drawing::Matrix3x2 transform;
+        std::shared_ptr<gmpi::gpu::ClipMask> mask;
     };
     std::vector<std::shared_ptr<const GeometryClip>> clipGeometryStack{ nullptr };
 
     bool geometryClipActive() const { return clipGeometryStack.back() != nullptr; }
+    // A clip the GPU cannot apply is in effect: draws must take the CPU path.
+    bool cpuGeometryClipActive() const
+    {
+        for (const auto& clip : clipGeometryStack)
+            if (clip && !clip->mask)
+                return true;
+        return false;
+    }
+    std::shared_ptr<gmpi::gpu::ClipMask> gpuClipMask() const
+    {
+        for (const auto& clip : clipGeometryStack)
+            if (clip && clip->mask)
+                return clip->mask;
+        return nullptr;
+    }
+    // The canvas stamps its current mask on every shape; keep it in step
+    // with the clip stack.
+    void syncClipMask() { canvas().setClipMask(gpuClipMask()); }
 
     gmpi::gpu::Canvas& canvas() { return bitmap->canvas; }
 
@@ -556,7 +587,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // Solid brush, no opacity brush, no geometry clip: the GPU-native cases.
     cpugfx::SolidColorBrush* gpuSolid(drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush = nullptr)
     {
-        if (opacityBrush || geometryClipActive())
+        if (opacityBrush || cpuGeometryClipActive())
             return nullptr;
         auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush);
         return (solid && solid->isPaintable()) ? solid : nullptr;
@@ -707,7 +738,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // brushes stay with cpugfx).
     std::optional<gmpi::gpu::Brush> gpuBrush(drawing::api::IBrush* brush, drawing::api::IBrush* opacityBrush = nullptr) const
     {
-        if (opacityBrush || geometryClipActive())
+        if (opacityBrush || cpuGeometryClipActive())
             return std::nullopt;
         if (auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush))
         {
@@ -801,6 +832,23 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         trace("figures", deviceBounds, "gpu path atlas");
 
         gmpi::gpu::Path vpath;
+        if (!devicePath(figures, fillMode, transform_, vpath))
+            return ReturnCode::Ok; // D2D draws nothing for a non-finite figure
+        if (vpath.numPoints() == 0)
+            return ReturnCode::Ok;
+        beginGpuShape(brush);
+        if (shaderBrush)
+            canvas().fill(vpath, frameShader(*shaderBrush, drawing::api::ShaderStage::Path));
+        else
+            canvas().fill(vpath, 0, 0);
+        return ReturnCode::Ok;
+    }
+
+    // The filled figures as one device-space path for the atlas. False for a
+    // non-finite point.
+    static bool devicePath(const std::vector<cpugfx::Figure>& figures, drawing::FillMode fillMode,
+                           const drawing::Matrix3x2& transform, gmpi::gpu::Path& out)
+    {
         for (const auto& figure : figures)
         {
             if (!figure.filled || figure.points.size() < 2)
@@ -808,28 +856,20 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
             bool first = true;
             for (const auto& p : figure.points)
             {
-                const auto d = drawing::transformPoint(transform_, p);
+                const auto d = drawing::transformPoint(transform, p);
                 if (!std::isfinite(d.x) || !std::isfinite(d.y))
-                    return ReturnCode::Ok; // D2D draws nothing for a non-finite figure
+                    return false;
                 if (first)
-                    vpath.moveTo(d.x, d.y);
+                    out.moveTo(d.x, d.y);
                 else
-                    vpath.lineTo(d.x, d.y);
+                    out.lineTo(d.x, d.y);
                 first = false;
             }
-            vpath.close(); // a fill is always closed, whatever the sink said
+            out.close(); // a fill is always closed, whatever the sink said
         }
-        if (vpath.numPoints() == 0)
-            return ReturnCode::Ok;
-
-        vpath.setFillRule(fillMode == drawing::FillMode::Winding ? gmpi::gpu::Path::FillRule::NonZero
-                                                                 : gmpi::gpu::Path::FillRule::EvenOdd);
-        beginGpuShape(brush);
-        if (shaderBrush)
-            canvas().fill(vpath, frameShader(*shaderBrush, drawing::api::ShaderStage::Path));
-        else
-            canvas().fill(vpath, 0, 0);
-        return ReturnCode::Ok;
+        out.setFillRule(fillMode == drawing::FillMode::Winding ? gmpi::gpu::Path::FillRule::NonZero
+                                                               : gmpi::gpu::Path::FillRule::EvenOdd);
+        return true;
     }
 
     // --- CPU fallback -------------------------------------------------------
@@ -857,10 +897,13 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
 
         const auto offset = drawing::makeTranslation(float(-left), float(-top));
 
-        // Replay geometry clips under the transforms they were pushed with.
+        // Replay geometry clips under the transforms they were pushed with -
+        // the ones without a GPU mask. A masked clip is applied by the shader
+        // to what this uploads (drawHalfImage), so replaying it too would
+        // square its antialiased edge.
         for (const auto& clip : clipGeometryStack)
         {
-            if (!clip)
+            if (!clip || clip->mask)
                 continue;
             const auto t = clip->transform * offset;
             cpu->setTransform(&t);
@@ -1006,8 +1049,10 @@ public:
         return ReturnCode::Ok;
     }
 
-    // Clip to an arbitrary geometry. Draws under it take the CPU fallback,
-    // where cpugfx rasterises the clip as antialiased coverage like D2D.
+    // Clip to an arbitrary geometry: the clip's exact coverage, as a mask in
+    // the path atlas that the shaders sample (GeometryClip, above). When it
+    // cannot be one, draws under it take the CPU fallback, where cpugfx
+    // rasterises the clip as antialiased coverage like D2D.
     ReturnCode pushClipGeometry(drawing::api::IPathGeometry* geometry) override
     {
         auto* path = dynamic_cast<cpugfx::PathGeometry*>(geometry);
@@ -1019,9 +1064,27 @@ public:
         clip->geometry.attach(path);
         clip->transform = transform_;
 
-        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), figuresDeviceBounds(path->figures)));
+        const auto deviceBounds = figuresDeviceBounds(path->figures);
+        if (!geometryClipActive() && !tooLargeForAtlas(deviceBounds) && gpuMasksEnabled())
+        {
+            gmpi::gpu::Path vpath;
+            if (devicePath(path->figures, path->fillMode, transform_, vpath) && vpath.numPoints() > 0)
+                clip->mask = canvas().createClipMask(vpath);
+        }
+        trace("pushClipGeometry", deviceBounds, clip->mask ? "gpu mask" : "cpu (nested, too large, or empty)");
+
+        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), deviceBounds));
         clipGeometryStack.push_back(std::move(clip));
+        syncClipMask();
         return ReturnCode::Ok;
+    }
+
+    // GMPI_UI_GPU_CLIP_MASKS=0 keeps every geometry clip on the CPU, as before
+    // masks existed: a switch for comparing the two.
+    static bool gpuMasksEnabled()
+    {
+        static const bool on = [] { const char* v = std::getenv("GMPI_UI_GPU_CLIP_MASKS"); return !(v && *v == '0'); }();
+        return on;
     }
 
     ReturnCode popAxisAlignedClip() override
@@ -1030,6 +1093,7 @@ public:
             clipRectStack.pop_back();
         if (clipGeometryStack.size() > 1)
             clipGeometryStack.pop_back();
+        syncClipMask();
         return ReturnCode::Ok;
     }
 
@@ -1046,6 +1110,7 @@ public:
     {
         static const auto epoch = std::chrono::steady_clock::now();
         canvas().updateTime(std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count());
+        syncClipMask();
         return ReturnCode::Ok;
     }
 
@@ -1063,10 +1128,30 @@ public:
         if (!finite(*clearColor))
             return ReturnCode::Ok;
 
-        trace("clear", clipRectStack.back(), "gpu opaque fill of clip");
         auto& c = canvas();
         const auto clamp = currentClamp();
         c.setClampBounds(clamp);
+        if (c.clipMask())
+        {
+            // A REPLACE under a shaped clip: only what the clip admits, with
+            // its antialiased edge interpolated (cpugfx and D2D do the same).
+            // Erase the destination by the coverage, then add the premultiplied
+            // colour times the coverage: dst * (1 - m) + colour * m.
+            trace("clear", clipRectStack.back(), "gpu masked replace");
+            const float a = clearColor->a;
+            c.setBlendMode(gmpi::gpu::BlendMode::Erase);
+            c.setColor(gmpi::gpu::Color(1.0f, 0.0f, 0.0f, 0.0f));
+            c.fill(clamp.left, clamp.top, clamp.right - clamp.left, clamp.bottom - clamp.top);
+            c.setBlendMode(gmpi::gpu::BlendMode::PlusPremultiplied);
+            c.setColor(gmpi::gpu::Color(a, clearColor->r * a, clearColor->g * a, clearColor->b * a));
+            c.fill(clamp.left, clamp.top, clamp.right - clamp.left, clamp.bottom - clamp.top);
+            c.setBlendMode(gmpi::gpu::BlendMode::Alpha);
+            bitmap->rendered = false;
+            return ReturnCode::Ok;
+        }
+        // TODO: under a clip only the CPU can apply (nested), this still fills
+        // the clip's bounding box; cpugfx replaces under the mask.
+        trace("clear", clipRectStack.back(), "gpu opaque fill of clip");
         c.setBlendMode(gmpi::gpu::BlendMode::Opaque);
         c.setColor(toVisage(*clearColor, 1.0f));
         // Explicit rect: the fork's fill() with no arguments puts the quad at
@@ -1091,7 +1176,7 @@ public:
             // geometry clip, or the figures were too large for the atlas).
             auto* fb = sb->fallback;
             auto cpuFallback = [&](cpugfx::RenderTarget& cpu) { return cpu.fillGeometry(pathGeometry, fb, opacityBrush); };
-            if (sb->hasPath && !opacityBrush && !geometryClipActive())
+            if (sb->hasPath && !opacityBrush && !cpuGeometryClipActive())
                 return fillFiguresGpu(path->figures, path->fillMode,
                                       gmpi::gpu::Brush::solid(gmpi::gpu::Color(1.0f, 1.0f, 1.0f, 1.0f)), cpuFallback, sb);
             brush = fb;
@@ -1102,7 +1187,7 @@ public:
         auto cpuFill = [&](cpugfx::RenderTarget& cpu) { return cpu.fillGeometry(pathGeometry, brush, opacityBrush); };
         if (auto b = gpuBrush(brush, opacityBrush))
             return fillFiguresGpu(path->figures, path->fillMode, *b, cpuFill);
-        return viaCpu(figuresDeviceBounds(path->figures), cpuFill, geometryClipActive() ? "fillGeometry under a geometry clip" : "fillGeometry with a CPU-only brush");
+        return viaCpu(figuresDeviceBounds(path->figures), cpuFill, cpuGeometryClipActive() ? "fillGeometry under a geometry clip" : "fillGeometry with a CPU-only brush");
     }
 
     ReturnCode drawGeometry(drawing::api::IPathGeometry* pathGeometry, drawing::api::IBrush* brush, float strokeWidth, drawing::api::IStrokeStyle* strokeStyle) override
@@ -1122,7 +1207,7 @@ public:
         auto cpuStroke = [&](cpugfx::RenderTarget& cpu) { return cpu.drawGeometry(pathGeometry, brush, strokeWidth, strokeStyle); };
         if (auto b = gpuBrush(brush))
             return fillFiguresGpu(widened, drawing::FillMode::Winding, *b, cpuStroke);
-        return viaCpu(figuresDeviceBounds(widened), cpuStroke, geometryClipActive() ? "drawGeometry under a geometry clip" : "drawGeometry with a CPU-only brush");
+        return viaCpu(figuresDeviceBounds(widened), cpuStroke, cpuGeometryClipActive() ? "drawGeometry under a geometry clip" : "drawGeometry with a CPU-only brush");
     }
 
     // Axis-aligned rectangles and circles are the fork's analytic SDF
@@ -1132,7 +1217,7 @@ public:
     {
         if (auto* sb = shaderBrushOf(brush))
         {
-            if (axisAligned() && !geometryClipActive())
+            if (axisAligned() && !cpuGeometryClipActive())
             {
                 const auto r = drawing::transformRect(transform_, *rect);
                 if (!(r.right > r.left) || !(r.bottom > r.top))
@@ -1283,7 +1368,7 @@ public:
             trace("drawBitmap", d, why);
             return false;
         };
-        if (!axisAligned() || geometryClipActive() || !std::isfinite(opacity))
+        if (!axisAligned() || cpuGeometryClipActive() || !std::isfinite(opacity))
             return no("cpu: transform or geometry clip");
         const int w = bm.surface.width, h = bm.surface.height;
         if (w <= 0 || h <= 0 || w > kMaxGpuImageSide || h > kMaxGpuImageSide)
@@ -1379,7 +1464,7 @@ public:
     {
         // GMPI_UI_GPU_TEXT_CACHE=0 turns it off, to compare against.
         static const bool enabled = [] { const char* v = std::getenv("GMPI_UI_GPU_TEXT_CACHE"); return !(v && *v == '0'); }();
-        if (!enabled || geometryClipActive())
+        if (!enabled || cpuGeometryClipActive())
             return false;
         const auto& m = transform_;
         if (m._12 != 0.0f || m._21 != 0.0f || !(m._11 > 0.0f) || !(m._22 > 0.0f))

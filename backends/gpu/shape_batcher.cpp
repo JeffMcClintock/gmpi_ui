@@ -22,6 +22,7 @@
 #include "shape_batcher.h"
 
 #include "canvas.h"
+#include "clip_mask.h"
 #include "shaders/compiled/shaders.h"
 #include "graphics_caches.h"
 #include "layer.h"
@@ -64,6 +65,12 @@ namespace gmpi::gpu {
     case BlendMode::MaskAdd:
       return BGFX_STATE_WRITE_A |
              BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
+    case BlendMode::Erase:
+      return BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+             BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_INV_SRC_ALPHA);
+    case BlendMode::PlusPremultiplied:
+      return BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+             BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE);
     case BlendMode::MaskRemove:
       return BGFX_STATE_WRITE_A |
              BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_ONE) |
@@ -116,6 +123,36 @@ namespace gmpi::gpu {
       fprintf(stderr, "[gmpi::gpu] setTexture stage %d: invalid texture handle %u\n", stage, unsigned(handle.idx));
     static const gfx::UniformHandle uniform = gfx::createUniform(name, gfx::UniformType::Sampler, 1);
     gfx::setTexture(stage, uniform, handle);
+  }
+
+  // The current shaped clip (clip_mask.h, shaders/clip_mask.sh), set once per
+  // batch: shapes batch by clip. Every shape program declares s_clip, so a
+  // texture is bound whether or not a clip applies; with none, a 1x1 stand-in.
+  void setClipMaskUniforms(const ClipMask* clip, BlendMode blend) {
+    static gfx::TextureHandle stand_in = gfx::createTexture2D(1, 1, false, 1, gfx::TextureFormat::R32F);
+    const bool premultiplied = blend == BlendMode::Composite || blend == BlendMode::PlusPremultiplied;
+    gfx::TextureHandle texture = stand_in;
+    float mask[4] = { 0.0f, 0.0f, premultiplied ? 1.0f : 0.0f, 0.0f };
+    float map[4] = { 1.0f, 1.0f, 0.0f, 0.0f };
+    if (clip && clip->atlas && clip->atlas->hasFrameBuffer()) {
+      texture = gfx::getTexture(clip->atlas->frameBufferHandle());
+      mask[0] = 1.0f;
+      mask[1] = clip->even_odd ? 1.0f : 0.0f;
+      map[0] = 1.0f / clip->atlas->width();
+      map[1] = 1.0f / clip->atlas->height();
+      map[2] = float(clip->packed_path.x() - clip->origin_x);
+      map[3] = float(clip->packed_path.y() - clip->origin_y);
+    }
+    else if (clip) {
+      static bool warned = false;
+      if (!warned) {
+        warned = true;
+        fprintf(stderr, "[gmpi::gpu] clip mask's path atlas has no frame buffer (overflowed?): drawing unclipped\n");
+      }
+    }
+    setUniform<Uniforms::kClipMask>(mask);
+    setUniform<Uniforms::kClipMap>(map);
+    setTexture<Uniforms::kClip>(3, texture);
   }
 
   inline void setUniformBounds(int x, int y, int width, int height) {

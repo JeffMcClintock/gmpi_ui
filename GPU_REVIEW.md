@@ -139,6 +139,27 @@ APIs are left with font enumeration only.
 
 ### B2. Geometry clips as a mask in the path atlas (removes whole-draw fallback)
 
+**Status 2026-10-25: DONE, uncommitted, on `clip-mask` branches** (gmpi_ui on
+`device-seam`; gimpi_ui_tests and SynthEditLib for regenerated blobs). A
+geometry clip pushed with no other active becomes a `ClipMask` (path-atlas
+entry + device origin, `backends/gpu/clip_mask.h`); the canvas stamps the
+current mask on every shape; batches split by clip (part of `SubmitBatch`'s
+identity, so layers never merge across clips); `shaders/clip_mask.sh`'s
+`applyClip(colour, gl_FragCoord.xy)` is the last step of every shape
+shader (rect, circle, colour, path, tinted texture, both shader-brush
+templates), scaling alpha, or all four channels for premultiplied blends.
+`clear()` under a mask is an exact replace (new `Erase` + `PlusPremultiplied`
+blend modes: dst*(1-m) + colour*m), which also fixes a GPU bug - the GPU
+clear used to ignore the clip. Nested geometry clips: the inner one stays
+CPU, the outer mask still applies to its upload. `GMPI_UI_GPU_CLIP_MASKS=0`
+restores the old behaviour for comparison. Tests: 7 new (6 GPU-vs-cpugfx
+scenes at worst < 0.01, ≤2 outliers, and a shader brush under a clip); with
+masks off the clear and shader tests fail, as they should. Full suite
+271/271 NVIDIA, 270 + the known text case lavapipe; SynthEdit 181/181. In
+the editor every frame pushes a geometry clip; all now GPU masks. Gotcha:
+bgfx's shader front end only exposes `gl_FragCoord` inside `main()`, so the
+helper takes it as a parameter.
+
 A geometry clip today turns **every** draw under it into a CPU raster
 (`gpuSolid`/`gpuBrush` refuse at `:557/:708`, bitmaps at `:1284`, the text
 cache at `:1380`, shader brushes at `:1092/:1133`), and `viaCpu` re-renders

@@ -74,6 +74,7 @@ namespace gmpi::gpu {
   void setImageAtlasUniform(const BatchVector<ImageWrapper>& batches);
   void setPathDataUniform(const BatchVector<PathFillWrapper>& batches);
 
+  void setClipMaskUniforms(const ClipMask* clip, BlendMode blend);
   void submitShader(const BatchVector<ShaderWrapper>& batches, const Layer& layer, int submit_pass);
   void submitShadedPathFills(const BatchVector<PathFillWrapper>& batches, const Layer& layer, int submit_pass);
   void submitSampleRegions(const BatchVector<SampleRegion>& batches, const Layer& layer, int submit_pass);
@@ -219,8 +220,9 @@ namespace gmpi::gpu {
     }
 
     const void* id() const { return id_; }
-    bool match(const void* id, BlendMode blend_mode, bool radial_gradient) const {
-      return id_ == id && blend_mode_ == blend_mode && radial_gradient_ == radial_gradient;
+    const ClipMask* clip() const { return clip_; }
+    bool match(const void* id, BlendMode blend_mode, bool radial_gradient, const ClipMask* clip) const {
+      return id_ == id && blend_mode_ == blend_mode && radial_gradient_ == radial_gradient && clip_ == clip;
     }
     bool match(const SubmitBatch* other) const { return compare(other) == 0; }
 
@@ -244,13 +246,19 @@ namespace gmpi::gpu {
         return -1;
       if (radial_gradient_ > other->radial_gradient_)
         return 1;
+      if (clip_ < other->clip_)
+        return -1;
+      if (clip_ > other->clip_)
+        return 1;
       return 0;
     }
 
     void clearAreas() { areas_.clear(); }
     void addShapeArea(const BaseShape& shape) {
       GMPI_GPU_ASSERT(id_ == nullptr || id_ == shape.batch_id);
+      GMPI_GPU_ASSERT(areas_.empty() || clip_ == shape.clip);
       id_ = shape.batch_id;
+      clip_ = shape.clip;
       radial_gradient_ = shape.radialGradient();
       areas_.push_back({ shape.x, shape.y, shape.x + shape.width, shape.y + shape.height });
     }
@@ -261,6 +269,7 @@ namespace gmpi::gpu {
     };
 
     const void* id_ = nullptr;
+    const ClipMask* clip_ = nullptr;
     std::vector<Area> areas_;
     BlendMode blend_mode_;
     bool radial_gradient_ = false;
@@ -285,6 +294,10 @@ namespace gmpi::gpu {
         const std::vector<T>* shapes = &reinterpret_cast<ShapeBatch<T>*>(batch.batch)->shapes_;
         batch_list.emplace_back(shapes, batch.invalid_rects, batch.x, batch.y);
       }
+      // The mask is looked up by frame-buffer pixel, so it assumes the shapes
+      // are drawn at their own position (every region the adaptor uses is).
+      GMPI_GPU_ASSERT(!clip() || std::all_of(batches.begin(), batches.end(), [](auto& b) { return b.x == 0 && b.y == 0; }));
+      setClipMaskUniforms(clip(), blendMode());
       submitShapes(batch_list, blendMode(), layer, submit_pass);
     }
 
@@ -317,7 +330,7 @@ namespace gmpi::gpu {
       int insert = batches_.size();
       for (int i = batches_.size() - 1; i >= 0; --i) {
         SubmitBatch* batch = batches_[i].get();
-        if (batch->match(shape.batch_id, blend, shape.radialGradient()))
+        if (batch->match(shape.batch_id, blend, shape.radialGradient(), shape.clip))
           match = i;
         if (batch->overlapsShape(shape))
           break;
@@ -360,7 +373,7 @@ namespace gmpi::gpu {
     void addShape(T shape, BlendMode blend = BlendMode::Alpha) {
       int batch_index = batchIndex(shape, blend);
       bool match = batch_index < batches_.size() &&
-                   batches_[batch_index]->match(shape.batch_id, blend, shape.radialGradient());
+                   batches_[batch_index]->match(shape.batch_id, blend, shape.radialGradient(), shape.clip);
       ShapeBatch<T>* batch = match ? reinterpret_cast<ShapeBatch<T>*>(batches_[batch_index].get()) :
                                      createNewBatch<T>(shape.batch_id, blend, batch_index);
 

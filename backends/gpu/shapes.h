@@ -40,6 +40,7 @@ namespace gmpi::gpu {
   class Region;
   class Layer;
   class Shader;
+  struct ClipMask;
 
   static constexpr float kFullThickness = FLT_MAX;
 
@@ -90,6 +91,7 @@ namespace gmpi::gpu {
         batch_id(batch_id), clamp(clamp), brush(brush), x(x), y(y), width(width), height(height) { }
 
     const void* batch_id = nullptr;
+    const ClipMask* clip = nullptr; // the shaped clip current when the shape was added (Canvas::addShape)
     ClampBounds clamp;
     const PackedBrush* brush;
     float x = 0.0f;

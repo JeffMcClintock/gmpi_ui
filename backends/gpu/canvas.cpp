@@ -49,6 +49,26 @@ namespace gmpi::gpu {
     composite_layer_.addRegion(&window_region_);
   }
 
+  std::shared_ptr<ClipMask> Canvas::createClipMask(const Path& device_path) {
+    if (device_path.numPoints() == 0)
+      return nullptr;
+    // Whole device pixels, one texel of margin: the atlas rect covers every
+    // pixel the clip's antialiased edge touches, at the pixel's own position.
+    const Bounds bounds = device_path.boundingBox();
+    const int x = static_cast<int>(std::floor(bounds.x())) - PathAtlas::kBuffer;
+    const int y = static_cast<int>(std::floor(bounds.y())) - PathAtlas::kBuffer;
+    const int width = static_cast<int>(std::ceil(bounds.right())) + PathAtlas::kBuffer - x;
+    const int height = static_cast<int>(std::ceil(bounds.bottom())) + PathAtlas::kBuffer - y;
+
+    auto mask = std::make_shared<ClipMask>();
+    mask->atlas = pathAtlas();
+    mask->origin_x = x;
+    mask->origin_y = y;
+    mask->even_odd = device_path.fillRule() == Path::FillRule::EvenOdd;
+    mask->packed_path = mask->atlas->addPath(device_path.translated(float(-x), float(-y)), width, height);
+    return mask;
+  }
+
   void Canvas::setWindowless(int width, int height) {
     setDimensions(width, height);
     composite_layer_.setWindowlessRender(width, height);

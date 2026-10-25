@@ -12,6 +12,7 @@ $input v_coordinates, v_dimensions, v_shader_values, v_position, v_gradient_text
 // range scale every brush fill applies.
 
 #include <shader_include.sh>
+#include <clip_mask.sh>
 
 SAMPLER2D(s_gradient, 0);
 
@@ -32,4 +33,5 @@ void main() {
   // only scale a user colour needs, the HDR range multiplier (1 on fp16).
   gl_FragColor = shade(gmpiBrushPosition(v_position));
   gl_FragColor.rgb = gl_FragColor.rgb * u_brush_transform[0].w;
+  gl_FragColor = applyClip(gl_FragColor, gl_FragCoord.xy);
 }

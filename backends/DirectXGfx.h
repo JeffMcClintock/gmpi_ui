@@ -1227,11 +1227,47 @@ public:
             opacityBrushNative = static_cast<BrushCommon*>(opacityBrush)->native();
         }
 
-        context_->FillGeometry(
-            d2d_geometry
-            , static_cast<BrushCommon*>(brush)->native()
-            , opacityBrushNative
-        );
+        auto* fillBrushNative = static_cast<BrushCommon*>(brush)->native();
+
+        if (!opacityBrushNative)
+        {
+            context_->FillGeometry(d2d_geometry, fillBrushNative, nullptr);
+            return ReturnCode::Ok;
+        }
+
+        // Direct2D draws nothing at all, and says nothing, unless the opacity mask is a
+        // bitmap brush, the fill is a bitmap brush, both clamp, and the target is aliased.
+        // Our bitmap brushes wrap, so clamp them for this call and put everything back.
+        struct ClampedBrush
+        {
+            ID2D1BitmapBrush* brush{};
+            D2D1_EXTEND_MODE x{}, y{};
+            explicit ClampedBrush(ID2D1Brush* native)
+            {
+                if (native && SUCCEEDED(native->QueryInterface(__uuidof(ID2D1BitmapBrush), reinterpret_cast<void**>(&brush))))
+                {
+                    x = brush->GetExtendModeX();
+                    y = brush->GetExtendModeY();
+                    brush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
+                    brush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
+                }
+            }
+            ~ClampedBrush()
+            {
+                if (brush)
+                {
+                    brush->SetExtendModeX(x);
+                    brush->SetExtendModeY(y);
+                    brush->Release();
+                }
+            }
+        };
+        ClampedBrush clampFill(fillBrushNative), clampMask(opacityBrushNative);
+
+        const auto antialiasMode = context_->GetAntialiasMode();
+        context_->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+        context_->FillGeometry(d2d_geometry, fillBrushNative, opacityBrushNative);
+        context_->SetAntialiasMode(antialiasMode);
         return ReturnCode::Ok;
     }
 

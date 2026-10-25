@@ -178,10 +178,16 @@ else ()
   set(GMPI_GPU_SHADERS ${GMPI_GPU_DIR}/shaders/compiled/shaders_spirv.cpp)
 endif ()
 if (NOT EXISTS ${GMPI_GPU_SHADERS})
-  message(FATAL_ERROR "gmpi_gpu: ${GMPI_GPU_SHADERS} has not been generated for this platform. "
-                      "Run backends/gpu/shaders/compile_shaders.cmake with RENDERERS for it.")
+  # With GMPI_GPU_BUILD_SHADERC the shaderc target must still configure, to generate this very file.
+  if (GMPI_GPU_BUILD_SHADERC)
+    message(WARNING "gmpi_gpu: ${GMPI_GPU_SHADERS} has not been generated yet; build shaderc and run compile_shaders.cmake.")
+  else ()
+    message(FATAL_ERROR "gmpi_gpu: ${GMPI_GPU_SHADERS} has not been generated for this platform. "
+                        "Run backends/gpu/shaders/compile_shaders.cmake with RENDERERS for it.")
+  endif ()
+else ()
+  target_sources(gmpi_gpu PRIVATE ${GMPI_GPU_SHADERS})
 endif ()
-target_sources(gmpi_gpu PRIVATE ${GMPI_GPU_SHADERS})
 
 # The model surface the renderer initialises on, per platform
 # (platform/model_surface.h).

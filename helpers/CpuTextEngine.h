@@ -2268,8 +2268,13 @@ public:
         // stops grid-processing text under such transforms.
         auto* cpuTarget = dynamic_cast<cpugfx::RenderTarget*>(context);
         auto* cpuBrush = dynamic_cast<cpugfx::CpuBrush*>(brush);
+        // Glyph masks are placed in device pixels, so they need the transform
+        // that reaches the device: getTransform() leaves out the target's DPI scale.
         Matrix3x2 contextTransform;
-        context->getTransform(&contextTransform);
+        if (cpuTarget)
+            contextTransform = cpuTarget->deviceTransform();
+        else
+            context->getTransform(&contextTransform);
         const bool axisAligned = contextTransform._12 == 0.0f && contextTransform._21 == 0.0f
                               && contextTransform._11 > 0.0f && contextTransform._22 > 0.0f;
 

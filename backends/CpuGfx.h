@@ -2569,6 +2569,11 @@ public:
         return ReturnCode::Ok;
     }
 
+    // The EFFECTIVE local -> device-pixel transform: the client's, then the DPI
+    // scale. getTransform() deliberately leaves the DPI out; code that places
+    // things in device pixels itself (the text engine's glyph masks) needs this.
+    const drawing::Matrix3x2& deviceTransform() const { return transform_; }
+
     ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
     {
         // D2D semantics: the rect is in local space at push time; stack is device space.

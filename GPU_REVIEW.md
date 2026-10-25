@@ -409,7 +409,8 @@ documents draw with no CPU fallbacks; StructureBench's steady frames are
 
 Left, and why:
 - **A1** (D3D12 under DrawingFrameWin, Metal under DrawingFrameMac) and the
-  D3D12 pipeline-cache key: need a Windows / Mac build.
+  D3D12 pipeline-cache key: need a Windows / Mac build. (Both done since:
+  see the Windows and macOS sections below.)
 - **B3 SDF route** for large rounded rects / circles: a decision for Jeff
   (hold D2D's flattened arcs or re-baseline to the analytic answer).
 - **B4 rotation, B5 opacity brushes, B7 offscreen targets / blur, B8 path
@@ -505,6 +506,166 @@ was CPU-side recording (cpu_ms ~ frame_ms). Profiled with VSDiagnostics + xperf
   gradient is new and the strip texture is uploaded again (60 % driver and kernel).
   With `--static-colors` (colours reused, as in a UI) the GPU beats Direct2D on the
   same scene by 1.7x (4 stars), 2.3x (16) and 3.4x (64: 2.3 vs 7.7 ms).
+
+## macOS / Metal, 2026-10-26
+
+All on `main`, committed locally, not pushed: gmpi_ui `e6ec82c` (presenter fix,
+sRGB swap chain), `562a23e` (A1), then MacBench and this note; gimpi_ui_tests
+`242b37e`, `0646877`. iMac M1 (8 GB), macOS 26.3, built-in Retina 4.5K (2x,
+Display P3), Xcode SDK 26.5, Release, Ninja.
+
+- **Baseline** (`GMPI_UI_TESTS_GPU_BACKEND=OFF`, cpugfx against the D2D
+  references): 233 tests, 230 pass, 3 skipped (styled text runs; two COLRv1
+  emoji tests, no such font here), no failures. With the three tests below:
+  236, 233 pass.
+- **The GPU suite did not compile on macOS.** Tests written on Linux since the
+  last Mac run used bare `Point`/`Rect`/`Size`, which CoreFoundation's
+  MacTypes.h (through SavePng.h) makes ambiguous. Qualified (`242b37e`).
+- **GPU suite on Metal: 289 tests, 286 pass, 3 skipped (the same three), no
+  failures, under `MTL_DEBUG_LAYER=1` (no API misuse).** No regression from the
+  Windows work. With the three tests below, and after A1's renderer changes:
+  292, 289 pass. The four things to check:
+  - R32F is renderable here (`ReportRendererCapabilities` now also logs the
+    origin), so the path atlas is R32F, not the R16F fallback.
+  - `caps->originBottomLeft` is false on Metal, as on D3D12 and Vulkan.
+  - `gl_FragCoord` is top-left in `clip_mask.sh`: the clip-mask scenes match
+    cpugfx, including a five-point star clipped to the top 36 rows
+    (`GpuClipGeometryIntersectsRectClip`), which a flipped lookup would fail.
+  - The 1/1024-texel nearest bias: `GpuBitmapCroppedAndNearestStretchesMatchCpu`
+    passes.
+- **The three Windows-found bugs, now tested everywhere** (`0646877`,
+  `transform_edge_tests.cpp`: pixel assertions, no references):
+  `FillUnderNegativeScaleIsMirrored`, `RotatedNearestBitmapKeepsEveryCorner`,
+  `HugeRectKeepsItsFractionalEdge`. Pass on cpugfx and on Metal (the CPU
+  backend agrees, nothing to report). With `9bf65f8` reverted, all three fail
+  on Metal (mirrored rect: coverage 0; rotated bitmap: two corners white; 1e7
+  rect: no fractional bottom edge), so they would have caught the bugs.
+- **A1, the present under `DrawingFrameMac.mm`** (`562a23e`). With
+  `GMPI_UI_GPU_BACKEND` and `GMPI_UI_GPU=1`, `initWithClient` starts the
+  renderer before the client is attached (its first `getDrawingFactory` sees
+  the GPU factory), makes the view layer-backed, and `updateLayer` presents
+  through `WindowPresenter` to a `CAMetalLayer` **sublayer**. A `CAMetalLayer`
+  returned from `makeBackingLayer` is never sent `updateLayer` (AppKit clears
+  `needsDisplay` and draws nothing; found by measurement), so it sits inside an
+  ordinary backing layer. `updateLayer` carries no rect, so the frame keeps its
+  own dirty union; `open()` requests the first present through it, resize and
+  a new client set `needsMeasure`, `viewDidChangeBackingProperties` marks all
+  dirty and the next present takes the new scale. Fallback to CoreGraphics
+  when `initialize()` fails. `GMPI_VIEW_VERSION` bumped to `_05`, plus a
+  `_05_GPU` name, since a GPU build differs from a plain one in body and ivar
+  layout. Without the define the file compiles as before (checked).
+- **Two bugs found by the first Mac present** (`e6ec82c`):
+  - **Mid-grey presented as 55, not 128.** bgfx's Metal swap chain ignores the
+    format the renderer asks for (`FrameBufferMtl::create` has
+    `BX_UNUSED(_format)`) and is `BGRA8Unorm`, so linear values went out
+    unencoded. Windows gets an RGBA16F (scRGB) swap chain from the same request.
+    macOS now takes the sRGB swap chain, as Linux does (`BGRA8Unorm_sRGB`,
+    encoded in hardware), and the layer is tagged sRGB. Result: 128 -> 128, the
+    field 56 vs CoreGraphics' 55-56, a black-to-white gradient's midpoint 188 vs
+    188. Not done: the Metal plan's Acceptance 1 (an RGBA16Float drawable on an
+    extended-linear-sRGB layer, no 8-bit anywhere) needs bgfx to honour the
+    format, a `gmpi.patch` change; the sRGB 8-bit drawable is the interim.
+  - **A partial repaint presented black on Retina.** `WindowPresenter` pushed
+    the dirty-area clip (device pixels) under the transform the target still
+    held from the last frame - the 2x scale - so the clip was at twice its place
+    and nothing redrew the area. It now sets identity, pushes the clip, then
+    sets the scale, every frame. Shared code: any host at a scale other than 1
+    had it (Windows at 100% and X11 never set a transform, which hid it).
+- **Proof without the screen**: `examples/MacPresent` opens the view through
+  each backend in a borderless window beyond every display, reads the window
+  back from the window server (`CGWindowListCreateImage` through `dlsym`: the
+  macOS 15 SDK marks it obsolete, but a process may still capture its own
+  windows without permission), compares, and closes everything. Exit 0 =
+  match. 400x300 logical, 800x600 captured at 2x:
+  - Mean per-channel difference **2.44 / 255** (max 201, at glyph edges).
+    Background 128/128/128 both; field 55-56 vs 56; red, blue, gradient
+    midpoint identical; a pixel inside the partial repaint 128 both.
+  - The rest is text: CpuTextEngine's title sits ~3 logical px lower than Core
+    Text's and is lighter (mean darkening of the title box 15.1 vs 17.7), as
+    Windows saw against DirectWrite.
+  - Resize down to 300x200 and back: the presenter measured and arranged at
+    each size, and the frame still matches.
+  - Clean under `MTL_DEBUG_LAYER=1`. 0 `viaCpu` fallbacks over 693 traced draw
+    ops (text draws are not in that trace).
+- **First frames.** Metal's own shader cache decides the first frame:
+  - Cold (the first run after the build): render 9.7 ms, submit+present 504 ms.
+  - Warm: render 2-10 ms, submit+present 1-5 ms; time from view creation to
+    the first `render` 6-15 ms against CoreGraphics' 11-18 ms.
+  - The app's pipeline cache (`GMPI_UI_GPU_PIPELINE_CACHE`) does nothing on
+    Metal: bgfx's Metal renderer makes no `cacheRead`/`cacheWrite` calls, and
+    the folder is never created. The OS cache is per user and shared by every
+    command-line tool, so I did not clear it to repeat the cold number.
+- **Partial repaint** (one 80x24 counter): render ~1.2 ms, submit+present
+  median 0.6 ms over 60 back-to-back repaints.
+- **vsync**: with `setVsync(true)` after `initialize()`, submit+present over the
+  same 60 repaints was median 0.6 ms (max 34, the first frame), the same as
+  without. That is an off-screen window, which may have no display to sync to,
+  so whether vsync blocks the main thread on screen is **not verified**.
+  `resetFlags()` on macOS is now `FLIP | SRGB_BACKBUFFER`, vsync off.
+- **Retina**: the frame presents at the backing scale (2.0, 800x600 drawable
+  for a 400x300 view). **Not verified**: a move to a display with another
+  scale. This Mac has one display; the path (`viewDidChangeBackingProperties`
+  -> dirty all -> the next present resizes to the new scale) is untested.
+- **Not covered**: SynthEdit's own frames, `HostedView` and the VST3/AU
+  wrappers do not start the GPU path (by design for now); a text edit overlay
+  over the Metal layer; interactive (live) resize; EDR / HDR.
+
+### Benchmark: Metal vs CoreGraphics (`examples/MacBench`)
+
+`examples/MacBench` is WinBench for macOS: headless, offscreen, no vsync,
+`--backend cg|gpu`, the same output. The scenes, the case list and the timing
+loop moved to `examples/BenchScenes.h`, which WinBench now includes too
+(WinBench is not rebuilt here: no Windows build on this Mac). 1000x700,
+240 frames per case after 30 warm-up, ms per frame:
+
+| scene load | CoreGraphics | Metal | Metal cpu_ms | Metal / CG |
+|---|---|---|---|---|
+| bounce 4 | 1.91 | 0.38 | 0.32 | 0.20 |
+| bounce 16 | 4.85 | 2.36 | 2.28 | 0.49 |
+| bounce 64 | 13.63 | 8.77 | 8.65 | 0.64 |
+| lines 100 | 1.26 | 0.38 | 0.31 | 0.30 |
+| lines 1000 | 8.60 | 4.14 | 3.98 | 0.48 |
+| lines 5000 | 41.37 | 18.16 | 17.84 | 0.44 |
+| rects 100 | 1.40 | 1.29 | 1.22 | 0.92 |
+| rects 1000 | 10.92 | 10.17 | 10.12 | 0.93 |
+| rects 5000 | 53.13 | 58.79 | 58.73 | 1.11 |
+| ellipses 100 | 2.95 | 1.60 | 1.52 | 0.54 |
+| ellipses 1000 | 25.66 | 11.81 | 11.74 | 0.46 |
+| ellipses 5000 | 127.75 | 73.31 | 73.26 | 0.57 |
+| text 50 | 1.52 | 0.95 | 0.89 | 0.62 |
+| text 200 | 5.07 | 3.60 | 3.54 | 0.71 |
+| text 1000 | 22.97 | 84.97 | 84.85 | 3.70 |
+| gradients 50 | 2.33 | 0.76 | 0.67 | 0.33 |
+| gradients 200 | 7.95 | 2.33 | 2.23 | 0.29 |
+| gradients 1000 | 37.38 | 13.42 | 13.31 | 0.36 |
+
+**Metal does not behave like D3D12 did against Direct2D.** It is faster than
+CoreGraphics in 15 of 18 cases (gradients and lines ~2-3x, small loads up to
+5x), because CoreGraphics is the slower native renderer: rects 5000 cost 53 ms
+here against Direct2D's 17. What Metal shares with D3D12 is the shape of the
+cost: **cpu_ms is within 0.1-0.2 ms of frame_ms in every case**, so the GPU
+time is CPU-side recording and the device is idle. The two losses, profiled
+with `sample` (12 s each, main thread ~9.1k samples):
+
+- **text 1000 (85 ms, 3.7x CoreGraphics)**: half the main thread is
+  `endDraw`, and 37% is `Bitmap::trimTextCache()`. Each opaque label's cache
+  key includes its colour's luminance (`coverageClass`), and the scene gives
+  each of 1000 labels its own hue, so 1000 classes x the subpixel phases
+  overflow the 64 MB budget every frame. The over-budget path then evicts by
+  rescanning the whole map for the oldest entry, once per eviction ("Rare, so a
+  scan is fine"): quadratic. `drawTextU` is 27% (cache lookups 8%, rasterising
+  misses 5%, coverage 3%), `Canvas::submit` 11%. Two fixes suggest
+  themselves: evict in one pass (sort or nth_element by `lastUsed`), and key
+  coverage without the colour where the coverage does not depend on it. Very
+  likely the same cause as Windows' text 1000 (318 ms).
+- **rects 5000 (59 ms, 1.11x)**: the scene is rounded rectangles, which the
+  adaptor draws as geometry, not SDF: `drawRoundedRectangle` 34% (arcs
+  flattened, the stroke widened on the CPU, then the path atlas),
+  `fillRoundedRectangle` 17%, `endDraw` 15%, of which `PathAtlas::removePath`
+  and `stbrp_pack_rects` (packing the atlas afresh each frame) are most;
+  malloc/free throughout. This is the B3 SDF route for rounded rects (a
+  decision for Jeff) plus B8 (paths rebuilt every frame).
+
 
 ## What is already right
 

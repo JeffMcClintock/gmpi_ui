@@ -1224,7 +1224,7 @@ public:
         ID2D1Brush* opacityBrushNative{};
         if (opacityBrush)
         {
-            opacityBrushNative = static_cast<BrushCommon*>(brush)->native();
+            opacityBrushNative = static_cast<BrushCommon*>(opacityBrush)->native();
         }
 
         context_->FillGeometry(

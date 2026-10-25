@@ -26,6 +26,14 @@
 #include <cmath>
 #include <string>
 #include <string_view>
+#if GMPI_UI_GPU_BACKEND
+#import <QuartzCore/QuartzCore.h>
+#include <memory>
+#include "backends/GpuGfx.h"
+#include "helpers/CpuTextEngine.h"
+#include "helpers/DecodeImage.h"
+#include "helpers/FontProvider.h"
+#endif
 
 
 // Bounds on the editor extent. Nothing on this path used to have one -- not onSize,
@@ -115,6 +123,35 @@ public:
     CGContextRef backBuffer{}; // backing buffer with linear colorspace for correct blending.
     CGFloat backBufferHeight{}; // for coordinate flipping
     
+#if GMPI_UI_GPU_BACKEND
+    // GPU present. Opt in with GMPI_UI_GPU=1 in a build that defines
+    // GMPI_UI_GPU_BACKEND: the view is then layer-backed, with a CAMetalLayer that
+    // gmpi_ui's renderer (Metal) presents to through gmpi::gpugfx::WindowPresenter,
+    // no backing bitmap is made, and the client gets the GPU factory. CoreGraphics
+    // stays the default and the fallback when the renderer will not start.
+    struct GpuState
+    {
+        gmpi::gpugfx::Factory         factory;
+        gmpi::drawing::CpuTextEngine  textEngine{ gmpi::drawing::findFont };
+        gmpi::gpugfx::WindowPresenter presenter{ factory };
+        CAMetalLayer*                 layer{};    // a sublayer of the view's backing layer, which retains it
+        bool                          needsMeasure{ true };
+        bool                          dirtyAll{ true };
+        gmpi::drawing::Rect           dirty{};    // logical, top-down, accumulated since the last present
+        const void*                   measuredClient{};
+    };
+    std::unique_ptr<GpuState> gpu_;
+#endif
+
+    bool gpuActive() const
+    {
+#if GMPI_UI_GPU_BACKEND
+        return gpu_ != nullptr;
+#else
+        return false;
+#endif
+    }
+
     void Init(gmpi::api::IUnknown* paramHost, gmpi::api::IUnknown* pclient)
     {
         parameterHost = paramHost;
@@ -151,6 +188,10 @@ public:
             gmpi::drawing::Rect finalRect{0,0, available.width, available.height};
             drawingClient->arrange(&finalRect);
         }
+#if GMPI_UI_GPU_BACKEND
+        if(gpu_)
+            invalidateRect(nullptr); // the first present, through the frame's own dirty state
+#endif
     }
     
      void DeInit()
@@ -169,6 +210,17 @@ public:
 
     ~DrawingFrameCocoa()
     {
+#if GMPI_UI_GPU_BACKEND
+        if(gpu_)
+        {
+            // The client's brushes and bitmaps belong to the GPU factory: let go of
+            // the client before the factory goes (DeInit has usually done it already).
+            drawingClient = {};
+            inputClient = {};
+            pluginParameters_GMPI = {};
+            gpu_.reset();
+        }
+#endif
         // onResize() is the only other place this is released, and it only runs
         // from setFrame:. A host that closes the editor without a final resize
         // would otherwise leak the whole backing bitmap (8 bytes/physical pixel
@@ -381,6 +433,20 @@ public:
     // IMpGraphicsHost
     void invalidateRect(const gmpi::drawing::Rect* rect) override
     {
+#if GMPI_UI_GPU_BACKEND
+        if(gpu_)
+        {
+            // AppKit's updateLayer carries no dirty rect, so the frame keeps its own.
+            if(!rect)
+                gpu_->dirtyAll = true;
+            else if(gpu_->dirty.right <= gpu_->dirty.left || gpu_->dirty.bottom <= gpu_->dirty.top)
+                gpu_->dirty = *rect;
+            else
+                gpu_->dirty = unionRect(gpu_->dirty, *rect);
+            [view setNeedsDisplay:YES];
+            return;
+        }
+#endif
         if(rect)
         {
 #if 0
@@ -434,6 +500,13 @@ public:
 
     gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown ** returnFactory) override
     {
+#if GMPI_UI_GPU_BACKEND
+        if(gpu_)
+        {
+            *returnFactory = static_cast<gmpi::api::IUnknown*>(&gpu_->factory);
+            return gmpi::ReturnCode::Ok;
+        }
+#endif
         *returnFactory = &drawingFactory;
         return gmpi::ReturnCode::Ok;
     }
@@ -564,11 +637,119 @@ public:
     
     void onResize()
     {
+#if GMPI_UI_GPU_BACKEND
+        if(gpu_)
+        {
+            // Queued on the frame's own dirty state, which nothing else clears;
+            // the present resizes the drawable and measures the client again.
+            gpu_->needsMeasure = true;
+            gpu_->dirtyAll = true;
+            [view setNeedsDisplay:YES];
+            return;
+        }
+#endif
         if(backBuffer)
             CGContextRelease(backBuffer);
         backBuffer = nullptr;
      }
     
+#if GMPI_UI_GPU_BACKEND
+    // Before the client is attached, so its first getDrawingFactory sees the
+    // GPU factory. False = present through CoreGraphics.
+    bool startGpu()
+    {
+        if(!gmpi::gpugfx::wanted())
+            return false;
+
+        if(!gmpi::gpugfx::initialize())
+        {
+            fprintf(stderr, "gmpi_ui: GPU backend unavailable, presenting through CoreGraphics\n");
+            return false;
+        }
+
+        gpu_ = std::make_unique<GpuState>();
+        gpu_->textEngine.imageDecoder = gmpi::drawing::decodeImageMemory;
+        gpu_->factory.cpu.imageDecoder = gmpi::drawing::decodeImageFile;
+        gpu_->factory.cpu.textEngine = &gpu_->textEngine;
+        return true;
+    }
+
+    // The layer presented to: a sublayer covering the view's backing layer.
+    // bgfx's Metal renderer takes a CAMetalLayer as the window handle and
+    // presents to it as it is.
+    CAMetalLayer* gpuLayer()
+    {
+        if(!gpu_->layer && [view layer])
+        {
+            auto layer = [CAMetalLayer layer];
+            layer.opaque = YES;
+            layer.anchorPoint = CGPointZero;
+            // The drawable holds sRGB-encoded values; say so, or Core Animation shows
+            // them unmatched on a wide-gamut display while CoreGraphics' are matched.
+            CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+            layer.colorspace = srgb;
+            CGColorSpaceRelease(srgb);
+            [[view layer] addSublayer:layer];
+            gpu_->layer = layer;
+        }
+        return gpu_->layer;
+    }
+
+    // Before the view goes: its drawable belongs to the layer.
+    void stopGpu()
+    {
+        if(gpu_)
+            gpu_->presenter.release();
+    }
+
+    // updateLayer: one present of whatever is dirty.
+    void paintGpu()
+    {
+        if(!gpu_ || !drawingClient || ![view window])
+            return;
+
+        CAMetalLayer* layer = gpuLayer();
+        const NSSize logical = [view bounds].size;
+        const CGFloat scale = [[view window] backingScaleFactor];
+        if(!layer || logical.width < 1.0 || logical.height < 1.0 || scale <= 0.0)
+            return;
+
+        // 16384 is the Metal texture limit on every Mac GPU.
+        constexpr int maxDrawableDimension = 16384;
+        const int pw = std::min(maxDrawableDimension, static_cast<int>(std::lround(logical.width * scale)));
+        const int ph = std::min(maxDrawableDimension, static_cast<int>(std::lround(logical.height * scale)));
+
+        const CGRect frame{ CGPointZero, NSSizeToCGSize(logical) };
+        if(!CGRectEqualToRect(layer.frame, frame) || layer.contentsScale != scale)
+        {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES]; // no implicit animation of a resize
+            layer.frame = frame;
+            layer.contentsScale = scale;
+            [CATransaction commit];
+            gpu_->dirtyAll = true;
+        }
+
+        bool sized = false;
+        if(!gpu_->presenter.ensureTarget((__bridge void*)layer, pw, ph, sized))
+        {
+            fprintf(stderr, "gmpi_ui: no GPU window target\n"); // the client already holds GPU resources, so CoreGraphics is not an option now
+            return;
+        }
+
+        // A new client has never been laid out.
+        if(gpu_->measuredClient != drawingClient.get())
+        {
+            gpu_->measuredClient = drawingClient.get();
+            gpu_->needsMeasure = true;
+        }
+
+        gpu_->dirtyAll = gpu_->dirtyAll || sized || gpu_->needsMeasure;
+        gpu_->presenter.present(drawingClient.get(), static_cast<float>(logical.width), static_cast<float>(logical.height),
+                                static_cast<float>(scale), gpu_->needsMeasure, gpu_->dirtyAll, gpu_->dirty);
+    }
+#endif
+
     GMPI_REFCOUNT_NO_DELETE;
 };
 
@@ -626,7 +807,15 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 // share the name AND the body, which is harmless; the danger is only ever two
 // DIFFERENT bodies under one name. Verified sibling: GMPI_KEY_LISTENER_VERSION_03
 // is unchanged across the same 38 commits and correctly needs no bump.
-#define GMPI_VIEW_CLASS GMPI_OBJC_NAME(GMPI_VIEW_VERSION_04)
+//
+// BUMPED _04 -> _05, 2026-10-26: the GPU present (wantsUpdateLayer / updateLayer).
+// A build with GMPI_UI_GPU_BACKEND has a different body AND a different ivar
+// layout (DrawingFrameCocoa::gpu_) from one without, so it gets its own name.
+#if GMPI_UI_GPU_BACKEND
+#define GMPI_VIEW_CLASS GMPI_OBJC_NAME(GMPI_VIEW_VERSION_05_GPU)
+#else
+#define GMPI_VIEW_CLASS GMPI_OBJC_NAME(GMPI_VIEW_VERSION_05)
+#endif
 
 //--------------------------------------------------------------------------------------------------------------
 @interface GMPI_VIEW_CLASS : NSView {
@@ -716,6 +905,14 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
         [self addTrackingArea:self->trackingArea ];
         
         drawingFrame.view = self; // pass to init might be clearer
+#if GMPI_UI_GPU_BACKEND
+        // Before Init: the client asks for its factory as soon as it has a host.
+        if (drawingFrame.startGpu())
+        {
+            self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
+            [self setWantsLayer:YES]; // updateLayer below
+        }
+#endif
         drawingFrame.Init((gmpi::api::IUnknown*) paramHost, (gmpi::api::IUnknown*) _client);
         
         timer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(onTimer:) userInfo:nil repeats:YES ];
@@ -759,12 +956,42 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
         self->timer = nil;
     }
     
+#if GMPI_UI_GPU_BACKEND
+    drawingFrame.stopGpu();
+#endif
     drawingFrame.DeInit();
     drawingFrame.view = nil;
 }
 
+#if GMPI_UI_GPU_BACKEND
+// GPU present: AppKit's display cycle calls updateLayer, which presents to a
+// CAMetalLayer covering the view. (A CAMetalLayer as the view's own backing
+// layer is never sent updateLayer, so it is a sublayer of an ordinary one.)
+// Without the GPU path these fall through to AppKit's own behaviour, and the
+// view draws through drawRect: as it always has.
+- (BOOL)wantsUpdateLayer
+{
+    return drawingFrame.gpuActive();
+}
+
+- (void)updateLayer
+{
+    drawingFrame.paintGpu();
+}
+
+- (void)viewDidChangeBackingProperties
+{
+    [super viewDidChangeBackingProperties];
+    if (drawingFrame.gpuActive())
+        drawingFrame.invalidateRect(nullptr); // the present picks up the new scale
+}
+#endif
+
 - (void)drawRect:(NSRect)dirtyRect
 {
+    if (drawingFrame.gpuActive())
+        return; // presented by updateLayer
+
 #if 0
     gmpi::drawing::Rect r{
         static_cast<float>(dirtyRect.origin.x),

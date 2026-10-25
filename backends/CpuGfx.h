@@ -2768,6 +2768,16 @@ public:
         return fillFigures(strokeFigures, drawing::FillMode::Winding, *cpuBrush);
     }
 
+    // Figures already flattened - and for a stroke already widened - by the
+    // caller, filled exactly as fillGeometry / drawGeometry fill theirs: for
+    // an adaptor that widened a stroke itself and must not pay for it twice
+    // (GpuGfx.h drawGeometry's CPU fallback).
+    ReturnCode fillFlattenedFigures(const std::vector<Figure>& figures, drawing::FillMode fillMode, drawing::api::IBrush* brush)
+    {
+        auto* cpuBrush = dynamic_cast<CpuBrush*>(brush);
+        return cpuBrush ? fillFigures(figures, fillMode, *cpuBrush) : ReturnCode::NoSupport;
+    }
+
 private:
     // Rasterize + blend a set of already-flattened figures. The single entry
     // point to pixels: both fillGeometry and drawGeometry come through here.

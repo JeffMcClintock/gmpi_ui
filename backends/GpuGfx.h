@@ -1454,7 +1454,9 @@ public:
         std::vector<cpugfx::Figure> widened;
         cpugfx::stroke::widen(path->figures, strokeWidth, cpugfx::strokeParams(strokeStyle), widened);
 
-        auto cpuStroke = [&](cpugfx::RenderTarget& cpu) { return cpu.drawGeometry(pathGeometry, brush, strokeWidth, strokeStyle); };
+        // The CPU fallback fills these same widened figures: widening is the
+        // expensive part of a stroke, and cpu.drawGeometry would do it again.
+        auto cpuStroke = [&](cpugfx::RenderTarget& cpu) { return cpu.fillFlattenedFigures(widened, drawing::FillMode::Winding, brush); };
         if (auto b = gpuBrush(brush))
             return fillFiguresGpu(widened, drawing::FillMode::Winding, *b, cpuStroke);
         return viaCpu(figuresDeviceBounds(widened), cpuStroke, cpuGeometryClipActive() ? "drawGeometry under a geometry clip" : "drawGeometry with a CPU-only brush");

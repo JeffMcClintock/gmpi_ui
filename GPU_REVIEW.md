@@ -120,6 +120,31 @@ on the CPU today and then uploads at 8 bytes per pixel.
 
 ### B1. Text: a coverage atlas tinted on the GPU (removes a platform engine per OS)
 
+**Status 2026-10-25: DONE in its first form, uncommitted, on `text-atlas`
+branches** (gmpi_ui on `clip-mask`; gimpi_ui_tests). Finding that shaped
+it: the text engine's coverage is NOT colour-independent - to match
+DirectWrite's weight it warps opaque text's coverage by a curve whose
+strength follows the brush's LUMINANCE (`CpuTextEngine.h`, kTextWarpDark),
+and translucent text skips the warp. So the cache keys a *coverage class*
+(opaque at luminance L, or translucent) instead of the colour, rasterises
+with a stand-in brush of that class (grey L, or 50% white), stores
+coverage, and tints in `fs_tinted_texture` with the premultiplied brush
+colour - exact, not approximate (0 outlier pixels against the real-colour
+raster for black, white, mid, translucent; a sabotaged class fails the
+test). Colour glyphs that do not tint are detected at rasterisation and
+fall back to an exact-colour entry (untested here: no colour-emoji font).
+`drawTextLayout` now goes through the same cache, keyed by the immutable
+layout's identity (the entry holds a reference). Effect in the editor:
+CPU text fallbacks 239 → 2 in 6 s; steady submit+present 2.4 ms vs
+10.5 ms with the cache off. Side effect: the long-standing lavapipe failure
+`TextLayoutMatchesDrawTextTrailingMultiline` passes (layout and plain text
+now share one rasterisation path) - 274/274 on both drivers.
+Not done yet: storage is still RGBA16F holding (c,c,c,c) (a true R16F/R8
+coverage atlas is the ~4-8x memory win); `drawRichTextU` still CPU;
+gradient/shader-brush text still uses the fallback colour; the cache's
+quarter-pixel origin snapping (pre-existing) differs from exact CPU text by
+up to ~0.02 at fractional origins.
+
 Today `drawTextU` rasterises through `CpuTextEngine` into **RGBA16F colour
 pixels** and caches them keyed by (text, format, **colour**, scale, phase)
 (`GpuGfx.h:184-199, 1440-1487`); `drawRichTextU` and `drawTextLayout`

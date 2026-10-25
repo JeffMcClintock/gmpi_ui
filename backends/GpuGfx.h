@@ -184,27 +184,44 @@ public:
     // sub-pixel phase of the layout origin, quantised to kTextPhases steps,
     // so text that moves by whole pixels - scrolling, dragging - still hits;
     // the price is drawing up to half a step (1/8 px) from where it was asked.
+    // Text is cached as COVERAGE and tinted on the GPU, so one raster serves
+    // every colour that rasterises the same. That is not every colour: to
+    // match DirectWrite's weight the text engine warps opaque text's coverage
+    // by a strength that depends on the brush's LUMINANCE (CpuTextEngine.h,
+    // kTextWarpDark), and translucent text takes a different, unwarped path.
+    // So the key carries a coverage class - opaque at this luminance, or
+    // translucent - instead of the colour. Colour glyphs (COLR emoji), which
+    // do not tint, are detected when rasterised and fall back to an entry for
+    // the exact colour, as every entry used to be.
     struct TextKey
     {
         std::string text;
         drawing::api::ITextFormat* format{};
+        const void* layout{};        // drawTextLayout: the (immutable) ITextLayout; text/format unused
         uint64_t formatState{};      // ICpuTextEngine::textFormatStateKey
-        // r g b a opacity, as bits. std::array, not a C array: inside
-        // std::tie a C array compares by ADDRESS, which made every key unique.
+        uint64_t coverageClass{};    // 0 translucent, else (1 << 32) | luminance bits (opaque)
+        // r g b a opacity as bits, for a colour-glyph entry only (zeros for
+        // coverage). std::array, not a C array: inside std::tie a C array
+        // compares by ADDRESS, which made every key unique.
         std::array<uint32_t, 5> color{};
         float layoutW{}, layoutH{};  // wrapping and alignment depend on the box size
         float scaleX{}, scaleY{};
         int32_t options{};
         uint8_t phaseX{}, phaseY{};
 
-        auto tie() const { return std::tie(text, format, formatState, color, layoutW, layoutH, scaleX, scaleY, options, phaseX, phaseY); }
+        auto tie() const { return std::tie(text, format, layout, formatState, coverageClass, color, layoutW, layoutH, scaleX, scaleY, options, phaseX, phaseY); }
         bool operator<(const TextKey& other) const { return tie() < other.tie(); }
     };
     struct CachedText
     {
-        // Held so the format cannot be freed and another allocated at the
-        // same address while the key names it.
+        // Held so the format (or layout) cannot be freed and another allocated
+        // at the same address while the key names it.
         gmpi::shared_ptr<drawing::api::ITextFormat> format;
+        gmpi::shared_ptr<drawing::api::ITextLayout> layout;
+        // Coverage entries hold (c, c, c, c) and are drawn tinted by the
+        // brush; false = this class did not tint (colour glyphs): look up the
+        // exact-colour entry instead.
+        bool tintable = true;
         std::vector<uint16_t> pixels; // w x h fp16 RGBA, never resized: the atlas keeps the pointer
         int32_t w{}, h{};
         int32_t offsetX{}, offsetY{}; // raster origin relative to the snapped layout origin, device px
@@ -218,12 +235,14 @@ public:
     std::map<TextKey, CachedText> textCache;
     size_t textCacheBytes{};
 
-    // Draw a cached raster at device (x, y), 1:1, through `clamp`.
-    void drawCachedText(const CachedText& entry, float x, float y, const gmpi::gpu::ClampBounds& clamp)
+    // Draw a cached raster at device (x, y), 1:1, through `clamp`, its texels
+    // multiplied by `tint` (premultiplied; white for a colour entry).
+    void drawCachedText(const CachedText& entry, float x, float y, const gmpi::gpu::ClampBounds& clamp,
+                        const gmpi::gpu::Color& tint)
     {
         canvas.setClampBounds(clamp);
         canvas.setBlendMode(gmpi::gpu::BlendMode::Composite);
-        canvas.setColor(gmpi::gpu::Color(1.0f, 1.0f, 1.0f, 1.0f));
+        canvas.setColor(tint);
         canvas.halfImage(reinterpret_cast<const unsigned char*>(entry.pixels.data()), entry.w, entry.h,
                          x, y, float(entry.w), float(entry.h), entry.id);
         canvas.setBlendMode(gmpi::gpu::BlendMode::Alpha);
@@ -1424,12 +1443,17 @@ public:
     {
         if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
             return clipRectStack.back();
+        return drawing::transformRect(transform_, textLocalBounds(layoutRect, extent));
+    }
+
+    // The same box in local coordinates (extent must be finite).
+    static drawing::Rect textLocalBounds(const drawing::Rect& layoutRect, drawing::Size extent)
+    {
         const float overflowW = (std::max)(0.0f, extent.width - (layoutRect.right - layoutRect.left));
         const float overflowH = (std::max)(0.0f, extent.height - (layoutRect.bottom - layoutRect.top));
         const float margin = extent.height + 1.0f;
-        const drawing::Rect grown{ layoutRect.left - overflowW - margin, layoutRect.top - overflowH - margin,
-                                   layoutRect.right + overflowW + margin, layoutRect.bottom + overflowH + margin };
-        return drawing::transformRect(transform_, grown);
+        return { layoutRect.left - overflowW - margin, layoutRect.top - overflowH - margin,
+                 layoutRect.right + overflowW + margin, layoutRect.bottom + overflowH + margin };
     }
 
     ReturnCode drawTextU(const char* string, uint32_t stringLength, drawing::api::ITextFormat* textFormat,
@@ -1455,16 +1479,27 @@ public:
         }, "drawTextU");
     }
 
-    // drawTextU through Bitmap::textCache. False = not cacheable here (a
-    // geometry clip, a rotated or skewed transform, a non-solid brush, an engine
-    // that cannot key its formats, a huge block); the caller draws uncached.
-    bool drawTextCached(cpugfx::ICpuTextEngine& engine, const char* string, uint32_t stringLength,
-                        drawing::api::ITextFormat* textFormat, const drawing::Rect& layoutRect,
-                        drawing::api::IBrush* brush, int32_t options)
+    // GMPI_UI_GPU_TEXT_CACHE=0 turns the text cache off, to compare against.
+    static bool textCacheEnabled()
     {
-        // GMPI_UI_GPU_TEXT_CACHE=0 turns it off, to compare against.
         static const bool enabled = [] { const char* v = std::getenv("GMPI_UI_GPU_TEXT_CACHE"); return !(v && *v == '0'); }();
-        if (!enabled || cpuGeometryClipActive())
+        return enabled;
+    }
+
+    using TextRasteriser = std::function<void(cpugfx::RenderTarget&, drawing::api::IBrush*)>;
+
+    // Draw text through Bitmap::textCache. `key` names the text (everything
+    // but phase, coverage class and colour, filled in here); `localOrigin` is
+    // where the layout box starts and `localBounds` a padded box that holds
+    // all its ink, both in local coordinates; `rasterise` draws it into a
+    // cpugfx target with the brush it is given. False = not cacheable here
+    // (a CPU-only clip, a rotated or skewed transform, a non-solid brush, a
+    // huge block); the caller draws uncached.
+    bool drawTextThroughCache(Bitmap::TextKey key, drawing::Point localOrigin, const drawing::Rect& localBounds,
+                              drawing::api::IBrush* brush, const TextRasteriser& rasterise,
+                              drawing::api::ITextFormat* holdFormat, drawing::api::ITextLayout* holdLayout)
+    {
+        if (!textCacheEnabled() || cpuGeometryClipActive())
             return false;
         const auto& m = transform_;
         if (m._12 != 0.0f || m._21 != 0.0f || !(m._11 > 0.0f) || !(m._22 > 0.0f))
@@ -1472,11 +1507,8 @@ public:
         auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush);
         if (!solid || !solid->isPaintable())
             return false;
-        const uint64_t formatState = engine.textFormatStateKey(textFormat);
-        if (formatState == 0)
-            return false;
 
-        const auto origin = drawing::transformPoint(m, { layoutRect.left, layoutRect.top });
+        const auto origin = drawing::transformPoint(m, localOrigin);
         if (!std::isfinite(origin.x) || !std::isfinite(origin.y))
             return false;
         float snapX = std::floor(origin.x), snapY = std::floor(origin.y);
@@ -1484,101 +1516,211 @@ public:
         int phaseY = int(std::lround((origin.y - snapY) * Bitmap::kTextPhases));
         if (phaseX == Bitmap::kTextPhases) { phaseX = 0; snapX += 1.0f; }
         if (phaseY == Bitmap::kTextPhases) { phaseY = 0; snapY += 1.0f; }
-
-        Bitmap::TextKey key;
-        key.text.assign(string, stringLength);
-        key.format = textFormat;
-        key.formatState = formatState;
-        const float colorParts[5] = { solid->color.r, solid->color.g, solid->color.b, solid->color.a, solid->opacity };
-        std::memcpy(key.color.data(), colorParts, sizeof colorParts);
-        key.layoutW = layoutRect.right - layoutRect.left;
-        key.layoutH = layoutRect.bottom - layoutRect.top;
         key.scaleX = m._11;
         key.scaleY = m._22;
-        key.options = options;
         key.phaseX = uint8_t(phaseX);
         key.phaseY = uint8_t(phaseY);
+
+        // The coverage class: what the engine's coverage depends on.
+        const float alpha = solid->color.a * solid->opacity;
+        const bool opaque = alpha >= 1.0f;
+        const float luminance = std::clamp(0.2126f * solid->color.r + 0.7152f * solid->color.g + 0.0722f * solid->color.b, 0.0f, 1.0f);
+        uint32_t luminanceBits;
+        std::memcpy(&luminanceBits, &luminance, sizeof luminanceBits);
+        key.coverageClass = opaque ? ((uint64_t(1) << 32) | luminanceBits) : 0;
 
         auto& cache = bitmap->textCache;
         auto it = cache.find(key);
         if (it == cache.end())
         {
-            drawing::Size unwrapped{ 0, 0 }, wrapped{ 0, 0 };
-            textFormat->getTextExtentU(string, int32_t(stringLength), 100000.0f, &unwrapped);
-            textFormat->getTextExtentU(string, int32_t(stringLength), (std::max)(1.0f, key.layoutW), &wrapped);
-            const drawing::Size extent{ (std::max)(unwrapped.width, wrapped.width), (std::max)(unwrapped.height, wrapped.height) };
-            if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
+            // Rasterise with a stand-in brush of the same class: an opaque
+            // grey of the same luminance (the warp sees the same strength), or
+            // half-transparent white (the same unwarped path), then keep the
+            // coverage alone.
+            const drawing::Color standIn = opaque ? drawing::Color{ luminance, luminance, luminance, 1.0f }
+                                                  : drawing::Color{ 1.0f, 1.0f, 1.0f, 0.5f };
+            cpugfx::SolidColorBrush standInBrush(factory, &standIn, nullptr);
+            auto entry = rasteriseText(key, origin, snapX, snapY, localBounds, &standInBrush, rasterise, holdFormat, holdLayout);
+            if (!entry)
                 return false;
+            entry->tintable = toCoverage(*entry, opaque ? luminance : 1.0f, opaque ? 1.0f : 0.5f);
+            if (!entry->tintable)
+                entry->pixels.clear(); // the exact-colour entry below draws it
+            it = storeText(std::move(key), std::move(*entry));
+        }
+        it->second.lastUsed = bitmap->submits;
 
-            // Rasterise as if the origin sat exactly on its quantised phase.
-            const float shiftX = snapX + float(phaseX) / Bitmap::kTextPhases - origin.x;
-            const float shiftY = snapY + float(phaseY) / Bitmap::kTextPhases - origin.y;
-            auto bounds = textDeviceBounds(layoutRect, extent);
-            bounds = { bounds.left + shiftX, bounds.top + shiftY, bounds.right + shiftX, bounds.bottom + shiftY };
-            const int32_t left = int32_t(std::floor(bounds.left));
-            const int32_t top = int32_t(std::floor(bounds.top));
-            const int32_t w = int32_t(std::ceil(bounds.right)) - left;
-            const int32_t h = int32_t(std::ceil(bounds.bottom)) - top;
-            if (w <= 0 || h <= 0)
-                return true; // nothing to draw
-            if (int64_t(w) * h > Bitmap::kMaxCachedTextPixels)
-                return false;
-
-            gmpi::shared_ptr<cpugfx::RenderTarget> cpu;
-            cpu.attach(new cpugfx::RenderTarget(factory, { uint32_t(w), uint32_t(h) }, 0, 96.0f));
-            const auto t = m * drawing::makeTranslation(shiftX - float(left), shiftY - float(top));
-            cpu->setTransform(&t);
-            cpu->beginDraw();
-            engine.drawText(cpu.get(), textFormat, string, int32_t(stringLength), layoutRect, brush, options);
-            cpu->endDraw();
-
-            gmpi::shared_ptr<drawing::api::IBitmap> cpuBitmap;
-            cpu->getBitmap(cpuBitmap.put());
-            auto* cb = dynamic_cast<cpugfx::Bitmap*>(cpuBitmap.get());
-            if (!cb)
-                return false;
-
-            // Keep only the ink. textDeviceBounds pads by a line height all
-            // round, so the raster is mostly empty: a 140 x 20 label came out
-            // near 200 KB of fp16, and a few hundred filled the budget.
-            const auto& sf = cb->surface;
-            int32_t inkL = w, inkT = h, inkR = -1, inkB = -1;
-            for (int32_t y = 0; y < h; ++y)
-            {
-                const uint16_t* row = sf.pixels + size_t(y) * sf.stridePixels * 4;
-                for (int32_t x = 0; x < w; ++x)
-                {
-                    if ((row[x * 4 + 3] & 0x7fff) == 0) // fp16 alpha, +0 or -0
-                        continue;
-                    inkL = (std::min)(inkL, x); inkR = (std::max)(inkR, x);
-                    inkT = (std::min)(inkT, y); inkB = (std::max)(inkB, y);
-                }
-            }
-
-            static uint64_t nextTextId = uint64_t(1) << 62; // apart from cachedImage()'s ids
-            Bitmap::CachedText entry;
-            textFormat->addRef();
-            entry.format.attach(textFormat);
-            if (inkR >= inkL) // otherwise nothing drew: cached as empty, so it stays a hit
-            {
-                entry.w = inkR - inkL + 1;
-                entry.h = inkB - inkT + 1;
-                entry.pixels = packSurface(sf, inkL, inkT, entry.w, entry.h);
-                entry.offsetX = left + inkL - int32_t(snapX);
-                entry.offsetY = top + inkT - int32_t(snapY);
-                entry.id = nextTextId++;
-                entry.retained = std::make_unique<gmpi::gpu::ImageAtlas::PackedImage>(
-                    bitmap->canvas.retainHalfImage(reinterpret_cast<const unsigned char*>(entry.pixels.data()),
-                                                   entry.w, entry.h, entry.id));
-                bitmap->textCacheBytes += entry.pixels.size() * sizeof(uint16_t);
-            }
-            it = cache.emplace(std::move(key), std::move(entry)).first;
+        if (it->second.tintable)
+        {
+            if (it->second.w > 0)
+                bitmap->drawCachedText(it->second, snapX + float(it->second.offsetX), snapY + float(it->second.offsetY), currentClamp(),
+                                       gmpi::gpu::Color(alpha, solid->color.r * alpha, solid->color.g * alpha, solid->color.b * alpha));
+            return true;
         }
 
-        it->second.lastUsed = bitmap->submits;
-        if (it->second.w > 0)
-            bitmap->drawCachedText(it->second, snapX + float(it->second.offsetX), snapY + float(it->second.offsetY), currentClamp());
+        // Colour glyphs: an entry for this exact colour, drawn untinted.
+        Bitmap::TextKey exact = it->first;
+        const float colorParts[5] = { solid->color.r, solid->color.g, solid->color.b, solid->color.a, solid->opacity };
+        std::memcpy(exact.color.data(), colorParts, sizeof colorParts);
+        auto ex = cache.find(exact);
+        if (ex == cache.end())
+        {
+            auto entry = rasteriseText(exact, origin, snapX, snapY, localBounds, brush, rasterise, holdFormat, holdLayout);
+            if (!entry)
+                return false;
+            entry->tintable = false;
+            ex = storeText(std::move(exact), std::move(*entry));
+        }
+        ex->second.lastUsed = bitmap->submits;
+        if (ex->second.w > 0)
+            bitmap->drawCachedText(ex->second, snapX + float(ex->second.offsetX), snapY + float(ex->second.offsetY), currentClamp(),
+                                   gmpi::gpu::Color(1.0f, 1.0f, 1.0f, 1.0f));
         return true;
+    }
+
+    // Rasterise one cache entry, cropped to its ink. Null = too big to cache.
+    std::optional<Bitmap::CachedText> rasteriseText(const Bitmap::TextKey& key, drawing::Point origin, float snapX, float snapY,
+                                                    const drawing::Rect& localBounds, drawing::api::IBrush* brush,
+                                                    const TextRasteriser& rasterise,
+                                                    drawing::api::ITextFormat* holdFormat, drawing::api::ITextLayout* holdLayout)
+    {
+        const auto& m = transform_;
+        // Rasterise as if the origin sat exactly on its quantised phase.
+        const float shiftX = snapX + float(key.phaseX) / Bitmap::kTextPhases - origin.x;
+        const float shiftY = snapY + float(key.phaseY) / Bitmap::kTextPhases - origin.y;
+        auto bounds = drawing::transformRect(m, localBounds);
+        bounds = { bounds.left + shiftX, bounds.top + shiftY, bounds.right + shiftX, bounds.bottom + shiftY };
+        if (!std::isfinite(bounds.left) || !std::isfinite(bounds.top) || !std::isfinite(bounds.right) || !std::isfinite(bounds.bottom))
+            return std::nullopt;
+        const int32_t left = int32_t(std::floor(bounds.left));
+        const int32_t top = int32_t(std::floor(bounds.top));
+        const int32_t w = int32_t(std::ceil(bounds.right)) - left;
+        const int32_t h = int32_t(std::ceil(bounds.bottom)) - top;
+
+        Bitmap::CachedText entry;
+        if (holdFormat)
+        {
+            holdFormat->addRef();
+            entry.format.attach(holdFormat);
+        }
+        if (holdLayout)
+        {
+            holdLayout->addRef();
+            entry.layout.attach(holdLayout);
+        }
+        if (w <= 0 || h <= 0)
+            return entry; // nothing to draw: cached as empty, so it stays a hit
+        if (int64_t(w) * h > Bitmap::kMaxCachedTextPixels)
+            return std::nullopt;
+
+        gmpi::shared_ptr<cpugfx::RenderTarget> cpu;
+        cpu.attach(new cpugfx::RenderTarget(factory, { uint32_t(w), uint32_t(h) }, 0, 96.0f));
+        const auto t = m * drawing::makeTranslation(shiftX - float(left), shiftY - float(top));
+        cpu->setTransform(&t);
+        cpu->beginDraw();
+        rasterise(*cpu, brush);
+        cpu->endDraw();
+
+        gmpi::shared_ptr<drawing::api::IBitmap> cpuBitmap;
+        cpu->getBitmap(cpuBitmap.put());
+        auto* cb = dynamic_cast<cpugfx::Bitmap*>(cpuBitmap.get());
+        if (!cb)
+            return std::nullopt;
+
+        // Keep only the ink. The bounds are padded by a line height all round,
+        // so the raster is mostly empty: a 140 x 20 label came out near
+        // 200 KB of fp16, and a few hundred filled the budget.
+        const auto& sf = cb->surface;
+        int32_t inkL = w, inkT = h, inkR = -1, inkB = -1;
+        for (int32_t y = 0; y < h; ++y)
+        {
+            const uint16_t* row = sf.pixels + size_t(y) * sf.stridePixels * 4;
+            for (int32_t x = 0; x < w; ++x)
+            {
+                if ((row[x * 4 + 3] & 0x7fff) == 0) // fp16 alpha, +0 or -0
+                    continue;
+                inkL = (std::min)(inkL, x); inkR = (std::max)(inkR, x);
+                inkT = (std::min)(inkT, y); inkB = (std::max)(inkB, y);
+            }
+        }
+        if (inkR >= inkL)
+        {
+            entry.w = inkR - inkL + 1;
+            entry.h = inkB - inkT + 1;
+            entry.pixels = packSurface(sf, inkL, inkT, entry.w, entry.h);
+            entry.offsetX = left + inkL - int32_t(snapX);
+            entry.offsetY = top + inkT - int32_t(snapY);
+        }
+        return entry;
+    }
+
+    // Turn a stand-in raster - premultiplied (g*s*c, g*s*c, g*s*c, s*c) for a
+    // grey g at alpha s - into coverage (c, c, c, c). False if any texel is
+    // not that grey: colour glyphs, which a tint cannot reproduce.
+    static bool toCoverage(Bitmap::CachedText& entry, float grey, float standInAlpha)
+    {
+        using drawing::detail::halfToFloat;
+        using drawing::detail::floatToHalf;
+        for (size_t i = 0; i + 3 < entry.pixels.size(); i += 4)
+        {
+            const float a = halfToFloat(entry.pixels[i + 3]);
+            const float expected = grey * a;
+            for (int c = 0; c < 3; ++c)
+            {
+                const float v = halfToFloat(entry.pixels[i + c]);
+                if (std::fabs(v - expected) > 2e-3f + 2e-3f * expected)
+                    return false;
+            }
+            const uint16_t coverage = floatToHalf(a / standInAlpha);
+            entry.pixels[i] = entry.pixels[i + 1] = entry.pixels[i + 2] = entry.pixels[i + 3] = coverage;
+        }
+        return true;
+    }
+
+    std::map<Bitmap::TextKey, Bitmap::CachedText>::iterator storeText(Bitmap::TextKey key, Bitmap::CachedText entry)
+    {
+        static uint64_t nextTextId = uint64_t(1) << 62; // apart from cachedImage()'s ids
+        if (entry.w > 0 && !entry.pixels.empty())
+        {
+            entry.id = nextTextId++;
+            entry.retained = std::make_unique<gmpi::gpu::ImageAtlas::PackedImage>(
+                bitmap->canvas.retainHalfImage(reinterpret_cast<const unsigned char*>(entry.pixels.data()),
+                                               entry.w, entry.h, entry.id));
+            bitmap->textCacheBytes += entry.pixels.size() * sizeof(uint16_t);
+        }
+        return bitmap->textCache.emplace(std::move(key), std::move(entry)).first;
+    }
+
+    // drawTextU through the cache. False = draw it uncached.
+    bool drawTextCached(cpugfx::ICpuTextEngine& engine, const char* string, uint32_t stringLength,
+                        drawing::api::ITextFormat* textFormat, const drawing::Rect& layoutRect,
+                        drawing::api::IBrush* brush, int32_t options)
+    {
+        const uint64_t formatState = engine.textFormatStateKey(textFormat);
+        if (formatState == 0)
+            return false;
+
+        Bitmap::TextKey key;
+        key.text.assign(string, stringLength);
+        key.format = textFormat;
+        key.formatState = formatState;
+        key.layoutW = layoutRect.right - layoutRect.left;
+        key.layoutH = layoutRect.bottom - layoutRect.top;
+        key.options = options;
+
+        // Measured both unwrapped and at the layout width: whichever way the
+        // format wraps, the larger of the two bounds the ink.
+        drawing::Size unwrapped{ 0, 0 }, wrapped{ 0, 0 };
+        textFormat->getTextExtentU(string, int32_t(stringLength), 100000.0f, &unwrapped);
+        textFormat->getTextExtentU(string, int32_t(stringLength), (std::max)(1.0f, key.layoutW), &wrapped);
+        const drawing::Size extent{ (std::max)(unwrapped.width, wrapped.width), (std::max)(unwrapped.height, wrapped.height) };
+        if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
+            return false;
+
+        return drawTextThroughCache(std::move(key), { layoutRect.left, layoutRect.top }, textLocalBounds(layoutRect, extent), brush,
+            [&](cpugfx::RenderTarget& cpu, drawing::api::IBrush* b) {
+                engine.drawText(&cpu, textFormat, string, int32_t(stringLength), layoutRect, b, options);
+            }, textFormat, nullptr);
     }
 
     ReturnCode drawRichTextU(drawing::api::IRichTextFormat* richTextFormat, const drawing::Rect* layoutRect,
@@ -1611,7 +1753,23 @@ public:
         drawing::Rect placed{};
         drawing::Rect bounds = clipRectStack.back();
         if (engine->getTextLayoutPlacement(textLayout, &placed) == ReturnCode::Ok)
-            bounds = textDeviceBounds({ point.x + placed.left, point.y + placed.top, point.x + placed.right, point.y + placed.bottom }, extent);
+        {
+            const drawing::Rect placedRect{ point.x + placed.left, point.y + placed.top, point.x + placed.right, point.y + placed.bottom };
+            // A layout is immutable once made (ITextLayout has no setters),
+            // so it is keyed by identity; the cache entry holds a reference,
+            // so its address cannot be reused by another layout meanwhile.
+            Bitmap::TextKey key;
+            key.layout = textLayout;
+            key.formatState = 1;
+            key.options = options;
+            if (std::isfinite(extent.width) && std::isfinite(extent.height) &&
+                drawTextThroughCache(std::move(key), point, textLocalBounds(placedRect, extent), brush,
+                    [&](cpugfx::RenderTarget& cpu, drawing::api::IBrush* b) {
+                        engine->drawTextLayout(&cpu, textLayout, point, b, options);
+                    }, nullptr, textLayout))
+                return ReturnCode::Ok;
+            bounds = textDeviceBounds(placedRect, extent);
+        }
         return viaCpu(bounds, [&](cpugfx::RenderTarget& cpu) {
             return engine->drawTextLayout(&cpu, textLayout, point, brush, options);
         }, "drawTextLayout");

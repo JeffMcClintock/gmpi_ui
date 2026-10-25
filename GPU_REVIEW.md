@@ -284,6 +284,29 @@ retained-pixels layer makes it mostly moot for *unchanged* regions; for a
 scrolling or zooming view, retaining atlas entries keyed by
 (geometry identity, transform) is the next step.
 
+## Measured on real documents (2026-10-25)
+
+Six real documents (Poly Synth, TideSynth DefaultRack, Thick2, Impulse
+Response, StructureBench, WavetableSynth; structure view, 6 s each, NVIDIA):
+after clips, text, bitmaps and the fix below, CPU fallbacks went 21 -> 2,
+and both are one large figure (StructureBench, > 512^2 texels: B3). The
+other 17 were one text draw per document - the browser pane's multi-line
+block - refused by the text cache because its padding was the BLOCK's
+height on every side instead of a line's (~1.9 Mpx, over the 1 Mpx limit);
+fixed on `gpu-text-misc` (padding = ascent + descent + line gap from the
+format; cache refusals now say why under GMPI_UI_GPU_TRACE_DRAWS; test
+GpuTallTextBlockIsCachedAndComplete fails without the fix).
+
+Not a regression, measured: a document that redraws at ~3 fps shows
+submit+present climbing from 1 ms to a ~8.4 ms plateau within seconds. The
+NVIDIA card drops from P0 (2490 MHz) to P8 (210 MHz) over the same seconds
+(nvidia-smi); the same document at P0 is 1 ms. Same with clip masks off.
+
+What is left by measurement: first frames cost 15-25 ms submit+present
+(shader programs created on first use, atlases allocated and filled) and
+7-25 ms render; B3 for the occasional large figure. Rich text (B1 tail) did
+not appear in these documents.
+
 ## Suggested order
 
 1. **A2 + A3 + A4 - DONE 2026-10-25 (uncommitted, gmpi_ui branch

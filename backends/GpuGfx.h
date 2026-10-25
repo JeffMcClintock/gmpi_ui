@@ -1484,19 +1484,34 @@ public:
     // line's height for ink beyond the typographic box. The CPU fallback
     // used to cover the whole clip for every text draw: the analyser's 26
     // axis labels were each a 400x200 raster and upload per frame.
-    drawing::Rect textDeviceBounds(const drawing::Rect& layoutRect, drawing::Size extent) const
+    drawing::Rect textDeviceBounds(const drawing::Rect& layoutRect, drawing::Size extent, float lineHeight = 0.0f) const
     {
         if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
             return clipRectStack.back();
-        return drawing::transformRect(transform_, textLocalBounds(layoutRect, extent));
+        return drawing::transformRect(transform_, textLocalBounds(layoutRect, extent, lineHeight));
     }
 
-    // The same box in local coordinates (extent must be finite).
-    static drawing::Rect textLocalBounds(const drawing::Rect& layoutRect, drawing::Size extent)
+    // A format's line height (ascent + descent + line gap), or 0 if unknown.
+    static float lineHeightOf(drawing::api::ITextFormat* format)
+    {
+        drawing::FontMetrics metrics{};
+        if (!format || format->getFontMetrics(&metrics) != ReturnCode::Ok)
+            return 0.0f;
+        const float h = metrics.ascent + metrics.descent + (std::max)(0.0f, metrics.lineGap);
+        return std::isfinite(h) && h > 0.0f ? h : 0.0f;
+    }
+
+    // The same box in local coordinates (extent must be finite). The margin
+    // is a LINE's height, for ink beyond the typographic box; with no line
+    // height known it falls back to the block's height, which for a
+    // multi-line block is far too much (a 600 px browser pane's text block
+    // grew 600 px on every side, over the cache's size limit, and went to
+    // the CPU on every document open).
+    static drawing::Rect textLocalBounds(const drawing::Rect& layoutRect, drawing::Size extent, float lineHeight = 0.0f)
     {
         const float overflowW = (std::max)(0.0f, extent.width - (layoutRect.right - layoutRect.left));
         const float overflowH = (std::max)(0.0f, extent.height - (layoutRect.bottom - layoutRect.top));
-        const float margin = extent.height + 1.0f;
+        const float margin = (lineHeight > 0.0f ? (std::min)(lineHeight, extent.height) : extent.height) + 1.0f;
         return { layoutRect.left - overflowW - margin, layoutRect.top - overflowH - margin,
                  layoutRect.right + overflowW + margin, layoutRect.bottom + overflowH + margin };
     }
@@ -1519,7 +1534,7 @@ public:
         textFormat->getTextExtentU(string, int32_t(stringLength), (std::max)(1.0f, layoutRect->right - layoutRect->left), &wrapped);
         const drawing::Size extent{ (std::max)(unwrapped.width, wrapped.width), (std::max)(unwrapped.height, wrapped.height) };
 
-        return viaCpu(textDeviceBounds(*layoutRect, extent), [&](cpugfx::RenderTarget& cpu) {
+        return viaCpu(textDeviceBounds(*layoutRect, extent, lineHeightOf(textFormat)), [&](cpugfx::RenderTarget& cpu) {
             return engine->drawText(&cpu, textFormat, string, int32_t(stringLength), *layoutRect, brush, options);
         }, "drawTextU");
     }
@@ -1544,14 +1559,21 @@ public:
                               drawing::api::IBrush* brush, const TextRasteriser& rasterise,
                               drawing::api::ITextFormat* holdFormat, drawing::api::ITextLayout* holdLayout)
     {
-        if (!textCacheEnabled() || cpuGeometryClipActive())
+        // Each refusal says why under GMPI_UI_GPU_TRACE_DRAWS.
+        auto no = [&](const char* why) {
+            trace("text cache", drawing::transformRect(transform_, localBounds), why);
             return false;
+        };
+        if (!textCacheEnabled())
+            return no("refused: cache disabled");
+        if (cpuGeometryClipActive())
+            return no("refused: a geometry clip only the CPU can apply");
         const auto& m = transform_;
         if (m._12 != 0.0f || m._21 != 0.0f || !(m._11 > 0.0f) || !(m._22 > 0.0f))
-            return false;
+            return no("refused: rotated, skewed or mirrored transform");
         auto* solid = dynamic_cast<cpugfx::SolidColorBrush*>(brush);
         if (!solid || !solid->isPaintable())
-            return false;
+            return no("refused: not a solid brush");
 
         const auto origin = drawing::transformPoint(m, localOrigin);
         if (!std::isfinite(origin.x) || !std::isfinite(origin.y))
@@ -1587,7 +1609,7 @@ public:
             cpugfx::SolidColorBrush standInBrush(factory, &standIn, nullptr);
             auto entry = rasteriseText(key, origin, snapX, snapY, localBounds, &standInBrush, rasterise, holdFormat, holdLayout);
             if (!entry)
-                return false;
+                return no("refused: block too large to cache");
             entry->tintable = toCoverage(*entry, opaque ? luminance : 1.0f, opaque ? 1.0f : 0.5f);
             if (!entry->tintable)
                 entry->pixels.clear(); // the exact-colour entry below draws it
@@ -1743,7 +1765,10 @@ public:
     {
         const uint64_t formatState = engine.textFormatStateKey(textFormat);
         if (formatState == 0)
+        {
+            trace("text cache", clipRectStack.back(), "refused: the engine cannot key this format");
             return false;
+        }
 
         Bitmap::TextKey key;
         key.text.assign(string, stringLength);
@@ -1760,9 +1785,12 @@ public:
         textFormat->getTextExtentU(string, int32_t(stringLength), (std::max)(1.0f, key.layoutW), &wrapped);
         const drawing::Size extent{ (std::max)(unwrapped.width, wrapped.width), (std::max)(unwrapped.height, wrapped.height) };
         if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
+        {
+            trace("text cache", clipRectStack.back(), "refused: no finite extent");
             return false;
+        }
 
-        return drawTextThroughCache(std::move(key), { layoutRect.left, layoutRect.top }, textLocalBounds(layoutRect, extent), brush,
+        return drawTextThroughCache(std::move(key), { layoutRect.left, layoutRect.top }, textLocalBounds(layoutRect, extent, lineHeightOf(textFormat)), brush,
             [&](cpugfx::RenderTarget& cpu, drawing::api::IBrush* b) {
                 engine.drawText(&cpu, textFormat, string, int32_t(stringLength), layoutRect, b, options);
             }, textFormat, nullptr);

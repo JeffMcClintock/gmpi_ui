@@ -46,6 +46,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -1220,6 +1221,37 @@ public:
     // message boxes) still get theirs.
     void setBlocked(bool b) { blocked_ = b; }
 
+    // App-modal dialogs on this window (message boxes, the colour picker): one on
+    // screen at a time. A dialog asks for its turn with `show`; if another is up
+    // it waits, in order, and is shown when that one is answered (modalFinished).
+    // While any is up the window's own surface gets no input, as with setBlocked -
+    // two message boxes raised by one document load used to appear at once, over
+    // a window that still took clicks. `discard` releases a dialog still waiting
+    // when the window goes away.
+    void requestModal(std::function<void()> show, std::function<void()> discard)
+    {
+        if (modalActive_)
+        {
+            pendingModals_.push_back({ std::move(show), std::move(discard) });
+            return;
+        }
+        modalActive_ = true;
+        show();
+    }
+    void modalFinished()
+    {
+        if (pendingModals_.empty())
+        {
+            modalActive_ = false;
+            return;
+        }
+        auto next = std::move(pendingModals_.front());
+        pendingModals_.pop_front();
+        next.show(); // modalActive_ stays true: the next one is now the one up
+    }
+    bool modalActive() const { return modalActive_; }
+    size_t modalsWaiting() const { return pendingModals_.size(); }
+
     // Deliver keys only while this frame's own surface (or a registered target) has
     // keyboard focus. For a second toplevel with its own dispatcher: every
     // wl_keyboard the client binds sees every key, whichever window is focused.
@@ -1508,6 +1540,10 @@ private:
     wl_surface*  keyboardFocus_{};
     wl_surface*  surface_{};
     bool         blocked_ = false;
+    bool isBlocked() const { return blocked_ || modalActive_; }
+    struct PendingModal { std::function<void()> show; std::function<void()> discard; };
+    std::deque<PendingModal> pendingModals_;
+    bool         modalActive_ = false;
     bool         keysRequireFocus_ = false;
     bool         ownSurfaceFocused_ = false;   // keyboardFocus_ tracks registered targets only
     IKeySink*        keySink_{};
@@ -1628,7 +1664,7 @@ inline void InputDispatch::pointerMotion(void* data, wl_pointer*, uint32_t,
         return;
     }
 
-    if (in.blocked_ || !in.overContent())
+    if (in.isBlocked() || !in.overContent())
         return;
 
     if (in.onPointerActivity)
@@ -1656,7 +1692,7 @@ inline void InputDispatch::pointerButton(void* data, wl_pointer*, uint32_t seria
         return;
     }
 
-    if (in.blocked_)
+    if (in.isBlocked())
         return;
 
     // The click landed on our own window while a menu is up, so dismiss it.
@@ -1732,7 +1768,7 @@ inline void InputDispatch::pointerAxis(void* data, wl_pointer*, uint32_t,
                                        uint32_t axis, wl_fixed_t value)
 {
     auto& in = *static_cast<InputDispatch*>(data);
-    if (in.blocked_ || !in.client_ || !in.overContent())
+    if (in.isBlocked() || !in.client_ || !in.overContent())
         return;
 
     // Primary and Confidence on wheel events too - makeWheelFlags sends them.
@@ -1807,7 +1843,7 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
         return;
     }
 
-    if (in.blocked_ || (in.keysRequireFocus_ && !in.ownSurfaceFocused_))
+    if (in.isBlocked() || (in.keysRequireFocus_ && !in.ownSurfaceFocused_))
         return;
 
     // a key listener or text edit takes them next, down AND up: it is the only
@@ -1915,6 +1951,12 @@ inline void InputDispatch::bindSeat(Connection& connection)
 // main window - sent to EVERY wl_keyboard the client holds - crashed the app.
 inline InputDispatch::~InputDispatch()
 {
+    // Dialogs still waiting their turn are dropped with the window.
+    for (auto& pending : pendingModals_)
+        if (pending.discard)
+            pending.discard();
+    pendingModals_.clear();
+
     if (cursorShape_) wp_cursor_shape_device_v1_destroy(cursorShape_);
 
     if (pointer_)
@@ -2917,6 +2959,7 @@ public:
     ~WaylandColorDialog() override { destroySurfaces(); }
 
     gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+    void map(); // its turn as the window's modal dialog has come
 
     // --- IPointerTarget ---
     void onEnter(double x, double y, uint32_t) override { (void)x; (void)y; }
@@ -3066,23 +3109,36 @@ inline void WaylandColorDialog::onButton(double x, double y, uint32_t, bool pres
 
 inline gmpi::ReturnCode WaylandColorDialog::showAsync(gmpi::api::IUnknown* callback)
 {
-    static libdecor_frame_interface frameInterface = { configure, closed, commitCb, dismissPopup };
-
     if (!decor_ || !connection_.compositor())
         return gmpi::ReturnCode::Fail;
+
+    callback_ = callback;
+    addRef();
+    // Modal like the stock dialog: one at a time per window, see requestModal.
+    input_.requestModal([this] { map(); }, [this] { callback_ = {}; release(); });
+    return gmpi::ReturnCode::Ok;
+}
+
+inline void WaylandColorDialog::map()
+{
+    static libdecor_frame_interface frameInterface = { configure, closed, commitCb, dismissPopup };
 
     connection_.closeLivePopups();   // it takes the keyboard; see the stock dialog
 
     surface_ = wl_compositor_create_surface(connection_.compositor());
-    if (!surface_)
-        return gmpi::ReturnCode::Fail;
-
-    frame_ = libdecor_decorate(decor_, surface_, &frameInterface, this);
+    if (surface_)
+    {
+        frame_ = libdecor_decorate(decor_, surface_, &frameInterface, this);
+        if (!frame_)
+        {
+            wl_surface_destroy(surface_);
+            surface_ = nullptr;
+        }
+    }
     if (!frame_)
     {
-        wl_surface_destroy(surface_);
-        surface_ = nullptr;
-        return gmpi::ReturnCode::Fail;
+        complete(gmpi::ReturnCode::Cancel); // as if dismissed; the next dialog gets its turn
+        return;
     }
 
     libdecor_frame_set_title(frame_, "Choose a Colour");
@@ -3090,10 +3146,6 @@ inline gmpi::ReturnCode WaylandColorDialog::showAsync(gmpi::api::IUnknown* callb
     libdecor_frame_map(frame_);
 
     input_.registerSurface(surface_, this);
-    callback_ = callback;
-
-    addRef();
-    return gmpi::ReturnCode::Ok;
 }
 
 inline void WaylandColorDialog::configure(libdecor_frame* frame,
@@ -3169,6 +3221,7 @@ inline void WaylandColorDialog::complete(gmpi::ReturnCode result)
     completed_ = true;
 
     destroySurfaces();   // before the callback, as with the stock dialog
+    input_.modalFinished();
 
     if (auto cb = callback_.as<gmpi::api::IColorDialogCallback>(); cb)
         cb->onComplete(result, color());
@@ -3352,6 +3405,7 @@ public:
     ~WaylandStockDialog() override { destroySurfaces(); }
 
     gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+    void map(); // its turn as the window's modal dialog has come
 
     // --- IPointerTarget ---
     void onEnter(double x, double y, uint32_t) override { hovered_ = buttonAt(x, y); present(); }
@@ -3550,10 +3604,21 @@ inline int WaylandStockDialog::buttonAt(double x, double y) const
 
 inline gmpi::ReturnCode WaylandStockDialog::showAsync(gmpi::api::IUnknown* callback)
 {
-    static libdecor_frame_interface frameInterface = { configure, closed, commitCb, dismissPopup };
-
     if (!decor_ || !connection_.compositor())
         return gmpi::ReturnCode::Fail;
+
+    callback_ = callback;
+    // stay alive until the user answers (or the window goes while this waits),
+    // independent of the caller's reference
+    addRef();
+    input_.requestModal([this] { map(); }, [this] { callback_ = {}; release(); });
+    return gmpi::ReturnCode::Ok;
+}
+
+// This dialog's turn (InputDispatch::requestModal): put it on screen.
+inline void WaylandStockDialog::map()
+{
+    static libdecor_frame_interface frameInterface = { configure, closed, commitCb, dismissPopup };
 
     // A message box takes the keyboard; leaving a popup grab up while it does
     // strands the compositor with a grab nobody services.
@@ -3562,15 +3627,21 @@ inline gmpi::ReturnCode WaylandStockDialog::showAsync(gmpi::api::IUnknown* callb
     layout();
 
     surface_ = wl_compositor_create_surface(connection_.compositor());
-    if (!surface_)
-        return gmpi::ReturnCode::Fail;
-
-    frame_ = libdecor_decorate(decor_, surface_, &frameInterface, this);
+    if (surface_)
+    {
+        frame_ = libdecor_decorate(decor_, surface_, &frameInterface, this);
+        if (!frame_)
+        {
+            wl_surface_destroy(surface_);
+            surface_ = nullptr;
+        }
+    }
     if (!frame_)
     {
-        wl_surface_destroy(surface_);
-        surface_ = nullptr;
-        return gmpi::ReturnCode::Fail;
+        // Answered as if dismissed, so the caller is not left waiting and the
+        // next dialog gets its turn.
+        complete(escape_);
+        return;
     }
 
     libdecor_frame_set_title(frame_, title_.c_str());
@@ -3578,11 +3649,6 @@ inline gmpi::ReturnCode WaylandStockDialog::showAsync(gmpi::api::IUnknown* callb
     setDecorParent(frame_, parentToplevel_);
 
     input_.registerSurface(surface_, this);
-    callback_ = callback;
-
-    // stay alive until the user answers, independent of the caller's reference
-    addRef();
-    return gmpi::ReturnCode::Ok;
 }
 
 inline void WaylandStockDialog::configure(libdecor_frame* frame,
@@ -3710,6 +3776,7 @@ inline void WaylandStockDialog::complete(gmpi::api::StockDialogButton b)
     // Tear the window down BEFORE the callback: it commonly opens the next dialog,
     // and leaving this one on screen behind it reads as the click not registering.
     destroySurfaces();
+    input_.modalFinished(); // the next waiting dialog, if any, goes up now
 
     if (auto cb = callback_.as<gmpi::api::IStockDialogCallback>(); cb)
         cb->onComplete(b);

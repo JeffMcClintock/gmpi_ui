@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <functional>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -168,6 +170,38 @@ struct X11DrawingFrame::Impl
     // Display and so are serviced from this frame's event pump.
     std::vector<class X11StockDialog*> dialogs;
     std::vector<class X11ColorDialog*> colorDialogs;
+
+    // App-modal dialogs (message boxes, the colour picker): one on screen at a
+    // time per window. A dialog asks for its turn with `show`; if another is up
+    // it waits, in order, and is shown when that one is answered. While any is
+    // up the window's own pointer and key events are dropped - the dialogs, on
+    // windows of their own, still get theirs. The Wayland frame's InputDispatch
+    // does the same; see requestModal there.
+    struct PendingModal { std::function<void()> show; std::function<void()> discard; };
+    std::deque<PendingModal> pendingModals;
+    bool modalActive = false;
+
+    void requestModal(std::function<void()> show, std::function<void()> discard)
+    {
+        if (modalActive)
+        {
+            pendingModals.push_back({ std::move(show), std::move(discard) });
+            return;
+        }
+        modalActive = true;
+        show();
+    }
+    void modalFinished()
+    {
+        if (pendingModals.empty())
+        {
+            modalActive = false;
+            return;
+        }
+        auto next = std::move(pendingModals.front());
+        pendingModals.pop_front();
+        next.show();
+    }
 
     gmpi::drawing::api::ITextFormat* menuFont{};
 
@@ -618,6 +652,7 @@ public:
     ~X11ColorDialog() { destroyWindow(); }
 
     gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+    void map(); // its turn as the window's modal dialog has come
 
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
@@ -674,6 +709,7 @@ public:
     ~X11StockDialog() { destroyWindow(); }
 
     gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override;
+    void map(); // its turn as the window's modal dialog has come
 
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
     {
@@ -868,6 +904,12 @@ void X11DrawingFrame::close()
         d.tooltipWindow = nullptr;
     }
 
+    // Dialogs still waiting their turn go with the window.
+    for (auto& pending : d.pendingModals)
+        if (pending.discard)
+            pending.discard();
+    d.pendingModals.clear();
+
     d.releaseImage();
 
 #if GMPI_UI_GPU_BACKEND
@@ -1028,6 +1070,13 @@ void X11DrawingFrame::processEvents()
             if (consumed)
                 continue;
         }
+
+        // Behind a modal dialog: the window still redraws and resizes, but takes
+        // no pointer or keyboard input until the dialog is answered.
+        if (d.modalActive && e.xany.window == d.window &&
+            (e.type == ButtonPress || e.type == ButtonRelease || e.type == MotionNotify ||
+             e.type == KeyPress || e.type == KeyRelease))
+            continue;
 
         switch (e.type)
         {
@@ -2196,10 +2245,18 @@ void X11Tooltip::present(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& fa
 
 gmpi::ReturnCode X11ColorDialog::showAsync(gmpi::api::IUnknown* callback)
 {
-    auto& d = frame_;
-    if (!d.display)
+    if (!frame_.display)
         return gmpi::ReturnCode::Fail;
 
+    callback_ = callback;
+    addRef();   // alive until the user answers, or the window goes while this waits
+    frame_.requestModal([this] { map(); }, [this] { callback_ = {}; release(); });
+    return gmpi::ReturnCode::Ok;
+}
+
+void X11ColorDialog::map()
+{
+    auto& d = frame_;
     const int w = model_.contentWidth();
     const int h = model_.contentHeight();
 
@@ -2226,7 +2283,10 @@ gmpi::ReturnCode X11ColorDialog::showAsync(gmpi::api::IUnknown* callback)
                             0, d.depth, InputOutput, d.visual,
                             CWBorderPixel | CWColormap | CWEventMask, &attr);
     if (!window_)
-        return gmpi::ReturnCode::Fail;
+    {
+        complete(gmpi::ReturnCode::Cancel); // as if dismissed
+        return;
+    }
 
     XSetTransientForHint(d.display, window_, d.window);
     XStoreName(d.display, window_, "Colour");
@@ -2242,12 +2302,8 @@ gmpi::ReturnCode X11ColorDialog::showAsync(gmpi::api::IUnknown* callback)
     XSync(d.display, False);
     focusIfViewable(d.display, window_);
 
-    callback_ = callback;
-    addRef();   // alive until the user answers
-
     present();
     XFlush(d.display);
-    return gmpi::ReturnCode::Ok;
 }
 
 void X11ColorDialog::present()
@@ -2330,6 +2386,7 @@ void X11ColorDialog::complete(gmpi::ReturnCode result)
     callback_ = {};
 
     destroyWindow();
+    frame_.modalFinished();
 
     if (auto sink = cb.as<gmpi::api::IColorDialogCallback>(); sink)
         sink->onComplete(result, picked);
@@ -2502,10 +2559,22 @@ int X11StockDialog::buttonAt(int x, int y) const
 
 gmpi::ReturnCode X11StockDialog::showAsync(gmpi::api::IUnknown* callback)
 {
-    auto& d = frame_;
-    if (!d.display)
+    if (!frame_.display)
         return gmpi::ReturnCode::Fail;
 
+    callback_ = callback;
+    // Stay alive until the user answers (or the window goes while this waits),
+    // independent of the caller's reference - the same contract as the Wayland
+    // dialog.
+    addRef();
+    frame_.requestModal([this] { map(); }, [this] { callback_ = {}; release(); });
+    return gmpi::ReturnCode::Ok;
+}
+
+// This dialog's turn as the window's modal dialog: put it on screen.
+void X11StockDialog::map()
+{
+    auto& d = frame_;
     layout();
 
     // Centred on the host's window, which is where the user is looking - then
@@ -2534,7 +2603,10 @@ gmpi::ReturnCode X11StockDialog::showAsync(gmpi::api::IUnknown* callback)
                             0, d.depth, InputOutput, d.visual,
                             CWBorderPixel | CWColormap | CWEventMask, &attr);
     if (!window_)
-        return gmpi::ReturnCode::Fail;
+    {
+        finish(escape_); // as if dismissed: the caller is not left waiting
+        return;
+    }
 
     // The whole point of a dialog rather than a bare window: transient-for keeps
     // it above the host and off the task bar. Without it a modal question can
@@ -2559,15 +2631,8 @@ gmpi::ReturnCode X11StockDialog::showAsync(gmpi::api::IUnknown* callback)
     XSync(d.display, False);
     focusIfViewable(d.display, window_);
 
-    callback_ = callback;
-
-    // Stay alive until the user answers, independent of the caller's reference -
-    // the same contract as the Wayland dialog.
-    addRef();
-
     present();
     XFlush(d.display);
-    return gmpi::ReturnCode::Ok;
 }
 
 void X11StockDialog::present()
@@ -2692,6 +2757,7 @@ void X11StockDialog::finish(gmpi::api::StockDialogButton button)
     callback_ = {};
 
     destroyWindow();
+    frame_.modalFinished(); // the next waiting dialog, if any, goes up now
 
     if (auto sink = cb.as<gmpi::api::IStockDialogCallback>(); sink)
         sink->onComplete(button);

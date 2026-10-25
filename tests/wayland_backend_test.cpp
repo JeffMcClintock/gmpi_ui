@@ -11,6 +11,7 @@
 #include "helpers/NativeUi.h"
 #include "backends/PortalFileDialog.h"
 #include <cstdio>
+#include <string>
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -635,6 +636,52 @@ int main()
             check("control codes are not inserted as text", e->text().empty());
             e->release();
         }
+    }
+
+    // --- App-modal dialogs: one at a time per window ----------------------------
+    // Two message boxes raised by one document load used to map at once, over a
+    // window that still took input. InputDispatch now queues them.
+    {
+        gmpi::wayland::InputDispatch modal;
+        std::vector<std::string> shown, discarded;
+        auto ask = [&](const char* name) {
+            modal.requestModal([&shown, name] { shown.push_back(name); },
+                               [&discarded, name] { discarded.push_back(name); });
+        };
+
+        check("modal: none up, window takes input", !modal.modalActive());
+        ask("first");
+        ask("second");
+        ask("third");
+        check("modal: first shown at once, the rest wait",
+              shown == std::vector<std::string>{ "first" } && modal.modalsWaiting() == 2);
+        check("modal: window blocked while one is up", modal.modalActive());
+
+        modal.modalFinished(); // first answered
+        check("modal: second goes up when first is answered",
+              shown == (std::vector<std::string>{ "first", "second" }) && modal.modalsWaiting() == 1);
+        check("modal: still blocked with second up", modal.modalActive());
+
+        // An answer that opens a follow-up dialog: it waits behind "third".
+        ask("follow-up");
+        modal.modalFinished(); // second answered
+        modal.modalFinished(); // third answered
+        check("modal: shown in the order asked",
+              shown == (std::vector<std::string>{ "first", "second", "third", "follow-up" }));
+        modal.modalFinished(); // follow-up answered
+        check("modal: window unblocked after the last answer", !modal.modalActive() && modal.modalsWaiting() == 0);
+        check("modal: nothing discarded while the window lives", discarded.empty());
+    }
+    {
+        // A window closed with dialogs still waiting releases them, and only them.
+        std::vector<std::string> discarded;
+        {
+            gmpi::wayland::InputDispatch modal;
+            modal.requestModal([] {}, [&discarded] { discarded.push_back("up"); });
+            modal.requestModal([] {}, [&discarded] { discarded.push_back("waiting"); });
+        }
+        check("modal: closing the window discards waiting dialogs only",
+              discarded == std::vector<std::string>{ "waiting" });
     }
 
     printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");

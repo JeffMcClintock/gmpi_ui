@@ -629,6 +629,27 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // The transform maps axis-aligned rects to axis-aligned rects (no
     // rotation or skew); uniform() also means circles stay circles.
     bool axisAligned() const { return transform_._12 == 0.0f && transform_._21 == 0.0f; }
+
+    // Device-space bounds of a local rect: the box of all four transformed
+    // corners, normalised. drawing::transformRect maps only two corners, so a
+    // mirroring transform returns an inverted rect and a rotation one too small.
+    drawing::Rect deviceBounds(const drawing::Rect& r) const
+    {
+        const auto at = [&](float x, float y) {
+            return drawing::Point{ x * transform_._11 + y * transform_._21 + transform_._31,
+                                   x * transform_._12 + y * transform_._22 + transform_._32 };
+        };
+        const drawing::Point c[4]{ at(r.left, r.top), at(r.right, r.top), at(r.right, r.bottom), at(r.left, r.bottom) };
+        drawing::Rect b{ c[0].x, c[0].y, c[0].x, c[0].y };
+        for (const auto& p : c)
+        {
+            b.left = (std::min)(b.left, p.x);
+            b.top = (std::min)(b.top, p.y);
+            b.right = (std::max)(b.right, p.x);
+            b.bottom = (std::max)(b.bottom, p.y);
+        }
+        return b;
+    }
     bool uniformScale() const { return axisAligned() && transform_._11 == transform_._22 && transform_._11 > 0.0f; }
 
     // Solid brush, no opacity brush, no geometry clip: the GPU-native cases.
@@ -1517,7 +1538,7 @@ public:
         {
             if (axisAligned() && !cpuGeometryClipActive())
             {
-                const auto r = drawing::transformRect(transform_, *rect);
+                const auto r = deviceBounds(*rect);
                 if (!(r.right > r.left) || !(r.bottom > r.top))
                     return ReturnCode::Ok;
                 trace("fillRectangle", r, "gpu shader quad");
@@ -1529,7 +1550,11 @@ public:
         }
         if (auto b = gpuBrush(brush); b && axisAligned())
         {
-            const auto r = drawing::transformRect(transform_, *rect);
+            // Cut to the surface: the SDF loses its edge at coordinates this far out (float spacing at 1e7 is 1).
+            // The clip is left to the shader, which anti-aliases its fractional edges.
+            auto sb = surfaceBounds();
+            sb = { sb.left - 1.0f, sb.top - 1.0f, sb.right + 1.0f, sb.bottom + 1.0f };
+            const auto r = drawing::intersectRect(deviceBounds(*rect), sb);
             if (!(r.right > r.left) || !(r.bottom > r.top))
                 return ReturnCode::Ok;
             trace("fillRectangle", r, "gpu sdf rect");
@@ -1644,7 +1669,7 @@ public:
         if (drawBitmapGpu(*source, *destinationRectangle, opacity, interpolationMode, sourceRectangle))
             return ReturnCode::Ok;
 
-        return viaCpu(drawing::transformRect(transform_, *destinationRectangle), [&](cpugfx::RenderTarget& cpu) {
+        return viaCpu(deviceBounds(*destinationRectangle), [&](cpugfx::RenderTarget& cpu) {
             return cpu.drawBitmap(source.get(), destinationRectangle, opacity, interpolationMode, sourceRectangle);
         }, "drawBitmap");
     }

@@ -258,6 +258,10 @@ public:
     std::map<TextKey, CachedText> textCache;
     size_t textCacheBytes{};
 
+    // Draws on this target that went through cpugfx (RenderTarget::viaCpu),
+    // ever: for tests and diagnostics, alongside GMPI_UI_GPU_TRACE_DRAWS.
+    uint32_t cpuFallbacks{};
+
     // Draw a cached raster at device (x, y), 1:1, through `clamp`, its texels
     // multiplied by `tint` (premultiplied; white for a colour entry).
     void drawCachedText(const CachedText& entry, float x, float y, const gmpi::gpu::ClampBounds& clamp,
@@ -820,7 +824,8 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // The path atlas stores a path's coverage at full pixel size, so a large
     // path costs its whole bounding box in the R16F atlas and a window's worth
     // of panels overflows it (seen: 32768x32768 requested, the editor's first
-    // frame). Above this, the CPU rasteriser is the cheaper path anyway.
+    // frame). Above this a figure is drawn as tiles over its visible part
+    // (fillTiled), and a geometry clip is still a CPU clip.
     static constexpr float kMaxAtlasPathTexels = 512.0f * 512.0f;
 
     // Four corners (a closing repeat of the first allowed) with every edge
@@ -881,6 +886,16 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
                                        deviceBounds.bottom - deviceBounds.top);
                 return ReturnCode::Ok;
             }
+            if (tilesEnabled())
+            {
+                gmpi::gpu::Path vpath;
+                if (!devicePath(figures, fillMode, transform_, vpath))
+                    return ReturnCode::Ok;
+                if (vpath.numPoints() == 0)
+                    return ReturnCode::Ok;
+                if (auto r = fillTiled(vpath, deviceBounds, brush, shaderBrush))
+                    return *r;
+            }
             if (traceDraws())
             {
                 size_t points = 0;
@@ -906,6 +921,127 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         else
             canvas().fill(vpath, 0, 0);
         return ReturnCode::Ok;
+    }
+
+    // A figure too large for one atlas entry, as tiles of at most kTileSize
+    // square over the part of it that can be seen (its bounds within the clip
+    // and the surface), each tile its own atlas entry holding the path cut to
+    // that tile (clipPathToRect). Tiles sit on whole pixels and meet without
+    // overlap, so each pixel's coverage comes from exactly one of them; the
+    // brush (gradients, shader brushes) is in device space, so tiles need no
+    // brush adjustment. Nothing when what is visible is over this frame's
+    // tile budget: the caller then draws through the CPU as before.
+    static constexpr int kTileSize = 512;
+    static constexpr float kMaxTiledTexelsPerFrame = 2048.0f * 2048.0f;
+    float tiledTexelsThisFrame = 0.0f; // reset by endDraw
+
+    std::optional<ReturnCode> fillTiled(const gmpi::gpu::Path& vpath, const drawing::Rect& deviceBounds,
+                                        const gmpi::gpu::Brush& brush, const ShaderBrush* shaderBrush)
+    {
+        const auto visible = drawing::intersectRect(deviceBounds, drawing::intersectRect(clipRectStack.back(), surfaceBounds()));
+        if (!(visible.right > visible.left) || !(visible.bottom > visible.top))
+            return ReturnCode::Ok;
+        const float left = std::floor(visible.left);
+        const float top = std::floor(visible.top);
+        const float right = std::ceil(visible.right);
+        const float bottom = std::ceil(visible.bottom);
+        const float texels = (right - left) * (bottom - top);
+        if (tiledTexelsThisFrame + texels > kMaxTiledTexelsPerFrame)
+        {
+            trace("figures", deviceBounds, "cpu (too large for atlas; over this frame's tile budget)");
+            return std::nullopt;
+        }
+        tiledTexelsThisFrame += texels;
+
+        beginGpuShape(brush);
+        gmpi::gpu::Shader* shader = shaderBrush ? frameShader(*shaderBrush, drawing::api::ShaderStage::Path) : nullptr;
+        int tiles = 0;
+        for (float y = top; y < bottom; y += kTileSize)
+        {
+            for (float x = left; x < right; x += kTileSize)
+            {
+                const auto tile = clipPathToRect(vpath, x, y, (std::min)(x + kTileSize, right), (std::min)(y + kTileSize, bottom));
+                if (tile.numPoints() == 0)
+                    continue;
+                if (shader)
+                    canvas().fill(tile, shader);
+                else
+                    canvas().fill(tile, 0, 0);
+                ++tiles;
+            }
+        }
+        if (traceDraws())
+        {
+            char how[64];
+            std::snprintf(how, sizeof(how), "gpu path atlas (%d tiles)", tiles);
+            trace("figures", visible, how);
+        }
+        return ReturnCode::Ok;
+    }
+
+    // `path` cut to the rectangle [left, right] x [top, bottom], each
+    // sub-path clipped as a closed polygon (Sutherland-Hodgman, one side of
+    // the rectangle at a time). For the atlas's signed-area accumulation
+    // (fs_path_fill) this is exact inside the rectangle. The segments the
+    // clip adds run along its sides: a horizontal one adds nothing; a
+    // vertical one on the left stands in for the part cut away, which lay
+    // wholly left of every pixel inside and so only ever added whole rows -
+    // the same rows the segment adds; one on the right covers nothing inside.
+    // Winding numbers inside are unchanged, so both fill rules hold.
+    static gmpi::gpu::Path clipPathToRect(const gmpi::gpu::Path& path, float left, float top, float right, float bottom)
+    {
+        using gmpi::gpu::Point;
+        gmpi::gpu::Path out;
+        std::vector<Point> polygon, next;
+        for (const auto& sub : path.subPaths())
+        {
+            polygon = sub.points;
+            if (polygon.size() > 1 && polygon.front() == polygon.back())
+                polygon.pop_back();
+            for (int side = 0; side < 4 && polygon.size() > 2; ++side)
+            {
+                const bool vertical = side < 2;
+                const float edge = side == 0 ? left : side == 1 ? right : side == 2 ? top : bottom;
+                const bool keepGreater = side == 0 || side == 2;
+                auto inside = [&](const Point& p) {
+                    const float v = vertical ? p.x : p.y;
+                    return keepGreater ? v >= edge : v <= edge;
+                };
+                next.clear();
+                for (size_t i = 0; i < polygon.size(); ++i)
+                {
+                    const Point& a = polygon[i];
+                    const Point& b = polygon[(i + 1) % polygon.size()];
+                    const bool inA = inside(a);
+                    if (inA)
+                        next.push_back(a);
+                    if (inA != inside(b))
+                    {
+                        if (vertical)
+                            next.push_back(Point(edge, a.y + (edge - a.x) / (b.x - a.x) * (b.y - a.y)));
+                        else
+                            next.push_back(Point(a.x + (edge - a.y) / (b.y - a.y) * (b.x - a.x), edge));
+                    }
+                }
+                polygon.swap(next);
+            }
+            if (polygon.size() < 3)
+                continue;
+            out.moveTo(polygon[0]);
+            for (size_t i = 1; i < polygon.size(); ++i)
+                out.lineTo(polygon[i]);
+            out.close();
+        }
+        out.setFillRule(path.fillRule());
+        return out;
+    }
+
+    // GMPI_UI_GPU_TILES=0 sends figures too large for one atlas entry to the
+    // CPU, as before tiling: a switch for comparing the two.
+    static bool tilesEnabled()
+    {
+        static const bool on = [] { const char* v = std::getenv("GMPI_UI_GPU_TILES"); return !(v && *v == '0'); }();
+        return on;
     }
 
     // The filled figures as one device-space path for the atlas. False for a
@@ -948,6 +1084,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
         if (!(deviceBounds.right > deviceBounds.left) || !(deviceBounds.bottom > deviceBounds.top))
             return ReturnCode::Ok;
         trace("viaCpu", deviceBounds, what);
+        ++bitmap->cpuFallbacks;
 
         const int32_t left = int32_t(std::floor(deviceBounds.left));
         const int32_t top = int32_t(std::floor(deviceBounds.top));
@@ -1182,6 +1319,7 @@ public:
     {
         bitmap->submit();
         frameShaders.clear(); // the shapes that pointed at them are gone
+        tiledTexelsThisFrame = 0.0f;
         return ReturnCode::Ok;
     }
 

@@ -205,6 +205,21 @@ Milestone 2 lists this as still to do; it is the single biggest source of
 
 ### B3. Paths over 512×512 texels go to the CPU (removes the size cliff)
 
+**Status 2026-10-26: figures DONE by tiling (uncommitted, gmpi_ui
+`large-paths` on `modal-dialogs`; gimpi_ui_tests `large-paths`).** A figure
+over the limit is cut (Sutherland-Hodgman, `clipPathToRect`) into tiles of
+at most 512² over its VISIBLE part (bounds ∩ clip ∩ surface), each an
+ordinary atlas entry; no shader or vertex change, exact (the cut's added
+edges lie on tile sides, where the signed-area scheme makes them stand in
+for what was cut). A per-frame budget of 4 Mpx of tiles keeps the atlas
+bounded; past it the CPU path as before. Brushes are device-space, so
+gradients and shader brushes need nothing per tile; tiles batch under a
+GPU clip mask like any shape. `GMPI_UI_GPU_TILES=0` restores the old
+behaviour; `Bitmap::cpuFallbacks` counts viaCpu draws. StructureBench: its
+last 2 CPU fallbacks -> 0 (2 tiles each). Still CPU: a geometry CLIP over
+the limit (one mask entry, sampled by frame-buffer pixel; could be cut to
+the visible part the same way), and the SDF route below is not taken.
+
 `tooLargeForAtlas` (`:727, 749-754`) sends any figure whose bbox exceeds 512²
 texels (or a side > 4096) to cpugfx, except one axis-aligned rect. A 600 px
 ellipse, a big graph fill, a stroked circle wider than 512: all rasterised

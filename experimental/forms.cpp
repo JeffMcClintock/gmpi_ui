@@ -264,6 +264,14 @@ Button::Button(std::string_view caption, gmpi::drawing::Rect bounds)
 	result.push_back(std::move(button));
 }
 
+TabBar::TabBar(std::vector<std::string> titles, gmpi::drawing::Rect bounds)
+{
+	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
+	auto tabs = std::make_unique<gmpi::ui::builder::TabBarView>(std::move(titles), bounds);
+	view = tabs.get();
+	result.push_back(std::move(tabs));
+}
+
 TextEdit::TextEdit(
 	gmpi_forms::State<std::string>& pname
 	, std::function <void(const std::string&)> validateAndSave

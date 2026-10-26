@@ -212,6 +212,17 @@ struct Button
 	Button(std::string_view caption, gmpi::drawing::Rect bounds = {});
 };
 
+// A row of page titles (see builder::TabBarView):
+//
+//     TabBar tabs({ "Audio", "MIDI" }, { l, t, r, t + 40 });
+//     tabs.view->selected.setSource(&page);
+struct TabBar
+{
+	gmpi::ui::builder::TabBarView* view = {};
+
+	TabBar(std::vector<std::string> titles, gmpi::drawing::Rect bounds = {});
+};
+
 struct TextEdit
 {
 	gmpi::ui::builder::TextEditView* view = {};

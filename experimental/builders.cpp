@@ -404,6 +404,130 @@ void ToggleSwitch::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		//	};
 	}
 }
+namespace
+{
+// Draws a TabBarView's titles and its selection bar, measuring each title as
+// it goes and handing the rectangles back to the view for hit-testing.
+struct TabStripVisual : public primitive::RectangularVisual
+{
+	const TabBarView& view;
+	int32_t selected;
+	int32_t hovered;
+
+	TabStripVisual(const TabBarView& pview, int32_t pselected, int32_t phovered)
+		: RectangularVisual(pview.getBounds()), view(pview), selected(pselected), hovered(phovered) {}
+
+	void Draw(gmpi::drawing::Graphics& g) const override
+	{
+		const auto& theme = currentTheme();
+
+		constexpr float barHeight = 3.f;
+		const float textHeight = (getHeight(bounds) - barHeight - 4.f) * 0.75f;
+		const std::array<std::string_view, 1> families{ "system-ui" };
+		auto format = g.getFactory().createTextFormat(textHeight, families);
+		format.setWordWrapping(gmpi::drawing::WordWrapping::NoWrap);
+
+		auto muted = g.createSolidColorBrush(theme.labelText);
+		auto hover = g.createSolidColorBrush(gmpi::drawing::interpolateColor(theme.labelText, theme.controlText, 0.5f));
+		auto chosen = g.createSolidColorBrush(theme.controlText);
+		auto accent = g.createSolidColorBrush(theme.accent);
+
+		// The gap between titles is a fraction of the text size, so it scales
+		// with it as the Pivot's does.
+		const float gap = textHeight * 0.9f;
+		view.titleRects.clear();
+		float x = bounds.left;
+		for (int32_t i = 0; i < (int32_t)view.titles.size(); ++i)
+		{
+			const auto& title = view.titles[i];
+			const float w = format.getTextExtentU(title).width;
+			const gmpi::drawing::Rect textRect{ x, bounds.top, x + w, bounds.bottom - barHeight - 4.f };
+
+			auto& brush = (i == selected) ? chosen : (i == hovered ? hover : muted);
+			g.drawTextU(title, format, textRect, brush, gmpi::drawing::DrawTextOptions::Clip);
+
+			if (i == selected)
+			{
+				const gmpi::drawing::Rect bar{ x, bounds.bottom - barHeight, x + w, bounds.bottom };
+				g.fillRoundedRectangle({ bar, barHeight * 0.5f, barHeight * 0.5f }, accent);
+			}
+
+			// The clickable area runs to the next title, so the gaps are not dead.
+			view.titleRects.push_back({ x - gap * 0.5f, bounds.top, x + w + gap * 0.5f, bounds.bottom });
+			x += w + gap;
+		}
+	}
+};
+} // namespace
+
+TabBarView::TabBarView(std::vector<std::string> ptitles, gmpi::drawing::Rect pbounds)
+	: bounds(pbounds), titles(std::move(ptitles))
+{
+	selected.addObserver([this]()
+		{
+			setDirty();
+		});
+}
+
+int32_t TabBarView::titleAt(gmpi::drawing::Point p) const
+{
+	for (int32_t i = 0; i < (int32_t)titleRects.size(); ++i)
+	{
+		if (pointInRect(p, titleRects[i]))
+			return i;
+	}
+	return -1;
+}
+
+void TabBarView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
+{
+	canvas.add(new TabStripVisual(*this, selected.getSource() ? selected.get() : -1, hovered));
+
+	auto clickDetector = new primitive::RectangleMouseTarget(getBounds());
+	canvas.add(clickDetector);
+
+	clickDetector->onHover_callback = [this](bool over)
+		{
+			if (!over && (hovered != -1 || pressed != -1))
+			{
+				hovered = pressed = -1;
+				setDirty();
+			}
+		};
+
+	clickDetector->onPointerMove_callback = [this](gmpi::drawing::Point p)
+		{
+			const auto i = titleAt(p);
+			if (i != hovered)
+			{
+				hovered = i;
+				setDirty();
+			}
+		};
+
+	clickDetector->onPointerDown_callback = [this](const primitive::PointerEvent* e)
+		{
+			pressed = titleAt(e->position);
+		};
+
+	clickDetector->onPointerUp_callback = [this](gmpi::drawing::Point p)
+		{
+			// As a button: the release must land on the title that was pressed.
+			const auto i = titleAt(p);
+			const bool clicked = i >= 0 && i == pressed;
+			pressed = -1;
+			if (!clicked || (selected.getSource() && i == selected.get()))
+				return;
+
+			// LAST, as ButtonView: the handler may rebuild the form this strip
+			// lives on.
+			if (validateAndSave)
+				validateAndSave(i);
+			else if (auto* source = selected.getSource())
+				source->set(i);
+		};
+}
+
 ButtonView::ButtonView(gmpi::drawing::Rect pbounds) : bounds(pbounds)
 {
 	text.addObserver([this]()

@@ -513,6 +513,46 @@ struct ButtonView : public View
 	mutable bool pressed = false;
 };
 
+// A row of page titles, one of them selected - the WinUI Pivot's header: the
+// titles in large text at their natural widths, the selected one in control
+// text over a short accent bar, the rest muted. Selecting one is the whole
+// interface; what the page shows is the form's business (rebuild it from the
+// bound index).
+//
+// The titles are measured when they are drawn, not here: a builder has no
+// drawing factory. So the click target spans the strip and resolves which
+// title it hit from the rectangles the last draw recorded - the strip is
+// always drawn before it can be clicked.
+struct TabBarView : public View
+{
+	gmpi::drawing::Rect bounds;
+	std::vector<std::string> titles;
+	mutable gmpi_forms::StateRef<int32_t> selected;
+
+	// As ComboBoxView: when set, a click routes the chosen index here instead
+	// of writing 'selected' directly.
+	std::function<void(int32_t)> validateAndSave;
+
+	TabBarView(std::vector<std::string> ptitles, gmpi::drawing::Rect pbounds);
+
+	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+	gmpi::drawing::Rect getBounds() const override
+	{
+		return bounds;
+	}
+	void setBounds(gmpi::drawing::Rect newBounds) override
+	{
+		bounds = newBounds;
+	}
+
+	int32_t titleAt(gmpi::drawing::Point p) const;
+
+	// Written by the draw (see above); presentation state, like ButtonView's.
+	mutable std::vector<gmpi::drawing::Rect> titleRects;
+	mutable int32_t hovered = -1;
+	mutable int32_t pressed = -1;
+};
+
 // A text label that shows a popup menu when clicked.
 struct PopupMenuView : public View
 {

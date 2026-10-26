@@ -2970,6 +2970,214 @@ gmpi::ReturnCode DxDrawingFrameBase::createColorDialog(gmpi::drawing::Color init
 }
 
 // ---------------------------------------------------------------------
+// IDialogHost::createChildWindow. An overlapped window OWNED by the asking
+// frame's top-level window (so it stays above it and goes with it), whose
+// client area a DrawingFrame fills - the standalone's ToplevelWindow
+// arrangement, which is the one way a DrawingFrame can exist on its own.
+// ---------------------------------------------------------------------
+class GMPI_WIN_ChildWindow : public gmpi::api::IChildWindow
+{
+	static constexpr DWORD kStyle = WS_OVERLAPPEDWINDOW;
+	static constexpr wchar_t kClassName[] = L"GmpiChildWindow";
+
+	HWND owner_{};
+	std::wstring title_;
+	int widthDips_{};
+	int heightDips_{};
+	int32_t flags_{};
+	gmpi::shared_ptr<gmpi::api::IUnknown> client_;
+	gmpi::shared_ptr<gmpi::api::IChildWindowCallback> callback_;
+	HWND hwnd_{};
+	bool shown_{};
+	DrawingFrame frame_;
+
+	bool modal() const { return (flags_ & static_cast<int32_t>(gmpi::api::ChildWindowFlags::Modal)) != 0; }
+
+	// The module this code is in - the plugin's DLL when gmpi_ui is in a plugin.
+	static HINSTANCE thisModule()
+	{
+		HMODULE module{};
+		::GetModuleHandleExW(
+			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(&GMPI_WIN_ChildWindow::thisModule),
+			&module);
+		return module;
+	}
+
+	static bool registerClass(HINSTANCE instance)
+	{
+		static bool registered = false;
+		if (registered)
+			return true;
+
+		WNDCLASSEXW wc{};
+		wc.cbSize        = sizeof(wc);
+		wc.lpfnWndProc   = &GMPI_WIN_ChildWindow::windowProc;
+		wc.hInstance     = instance;
+		wc.hCursor       = ::LoadCursor(nullptr, IDC_ARROW);
+		wc.lpszClassName = kClassName;
+		registered = ::RegisterClassExW(&wc) != 0;
+		return registered;
+	}
+
+	static LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		if (message == WM_NCCREATE)
+		{
+			auto* const create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+			::SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+		}
+
+		auto* const self = reinterpret_cast<GMPI_WIN_ChildWindow*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+		if (!self)
+			return ::DefWindowProcW(hwnd, message, wParam, lParam);
+
+		switch (message)
+		{
+		case WM_SIZE:
+			if (wParam != SIZE_MINIMIZED)
+			{
+				RECT client{};
+				::GetClientRect(hwnd, &client);
+				self->frame_.reSize(0, 0, client.right, client.bottom);
+			}
+			return 0;
+
+		case WM_DPICHANGED:
+		{
+			const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+			::SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
+				suggested->right - suggested->left, suggested->bottom - suggested->top,
+				SWP_NOZORDER | SWP_NOACTIVATE);
+			return 0;
+		}
+
+		case WM_CLOSE: // the title-bar close, and close() by way of PostMessage
+			::DestroyWindow(hwnd);
+			return 0;
+
+		case WM_DESTROY: // also reached when the owner is destroyed first
+			// The owner back on BEFORE this window goes, or Windows activates
+			// some other application's window instead of it.
+			if (self->modal() && self->owner_)
+				::EnableWindow(self->owner_, TRUE);
+			self->frame_.detachClient();
+			self->frame_.close();
+			return 0;
+
+		case WM_NCDESTROY:
+		{
+			::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+			self->hwnd_ = {};
+			if (auto callback = std::move(self->callback_))
+				callback->onClosed();
+			self->release(); // the showAsync reference; may delete self
+			return ::DefWindowProcW(hwnd, message, wParam, lParam);
+		}
+		}
+
+		return ::DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+
+public:
+	GMPI_WIN_ChildWindow(HWND owner, const char* title, int32_t width, int32_t height, int32_t flags, gmpi::api::IUnknown* client)
+		: owner_(owner)
+		, title_(gmpi::directx::Utf8ToWstring(title ? title : ""))
+		, widthDips_(width)
+		, heightDips_(height)
+		, flags_(flags)
+	{
+		client_ = client; // assignment addRefs; the raw-pointer constructor would adopt the caller's reference
+	}
+
+	gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+	{
+		if (shown_ || !client_)
+			return gmpi::ReturnCode::Fail;
+
+		const auto instance = thisModule();
+		if (!registerClass(instance))
+			return gmpi::ReturnCode::Fail;
+
+		// DIPs to pixels at the owner's DPI, and centred over it.
+		const UINT dpi = owner_ ? ::GetDpiForWindow(owner_) : ::GetDpiForSystem();
+		RECT r{ 0, 0, ::MulDiv(widthDips_, static_cast<int>(dpi), 96), ::MulDiv(heightDips_, static_cast<int>(dpi), 96) };
+		::AdjustWindowRectExForDpi(&r, kStyle, FALSE, 0, dpi);
+		const int w = r.right - r.left;
+		const int h = r.bottom - r.top;
+
+		int x = CW_USEDEFAULT;
+		int y = CW_USEDEFAULT;
+		RECT ownerRect{};
+		if (owner_ && ::GetWindowRect(owner_, &ownerRect))
+		{
+			x = ownerRect.left + ((ownerRect.right - ownerRect.left) - w) / 2;
+			y = ownerRect.top + ((ownerRect.bottom - ownerRect.top) - h) / 2;
+		}
+
+		// owner_ as the parent of an overlapped window makes it the OWNER.
+		hwnd_ = ::CreateWindowExW(0, kClassName, title_.c_str(), kStyle, x, y, w, h,
+			owner_, nullptr, instance, this);
+		if (!hwnd_)
+			return gmpi::ReturnCode::Fail;
+
+		shown_ = true;
+		addRef(); // alive while open; WM_NCDESTROY releases it
+
+		frame_.open(hwnd_);
+		if (!frame_.getWindowHandle())
+		{
+			::DestroyWindow(hwnd_); // no callback yet: this is a failed show, not a close
+			return gmpi::ReturnCode::Fail;
+		}
+		frame_.attachClient(client_.get());
+
+		// Only now: a failed show above must not report a close.
+		if (callback)
+			callback->queryInterface(&gmpi::api::IChildWindowCallback::guid, callback_.put_void());
+
+		if (modal() && owner_)
+			::EnableWindow(owner_, FALSE);
+
+		::ShowWindow(hwnd_, SW_SHOW);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	// Posted, so a client may call it from its own button: the window goes
+	// after that click has been handled, not from inside it.
+	gmpi::ReturnCode close() override
+	{
+		if (hwnd_)
+			::PostMessageW(hwnd_, WM_CLOSE, 0, 0);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode activate() override
+	{
+		if (!hwnd_)
+			return gmpi::ReturnCode::Fail;
+		if (::IsIconic(hwnd_))
+			::ShowWindow(hwnd_, SW_RESTORE);
+		::SetForegroundWindow(hwnd_);
+		return gmpi::ReturnCode::Ok;
+	}
+
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		*returnInterface = {};
+		GMPI_QUERYINTERFACE(gmpi::api::IChildWindow);
+		return gmpi::ReturnCode::NoSupport;
+	}
+	GMPI_REFCOUNT
+};
+
+gmpi::ReturnCode DxDrawingFrameBase::createChildWindow(const char* title, int32_t width, int32_t height, int32_t flags,
+	gmpi::api::IUnknown* client, gmpi::api::IUnknown** returnWindow)
+{
+	return gmpi::hosting::win32::createPlatformChildWindow(getWindowHandle(), title, width, height, flags, client, returnWindow);
+}
+
+// ---------------------------------------------------------------------
 // Shared Win32 dialog factories. Counterparts to createPlatformTextEdit
 // — both DxDrawingFrameBase (gmpi_ui) and DrawingFrameBase2 (SynthEditLib)
 // route here so the GMPI_WIN_FileDialog / GMPI_WIN_StockDialog classes
@@ -3034,6 +3242,29 @@ gmpi::ReturnCode createPlatformPopupMenu(
 	// already holds the single refcount we hand to the caller.
 	auto* menu = new GMPI_WIN_PopupMenu(parentWnd, rect, dpiScale);
 	*returnMenu = static_cast<gmpi::api::IPopupMenu*>(menu);
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode createPlatformChildWindow(
+	HWND ownerWnd,
+	const char* title,
+	int32_t width,
+	int32_t height,
+	int32_t flags,
+	gmpi::api::IUnknown* client,
+	gmpi::api::IUnknown** returnWindow)
+{
+	if (!returnWindow)
+		return gmpi::ReturnCode::Fail;
+	*returnWindow = {};
+	if (!client)
+		return gmpi::ReturnCode::Fail;
+
+	// Owned by the top-level window: a frame's own HWND is a WS_CHILD.
+	const HWND owner = ownerWnd ? ::GetAncestor(ownerWnd, GA_ROOT) : nullptr;
+
+	// GMPI_REFCOUNT initializes refCount2_ = 1, so the freshly-`new`'d object already holds the ref.
+	*returnWindow = static_cast<gmpi::api::IChildWindow*>(new GMPI_WIN_ChildWindow(owner, title, width, height, flags, client));
 	return gmpi::ReturnCode::Ok;
 }
 

@@ -194,6 +194,27 @@ struct DECLSPEC_NOVTABLE IDialogHost : gmpi::api::IUnknown
 	// returns an IColorDialog (a native colour picker) seeded with initialColor.
 	virtual ReturnCode createColorDialog(gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog) = 0;
 
+	// Returns an IChildWindow: a top-level window of its own, owned by this one,
+	// that hosts `client` - an IDrawingClient, and an IInputClient if it takes
+	// input, exactly what a frame hosts. The window is the client's host: it calls
+	// setHost with an object offering IDrawingHost, IInputHost and IDialogHost, so
+	// the client can draw, take input and open menus in its own window.
+	// width/height are DIPs; flags are ChildWindowFlags. Nothing appears until
+	// showAsync().
+	//
+	// ADDED AFTER THE SIX ABOVE, at the end, so their vtable slots are unchanged.
+	// The default body is what every host that predates this method - or simply
+	// does not offer child windows - answers. A host COMPILED before this method
+	// existed has no slot for it at all, so only call it on a host built against
+	// this header.
+	virtual ReturnCode createChildWindow(const char* title, int32_t width, int32_t height, int32_t flags,
+	                                     gmpi::api::IUnknown* client, gmpi::api::IUnknown** returnWindow)
+	{
+		(void)title; (void)width; (void)height; (void)flags; (void)client;
+		*returnWindow = {};
+		return ReturnCode::NoSupport;
+	}
+
 	// {7BB86E70-88CB-44B5-8059-7D3D1CBE9F56}
 	inline static const gmpi::api::Guid guid =
 	{ 0x7bb86e70, 0x88cb, 0x44b5, { 0x80, 0x59, 0x7d, 0x3d, 0x1c, 0xbe, 0x9f, 0x56 } };
@@ -385,6 +406,45 @@ public:
 	{ 0x7ca3d452, 0x8c5d, 0x42d1, { 0x84, 0xbd, 0x37, 0xd6, 0x84, 0xb1, 0x4f, 0x17 } };
 };
 
+// IDialogHost::createChildWindow's flags.
+enum class ChildWindowFlags : int32_t
+{
+	None  = 0,
+	Modal = 1, // the owner window takes no input until this one closes
+};
+
+// A window of its own, hosting a client (IDialogHost::createChildWindow).
+// Modeless unless created ChildWindowFlags::Modal.
+struct DECLSPEC_NOVTABLE IChildWindow : gmpi::api::IUnknown
+{
+	// Opens the window. `callback` is an IChildWindowCallback, told once when
+	// the window goes - closed by the user, by close(), or with its owner.
+	virtual ReturnCode showAsync(gmpi::api::IUnknown* callback) = 0;
+
+	// Closes it from code; the callback still fires. Takes effect after the
+	// current event is handled, so a client may call it from its own button.
+	virtual ReturnCode close() = 0;
+
+	// Brings an open window to the front. NoSupport where the platform does not
+	// let an application raise its own window (Wayland without an activation
+	// token).
+	virtual ReturnCode activate() = 0;
+
+	// {F362EBCD-A220-4B69-A8CA-430086CE0306}
+	inline static const gmpi::api::Guid guid =
+	{ 0xf362ebcd, 0xa220, 0x4b69, { 0xa8, 0xca, 0x43, 0x00, 0x86, 0xce, 0x03, 0x06 } };
+};
+
+struct DECLSPEC_NOVTABLE IChildWindowCallback : gmpi::api::IUnknown
+{
+public:
+	virtual void onClosed() = 0;
+
+	// {E8C5CC5F-DA41-478C-A163-4CAC1B28DA70}
+	inline static const gmpi::api::Guid guid =
+	{ 0xe8c5cc5f, 0xda41, 0x478c, { 0xa1, 0x63, 0x4c, 0xac, 0x1b, 0x28, 0xda, 0x70 } };
+};
+
 } // namespace api
 
 namespace sdk
@@ -556,6 +616,22 @@ public:
 	}
 
 	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IColorDialogCallback);
+	GMPI_REFCOUNT;
+};
+
+class ChildWindowCallback : public gmpi::api::IChildWindowCallback
+{
+	std::function<void()> onClosed_;
+
+public:
+	ChildWindowCallback(std::function<void()> callback = [] {}) : onClosed_(callback) {}
+
+	void onClosed() override
+	{
+		onClosed_();
+	}
+
+	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IChildWindowCallback);
 	GMPI_REFCOUNT;
 };
 

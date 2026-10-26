@@ -752,6 +752,7 @@ public:
     // Menus draw their own text, so the host needs a format. The app supplies it for
     // the same reason it supplies the text engine: no font code in this layer.
     void setMenuFont(gmpi::drawing::api::ITextFormat* font) { menuFont_ = font; }
+    gmpi::drawing::api::ITextFormat* menuFont() const { return menuFont_; }
 
     virtual InputDispatch& inputDispatch() = 0;
 
@@ -3932,6 +3933,10 @@ public:
         // InputDispatch (heap-use-after-free, caught by ASan).
         connection_.closeLivePopups();
 
+        // Child windows borrow our libdecor context and are parented to our
+        // toplevel, so they go before either does.
+        closeChildWindows();
+
         // while this object is still complete, so inputDispatch() resolves
         detachClient();
 
@@ -4041,6 +4046,17 @@ public:
 
     void runEventLoop(int tickMs, const std::function<void(int)>& onTick);
 
+    // IDialogHost: a window of its own, parented to this one (WaylandChildWindow).
+    gmpi::ReturnCode createChildWindow(const char* title, int32_t width, int32_t height, int32_t flags,
+                                       gmpi::api::IUnknown* client, gmpi::api::IUnknown** returnWindow) override;
+
+    // Closes every child window NOW, firing their callbacks. For an app's
+    // teardown, once its loop has stopped and can no longer run the deferred
+    // close: call it while whatever those callbacks and clients refer to still
+    // exists. The destructor does the same, but a shell that keeps this frame
+    // alive past its app's locals (for ~Connection's sake) must not wait for it.
+    void closeChildWindows();
+
     // True if the connection has died. Prints the offending interface and opcode -
     // wayland reports these once and then the connection is unusable.
     bool reportProtocolError();
@@ -4056,6 +4072,19 @@ private:
     static void frameDone(void* data, wl_callback* cb, uint32_t);
 
     void requestFrameCallback();
+
+    // Child windows (createChildWindow) are driven by THIS window's loop: it pumps
+    // their clipboards and tooltips, and runs their closing as a deferred step,
+    // because closing from inside the window's own dispatch would pull its
+    // surface out from under that dispatch.
+    friend class WaylandChildWindow;
+    void defer(std::function<void()> f) { deferred_.push_back(std::move(f)); }
+    void runDeferred();
+    void pumpChildWindows(int64_t nowMs);
+
+    std::vector<class WaylandChildWindow*> childWindows_;
+    std::vector<std::function<void()>>     deferred_;
+    std::string                            appId_;   // a child window reuses it, so it groups with ours
 
     libdecor*       decor_{};
     libdecor_frame* frame_{};
@@ -4180,6 +4209,7 @@ inline bool WaylandToplevel::create(const char* title, const char* appId, int w,
     if (!frame_)
         return false;
 
+    appId_ = appId ? appId : "";
     libdecor_frame_set_app_id(frame_, appId);
     libdecor_frame_set_title(frame_, title);
     libdecor_frame_map(frame_);
@@ -4307,6 +4337,9 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
             break;
         }
 
+        // After dispatch, outside every callback: child windows close here.
+        runDeferred();
+
         if (timerFd >= 0 && (fds[1].revents & POLLIN))
         {
             uint64_t expiries = 0;
@@ -4314,7 +4347,11 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
             {
                 // Before the app's own tick: a tooltip appearing is not
                 // something the app should have to remember to drive.
-                tickTooltip(gmpi::tooltip::nowMs());
+                const auto now = gmpi::tooltip::nowMs();
+                tickTooltip(now);
+
+                // Ours alone are pumped above; a child window has no loop of its own.
+                pumpChildWindows(now);
 
                 if (onTick)
                     onTick(static_cast<int>(expiries) * tickMs);
@@ -4324,6 +4361,170 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
 
     if (timerFd >= 0)
         ::close(timerFd);   // ::, or this resolves to our own close() member
+}
+
+// ---------------------------------------------------------------------------
+// WaylandChildWindow - IDialogHost::createChildWindow
+// ---------------------------------------------------------------------------
+// A parented WaylandToplevel hosting the caller's client. It shares the
+// owner's connection and libdecor context, so the owner's event loop dispatches
+// it; the owner also pumps its clipboard and tooltip (pump), runs its closing as
+// a deferred step, and closes it if the owner goes first. The same arrangement
+// SynthEditWayland's Export window was built by hand.
+class WaylandChildWindow final : public gmpi::api::IChildWindow
+{
+public:
+    WaylandChildWindow(WaylandToplevel& owner, std::string title, int width, int height,
+                       int32_t flags, gmpi::api::IUnknown* client)
+        : owner_(owner), title_(std::move(title)), width_(width), height_(height), flags_(flags)
+    {
+        if (client)
+            client->queryInterface(&gmpi::api::IDrawingClient::guid, client_.put_void());
+    }
+
+    gmpi::ReturnCode showAsync(gmpi::api::IUnknown* callback) override
+    {
+        if (window_ || closed_ || !client_)
+            return gmpi::ReturnCode::Fail;
+
+        if (callback)
+            callback->queryInterface(&gmpi::api::IChildWindowCallback::guid, callback_.put_void());
+
+        auto window = std::make_unique<WaylandToplevel>(owner_.connection());
+
+        // Each frame has its own drawing factory; give this one the owner's text
+        // engine, image decoder and menu font.
+        window->drawingFactory().textEngine   = owner_.drawingFactory().textEngine;
+        window->drawingFactory().imageDecoder = owner_.drawingFactory().imageDecoder;
+        window->setMenuFont(owner_.menuFont());
+
+        if (!window->create(title_.c_str(), owner_.appId_.c_str(), width_, height_, &owner_))
+            return gmpi::ReturnCode::Fail;
+
+        // The title-bar close goes the same way as close().
+        window->onCloseRequest = [this] { close(); return false; };
+        window->attachClient(client_.get());
+
+        window_ = std::move(window);
+        owner_.childWindows_.push_back(this);
+
+        if (modal())
+            owner_.input().setBlocked(true);
+
+        addRef(); // alive while open, whatever the caller does with its reference
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode close() override
+    {
+        if (!window_ || closing_)
+            return gmpi::ReturnCode::Ok;
+
+        closing_ = true;
+        owner_.defer([this] { finishClose(); });
+        return gmpi::ReturnCode::Ok;
+    }
+
+    // Raising a window needs an xdg-activation token, which only an input event
+    // the compositor delivered to us can mint.
+    gmpi::ReturnCode activate() override
+    {
+        return window_ ? gmpi::ReturnCode::NoSupport : gmpi::ReturnCode::Fail;
+    }
+
+    // From the owner's loop tick.
+    void pump(int64_t nowMs)
+    {
+        if (!window_ || closing_)
+            return;
+        window_->pumpClipboard();
+        window_->tickTooltip(nowMs);
+    }
+
+    // The owner is being destroyed: close now, while its context still exists.
+    void ownerClosing() { finishClose(); }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        GMPI_QUERYINTERFACE(gmpi::api::IChildWindow);
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT;
+
+private:
+    bool modal() const { return (flags_ & static_cast<int32_t>(gmpi::api::ChildWindowFlags::Modal)) != 0; }
+
+    void finishClose()
+    {
+        if (!window_)
+            return;
+
+        std::erase(owner_.childWindows_, this);
+        if (modal())
+            owner_.input().setBlocked(false);
+
+        // Detaches the client, closes its popups, destroys the surface.
+        window_.reset();
+        closed_ = true;
+
+        if (auto callback = std::move(callback_))
+            callback->onClosed();
+
+        release(); // the showAsync reference; may delete this
+    }
+
+    WaylandToplevel& owner_;
+    std::string title_;
+    int width_{};
+    int height_{};
+    int32_t flags_{};
+    gmpi::shared_ptr<gmpi::api::IDrawingClient> client_;
+    gmpi::shared_ptr<gmpi::api::IChildWindowCallback> callback_;
+    std::unique_ptr<WaylandToplevel> window_;
+    bool closing_{};
+    bool closed_{};
+};
+
+inline gmpi::ReturnCode WaylandToplevel::createChildWindow(const char* title, int32_t width, int32_t height,
+                                                           int32_t flags, gmpi::api::IUnknown* client,
+                                                           gmpi::api::IUnknown** returnWindow)
+{
+    *returnWindow = {};
+    if (!frame_ || !client)
+        return gmpi::ReturnCode::Fail;
+
+    auto* window = new WaylandChildWindow(*this, title ? title : "", width, height, flags, client);
+    *returnWindow = static_cast<gmpi::api::IChildWindow*>(window);
+    return gmpi::ReturnCode::Ok;
+}
+
+inline void WaylandToplevel::runDeferred()
+{
+    // Moved out first: an action may queue another (a child closing another).
+    while (!deferred_.empty())
+    {
+        auto actions = std::move(deferred_);
+        deferred_.clear();
+        for (auto& action : actions)
+            action();
+    }
+}
+
+inline void WaylandToplevel::pumpChildWindows(int64_t nowMs)
+{
+    for (auto* child : childWindows_)
+        child->pump(nowMs);
+}
+
+inline void WaylandToplevel::closeChildWindows()
+{
+    // Our loop is done with: anything still queued is a close that this does now.
+    deferred_.clear();
+
+    auto children = childWindows_; // finishClose() unregisters
+    for (auto it = children.rbegin(); it != children.rend(); ++it)
+        (*it)->ownerClosing();
 }
 
 // ---------------------------------------------------------------------------

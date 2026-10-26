@@ -75,6 +75,18 @@ namespace win32
 		HWND parentWnd,
 		gmpi::drawing::Color initialColor,
 		gmpi::api::IUnknown** returnDialog);
+
+	// Shared Win32 IChildWindow factory: an overlapped window owned by
+	// ownerWnd's top-level window, its client area filled by a DrawingFrame
+	// hosting `client`. width/height are DIPs; flags are ChildWindowFlags.
+	gmpi::ReturnCode createPlatformChildWindow(
+		HWND ownerWnd,
+		const char* title,
+		int32_t width,
+		int32_t height,
+		int32_t flags,
+		gmpi::api::IUnknown* client,
+		gmpi::api::IUnknown** returnWindow);
 } // namespace win32
 
 class UpdateRegionWinGdi
@@ -491,6 +503,8 @@ public:
 	gmpi::ReturnCode createFileDialog(int32_t dialogType, gmpi::api::IUnknown** returnMenu) override;
 	gmpi::ReturnCode createStockDialog(int32_t dialogType, const char* title, const char* text, gmpi::api::IUnknown** returnDialog) override;
 	gmpi::ReturnCode createColorDialog(gmpi::drawing::Color initialColor, gmpi::api::IUnknown** returnDialog) override;
+	gmpi::ReturnCode createChildWindow(const char* title, int32_t width, int32_t height, int32_t flags,
+	                                   gmpi::api::IUnknown* client, gmpi::api::IUnknown** returnWindow) override;
 
 	// IUnknown methods
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

@@ -17,6 +17,7 @@
 #include "MacStockDialog.h"
 #include "MacFileDialog.h"
 #include "MacColorDialog.h"
+#include "MacChildWindow.h"
 #include "MacKeyListener.h"
 #include "MacEventHelpers.h"
 #import "helpers/IController.h"
@@ -196,6 +197,11 @@ public:
     
      void DeInit()
      {
+         // Our child windows first: they belong to this view's window.
+         auto children = childWindows; // ownerClosing() unregisters
+         for (auto* child : children)
+             child->ownerClosing();
+
          if(pluginParameters_GMPI)
          {
              auto controller = dynamic_cast<gmpi::hosting::IController*>(parameterHost);
@@ -555,6 +561,19 @@ public:
         *returnDialog = new GMPI_MAC_ColorDialog(view, initialColor);
         return gmpi::ReturnCode::Ok;
     }
+    gmpi::ReturnCode createChildWindow(const char* title, int32_t width, int32_t height, int32_t flags,
+                                       gmpi::api::IUnknown* client, gmpi::api::IUnknown** returnWindow) override
+    {
+        *returnWindow = {};
+        if (!client)
+            return gmpi::ReturnCode::Fail;
+        *returnWindow = static_cast<gmpi::api::IChildWindow*>(
+            new GMPI_MAC_ChildWindow(view, childWindows, title, width, height, flags, client));
+        return gmpi::ReturnCode::Ok;
+    }
+
+    // Open child windows (createChildWindow), closed by DeInit when this view goes.
+    GMPI_MAC_ChildWindow::Registry childWindows;
 
     // Legacy SDK3 dialog overrides (gmpi_gui::IMpPlatform*) used to live here under
     // #ifdef GMPI_HOST_POINTER_SUPPORT — never defined anywhere in the gmpi_ui

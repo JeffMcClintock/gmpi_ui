@@ -654,10 +654,27 @@ with `sample` (12 s each, main thread ~9.1k samples):
   overflow the 64 MB budget every frame. The over-budget path then evicts by
   rescanning the whole map for the oldest entry, once per eviction ("Rare, so a
   scan is fine"): quadratic. `drawTextU` is 27% (cache lookups 8%, rasterising
-  misses 5%, coverage 3%), `Canvas::submit` 11%. Two fixes suggest
-  themselves: evict in one pass (sort or nth_element by `lastUsed`), and key
-  coverage without the colour where the coverage does not depend on it. Very
-  likely the same cause as Windows' text 1000 (318 ms).
+  misses 5%, coverage 3%), `Canvas::submit` 11%. Very likely the same cause
+  as Windows' text 1000 (318 ms).
+  **Fixed (eviction):** over budget, `trimTextCache` now sorts the entries by
+  `lastUsed` once and drops the oldest down to 3/4 of the budget
+  (`kTextCacheTrimBytes`), so the next frame does not trip it again at once.
+  text 1000: **86.6 -> 34.0 ms** (CoreGraphics 23.0); text 50 and 200 never
+  go over budget and are unchanged (200: 3.55-3.61 vs 3.57-3.73 ms over three
+  runs each). Test `GpuTextCacheOverBudgetDropsTheOldestFramesFirst`: the
+  cache stays within budget, a trim reaches the mark, the newest two frames
+  survive whole, text still draws; it fails against the old loop (trimmed
+  only to 67.0 MB, mark 50.3 MB). What is left of the 34 ms: `drawTextU` 59%
+  (cache lookups on string keys 38%, re-rasterising evicted entries 11%) and
+  `Canvas::submit` 24% (uploading them).
+  **Not changed (the colour in the key):** it is deliberate. Opaque text's
+  coverage is warped by a strength linear in the brush's darkness
+  (`textWarpStrength`, to match DirectWrite's weight), zero above 32 px em.
+  The key holds the luminance's exact float bits, so every colour is its own
+  entry. The warp moves coverage by at most ~0.23 (at 50%), so quantising the
+  luminance to 1/256 steps would change coverage by at most ~0.001 and let
+  similar colours share; and text over 32 px em could drop the luminance
+  altogether. Both change output slightly, so they are a decision, not done.
 - **rects 5000 (59 ms, 1.11x)**: the scene is rounded rectangles, which the
   adaptor draws as geometry, not SDF: `drawRoundedRectangle` 34% (arcs
   flattened, the stroke widened on the CPU, then the path atlas),

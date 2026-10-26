@@ -2544,7 +2544,7 @@ public:
     {
         gmpi::drawing::Matrix3x2 currentTransform;
         getTransform(&currentTransform);
-        auto absClipRect = transformRect(currentTransform, *clipRect);
+        auto absClipRect = transformBounds(currentTransform, *clipRect);
 
         if (!info.clipRectStack.empty())
             absClipRect = intersectRect(absClipRect, info.clipRectStack.back());
@@ -2569,7 +2569,7 @@ public:
         gmpi::drawing::Rect localBounds{
             static_cast<float>(CGRectGetMinX(bbox)), static_cast<float>(CGRectGetMinY(bbox)),
             static_cast<float>(CGRectGetMaxX(bbox)), static_cast<float>(CGRectGetMaxY(bbox)) };
-        auto absBounds = transformRect(currentTransform, localBounds);
+        auto absBounds = transformBounds(currentTransform, localBounds);
 
         if (!info.clipRectStack.empty())
             absBounds = intersectRect(absBounds, info.clipRectStack.back());
@@ -2589,6 +2589,9 @@ public:
 
 	gmpi::ReturnCode popAxisAlignedClip() override
 	{
+        if (info.clipRectStack.empty()) // unbalanced pop: no saved state of ours to restore
+            return gmpi::ReturnCode::Fail;
+
         info.clipRectStack.pop_back();
 		CGContextRestoreGState(cgContext_);
 		return gmpi::ReturnCode::Ok;
@@ -2599,7 +2602,7 @@ public:
         gmpi::drawing::Matrix3x2 currentTransform;
 		getTransform(&currentTransform);
 		currentTransform = invert(currentTransform);
-		*returnClipRect = transformRect(currentTransform, info.clipRectStack.back());
+		*returnClipRect = transformBounds(currentTransform, info.clipRectStack.back());
         return gmpi::ReturnCode::Ok;
 	}
 

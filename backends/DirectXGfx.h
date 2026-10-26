@@ -1348,6 +1348,9 @@ public:
 
     ReturnCode popAxisAlignedClip() override
     {
+        if (clipStack.size() <= 1) // unbalanced pop: keep the sentinel
+            return ReturnCode::Fail;
+
         if (clipStack.back().kind == ClipKind::Geometry)
             context_->PopLayer();
         else

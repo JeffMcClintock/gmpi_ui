@@ -1665,7 +1665,7 @@ gmpi::ReturnCode GraphicsContext_base::pushAxisAlignedClip(const drawing::Rect* 
 	// Transform to original position.
 	drawing::Matrix3x2 currentTransform;
 	context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
-	auto r2 = transformRect(currentTransform , *clipRect);
+	auto r2 = drawing::intersectRect(clipStack.back().bounds, transformBounds(currentTransform, *clipRect));
 	clipStack.push_back({ r2, ClipKind::Rect });
 
 //			_RPT4(_CRT_WARN, "                 PushAxisAlignedClip( %f %f %f %f)\n", r2.left, r2.top, r2.right , r2.bottom);
@@ -1694,7 +1694,7 @@ gmpi::ReturnCode GraphicsContext_base::pushClipGeometry(drawing::api::IPathGeome
 
 	D2D1_RECT_F bounds{};
 	d2dGeometry->GetBounds(reinterpret_cast<const D2D1_MATRIX_3X2_F*>(&currentTransform), &bounds);
-	clipStack.push_back({ {bounds.left, bounds.top, bounds.right, bounds.bottom}, ClipKind::Geometry });
+	clipStack.push_back({ drawing::intersectRect(clipStack.back().bounds, {bounds.left, bounds.top, bounds.right, bounds.bottom}), ClipKind::Geometry });
 
 	return gmpi::ReturnCode::Ok;
 }
@@ -1705,7 +1705,7 @@ gmpi::ReturnCode GraphicsContext_base::getAxisAlignedClip(gmpi::drawing::Rect* r
 	drawing::Matrix3x2 currentTransform;
 	context_->GetTransform(reinterpret_cast<D2D1_MATRIX_3X2_F*>(&currentTransform));
 	currentTransform = invert(currentTransform);
-	auto r2 = transformRect(currentTransform, clipStack.back().bounds);
+	auto r2 = transformBounds(currentTransform, clipStack.back().bounds);
 
 	*returnClipRect = r2;
 	return gmpi::ReturnCode::Ok;

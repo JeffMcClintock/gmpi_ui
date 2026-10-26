@@ -1252,7 +1252,7 @@ public:
 		auto devicePath = userPath;
 		devicePath.applyTransform(toJuce(currentTransform));
 
-		clipStack.push_back({ devicePath, drawing::transformRect(currentTransform, *clipRect) });
+		clipStack.push_back({ devicePath, drawing::intersectRect(clipStack.back().deviceBounds, drawing::transformBounds(currentTransform, *clipRect)) });
 
 		// the current state already carries the transform, so clip with the untransformed rect.
 		g->reduceClipRegion(userPath);
@@ -1269,7 +1269,7 @@ public:
 		devicePath.applyTransform(toJuce(currentTransform));
 
 		const auto bounds = devicePath.getBounds();
-		clipStack.push_back({ devicePath, { bounds.getX(), bounds.getY(), bounds.getRight(), bounds.getBottom() } });
+		clipStack.push_back({ devicePath, drawing::intersectRect(clipStack.back().deviceBounds, { bounds.getX(), bounds.getY(), bounds.getRight(), bounds.getBottom() }) });
 
 		g->reduceClipRegion(pathGeometry->path);
 		return ReturnCode::Ok;
@@ -1286,7 +1286,7 @@ public:
 
 	ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
 	{
-		*returnClipRect = drawing::transformRect(drawing::invert(currentTransform), clipStack.back().deviceBounds);
+		*returnClipRect = drawing::transformBounds(drawing::invert(currentTransform), clipStack.back().deviceBounds);
 		return ReturnCode::Ok;
 	}
 

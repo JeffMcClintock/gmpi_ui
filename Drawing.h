@@ -178,6 +178,23 @@ inline Rect inflateRect(Rect a, float extra)
     };
 }
 
+// Bounds of all four transformed corners; transformRect inverts under mirroring and shrinks under rotation.
+[[nodiscard]] inline Rect transformBounds(const Matrix3x2& transform, Rect rect)
+{
+    const Point corners[4] = {
+        transformPoint(transform, {rect.left, rect.top}), transformPoint(transform, {rect.right, rect.top}),
+        transformPoint(transform, {rect.left, rect.bottom}), transformPoint(transform, {rect.right, rect.bottom}) };
+    Rect out{ corners[0].x, corners[0].y, corners[0].x, corners[0].y };
+    for (int i = 1; i < 4; ++i)
+    {
+        out.left = (std::min)(out.left, corners[i].x);
+        out.top = (std::min)(out.top, corners[i].y);
+        out.right = (std::max)(out.right, corners[i].x);
+        out.bottom = (std::max)(out.bottom, corners[i].y);
+    }
+    return out;
+}
+
 [[nodiscard]] inline RectL getSmallestIntegerContainer(Rect rect)
 {
 	return {

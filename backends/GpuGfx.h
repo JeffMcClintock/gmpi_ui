@@ -639,26 +639,7 @@ class RenderTarget final : public se::generic_graphics::GraphicsContextT<drawing
     // rotation or skew); uniform() also means circles stay circles.
     bool axisAligned() const { return transform_._12 == 0.0f && transform_._21 == 0.0f; }
 
-    // Device-space bounds of a local rect: the box of all four transformed
-    // corners, normalised. drawing::transformRect maps only two corners, so a
-    // mirroring transform returns an inverted rect and a rotation one too small.
-    drawing::Rect deviceBounds(const drawing::Rect& r) const
-    {
-        const auto at = [&](float x, float y) {
-            return drawing::Point{ x * transform_._11 + y * transform_._21 + transform_._31,
-                                   x * transform_._12 + y * transform_._22 + transform_._32 };
-        };
-        const drawing::Point c[4]{ at(r.left, r.top), at(r.right, r.top), at(r.right, r.bottom), at(r.left, r.bottom) };
-        drawing::Rect b{ c[0].x, c[0].y, c[0].x, c[0].y };
-        for (const auto& p : c)
-        {
-            b.left = (std::min)(b.left, p.x);
-            b.top = (std::min)(b.top, p.y);
-            b.right = (std::max)(b.right, p.x);
-            b.bottom = (std::max)(b.bottom, p.y);
-        }
-        return b;
-    }
+    drawing::Rect deviceBounds(const drawing::Rect& r) const { return drawing::transformBounds(transform_, r); }
     bool uniformScale() const { return axisAligned() && transform_._11 == transform_._22 && transform_._11 > 0.0f; }
 
     // Solid brush, no opacity brush, no geometry clip: the GPU-native cases.
@@ -1315,7 +1296,7 @@ public:
 
     ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
     {
-        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), drawing::transformRect(transform_, *clipRect)));
+        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), deviceBounds(*clipRect)));
         clipGeometryStack.push_back(clipGeometryStack.back());
         return ReturnCode::Ok;
     }
@@ -1403,7 +1384,7 @@ public:
 
     ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
     {
-        *returnClipRect = drawing::transformRect(drawing::invert(transform_), clipRectStack.back());
+        *returnClipRect = drawing::transformBounds(drawing::invert(transform_), clipRectStack.back());
         return ReturnCode::Ok;
     }
 
@@ -1756,7 +1737,7 @@ public:
     {
         if (!std::isfinite(extent.width) || !std::isfinite(extent.height))
             return clipRectStack.back();
-        return drawing::transformRect(transform_, textLocalBounds(layoutRect, extent, lineHeight));
+        return deviceBounds(textLocalBounds(layoutRect, extent, lineHeight));
     }
 
     // A format's line height (ascent + descent + line gap), or 0 if unknown.

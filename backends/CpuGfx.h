@@ -204,27 +204,6 @@ inline void storeSpan(const float* src, uint16_t* dst, int floatCount)
 #endif
 }
 
-// ---------------------------------------------------------------------------
-// Axis-aligned bounds of a rect transformed by an affine matrix.
-// (Drawing.h's transformRect maps only two corners, which is wrong under
-// rotation or negative scale; clip math needs true bounds of all four.)
-// ---------------------------------------------------------------------------
-inline drawing::Rect transformBounds(const drawing::Matrix3x2& m, const drawing::Rect& r)
-{
-    const drawing::Point corners[4] = {
-        drawing::transformPoint(m, {r.left, r.top}), drawing::transformPoint(m, {r.right, r.top}),
-        drawing::transformPoint(m, {r.left, r.bottom}), drawing::transformPoint(m, {r.right, r.bottom}) };
-    drawing::Rect out{ corners[0].x, corners[0].y, corners[0].x, corners[0].y };
-    for (int i = 1; i < 4; ++i)
-    {
-        out.left = (std::min)(out.left, corners[i].x);
-        out.top = (std::min)(out.top, corners[i].y);
-        out.right = (std::max)(out.right, corners[i].x);
-        out.bottom = (std::max)(out.bottom, corners[i].y);
-    }
-    return out;
-}
-
 // Integer pixel bound of an axis-aligned clip edge under Direct2D's ALIASED
 // clip rule: a pixel belongs to the clip iff its centre is inside (top-left
 // rule, so a centre exactly on the left/top edge counts as inside). The same
@@ -2577,7 +2556,7 @@ public:
     ReturnCode pushAxisAlignedClip(const drawing::Rect* clipRect) override
     {
         // D2D semantics: the rect is in local space at push time; stack is device space.
-        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), transformBounds(transform_, *clipRect)));
+        clipRectStack.push_back(drawing::intersectRect(clipRectStack.back(), drawing::transformBounds(transform_, *clipRect)));
         clipMaskStack.push_back(clipMaskStack.back()); // a rect clip needs no mask of its own
         return ReturnCode::Ok;
     }
@@ -2623,7 +2602,7 @@ public:
 
     ReturnCode getAxisAlignedClip(drawing::Rect* returnClipRect) override
     {
-        *returnClipRect = transformBounds(drawing::invert(transform_), clipRectStack.back());
+        *returnClipRect = drawing::transformBounds(drawing::invert(transform_), clipRectStack.back());
         return ReturnCode::Ok;
     }
 

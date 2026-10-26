@@ -2340,7 +2340,12 @@ inline gmpi::ReturnCode WaylandPopupMenu::showAsync()
 
     // Must be a real user-action serial: the compositor refuses the grab otherwise
     // and dismisses the popup immediately.
-    xdg_popup_grab(popup_, connection_.seat(), input_.lastGrabSerial());
+    //
+    // No seat at all (a compositor with no input devices, e.g. headless weston):
+    // there is nothing to grab, and a null wl_seat is a marshalling error that
+    // kills the whole connection. Show it ungrabbed, which xdg-shell allows.
+    if (auto* seat = connection_.seat())
+        xdg_popup_grab(popup_, seat, input_.lastGrabSerial());
 
     input_.registerSurface(surface_, this);
     wl_surface_commit(surface_);
@@ -3914,6 +3919,12 @@ public:
 
     ~WaylandToplevel() override
     {
+        // First: a popup still standing holds input_ (ours, about to be freed)
+        // and was made a child of our surface. Left to ~Connection, which runs
+        // after us in the standalone shell, it unregisters from a freed
+        // InputDispatch (heap-use-after-free, caught by ASan).
+        connection_.closeLivePopups();
+
         // while this object is still complete, so inputDispatch() resolves
         detachClient();
 
@@ -4255,8 +4266,14 @@ inline void WaylandToplevel::runEventLoop(int tickMs, const std::function<void(i
 
         // libdecor owns the dispatch: it must see configure events before we do,
         // so it can size the decorations.
+        // It fails when the connection has, so say why before leaving; this exit
+        // used to skip the report below and the app just vanished.
         if (libdecor_dispatch(decor_, 0) < 0)
+        {
+            if (!reportProtocolError())
+                fprintf(stderr, "wayland: libdecor_dispatch failed\n");
             break;
+        }
 
         // A protocol error disconnects us, and if it happens while a popup grab is
         // up, a compositor that leaks the grab takes the desktop's input with it.
@@ -4336,6 +4353,9 @@ public:
 
     ~WaylandSubsurfaceFrame() override
     {
+        // First, as in the toplevel: popups hold our input_ and our surface.
+        connection_.closeLivePopups();
+
         // while this object is still complete, so inputDispatch() resolves
         detachClient();
 

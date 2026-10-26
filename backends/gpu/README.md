@@ -3,7 +3,7 @@
 The renderer under `backends/GpuGfx.h`: half-float layers, an exact
 path-coverage atlas, gradient and image atlases, SDF rectangles and circles,
 post effects and custom shaders, over [bgfx](https://github.com/bkaradzic/bgfx)
-(Direct3D 11 / Metal / Vulkan). Namespace `gmpi::gpu`.
+(Direct3D 12 / Metal / Vulkan). Namespace `gmpi::gpu`.
 
 ## Origin
 
@@ -35,7 +35,7 @@ and the reasons):
 ## Building
 
 gmpi_ui has no CMake of its own; consumers list its sources. The renderer is
-the exception because it fetches bgfx, so it is one fragment:
+the exception because it builds bgfx, so it is one fragment:
 
 ```cmake
 include(${GMPI_UI_SDK}/backends/gpu/gmpi_gpu.cmake)
@@ -60,7 +60,7 @@ shaderc nor an embed step:
 |---|---|---|
 | Vulkan (SPIR-V) | `shaders_spirv.cpp` | Linux |
 | Metal | `shaders_metal.cpp` | macOS |
-| Direct3D 12 (DXBC) | `shaders_dxbc.cpp` | Windows — not generated yet |
+| Direct3D 12 (DXBC) | `shaders_dxbc.cpp` | Windows |
 
 After changing a shader, regenerate them:
 
@@ -75,7 +75,9 @@ bgfx.cmake at the vendored tag for that, and only that. SPIR-V and Metal can be 
 any host. Direct3D needs shaderc on Windows (`-DRENDERERS=dxbc`), because the
 HLSL compiler is Microsoft's.
 
-Custom shaders and post effects are kept for a future gmpi_ui feature; the
+Custom shaders reach modules as shader brushes (`GmpiApiShaders.h`,
+`SHADER_API_PLAN.md`); a module's own `shade()` is compiled with
+`compile_shaders.cmake`'s USER_SHADER mode. Post effects are kept but the
 GMPI adaptor does not drive them yet.
 
 ## Tests

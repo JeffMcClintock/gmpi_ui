@@ -667,14 +667,27 @@ with `sample` (12 s each, main thread ~9.1k samples):
   only to 67.0 MB, mark 50.3 MB). What is left of the 34 ms: `drawTextU` 59%
   (cache lookups on string keys 38%, re-rasterising evicted entries 11%) and
   `Canvas::submit` 24% (uploading them).
-  **Not changed (the colour in the key):** it is deliberate. Opaque text's
+  **The colour in the key: quantised.** It is deliberate: opaque text's
   coverage is warped by a strength linear in the brush's darkness
   (`textWarpStrength`, to match DirectWrite's weight), zero above 32 px em.
-  The key holds the luminance's exact float bits, so every colour is its own
-  entry. The warp moves coverage by at most ~0.23 (at 50%), so quantising the
-  luminance to 1/256 steps would change coverage by at most ~0.001 and let
-  similar colours share; and text over 32 px em could drop the luminance
-  altogether. Both change output slightly, so they are a decision, not done.
+  The key held the luminance's exact float bits, so every colour was its own
+  entry. It now holds the luminance in 1/255 steps (0 and 1 exact), and the
+  stand-in grey and `toCoverage` use the stepped value, so every colour in a
+  step gets the same raster whichever reached the cache first; the tint is
+  still the exact colour. Measured against the exact key, by dumping the fp16
+  pixels of every image the GPU suite checks (125) plus a worst-case scene
+  (16 greys half-way between steps, 11/14/18/24 px), in both builds:
+  - 123 of 126 images bit-identical (most test text is black or white, which
+    sits on a step).
+  - The worst-case scene: 16,459 of 1,048,576 pixels differ, max 0.00049
+    linear, max 0.25/255 in sRGB; `drawTextColoured` 50 of 4,096 (0.09/255);
+    `fontMetricsVisual` 296 of 30,720 (0.22/255). Where an 8-bit value
+    changes, it is by one, from a value on a rounding boundary.
+  - The suite passes (290, 3 skipped).
+  MacBench text 1000: **33.6 -> 24.3 ms** (CoreGraphics 23.0); 50 and 200
+  unchanged (0.95 / 3.53 ms). With the eviction fix, 86.6 -> 24.3 ms. Not
+  done: dropping the luminance from the key above 32 px em, where the warp
+  is off (fewer entries again, no pixel change, untested).
 - **rects 5000 (59 ms, 1.11x)**: the scene is rounded rectangles, which the
   adaptor draws as geometry, not SDF: `drawRoundedRectangle` 34% (arcs
   flattened, the stroke widened on the CPU, then the path atlas),

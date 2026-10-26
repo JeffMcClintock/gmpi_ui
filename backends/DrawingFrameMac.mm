@@ -519,9 +519,7 @@ public:
     // IDialogHost
     gmpi::ReturnCode createTextEdit(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnTextEdit) override
     {
-        auto textEdit = new GMPI_MAC_TextEdit(view, *r);
-        textEdit->addRef();
-        *returnTextEdit = textEdit;
+        *returnTextEdit = new GMPI_MAC_TextEdit(view, *r); // the caller's ref; showAsync holds its own
         return gmpi::ReturnCode::Ok;
     }
     gmpi::ReturnCode createPopupMenu(const gmpi::drawing::Rect* r, gmpi::api::IUnknown** returnMenu) override
@@ -552,7 +550,7 @@ public:
         // onComplete once, on dismissal), matching the modal Windows
         // ChooseColorW path — see MacColorDialog.h for the cross-platform note.
         // No extra addRef: GMPI_REFCOUNT starts refCount2_ at 1, and (unlike
-        // createTextEdit/createPopupMenu, which also keep a member) the host
+        // createPopupMenu, which also keeps a member) the host
         // retains no second copy — matches createFileDialog/createStockDialog.
         *returnDialog = new GMPI_MAC_ColorDialog(view, initialColor);
         return gmpi::ReturnCode::Ok;

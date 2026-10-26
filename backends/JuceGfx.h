@@ -473,7 +473,6 @@ class BitmapPixels final : public drawing::api::IBitmapPixels
 	int32_t pixelFormat = RGBA_16f;
 	int32_t lockFlags{};
 	std::vector<uint16_t> halfBuffer; // RGBA half-float, linear, premultiplied.
-	std::vector<uint8_t> byteBuffer;  // BGRA 8-bit, LINEAR, premultiplied (SRGBPixels targets).
 
 public:
 	BitmapPixels(juce::Image& pimage, int32_t flags, bool rawSRGB) : image(pimage), lockFlags(flags)
@@ -491,30 +490,11 @@ public:
 			return;
 		}
 
-		// Bitmaps created with BitmapRenderTargetFlags::SRGBPixels lock as 32bpp
-		// premultiplied BGRA whose byte values are LINEAR — matching the native
-		// backends (despite the flag name; see helpers/SavePng.h) — via an 8-bit
-		// converting staging buffer.
+		// SRGBPixels targets lock as the juce image's own bytes: premultiplied sRGB BGRA,
+		// as the 8-bit contract in GmpiApiDrawing.h requires.
 		if (rawSRGB)
 		{
 			pixelFormat = BGRA_sRGB_8i;
-			byteBuffer.assign(static_cast<size_t>(bitmapData->width) * bitmapData->height * 4, 0);
-
-			if ((flags & static_cast<int32_t>(drawing::BitmapLockFlags::Read)) != 0)
-			{
-				auto* dest = byteBuffer.data();
-				for (int y = 0; y < bitmapData->height; ++y)
-				{
-					const auto* src = bitmapData->getLinePointer(y); // premultiplied sRGB, memory order B,G,R,A.
-					for (int x = 0; x < bitmapData->width; ++x, src += 4, dest += 4)
-					{
-						dest[0] = static_cast<uint8_t>(0.5f + 255.0f * drawing::SRGBPixelToLinear(src[0]));
-						dest[1] = static_cast<uint8_t>(0.5f + 255.0f * drawing::SRGBPixelToLinear(src[1]));
-						dest[2] = static_cast<uint8_t>(0.5f + 255.0f * drawing::SRGBPixelToLinear(src[2]));
-						dest[3] = src[3];
-					}
-				}
-			}
 			return;
 		}
 
@@ -543,24 +523,6 @@ public:
 		if ((lockFlags & static_cast<int32_t>(drawing::BitmapLockFlags::Write)) == 0)
 			return;
 
-		if (!byteBuffer.empty())
-		{
-			// linear 8-bit staging back to the juce image's sRGB bytes.
-			const auto* src = byteBuffer.data();
-			for (int y = 0; y < bitmapData->height; ++y)
-			{
-				auto* dest = bitmapData->getLinePointer(y);
-				for (int x = 0; x < bitmapData->width; ++x, src += 4, dest += 4)
-				{
-					dest[0] = drawing::linearPixelToSRGB(src[0] * (1.0f / 255.0f));
-					dest[1] = drawing::linearPixelToSRGB(src[1] * (1.0f / 255.0f));
-					dest[2] = drawing::linearPixelToSRGB(src[2] * (1.0f / 255.0f));
-					dest[3] = src[3];
-				}
-			}
-			return;
-		}
-
 		if (halfBuffer.empty())
 			return;
 
@@ -581,19 +543,13 @@ public:
 
 	ReturnCode getAddress(uint8_t** returnAddress) override
 	{
-		if (!byteBuffer.empty())
-			*returnAddress = byteBuffer.data();
-		else
-			*returnAddress = halfBuffer.empty() ? bitmapData->data : reinterpret_cast<uint8_t*>(halfBuffer.data());
+		*returnAddress = halfBuffer.empty() ? bitmapData->data : reinterpret_cast<uint8_t*>(halfBuffer.data());
 		return ReturnCode::Ok;
 	}
 
 	ReturnCode getBytesPerRow(int32_t* returnBytesPerRow) override
 	{
-		if (!byteBuffer.empty())
-			*returnBytesPerRow = bitmapData->width * 4;
-		else
-			*returnBytesPerRow = halfBuffer.empty() ? bitmapData->lineStride : bitmapData->width * 8;
+		*returnBytesPerRow = halfBuffer.empty() ? bitmapData->lineStride : bitmapData->width * 8;
 		return ReturnCode::Ok;
 	}
 

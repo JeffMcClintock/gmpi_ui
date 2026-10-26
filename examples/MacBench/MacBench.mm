@@ -44,10 +44,10 @@ int main(int argc, char** argv)
 
     @autoreleasepool
     {
-        gmpi::drawing::Factory factory;
         std::unique_ptr<gmpi::cocoa::Factory> cgFactory;
         std::unique_ptr<gmpi::gpugfx::Factory> gpuFactory;
         std::unique_ptr<gmpi::drawing::CpuTextEngine> textEngine;
+        gmpi::drawing::Factory factory; // after the backends: it releases its pointer when destroyed
         if (backend == "cg")
         {
             cgFactory = std::make_unique<gmpi::cocoa::Factory>();

@@ -53,12 +53,12 @@ int main(int argc, char** argv)
 
     ::CoInitialize(nullptr);
 
-    gmpi::drawing::Factory factory;
     std::unique_ptr<gmpi::directx::Factory> d2dFactory;
 #if GMPI_UI_GPU_BACKEND
     std::unique_ptr<gmpi::gpugfx::Factory> gpuFactory;
     std::unique_ptr<gmpi::drawing::CpuTextEngine> textEngine;
 #endif
+    gmpi::drawing::Factory factory; // after the backends: it releases its pointer when destroyed
     if (backend == "d2d")
     {
         d2dFactory = std::make_unique<gmpi::directx::Factory>();

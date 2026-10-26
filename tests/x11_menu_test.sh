@@ -43,6 +43,10 @@ sleep 0.7
 
 export DISPLAY=$DISP
 
+# Navigation keys reach the client as the Windows and Mac frames send them.
+"$TOOLS/usr/bin/xdotool" mousemove 200 150 sleep 0.2 key Left Delete a >/dev/null 2>&1
+sleep 0.3
+
 # Tooltip: park the pointer over the client and leave it still.
 "$TOOLS/usr/bin/xdotool" mousemove 150 90 >/dev/null 2>&1
 sleep 1.4
@@ -149,6 +153,14 @@ PY
 
 grep -q "^item chosen: 1$" "$OUT/test.log" \
   || { echo "FAIL: clicking the first item did not deliver its id (see test.log)"; exit 1; }
+
+# GrabSuccess == 0
+grep -q "^pointer grab inside the choice: 0$" "$OUT/test.log" \
+  || { echo "FAIL: the menu still held the pointer grab while its choice ran (see test.log)"; exit 1; }
+
+# VK_LEFT, VK_DELETE, then a plain 'a'
+grep -q "^client keys: 25 2e 61$" "$OUT/test.log" \
+  || { echo "FAIL: arrow/Delete keys did not reach the client as VK codes (see test.log)"; exit 1; }
 
 grep -q "^stock dialog created$" "$OUT/test.log" \
   || { echo "FAIL: createStockDialog refused - the plugin frame still has no dialogs"; exit 1; }

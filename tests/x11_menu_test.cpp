@@ -49,6 +49,8 @@ int g_toolTipCalls = 0;
 int g_pointerDowns = 0;
 gmpi::drawing::Color g_pickedColor{};
 bool                 g_colorPicked = false;
+int g_grabAtChoice = -1;   // XGrabPointer's result from another client, inside the callback
+std::string g_clientKeys;  // what onKeyPress received, as hex codes
 
 class MenuCallback : public api::IPopupMenuCallback
 {
@@ -57,6 +59,17 @@ public:
     {
         if (result == ReturnCode::Ok)
             g_chosenId = selectedID;
+
+        // The menu must have let go of input before running the choice: a command
+        // that blocks or opens a dialog would otherwise run with the pointer grabbed.
+        if (Display* q = XOpenDisplay(nullptr))
+        {
+            g_grabAtChoice = XGrabPointer(q, DefaultRootWindow(q), False, 0, GrabModeAsync, GrabModeAsync,
+                                          None, None, CurrentTime);
+            if (g_grabAtChoice == GrabSuccess)
+                XUngrabPointer(q, CurrentTime);
+            XCloseDisplay(q);
+        }
     }
     ReturnCode queryInterface(const api::Guid* iid, void** returnInterface) override
     {
@@ -151,7 +164,13 @@ public:
     ReturnCode onPointerMove(drawing::Point, int32_t) override { return ReturnCode::Ok; }
     ReturnCode onPointerUp(drawing::Point, int32_t) override { return ReturnCode::Ok; }
     ReturnCode onMouseWheel(drawing::Point, int32_t, int32_t) override { return ReturnCode::Ok; }
-    ReturnCode onKeyPress(wchar_t) override { return ReturnCode::Ok; }
+    ReturnCode onKeyPress(wchar_t c) override
+    {
+        char buf[16];
+        snprintf(buf, sizeof buf, "%s%x", g_clientKeys.empty() ? "" : " ", unsigned(c));
+        g_clientKeys += buf;
+        return ReturnCode::Ok;
+    }
     // Reports where it was asked, so the test can check the frame passes the
     // pointer position rather than something stale.
     ReturnCode getToolTip(drawing::Point point, api::IString* returnString) override
@@ -343,6 +362,8 @@ int main(int argc, char** argv)
 
     std::printf("populateContextMenu called: %d\n", g_populateCalls);
     std::printf("item chosen: %d\n", g_chosenId);
+    std::printf("pointer grab inside the choice: %d\n", g_grabAtChoice);
+    std::printf("client keys: %s\n", g_clientKeys.c_str());
     std::printf("dialog answer: %d\n", g_dialogAnswer);
     std::printf("edit result: '%s' complete %d\n", g_editResult.c_str(), int(g_editComplete));
     std::printf("keys seen: '%s' ended %d\n", g_keysSeen.c_str(), int(g_keyListenerEnded));

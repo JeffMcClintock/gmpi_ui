@@ -63,6 +63,7 @@
 #include "backends/TextEditModel.h"
 #include "backends/ColorPickerModel.h"
 #include "backends/TooltipModel.h"
+#include "backends/LinuxKeys.h"
 #include "helpers/NativeUi.h"
 #include "RefCountMacros.h"
 #include "backends/PortalFileDialog.h"
@@ -936,7 +937,8 @@ public:
         if (tooltip_.takeHideRequest() && tooltipWindow_)
             tooltipWindow_->hide();
 
-        if (!client_ || !popupParent() || !tooltip_.ready(nowMs))
+        // Not mid-drag: X11 and Windows skip the tick while the pointer is captured too.
+        if (!client_ || captured_ || !popupParent() || !tooltip_.ready(nowMs))
             return;
 
         gmpi::api::IInputClient* in{};
@@ -1857,7 +1859,12 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
     if (down && in.onShortcut && in.onShortcut(keysym, in.modifierFlags()))
         return;
 
-    if (down && utf32 && in.client_)
+    if (!down || !in.client_)
+        return;
+
+    if (const auto vk = linuxkeys::navigationKeyToVk(keysym))
+        in.client_->onKeyPress(vk);
+    else if (utf32)
         in.client_->onKeyPress(static_cast<wchar_t>(utf32));
 }
 

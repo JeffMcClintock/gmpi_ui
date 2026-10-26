@@ -20,6 +20,7 @@
 #include "backends/TextEditModel.h"
 #include "backends/ColorPickerModel.h"
 #include "backends/TooltipModel.h"
+#include "backends/LinuxKeys.h"
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -1258,7 +1259,14 @@ void X11DrawingFrame::processEvents()
             if (!down)
                 break;   // the client's onKeyPress has no release half
 
-            if (d.inputClient && n > 0)
+            if (!d.inputClient)
+                break;
+
+            if (const auto vk = linuxkeys::navigationKeyToVk(uint32_t(keysym)))
+            {
+                d.inputClient->onKeyPress(vk);
+            }
+            else
             {
                 // Latin-1 range only, which is what IInputClient::onKeyPress
                 // takes. Anything wider needs an XIM input context - a text edit
@@ -1792,13 +1800,17 @@ void X11PopupMenu::openChildFor(int index)
 
 void X11PopupMenu::choose(const Item& item)
 {
-    auto callback = item.callback;   // copy: as<> is non-const
-    if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
-        cb->onComplete(gmpi::ReturnCode::Ok, item.id);
+    // Copies: as<> is non-const, and `item` dies with the menu.
+    auto callback = item.callback;
+    const auto id = item.id;
 
-    // Picking from a submenu closes the whole menu, not just that level.
-    // `this` may be gone after it, so touch nothing below.
+    // Close the whole menu, releasing the grabs, BEFORE running the choice: a
+    // command that blocks or opens a dialog must not run with input grabbed.
+    // `this` may be gone after it, so touch nothing of ours below.
     rootMenu()->dismiss();
+
+    if (auto cb = callback.as<gmpi::api::IPopupMenuCallback>(); cb)
+        cb->onComplete(gmpi::ReturnCode::Ok, id);
 }
 
 void X11PopupMenu::dismiss()

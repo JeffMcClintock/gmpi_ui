@@ -68,8 +68,9 @@ endif ()
 # bimg: its format table and conversions only. Every texture here is raw
 # pixels the renderer made, so none of bimg's container decoders or codecs is
 # vendored; BIMG_DECODE_ASTC=0 leaves astcenc.h (included unconditionally)
-# unused.
-add_library(gmpi_bimg STATIC ${GMPI_BGFX_DIR}/bimg/src/image.cpp ${GMPI_BGFX_DIR}/bimg/src/image_gnf.cpp)
+# unused, and gmpi/astcenc_stubs.cpp satisfies the calls a Debug build still links.
+add_library(gmpi_bimg STATIC ${GMPI_BGFX_DIR}/bimg/src/image.cpp ${GMPI_BGFX_DIR}/bimg/src/image_gnf.cpp
+                             ${GMPI_BGFX_DIR}/gmpi/astcenc_stubs.cpp)
 target_include_directories(gmpi_bimg PUBLIC ${GMPI_BGFX_DIR}/bimg/include
                                      PRIVATE ${GMPI_BGFX_DIR}/bimg/3rdparty/astc-encoder/include)
 target_compile_definitions(gmpi_bimg PRIVATE BIMG_DECODE_ASTC=0)
@@ -113,7 +114,8 @@ target_compile_definitions(gmpi_bgfx
   PRIVATE ${GMPI_GPU_RENDERERS}
   PUBLIC BGFX_CONFIG_MAX_DRAW_CALLS=8192 BGFX_CONFIG_MAX_VIEWS=256 BGFX_CONFIG_MAX_FRAME_BUFFERS=1024
          BGFX_CONFIG_MULTITHREADED=0
-         BGFX_CONFIG_DEBUG_ANNOTATION=$<OR:$<CONFIG:Debug>,$<BOOL:${GMPI_GPU_DEBUG_LOGGING}>>)
+         # Never on Windows: Direct3D 12's annotations need PIX's pix3.h, which is not vendored.
+         BGFX_CONFIG_DEBUG_ANNOTATION=$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CONFIG:Debug>,$<BOOL:${GMPI_GPU_DEBUG_LOGGING}>>>)
 target_compile_options(gmpi_bgfx PRIVATE ${GMPI_GPU_NO_WARNINGS})
 target_link_libraries(gmpi_bgfx PUBLIC gmpi_bx PRIVATE gmpi_bimg)
 if (APPLE)

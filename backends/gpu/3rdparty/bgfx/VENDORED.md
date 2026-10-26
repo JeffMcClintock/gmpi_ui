@@ -42,6 +42,9 @@ dependency records (see `GPU_SINGLE_DEPENDENCY_PLAN.md`, milestone 0), about
 - `gmpi/amalgamated.cpp` / `.mm`: the single translation unit, listing only
   the vendored sources (bgfx's own `amalgamated.cpp` includes every renderer).
 - `gmpi/renderer_stubs.cpp`: see above.
+- `gmpi/astcenc_stubs.cpp`: `image.cpp` guards the ASTC decoder with a plain
+  `if`, so a Debug build links astcenc calls the branch never makes. These
+  stubs answer them; the ASTC encoder itself is not vendored.
 - `gmpi.patch`: the changes to upstream source, applied by the vendoring
   script. Two, both in `renderer_vk.cpp`:
   1. **A stable pipeline key** (2026-10-25). bgfx hashed each pipeline with

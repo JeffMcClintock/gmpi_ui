@@ -42,6 +42,7 @@
 #include "GmpiApiShaders.h"
 #include "helpers/NativeUi.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -254,6 +255,7 @@ public:
 
     static constexpr int kTextPhases = 4;
     static constexpr size_t kTextCacheBudgetBytes = size_t(64) << 20;
+    static constexpr size_t kTextCacheTrimBytes = kTextCacheBudgetBytes / 4 * 3; // an over-budget trim stops here
     static constexpr int64_t kMaxCachedTextPixels = int64_t(1) << 20; // a bigger block is drawn uncached
     std::map<TextKey, CachedText> textCache;
     size_t textCacheBytes{};
@@ -289,8 +291,10 @@ public:
                 ++it;
         }
         // Over budget (text that changes every frame, a scrolling log): drop
-        // the least recently used until under. One sort, not a scan per
-        // eviction: a frame of a thousand distinct strings evicts a thousand.
+        // the least recently used, down to kTextCacheTrimBytes so the next
+        // frame's new text does not trip the budget again at once. One sort,
+        // not a scan per eviction: a frame of a thousand distinct strings
+        // evicts a thousand.
         if (textCacheBytes > kTextCacheBudgetBytes)
         {
             std::vector<std::map<TextKey, CachedText>::iterator> byAge;
@@ -300,8 +304,8 @@ public:
             std::sort(byAge.begin(), byAge.end(), [](const auto& a, const auto& b) { return a->second.lastUsed < b->second.lastUsed; });
             for (auto it : byAge)
             {
-                if (textCacheBytes <= kTextCacheBudgetBytes || it->second.lastUsed == submits)
-                    break; // under budget, or everything left is in this frame
+                if (textCacheBytes <= kTextCacheTrimBytes || it->second.lastUsed == submits)
+                    break; // under the trim mark, or everything left is in this frame
                 textCacheBytes -= it->second.pixels.size() * sizeof(uint16_t);
                 textCache.erase(it);
             }

@@ -200,7 +200,7 @@ public:
         drawing::api::ITextFormat* format{};
         const void* layout{};        // drawTextLayout: the (immutable) ITextLayout; text/format unused
         uint64_t formatState{};      // ICpuTextEngine::textFormatStateKey
-        uint64_t coverageClass{};    // 0 translucent, else (1 << 32) | luminance bits (opaque)
+        uint64_t coverageClass{};    // 0 translucent, else (1 << 32) | luminance in 1/255 steps (opaque)
         // r g b a opacity as bits, for a colour-glyph entry only (zeros for
         // coverage). std::array, not a C array: inside std::tie a C array
         // compares by ADDRESS, which made every key unique.
@@ -1859,10 +1859,15 @@ public:
         // The coverage class: what the engine's coverage depends on.
         const float alpha = solid->color.a * solid->opacity;
         const bool opaque = alpha >= 1.0f;
-        const float luminance = std::clamp(0.2126f * solid->color.r + 0.7152f * solid->color.g + 0.0722f * solid->color.b, 0.0f, 1.0f);
-        uint32_t luminanceBits;
-        std::memcpy(&luminanceBits, &luminance, sizeof luminanceBits);
-        key.coverageClass = opaque ? ((uint64_t(1) << 32) | luminanceBits) : 0;
+        // Luminance in 1/255 steps (0 and 1 exact), and the raster is made at the
+        // stepped value, so every colour in a step shares one entry. The warp's
+        // strength is linear in luminance and moves coverage by at most ~0.23,
+        // so half a step changes coverage by under 5e-4. Keyed by the exact
+        // float, 1000 labels in 1000 colours were 1000 entries per phase.
+        const float exactLuminance = std::clamp(0.2126f * solid->color.r + 0.7152f * solid->color.g + 0.0722f * solid->color.b, 0.0f, 1.0f);
+        const uint32_t luminanceStep = uint32_t(std::lround(exactLuminance * 255.0f));
+        const float luminance = float(luminanceStep) / 255.0f;
+        key.coverageClass = opaque ? ((uint64_t(1) << 32) | luminanceStep) : 0;
 
         auto& cache = bitmap->textCache;
         auto it = cache.find(key);

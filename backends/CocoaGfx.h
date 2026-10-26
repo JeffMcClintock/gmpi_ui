@@ -2776,8 +2776,22 @@ inline gmpi::ReturnCode GraphicsContext::createCompatibleRenderTarget(gmpi::draw
 	return b2->queryInterface(&gmpi::drawing::api::IBitmapRenderTarget::guid, reinterpret_cast<void**>(bitmapRenderTarget));
 }
 
+// The em size that gives a cap height of fontSize under FontFlags::CapHeight, as DirectXGfx and cpugfx do.
+inline float emSizeForFlags(const char* fontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags)
+{
+	if ((fontFlags & static_cast<int32_t>(gmpi::drawing::FontFlags::CapHeight)) == 0)
+		return fontSize;
+
+	TextFormat probe(fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize);
+	gmpi::drawing::FontMetrics metrics{};
+	probe.getFontMetrics(&metrics);
+	return metrics.capHeight > 0.0f ? fontSize * fontSize / metrics.capHeight : fontSize; // no cap height: unscaled, like DX
+}
+
 inline gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, gmpi::drawing::api::ITextFormat** textFormat)
 {
+	fontSize = emSizeForFlags(fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize, fontFlags);
+
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
 	b2.attach(new TextFormat(fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize));
 
@@ -2786,6 +2800,8 @@ inline gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, gm
 
 inline gmpi::ReturnCode Factory::createRichTextFormat(const char* markdownText, float fontSize, const char* fontFamilyName, int32_t fontFlags, gmpi::drawing::TextAlignment textAlignment, gmpi::drawing::ParagraphAlignment paragraphAlignment, gmpi::drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, gmpi::drawing::api::IRichTextFormat** richTextFormat)
 {
+	fontSize = emSizeForFlags(fontFamilyName, gmpi::drawing::FontWeight::Regular, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal, fontSize, fontFlags);
+
 	// create a base TextFormat with regular weight/style (markdown controls bold/italic)
 	TextFormat baseFormat(fontFamilyName, gmpi::drawing::FontWeight::Regular, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal, fontSize);
 

@@ -509,10 +509,13 @@ was CPU-side recording (cpu_ms ~ frame_ms). Profiled with VSDiagnostics + xperf
 
 ## macOS / Metal, 2026-10-26
 
-All on `main`, committed locally, not pushed: gmpi_ui `e6ec82c` (presenter fix,
-sRGB swap chain), `562a23e` (A1), then MacBench and this note; gimpi_ui_tests
-`242b37e`, `0646877`. iMac M1 (8 GB), macOS 26.3, built-in Retina 4.5K (2x,
-Display P3), Xcode SDK 26.5, Release, Ninja.
+All on `main`, committed locally, not pushed, rebased onto the Windows
+session's later commits (gmpi_ui `d1ab0a5` and the three before it,
+gimpi_ui_tests `abfd031` and the two before it): gmpi_ui `8c1f09e` (presenter
+fix, sRGB swap chain), `323b2ae` (A1), then MacBench, the text-cache changes
+and this note; gimpi_ui_tests `4c20a91`, `51bacd1`, `2447ed4`, `6a02f54`,
+`7ab755d`. iMac M1 (8 GB), macOS 26.3, built-in Retina 4.5K (2x, Display P3),
+Xcode SDK 26.5, Release, Ninja.
 
 - **Baseline** (`GMPI_UI_TESTS_GPU_BACKEND=OFF`, cpugfx against the D2D
   references): 233 tests, 230 pass, 3 skipped (styled text runs; two COLRv1
@@ -520,7 +523,8 @@ Display P3), Xcode SDK 26.5, Release, Ninja.
   236, 233 pass.
 - **The GPU suite did not compile on macOS.** Tests written on Linux since the
   last Mac run used bare `Point`/`Rect`/`Size`, which CoreFoundation's
-  MacTypes.h (through SavePng.h) makes ambiguous. Qualified (`242b37e`).
+  MacTypes.h (through SavePng.h) makes ambiguous. Qualified (`4c20a91`; and
+  `6a02f54` for `CpuText.DpiScalesTextLikeATransform`, added on Windows since).
 - **GPU suite on Metal: 289 tests, 286 pass, 3 skipped (the same three), no
   failures, under `MTL_DEBUG_LAYER=1` (no API misuse).** No regression from the
   Windows work. With the three tests below, and after A1's renderer changes:
@@ -533,14 +537,14 @@ Display P3), Xcode SDK 26.5, Release, Ninja.
     (`GpuClipGeometryIntersectsRectClip`), which a flipped lookup would fail.
   - The 1/1024-texel nearest bias: `GpuBitmapCroppedAndNearestStretchesMatchCpu`
     passes.
-- **The three Windows-found bugs, now tested everywhere** (`0646877`,
+- **The three Windows-found bugs, now tested everywhere** (`51bacd1`,
   `transform_edge_tests.cpp`: pixel assertions, no references):
   `FillUnderNegativeScaleIsMirrored`, `RotatedNearestBitmapKeepsEveryCorner`,
   `HugeRectKeepsItsFractionalEdge`. Pass on cpugfx and on Metal (the CPU
   backend agrees, nothing to report). With `9bf65f8` reverted, all three fail
   on Metal (mirrored rect: coverage 0; rotated bitmap: two corners white; 1e7
   rect: no fractional bottom edge), so they would have caught the bugs.
-- **A1, the present under `DrawingFrameMac.mm`** (`562a23e`). With
+- **A1, the present under `DrawingFrameMac.mm`** (`323b2ae`). With
   `GMPI_UI_GPU_BACKEND` and `GMPI_UI_GPU=1`, `initWithClient` starts the
   renderer before the client is attached (its first `getDrawingFactory` sees
   the GPU factory), makes the view layer-backed, and `updateLayer` presents
@@ -554,7 +558,7 @@ Display P3), Xcode SDK 26.5, Release, Ninja.
   when `initialize()` fails. `GMPI_VIEW_VERSION` bumped to `_05`, plus a
   `_05_GPU` name, since a GPU build differs from a plain one in body and ivar
   layout. Without the define the file compiles as before (checked).
-- **Two bugs found by the first Mac present** (`e6ec82c`):
+- **Two bugs found by the first Mac present** (`8c1f09e`):
   - **Mid-grey presented as 55, not 128.** bgfx's Metal swap chain ignores the
     format the renderer asks for (`FrameBufferMtl::create` has
     `BX_UNUSED(_format)`) and is `BGRA8Unorm`, so linear values went out
@@ -609,6 +613,16 @@ Display P3), Xcode SDK 26.5, Release, Ninja.
 - **Not covered**: SynthEdit's own frames, `HostedView` and the VST3/AU
   wrappers do not start the GPU path (by design for now); a text edit overlay
   over the Metal layer; interactive (live) resize; EDR / HDR.
+- **After the sync with the Windows session**: 9 `TextBaselineLowestPixel*`
+  tests (125/175/200%, all three fonts) failed on macOS on both the CPU and GPU
+  builds. gmpi_ui `86ea5af` (glyphs placed with the device transform) makes
+  cpugfx snap the baseline to half a DIP as Direct2D does, while the macOS
+  prediction was calibrated for CoreGraphics and took DIP offsets as device
+  pixels. The prediction now follows the backend, not the OS: Direct2D's
+  half-DIP rule for D2D, cpugfx and the GPU backend; the calibration only for
+  native CoreGraphics, with its offsets scaled by the DPI (`7ab755d`; the
+  native path is not run). Now: CPU 237 tests, 234 pass; Metal 294, 291 pass;
+  3 skipped each, no failures.
 
 ### Benchmark: Metal vs CoreGraphics (`examples/MacBench`)
 
@@ -618,34 +632,41 @@ loop moved to `examples/BenchScenes.h`, which WinBench now includes too
 (WinBench is not rebuilt here: no Windows build on this Mac). 1000x700,
 240 frames per case after 30 warm-up, ms per frame:
 
-| scene load | CoreGraphics | Metal | Metal cpu_ms | Metal / CG |
-|---|---|---|---|---|
-| bounce 4 | 1.91 | 0.38 | 0.32 | 0.20 |
-| bounce 16 | 4.85 | 2.36 | 2.28 | 0.49 |
-| bounce 64 | 13.63 | 8.77 | 8.65 | 0.64 |
-| lines 100 | 1.26 | 0.38 | 0.31 | 0.30 |
-| lines 1000 | 8.60 | 4.14 | 3.98 | 0.48 |
-| lines 5000 | 41.37 | 18.16 | 17.84 | 0.44 |
-| rects 100 | 1.40 | 1.29 | 1.22 | 0.92 |
-| rects 1000 | 10.92 | 10.17 | 10.12 | 0.93 |
-| rects 5000 | 53.13 | 58.79 | 58.73 | 1.11 |
-| ellipses 100 | 2.95 | 1.60 | 1.52 | 0.54 |
-| ellipses 1000 | 25.66 | 11.81 | 11.74 | 0.46 |
-| ellipses 5000 | 127.75 | 73.31 | 73.26 | 0.57 |
-| text 50 | 1.52 | 0.95 | 0.89 | 0.62 |
-| text 200 | 5.07 | 3.60 | 3.54 | 0.71 |
-| text 1000 | 22.97 | 84.97 | 84.85 | 3.70 |
-| gradients 50 | 2.33 | 0.76 | 0.67 | 0.33 |
-| gradients 200 | 7.95 | 2.33 | 2.23 | 0.29 |
-| gradients 1000 | 37.38 | 13.42 | 13.31 | 0.36 |
+| scene load | CoreGraphics | Metal | Metal cpu_ms | Metal / CG | Metal, first run |
+|---|---|---|---|---|---|
+| bounce 4 | 1.89 | 0.34 | 0.29 | 0.18 | 0.38 |
+| bounce 16 | 4.84 | 2.21 | 2.13 | 0.46 | 2.36 |
+| bounce 64 | 13.37 | 8.73 | 8.62 | 0.65 | 8.77 |
+| lines 100 | 1.23 | 0.37 | 0.30 | 0.30 | 0.38 |
+| lines 1000 | 8.44 | 2.79 | 2.63 | 0.33 | 4.14 |
+| lines 5000 | 41.75 | 14.86 | 14.45 | 0.36 | 18.16 |
+| rects 100 | 1.43 | 1.26 | 1.19 | 0.88 | 1.29 |
+| rects 1000 | 10.68 | 9.65 | 9.58 | 0.90 | 10.17 |
+| rects 5000 | 51.19 | 48.94 | 48.81 | 0.96 | 58.79 |
+| ellipses 100 | 2.91 | 1.58 | 1.49 | 0.54 | 1.60 |
+| ellipses 1000 | 25.13 | 11.40 | 11.32 | 0.45 | 11.81 |
+| ellipses 5000 | 124.83 | 63.55 | 63.37 | 0.51 | 73.31 |
+| text 50 | 1.72 | 0.95 | 0.85 | 0.55 | 0.95 |
+| text 200 | 5.27 | 4.00 | 3.94 | 0.76 | 3.60 |
+| text 1000 | 22.85 | 24.39 | 24.01 | 1.07 | 84.97 |
+| gradients 50 | 2.36 | 0.70 | 0.64 | 0.30 | 0.76 |
+| gradients 200 | 8.05 | 2.41 | 2.32 | 0.30 | 2.33 |
+| gradients 1000 | 38.15 | 13.33 | 13.22 | 0.35 | 13.42 |
 
-**Metal does not behave like D3D12 did against Direct2D.** It is faster than
-CoreGraphics in 15 of 18 cases (gradients and lines ~2-3x, small loads up to
-5x), because CoreGraphics is the slower native renderer: rects 5000 cost 53 ms
+The last column is the first run, before the text-cache changes and the
+Windows session's path-atlas fix; the rest is after both (and after the sync).
+With `--static-colors` (the bounce colours held, so gradients are reused, as
+in a UI) Metal draws bounce 4 / 16 / 64 in 0.37 / 0.39 / 1.26 ms against
+CoreGraphics' 1.89 / 4.89 / 13.48: 5x, 12x, 11x.
+
+**Metal does not behave like D3D12 did against Direct2D.** On the first run it
+was faster than CoreGraphics in 15 of 18 cases (gradients and lines ~2-3x,
+small loads up to 5x), now in 16, with rects 5000 at 0.96x and text 1000 at
+1.07x. CoreGraphics is the slower native renderer: rects 5000 cost 51 ms
 here against Direct2D's 17. What Metal shares with D3D12 is the shape of the
 cost: **cpu_ms is within 0.1-0.2 ms of frame_ms in every case**, so the GPU
-time is CPU-side recording and the device is idle. The two losses, profiled
-with `sample` (12 s each, main thread ~9.1k samples):
+time is CPU-side recording and the device is idle. The two losses on the
+first run, profiled with `sample` (12 s each, main thread ~9.1k samples):
 
 - **text 1000 (85 ms, 3.7x CoreGraphics)**: half the main thread is
   `endDraw`, and 37% is `Bitmap::trimTextCache()`. Each opaque label's cache
@@ -657,9 +678,11 @@ with `sample` (12 s each, main thread ~9.1k samples):
   misses 5%, coverage 3%), `Canvas::submit` 11%. Very likely the same cause
   as Windows' text 1000 (318 ms).
   **Fixed (eviction):** over budget, `trimTextCache` now sorts the entries by
-  `lastUsed` once and drops the oldest down to 3/4 of the budget
-  (`kTextCacheTrimBytes`), so the next frame does not trip it again at once.
-  text 1000: **86.6 -> 34.0 ms** (CoreGraphics 23.0); text 50 and 200 never
+  `lastUsed` once (the Windows session's `d1ab0a5` landed the same sort in
+  parallel) and drops the oldest down to 3/4 of the budget
+  (`kTextCacheTrimBytes`, `7468a4b`), so the next frame does not trip it again
+  at once. Measured here before the sync, sort and trim mark together:
+  text 1000 **86.6 -> 34.0 ms** (CoreGraphics 23.0); text 50 and 200 never
   go over budget and are unchanged (200: 3.55-3.61 vs 3.57-3.73 ms over three
   runs each). Test `GpuTextCacheOverBudgetDropsTheOldestFramesFirst`: the
   cache stays within budget, a trim reaches the mark, the newest two frames
@@ -693,8 +716,10 @@ with `sample` (12 s each, main thread ~9.1k samples):
   flattened, the stroke widened on the CPU, then the path atlas),
   `fillRoundedRectangle` 17%, `endDraw` 15%, of which `PathAtlas::removePath`
   and `stbrp_pack_rects` (packing the atlas afresh each frame) are most;
-  malloc/free throughout. This is the B3 SDF route for rounded rects (a
-  decision for Jeff) plus B8 (paths rebuilt every frame).
+  malloc/free throughout. `removePath`'s search was the Windows session's
+  fix in `d1ab0a5` (swap-and-pop): here 58.8 -> 48.9 ms. The rest is the B3
+  SDF route for rounded rects (a decision for Jeff) plus B8 (paths rebuilt
+  every frame).
 
 
 ## What is already right

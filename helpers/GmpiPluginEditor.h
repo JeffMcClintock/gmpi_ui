@@ -20,6 +20,11 @@ public:
 	gmpi::shared_ptr<gmpi::api::IEditorHost> editorHost;
 	gmpi::shared_ptr<gmpi::api::IDialogHost> dialogHost;
 
+	// PluginEditorNoGui's GMPI_REFCOUNT does `delete this` from here, so a
+	// derived editor (StringConcatGui...) must be destroyed through its own type.
+	// Comes after IEditor's slots in the vtable, so hosts see no ABI change.
+	virtual ~PluginEditorBase() {}
+
 	// One setHost override per plugin satisfies IEditor, IDrawingClient and IInputClient
 	// simultaneously (all three declare identical-signature pure virtuals).
 	ReturnCode setHost(gmpi::api::IUnknown* phost) override

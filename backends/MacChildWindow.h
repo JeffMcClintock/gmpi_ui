@@ -81,7 +81,7 @@ public:
         [window_ setDelegate:delegate];
 
         view_ = (NSView*)createNativeView((void*)[window_ contentView], nullptr,
-                                          (class IUnknown*)client_.get(), width_, height_);
+                                          (::IUnknown*)client_.get(), width_, height_); // ::, not the inherited gmpi::api::IUnknown
         if (!view_)
         {
             releaseWindow();

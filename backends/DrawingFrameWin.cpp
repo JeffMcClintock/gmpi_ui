@@ -1166,7 +1166,9 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 		} while (r == 0x887a002d); // The application requested an operation that depends on an SDK component that is missing or mismatched. (no DEBUG LAYER).
 	}
 
-	if (FAILED(r))
+	const HRESULT hardwareCreateResult = r;
+	const bool usingWarp = FAILED(r);
+	if (usingWarp)
 	{
 		d3dDevice = nullptr;
 		do {
@@ -1204,11 +1206,12 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
 	// Deep colour needs a displayable, blendable fp16 format at feature level 11; otherwise the 8-bit swap
 	// chain on the same device, which blends in linear light too. No guessing from the adapter's memory:
 	// an integrated GPU reports little dedicated memory however capable it is (the UHD 770 passes here).
-	bool fp16Supported = D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
+	const bool featureLevelOk = D3D_FEATURE_LEVEL_11_0 <= supportedFeatureLevel;
+	bool fp16Supported = featureLevelOk;
+	UINT fp16Support = 0;
 	{
-		UINT support = 0;
 		const UINT required = D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_BLENDABLE;
-		fp16Supported = fp16Supported && SUCCEEDED(d3dDevice->CheckFormatSupport(bestFormat, &support)) && (support & required) == required;
+		fp16Supported = fp16Supported && SUCCEEDED(d3dDevice->CheckFormatSupport(bestFormat, &fp16Support)) && (fp16Support & required) == required;
 	}
 	const bool useDeepColor = !m_disable_deep_color && fp16Supported;
 
@@ -1262,6 +1265,39 @@ void tempSharedD2DBase::CreateSwapPanel(ID2D1Factory1* d2dFactory)
     }
 
 	swapChain1->QueryInterface(swapChain.getAddressOf());
+
+	{
+		DXGI_ADAPTER_DESC adapterDesc{};
+		dxgiAdapter->GetDesc(&adapterDesc);
+		char adapterName[256]{};
+		WideCharToMultiByte(CP_UTF8, 0, adapterDesc.Description, -1, adapterName, static_cast<int>(sizeof(adapterName)) - 1, nullptr, nullptr);
+
+		auto hex = [](HRESULT hr) { char b[16]; snprintf(b, sizeof(b), "0x%08X", static_cast<unsigned>(hr)); return std::string(b); };
+		const char* levelName = supportedFeatureLevel >= D3D_FEATURE_LEVEL_11_1 ? "11.1" : supportedFeatureLevel >= D3D_FEATURE_LEVEL_11_0 ? "11.0" : supportedFeatureLevel >= D3D_FEATURE_LEVEL_10_1 ? "10.1" : "10.0";
+
+		std::string t;
+		t += usingWarp ? "Renderer: Direct2D on WARP (software, CPU)\n" : "Renderer: Direct2D on the graphics card (hardware)\n";
+		t += std::string("Adapter: ") + adapterName + ", " + std::to_string(adapterDesc.DedicatedVideoMemory / 0x100000) + " MB dedicated, feature level " + levelName + "\n";
+		if (m_disable_gpu)
+			t += "Why WARP: Compatibility mode (GpuDisabled) is on in Preferences\n";
+		else if (usingWarp)
+			t += "Why WARP: hardware D3D11 device creation failed, HRESULT " + hex(hardwareCreateResult) + " (driver missing or unsupported, remote session, VM?)\n";
+		else
+			t += "Hardware device creation: ok\n";
+		if (gmpi::directx::adapterOverride() >= 0)
+			t += "Adapter override in effect: " + std::to_string(gmpi::directx::adapterOverride()) + "\n";
+		t += std::string("Swap chain: ") + (useDeepColor ? "fp16 (R16G16B16A16_FLOAT)" : "8-bit (B8G8R8A8_UNORM)") + "\n";
+		if (m_disable_deep_color)
+			t += "Why 8-bit: Fast mode (DeepColorDisabled) is on in Preferences\n";
+		else if (!useDeepColor && !featureLevelOk)
+			t += std::string("Why 8-bit: feature level ") + levelName + " is below 11.0\n";
+		else if (!useDeepColor)
+			t += "Why 8-bit: the device lacks display+texture+blend support for fp16 (support flags " + hex(static_cast<HRESULT>(fp16Support)) + ")\n";
+		else
+			t += "fp16 checks: feature level " + std::string(levelName) + " ok, format support " + hex(static_cast<HRESULT>(fp16Support)) + " ok\n";
+		t += "Window white level: " + std::to_string(windowWhiteLevel) + "\n";
+		rendererReport = std::move(t);
+	}
 
 	// Creating the Direct2D Device
     gmpi::directx::ComPtr<::ID2D1Device> d2dDevice;

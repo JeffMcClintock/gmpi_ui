@@ -253,6 +253,9 @@ struct tempSharedD2DBase : public gmpi::api::IDrawingHost, public gmpi::api::IIn
 	// GPU-adapter change, and device loss (failed Present/endDraw/ResizeBuffers).
 	std::function<void()> clientInvalidated;
 
+	// Which renderer CreateSwapPanel chose, and why (read by the SE "Renderer Report" module).
+	std::string rendererReport;
+
 	virtual float calcWhiteLevel()
 	{
 		return calcWhiteLevelForHwnd(getWindowHandle());

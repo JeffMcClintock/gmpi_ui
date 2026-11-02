@@ -45,6 +45,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <utility>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -2442,8 +2443,16 @@ public:
     // One frame. `dirty` is in logical units and `scale` maps logical to
     // device pixels; needsMeasure / dirtyAll / dirty are the frame's own
     // flags, consumed here: measure + arrange run when needsMeasure is set,
-    // and all three are cleared after the present. `overlay` draws after the
-    // client inside the same clip (a text edit). Requires ensureTarget().
+    // and all three are TAKEN (cleared) before the first client call rather
+    // than after the present. A client may invalidate while it is measured
+    // or rendered -- SynthEdit's TiDE panel, told mid-render that a knob
+    // moved over it, asks for a full repaint so it can show its previous
+    // face while the new one traces -- and clearing afterwards threw that
+    // away, leaving stale pixels until something outside a paint invalidated
+    // again (seen as a dragged module's selection adorner smeared across the
+    // panel, on the Windows HostedView path that had the same order).
+    // `overlay` draws after the client inside the same clip (a text edit).
+    // Requires ensureTarget().
     void present(gmpi::api::IDrawingClient* client, float logicalW, float logicalH, float scale,
                  bool& needsMeasure, bool& dirtyAll, drawing::Rect& dirty,
                  const std::function<void(RenderTarget&)>& overlay = {}, const char* traceTag = "presentGpu")
@@ -2451,6 +2460,9 @@ public:
         assert(target_);
         const int pw = width_, ph = height_;
         const bool trace = std::getenv("GMPI_UI_GPU_TRACE") != nullptr;
+
+        const bool wantAll = std::exchange(dirtyAll, false);
+        const drawing::Rect want = std::exchange(dirty, {});
 
         if (needsMeasure)
         {
@@ -2465,17 +2477,17 @@ public:
         }
 
         drawing::RectL area{ 0, 0, pw, ph };
-        if (!dirtyAll && dirty.right > dirty.left && dirty.bottom > dirty.top)
+        if (!wantAll && want.right > want.left && want.bottom > want.top)
         {
-            area.left   = (std::max)(0,  static_cast<int32_t>(dirty.left   * scale));
-            area.top    = (std::max)(0,  static_cast<int32_t>(dirty.top    * scale));
-            area.right  = (std::min)(pw, static_cast<int32_t>(dirty.right  * scale + 1.0f));
-            area.bottom = (std::min)(ph, static_cast<int32_t>(dirty.bottom * scale + 1.0f));
+            area.left   = (std::max)(0,  static_cast<int32_t>(want.left   * scale));
+            area.top    = (std::max)(0,  static_cast<int32_t>(want.top    * scale));
+            area.right  = (std::min)(pw, static_cast<int32_t>(want.right  * scale + 1.0f));
+            area.bottom = (std::min)(ph, static_cast<int32_t>(want.bottom * scale + 1.0f));
         }
         if (trace)
             std::fprintf(stderr, "[%s t=%ld] %dx%d area %d,%d-%d,%d dirtyAll %d\n", traceTag,
                          long(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() % 100000),
-                         pw, ph, area.left, area.top, area.right, area.bottom, int(dirtyAll));
+                         pw, ph, area.left, area.top, area.right, area.bottom, int(wantAll));
 
         target_->beginDraw();
         target_->invalidate(area);
@@ -2505,9 +2517,6 @@ public:
         timing_ = { ms(tSubmit - tRender).count(), ms(tDone - tSubmit).count() };
         if (trace)
             std::fprintf(stderr, "[%s] render %.1f ms, submit+present %.1f ms\n", traceTag, timing_.renderMs, timing_.finishMs);
-
-        dirtyAll = false;
-        dirty = {};
     }
 
 private:

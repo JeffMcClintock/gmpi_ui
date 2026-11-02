@@ -1069,6 +1069,15 @@ inline void WaylandFrameBase::present()
     auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
     if (!rt) { if (rtRaw) rtRaw->release(); return; }
 
+    // Taken before the first client call, not cleared after the commit: a
+    // client may invalidate while it is measured or rendered (SynthEdit's TiDE
+    // panel, told mid-render that a knob moved over it, asks for a full repaint
+    // so it can show its previous face while the new one traces), and clearing
+    // afterwards threw that away, leaving stale pixels until something outside
+    // a paint invalidated again.
+    const bool dirtyAll = std::exchange(dirtyAll_, false);
+    const gmpi::drawing::Rect dirty = std::exchange(dirty_, {});
+
     if (needsMeasure_)
     {
         gmpi::drawing::Size avail{ static_cast<float>(logicalW_), static_cast<float>(logicalH_) };
@@ -1105,12 +1114,12 @@ inline void WaylandFrameBase::present()
                                                gmpi::cpugfx::PixelEncoding::Bgra8888 };
 
         gmpi::drawing::RectL area{ 0, 0, pw, ph };
-        if (!dirtyAll_ && !isEmpty(dirty_))
+        if (!dirtyAll && !isEmpty(dirty))
         {
-            area.left   = (std::max)(0,  static_cast<int32_t>(dirty_.left   * scale_));
-            area.top    = (std::max)(0,  static_cast<int32_t>(dirty_.top    * scale_));
-            area.right  = (std::min)(pw, static_cast<int32_t>(dirty_.right  * scale_ + 1.0f));
-            area.bottom = (std::min)(ph, static_cast<int32_t>(dirty_.bottom * scale_ + 1.0f));
+            area.left   = (std::max)(0,  static_cast<int32_t>(dirty.left   * scale_));
+            area.top    = (std::max)(0,  static_cast<int32_t>(dirty.top    * scale_));
+            area.right  = (std::min)(pw, static_cast<int32_t>(dirty.right  * scale_ + 1.0f));
+            area.bottom = (std::min)(ph, static_cast<int32_t>(dirty.bottom * scale_ + 1.0f));
         }
 
         gmpi::cpugfx::encodeDirtyRect(src, dst, area);
@@ -1140,9 +1149,6 @@ inline void WaylandFrameBase::present()
     // compositor never rescales what we drew
     if (viewport_)
         wp_viewport_set_destination(viewport_, logicalW_, logicalH_);
-
-    dirtyAll_ = false;
-    dirty_ = {};
 }
 
 #if GMPI_UI_GPU_BACKEND

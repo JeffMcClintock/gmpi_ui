@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <utility>
 #include <cstring>
 #include <cstdio>
 #include <functional>
@@ -1394,6 +1395,15 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
     const float logicalW = pw / d.scale;
     const float logicalH = ph / d.scale;
 
+    // Taken before the first client call, not cleared after the blit: a client
+    // may invalidate while it is measured or rendered (SynthEdit's TiDE panel,
+    // told mid-render that a knob moved over it, asks for a full repaint so it
+    // can show its previous face while the new one traces), and clearing
+    // afterwards threw that away, leaving stale pixels until something outside
+    // a paint invalidated again.
+    const bool dirtyAll = std::exchange(d.dirtyAll, false);
+    const gmpi::drawing::Rect dirty = std::exchange(d.dirty, {});
+
     if (d.needsMeasure)
     {
         gmpi::drawing::Size avail{ logicalW, logicalH };
@@ -1432,8 +1442,10 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
     //
     // Dropping the frame is the right response, not merely the safe one: the
     // nested present() already rendered and blitted the whole surface at the new
-    // size and cleared d.dirtyAll/d.dirty doing it, so there is nothing left to
-    // put on screen. Returning here leaves those flags exactly as it left them.
+    // size, so there is nothing left to put on screen. Returning here leaves
+    // d.dirtyAll/d.dirty exactly as the nested call left them: whatever the
+    // client invalidated after it ran, since both calls took their own damage
+    // up front.
     //
     // Reproduced before this guard existed - SIGSEGV in encodeDirtyRect
     // (CpuEncode.h:269) with clip bounds right=800/bottom=600 against a 64x48
@@ -1460,12 +1472,12 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
                                                gmpi::cpugfx::PixelEncoding::Bgra8888 };
 
         gmpi::drawing::RectL area{ 0, 0, pw, ph };
-        if (!d.dirtyAll && !isEmptyRect(d.dirty))
+        if (!dirtyAll && !isEmptyRect(dirty))
         {
-            area.left   = (std::max)(0,  static_cast<int32_t>(d.dirty.left   * d.scale));
-            area.top    = (std::max)(0,  static_cast<int32_t>(d.dirty.top    * d.scale));
-            area.right  = (std::min)(pw, static_cast<int32_t>(d.dirty.right  * d.scale + 1.0f));
-            area.bottom = (std::min)(ph, static_cast<int32_t>(d.dirty.bottom * d.scale + 1.0f));
+            area.left   = (std::max)(0,  static_cast<int32_t>(dirty.left   * d.scale));
+            area.top    = (std::max)(0,  static_cast<int32_t>(dirty.top    * d.scale));
+            area.right  = (std::min)(pw, static_cast<int32_t>(dirty.right  * d.scale + 1.0f));
+            area.bottom = (std::min)(ph, static_cast<int32_t>(dirty.bottom * d.scale + 1.0f));
         }
 
         gmpi::cpugfx::encodeDirtyRect(src, dst, area);
@@ -1489,9 +1501,6 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
 
     if (bmRaw) bmRaw->release();
     rtRaw->release();
-
-    d.dirtyAll = false;
-    d.dirty = {};
 }
 
 // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@
 
 #include "helpers/NativeUi.h"
 #include "GmpiSdkCommon.h"
+#include "backends/CpuGfx.h"
 
 namespace gmpi::popupmenu
 {
@@ -115,5 +116,99 @@ private:
     std::vector<std::vector<Item>*> stack_;
     bool pendingSeparator_ = false;
 };
+
+// ---------------------------------------------------------------------------
+// Geometry and drawing, shared the same way: a plugin looks the same whichever
+// way the host embeds it, and two copies of this had already drifted.
+// ---------------------------------------------------------------------------
+constexpr int kMenuItemHeight      = 24;
+constexpr int kMenuSeparatorHeight = 9;
+constexpr int kMenuTickGutter      = 26;
+constexpr int kMenuArrowGutter     = 22;
+constexpr int kMenuPadV            = 4;
+// Inset of the label from the tick gutter. A width measurement has to reserve
+// the SAME value the draw uses, or the widest item is handed a rect narrower
+// than the text it was measured from and drawTextU wraps it onto the item below.
+constexpr int kMenuLabelInset      = 2;
+
+// Top of item `index`; items.size() gives the bottom of the last one.
+inline int itemTop(const std::vector<Item>& items, int index)
+{
+    int top = kMenuPadV;
+    for (int i = 0; i < index && i < int(items.size()); ++i)
+        top += items[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
+    return top;
+}
+
+// hovered is -1 for none. font may be null - the structure still draws.
+inline void render(gmpi::cpugfx::RenderTarget* rt, const std::vector<Item>& items,
+                   gmpi::drawing::api::ITextFormat* font, int width, int hovered)
+{
+    auto brush = [&](gmpi::drawing::Color c)
+    {
+        gmpi::drawing::api::ISolidColorBrush* b{};
+        rt->createSolidColorBrush(&c, nullptr, &b);
+        return b;
+    };
+
+    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
+    rt->clear(&bg);
+
+    auto* ink    = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
+    auto* grey   = brush({ 0.45f, 0.46f, 0.50f, 1.0f });
+    auto* hilite = brush({ 0.16f, 0.42f, 0.75f, 1.0f });
+    auto* rule   = brush({ 0.28f, 0.29f, 0.32f, 1.0f });
+    const float w = float(width);
+
+    for (size_t i = 0; i < items.size(); ++i)
+    {
+        const auto& item = items[i];
+        const float top = float(itemTop(items, int(i)));
+
+        if (item.separator)
+        {
+            if (rule)
+            {
+                const gmpi::drawing::Rect r{ 6.f, top + kMenuSeparatorHeight * 0.5f,
+                                             w - 6.f, top + kMenuSeparatorHeight * 0.5f + 1.f };
+                rt->fillRectangle(&r, rule);
+            }
+            continue;
+        }
+
+        if (int(i) == hovered && !item.grayed && hilite)
+        {
+            const gmpi::drawing::Rect r{ 3.f, top, w - 3.f, top + kMenuItemHeight };
+            rt->fillRectangle(&r, hilite);
+        }
+
+        auto* fg = item.grayed ? grey : ink;
+        if (!fg || !font)
+            continue;
+
+        if (item.ticked)
+        {
+            const char* tick = "\xe2\x9c\x93";
+            const gmpi::drawing::Rect r{ 8.f, top + 3.f, 26.f, top + kMenuItemHeight };
+            rt->drawTextU(tick, 3, font, &r, fg, 0);
+        }
+
+        const gmpi::drawing::Rect r{ float(kMenuTickGutter + kMenuLabelInset), top + 3.f,
+                                     w - kMenuArrowGutter, top + kMenuItemHeight };
+        rt->drawTextU(item.label.c_str(), uint32_t(item.label.size()), font, &r, fg, 0);
+
+        if (!item.submenu.empty())
+        {
+            const char* arrow = "\xe2\x80\xba";
+            const gmpi::drawing::Rect a{ w - 20.f, top + 3.f, w - 6.f, top + kMenuItemHeight };
+            rt->drawTextU(arrow, 3, font, &a, fg, 0);
+        }
+    }
+
+    if (ink)    ink->release();
+    if (grey)   grey->release();
+    if (hilite) hilite->release();
+    if (rule)   rule->release();
+}
 
 } // namespace gmpi::popupmenu

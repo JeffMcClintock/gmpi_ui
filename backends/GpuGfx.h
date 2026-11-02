@@ -30,6 +30,7 @@
 // evaluates spans" to the fallback. Only the fp16 render target is new.
 
 #include "CpuGfx.h"
+#include "CpuPresent.h" // deviceArea, shared with the CPU present
 
 #include "gpu/canvas.h"
 #include "gpu/clip_mask.h"
@@ -2476,14 +2477,7 @@ public:
             needsMeasure = false;
         }
 
-        drawing::RectL area{ 0, 0, pw, ph };
-        if (!wantAll && want.right > want.left && want.bottom > want.top)
-        {
-            area.left   = (std::max)(0,  static_cast<int32_t>(want.left   * scale));
-            area.top    = (std::max)(0,  static_cast<int32_t>(want.top    * scale));
-            area.right  = (std::min)(pw, static_cast<int32_t>(want.right  * scale + 1.0f));
-            area.bottom = (std::min)(ph, static_cast<int32_t>(want.bottom * scale + 1.0f));
-        }
+        const drawing::RectL area = cpugfx::deviceArea(wantAll, want, scale, pw, ph);
         if (trace)
             std::fprintf(stderr, "[%s t=%ld] %dx%d area %d,%d-%d,%d dirtyAll %d\n", traceTag,
                          long(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() % 100000),

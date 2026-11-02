@@ -17,6 +17,8 @@
 // an error twenty headers from the cause. X11Clipboard.h is the exception - it
 // is ours but it needs Xlib - so it comes after.
 #include "backends/CpuEncode.h"
+#include "backends/CpuPresent.h"
+#include "backends/StockDialogModel.h"
 #include "backends/PortalFileDialog.h"
 #include "backends/TextEditModel.h"
 #include "backends/ColorPickerModel.h"
@@ -47,23 +49,14 @@ namespace
 constexpr int kDoubleClickMs = 400;   // GNOME's default
 constexpr int kDoubleClickSlopPx = 5;
 
-// Menu metrics, deliberately the same as the Wayland backend's so a plugin
+// Menu metrics: PopupMenuModel.h, shared with the Wayland backend so a plugin
 // looks the same whichever way the host embeds it.
-constexpr int kMenuItemHeight      = 24;
-constexpr int kMenuSeparatorHeight = 9;
-constexpr int kMenuTickGutter      = 26;
-constexpr int kMenuArrowGutter     = 22;
-constexpr int kMenuPadV            = 4;
+using gmpi::popupmenu::kMenuItemHeight;
+using gmpi::popupmenu::kMenuSeparatorHeight;
+using gmpi::popupmenu::kMenuTickGutter;
+using gmpi::popupmenu::kMenuArrowGutter;
+using gmpi::popupmenu::kMenuPadV;
 constexpr int kMenuMinWidth        = 120;
-
-// Stock-dialog metrics and palette, again matching the Wayland backend - see
-// the note there on why the button padding is Adwaita's.
-constexpr int kDialogMargin     = 20;
-constexpr int kDialogButtonPadH = 16;
-constexpr int kDialogButtonMinW = 64;
-constexpr int kDialogButtonH    = 34;
-constexpr int kDialogButtonGap  = 6;
-constexpr int kDialogTextWidth  = 380;
 
 // X11 delivers wheel notches as button 4/5 (vertical) and 6/7 (horizontal).
 // One notch is 120, the same unit Windows uses and what the clients expect.
@@ -725,21 +718,7 @@ public:
     bool handleEvent(const XEvent& e);
 
 private:
-    struct Button
-    {
-        std::string label;
-        gmpi::api::StockDialogButton id{};
-        gmpi::drawing::Rect rect{};
-        gmpi::drawing::Size labelSize{};   // measured in layout(), centres the label
-    };
-
-    // Where a button's label draws: centred both ways on the measured extent,
-    // matching the Wayland backend.
-    gmpi::drawing::Point labelOrigin(const Button& b) const
-    {
-        return { b.rect.left + 0.5f * ((b.rect.right - b.rect.left) - b.labelSize.width),
-                 b.rect.top  + 0.5f * ((b.rect.bottom - b.rect.top) - b.labelSize.height) };
-    }
+    using Button = gmpi::stockdialog::Button;
 
     void layout();
     void present();
@@ -1379,140 +1358,70 @@ void X11DrawingFrame::Impl::present(gmpi::cpugfx::Factory& factory)
     if (!d.ensureImage(pw, ph))
         return;
 
-    // cpugfx has no resize, so a size change means a new target - same trade as
-    // the Wayland frame: reallocating during an interactive resize measures fine
-    // and is far simpler than pooling.
-    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
-    factory.createCpuRenderTarget({ static_cast<uint32_t>(pw), static_cast<uint32_t>(ph) },
-                                  0, &rtRaw, 96.0f);
-    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
-    if (!rt)
-    {
-        if (rtRaw) rtRaw->release();
-        return;
-    }
-
-    const float logicalW = pw / d.scale;
-    const float logicalH = ph / d.scale;
-
-    // Taken before the first client call, not cleared after the blit: a client
-    // may invalidate while it is measured or rendered (SynthEdit's TiDE panel,
-    // told mid-render that a knob moved over it, asks for a full repaint so it
-    // can show its previous face while the new one traces), and clearing
-    // afterwards threw that away, leaving stale pixels until something outside
-    // a paint invalidated again.
-    const bool dirtyAll = std::exchange(d.dirtyAll, false);
-    const gmpi::drawing::Rect dirty = std::exchange(d.dirty, {});
-
-    if (d.needsMeasure)
-    {
-        gmpi::drawing::Size avail{ logicalW, logicalH };
-        gmpi::drawing::Size desired{};
-        d.client->measure(&avail, &desired);
-
-        const gmpi::drawing::Rect all{ 0, 0, avail.width, avail.height };
-        d.client->arrange(&all);
-        d.needsMeasure = false;
-    }
-
-    rt->beginDraw();
-    if (d.scale != 1.0f)
-    {
-        const auto m = gmpi::drawing::makeScale(d.scale, d.scale);
-        rt->setTransform(&m);
-    }
-    d.client->render(static_cast<gmpi::drawing::api::IDeviceContext*>(rt));
-
-    // An in-place edit sits ON the client, so it is drawn after - same order as
-    // the Wayland frame's drawActiveTextEdit.
-    if (d.activeEdit)
-        d.activeEdit->render(rt);
-
-    rt->endDraw();
-
-    // measure(), arrange() and render() above are all client calls, and pw/ph
-    // were read before the first of them. If any drove a nested present() at a
-    // smaller size, ensureImage() released the image we sized for and put a
-    // smaller one in its place: the dst below re-reads d.image->data and
-    // ->bytes_per_line, so it picks the new buffer up, but pw/ph are stale, and
-    // encodeDirtyRect clips to dst.width/height - i.e. to the lie - so it walks
-    // pw x ph pixels down a shorter stride and off the end of the allocation.
-    // A heap overflow rather than a null dereference, so a worse outcome than
-    // the P4 crash this is a cousin of.
-    //
-    // Dropping the frame is the right response, not merely the safe one: the
-    // nested present() already rendered and blitted the whole surface at the new
-    // size, so there is nothing left to put on screen. Returning here leaves
-    // d.dirtyAll/d.dirty exactly as the nested call left them: whatever the
-    // client invalidated after it ran, since both calls took their own damage
-    // up front.
-    //
-    // Reproduced before this guard existed - SIGSEGV in encodeDirtyRect
-    // (CpuEncode.h:269) with clip bounds right=800/bottom=600 against a 64x48
-    // image. Test: tests/x11_present_reentrant_resize.cpp (TIDE BACKLOG P7c).
-    // Note that test reaches the nesting only by handing the client a pointer to
-    // the concrete frame; through the public interfaces it is unreachable today
-    // (docs/x11-present-extents.md). The guard is here so that stays a property
-    // of the code rather than of the audit.
-    if (!d.image || d.imageWidth != pw || d.imageHeight != ph)
-    {
-        rtRaw->release();
-        return;
-    }
-
-    gmpi::drawing::api::IBitmap* bmRaw{};
-    rt->getBitmap(&bmRaw);
-    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
-    {
-        const auto& s = bm->surface;
-
-        const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
-        const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(d.image->data),
-                                               d.image->bytes_per_line, pw, ph,
-                                               gmpi::cpugfx::PixelEncoding::Bgra8888 };
-
-        gmpi::drawing::RectL area{ 0, 0, pw, ph };
-        if (!dirtyAll && !isEmptyRect(dirty))
+    const auto frame = gmpi::cpugfx::presentFrame(factory, d.client, pw, ph, pw / d.scale, ph / d.scale, d.scale,
+        d.needsMeasure, d.dirtyAll, d.dirty,
+        [&d](gmpi::cpugfx::RenderTarget& rt) { if (d.activeEdit) d.activeEdit->render(&rt); },
+        [&d]() -> gmpi::cpugfx::DestSurface
         {
-            area.left   = (std::max)(0,  static_cast<int32_t>(dirty.left   * d.scale));
-            area.top    = (std::max)(0,  static_cast<int32_t>(dirty.top    * d.scale));
-            area.right  = (std::min)(pw, static_cast<int32_t>(dirty.right  * d.scale + 1.0f));
-            area.bottom = (std::min)(ph, static_cast<int32_t>(dirty.bottom * d.scale + 1.0f));
-        }
+            // Read back AFTER the client calls: a nested present() may have
+            // replaced the image with a smaller one, and presentFrame drops
+            // the frame when the size no longer matches (it has already been
+            // put on screen at the new size). Was a heap overflow in
+            // encodeDirtyRect: tests/x11_present_reentrant_resize.cpp.
+            if (!d.image)
+                return {};
+            return { reinterpret_cast<uint8_t*>(d.image->data), d.image->bytes_per_line,
+                     d.imageWidth, d.imageHeight, gmpi::cpugfx::PixelEncoding::Bgra8888 };
+        });
+    if (!frame.presented())
+        return;
 
-        gmpi::cpugfx::encodeDirtyRect(src, dst, area);
-
-        const int aw = area.right - area.left;
-        const int ah = area.bottom - area.top;
-        if (aw > 0 && ah > 0)
-        {
-            if (d.usingShm)
-                XShmPutImage(d.display, d.window, d.gc, d.image,
-                             area.left, area.top, area.left, area.top,
-                             static_cast<unsigned>(aw), static_cast<unsigned>(ah), False);
-            else
-                XPutImage(d.display, d.window, d.gc, d.image,
-                          area.left, area.top, area.left, area.top,
-                          static_cast<unsigned>(aw), static_cast<unsigned>(ah));
-
-            XFlush(d.display);
-        }
-    }
-
-    if (bmRaw) bmRaw->release();
-    rtRaw->release();
+    const auto& area = frame.area;
+    const auto aw = static_cast<unsigned>(area.right - area.left);
+    const auto ah = static_cast<unsigned>(area.bottom - area.top);
+    if (d.usingShm)
+        XShmPutImage(d.display, d.window, d.gc, d.image, area.left, area.top, area.left, area.top, aw, ah, False);
+    else
+        XPutImage(d.display, d.window, d.gc, d.image, area.left, area.top, area.left, area.top, aw, ah);
+    XFlush(d.display);
 }
 
 // ---------------------------------------------------------------------------
 // X11PopupMenu
 // ---------------------------------------------------------------------------
 
+// The 8-bit buffer of a small window (menu, tooltip, dialog): a plain XImage
+// made on first use - these never resize while shown.
+static gmpi::cpugfx::DestSurface imageSurface(Display* display, Visual* visual, int depth, XImage*& image, int w, int h)
+{
+    if (!image)
+    {
+        auto* data = static_cast<char*>(std::calloc(size_t(w) * h, 4));
+        if (data)
+            image = XCreateImage(display, visual, depth, ZPixmap, 0, data, w, h, 32, w * 4);
+        if (!image && data)
+            std::free(data);
+    }
+    if (!image)
+        return {};
+    return { reinterpret_cast<uint8_t*>(image->data), image->bytes_per_line, w, h,
+             gmpi::cpugfx::PixelEncoding::Bgra8888 };
+}
+
+// Paints a small window and puts it on screen.
+static void paintWindow(Display* display, Visual* visual, int depth, gmpi::cpugfx::Factory& factory,
+                        Window window, GC gc, XImage*& image, int w, int h,
+                        const std::function<void(gmpi::cpugfx::RenderTarget&)>& paint)
+{
+    const auto dst = imageSurface(display, visual, depth, image, w, h);
+    if (dst.pixels && gmpi::cpugfx::paintInto(factory, dst, w, h, paint))
+        XPutImage(display, window, gc, image, 0, 0, 0, 0, unsigned(w), unsigned(h));
+    XFlush(display);
+}
+
 int X11PopupMenu::itemTop(int index) const
 {
-    int top = kMenuPadV;
-    for (int i = 0; i < index && i < (int)items().size(); ++i)
-        top += items()[i].separator ? kMenuSeparatorHeight : kMenuItemHeight;
-    return top;
+    return gmpi::popupmenu::itemTop(items(), index);
 }
 
 int X11PopupMenu::measuredHeight() const
@@ -1620,119 +1529,10 @@ void X11PopupMenu::present()
     if (!d.display || !window_ || width_ <= 0 || height_ <= 0)
         return;
 
-    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
-    factory_.createCpuRenderTarget({ uint32_t(width_), uint32_t(height_) }, 0, &rtRaw, 96.0f);
-    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
-    if (!rt)
+    paintWindow(d.display, d.visual, d.depth, factory_, window_, gc_, image_, width_, height_, [&](gmpi::cpugfx::RenderTarget& rt)
     {
-        if (rtRaw) rtRaw->release();
-        return;
-    }
-
-    rt->beginDraw();
-
-    auto brush = [&](gmpi::drawing::Color c)
-    {
-        gmpi::drawing::api::ISolidColorBrush* b{};
-        rt->createSolidColorBrush(&c, nullptr, &b);
-        return b;
-    };
-
-    // Same palette as the Wayland menu, deliberately.
-    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
-    rt->clear(&bg);
-
-    auto* ink    = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
-    auto* grey   = brush({ 0.45f, 0.46f, 0.50f, 1.0f });
-    auto* hilite = brush({ 0.16f, 0.42f, 0.75f, 1.0f });
-    auto* rule   = brush({ 0.28f, 0.29f, 0.32f, 1.0f });
-
-    for (size_t i = 0; i < items().size(); ++i)
-    {
-        const auto& item = items()[i];
-        const float top = float(itemTop(int(i)));
-
-        if (item.separator)
-        {
-            if (rule)
-            {
-                const gmpi::drawing::Rect r{ 6.f, top + kMenuSeparatorHeight * 0.5f,
-                                             float(width_) - 6.f,
-                                             top + kMenuSeparatorHeight * 0.5f + 1.f };
-                rt->fillRectangle(&r, rule);
-            }
-            continue;
-        }
-
-        if (int(i) == hovered_ && !item.grayed && hilite)
-        {
-            const gmpi::drawing::Rect r{ 3.f, top, float(width_) - 3.f, top + kMenuItemHeight };
-            rt->fillRectangle(&r, hilite);
-        }
-
-        auto* fg = item.grayed ? grey : ink;
-        if (!fg || !font_)
-            continue;
-
-        if (item.ticked)
-        {
-            const char* tick = "\xe2\x9c\x93";
-            const gmpi::drawing::Rect r{ 8.f, top + 3.f, 26.f, top + kMenuItemHeight };
-            rt->drawTextU(tick, 3, font_, &r, fg, 0);
-        }
-
-        const gmpi::drawing::Rect r{ float(kMenuTickGutter) + 2.f, top + 3.f,
-                                     float(width_) - kMenuArrowGutter, top + kMenuItemHeight };
-        rt->drawTextU(item.label.c_str(), uint32_t(item.label.size()), font_, &r, fg, 0);
-
-        if (!item.submenu.empty())
-        {
-            const char* arrow = "\xe2\x80\xba";
-            const gmpi::drawing::Rect a{ float(width_) - 20.f, top + 3.f,
-                                         float(width_) - 6.f, top + kMenuItemHeight };
-            rt->drawTextU(arrow, 3, font_, &a, fg, 0);
-        }
-    }
-
-    if (ink)    ink->release();
-    if (grey)   grey->release();
-    if (hilite) hilite->release();
-    if (rule)   rule->release();
-
-    rt->endDraw();
-
-    gmpi::drawing::api::IBitmap* bmRaw{};
-    rt->getBitmap(&bmRaw);
-    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
-    {
-        if (!image_)
-        {
-            auto* data = static_cast<char*>(std::calloc(size_t(width_) * height_, 4));
-            if (data)
-                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
-                                      data, width_, height_, 32, width_ * 4);
-            if (!image_ && data)
-                std::free(data);
-        }
-
-        if (image_)
-        {
-            const auto& s = bm->surface;
-            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
-            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
-                                                   image_->bytes_per_line, width_, height_,
-                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
-            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, width_, height_ });
-
-            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0,
-                      unsigned(width_), unsigned(height_));
-        }
-    }
-
-    if (bmRaw) bmRaw->release();
-    rtRaw->release();
-
-    XFlush(d.display);
+        gmpi::popupmenu::render(&rt, items(), font_, width_, hovered_);
+    });
 }
 
 void X11PopupMenu::destroyWindow()
@@ -2216,48 +2016,10 @@ void X11Tooltip::present(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Factory& fa
     if (!d.display || !window_)
         return;
 
-    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
-    factory.createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
-    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
-    if (!rt)
+    paintWindow(d.display, d.visual, d.depth, factory, window_, gc_, image_, w_, h_, [&](gmpi::cpugfx::RenderTarget& rt)
     {
-        if (rtRaw) rtRaw->release();
-        return;
-    }
-
-    rt->beginDraw();
-    gmpi::tooltip::Model::render(rt, text_, font_, float(w_), float(h_));
-    rt->endDraw();
-
-    gmpi::drawing::api::IBitmap* bmRaw{};
-    rt->getBitmap(&bmRaw);
-    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
-    {
-        if (!image_)
-        {
-            auto* data = static_cast<char*>(std::calloc(size_t(w_) * h_, 4));
-            if (data)
-                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
-                                      data, w_, h_, 32, w_ * 4);
-            if (!image_ && data)
-                std::free(data);
-        }
-
-        if (image_)
-        {
-            const auto& s = bm->surface;
-            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
-            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
-                                                   image_->bytes_per_line, w_, h_,
-                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
-            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
-            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0, unsigned(w_), unsigned(h_));
-        }
-    }
-
-    if (bmRaw) bmRaw->release();
-    rtRaw->release();
-    XFlush(d.display);
+        gmpi::tooltip::Model::render(&rt, text_, font_, float(w_), float(h_));
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2333,52 +2095,8 @@ void X11ColorDialog::present()
     if (!d.display || !window_)
         return;
 
-    const int w = model_.contentWidth();
-    const int h = model_.contentHeight();
-
-    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
-    factory_.createCpuRenderTarget({ uint32_t(w), uint32_t(h) }, 0, &rtRaw, 96.0f);
-    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
-    if (!rt)
-    {
-        if (rtRaw) rtRaw->release();
-        return;
-    }
-
-    rt->beginDraw();
-    gmpi::colorpicker::render(rt, model_, font_, hoveredButton_);
-    rt->endDraw();
-
-    gmpi::drawing::api::IBitmap* bmRaw{};
-    rt->getBitmap(&bmRaw);
-    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
-    {
-        if (!image_)
-        {
-            auto* data = static_cast<char*>(std::calloc(size_t(w) * h, 4));
-            if (data)
-                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
-                                      data, w, h, 32, w * 4);
-            if (!image_ && data)
-                std::free(data);
-        }
-
-        if (image_)
-        {
-            const auto& s = bm->surface;
-            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
-            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
-                                                   image_->bytes_per_line, w, h,
-                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
-            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w, h });
-            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0, unsigned(w), unsigned(h));
-        }
-    }
-
-    if (bmRaw) bmRaw->release();
-    rtRaw->release();
-
-    XFlush(d.display);
+    paintWindow(d.display, d.visual, d.depth, factory_, window_, gc_, image_, model_.contentWidth(), model_.contentHeight(),
+                [&](gmpi::cpugfx::RenderTarget& rt) { gmpi::colorpicker::render(&rt, model_, font_, hoveredButton_); });
 }
 
 void X11ColorDialog::destroyWindow()
@@ -2531,51 +2249,12 @@ X11StockDialog::X11StockDialog(X11DrawingFrame::Impl& frame, gmpi::cpugfx::Facto
 
 void X11StockDialog::layout()
 {
-    // Measure the message so a long one gets a taller box rather than a clipped
-    // one. Without a font we cannot measure, so fall back to a fixed height.
-    float textH = 40.0f;
-    if (font_)
-    {
-        gmpi::drawing::Size sz{};
-        if (font_->getTextExtentU(text_.c_str(), int32_t(text_.size()),
-                                  float(kDialogTextWidth), &sz) == gmpi::ReturnCode::Ok)
-            textH = (std::max)(20.0f, sz.height);
-    }
-
-    w_ = kDialogTextWidth + 2 * kDialogMargin;
-    h_ = kDialogMargin + int(textH) + 24 + kDialogButtonH + kDialogMargin;
-
-    // buttons right-aligned along the bottom, first one rightmost so the default
-    // sits where the eye lands
-    int x = w_ - kDialogMargin;
-    const int y = h_ - kDialogMargin - kDialogButtonH;
-    for (auto& b : buttons_)
-    {
-        // Measured once here rather than per frame; present() also centres the
-        // label with it. Without a font there is nothing to measure and nothing
-        // to draw either, so the floor width is the whole answer.
-        b.labelSize = {};
-        if (font_)
-            font_->getTextExtentU(b.label.c_str(), int32_t(b.label.size()),
-                                  float(kDialogTextWidth), &b.labelSize);
-
-        const int bw = (std::max)(kDialogButtonMinW,
-                                  int(std::ceil(b.labelSize.width)) + 2 * kDialogButtonPadH);
-        x -= bw;
-        b.rect = { float(x), float(y), float(x + bw), float(y + kDialogButtonH) };
-        x -= kDialogButtonGap;
-    }
+    gmpi::stockdialog::layout(text_, font_, buttons_, w_, h_);
 }
 
 int X11StockDialog::buttonAt(int x, int y) const
 {
-    for (size_t i = 0; i < buttons_.size(); ++i)
-    {
-        const auto& r = buttons_[i].rect;
-        if (x >= r.left && x < r.right && y >= r.top && y < r.bottom)
-            return int(i);
-    }
-    return -1;
+    return gmpi::stockdialog::buttonAt(buttons_, x, y);
 }
 
 gmpi::ReturnCode X11StockDialog::showAsync(gmpi::api::IUnknown* callback)
@@ -2662,95 +2341,10 @@ void X11StockDialog::present()
     if (!d.display || !window_ || w_ <= 0 || h_ <= 0)
         return;
 
-    gmpi::drawing::api::IBitmapRenderTarget* rtRaw{};
-    factory_.createCpuRenderTarget({ uint32_t(w_), uint32_t(h_) }, 0, &rtRaw, 96.0f);
-    auto* rt = dynamic_cast<gmpi::cpugfx::RenderTarget*>(rtRaw);
-    if (!rt)
+    paintWindow(d.display, d.visual, d.depth, factory_, window_, gc_, image_, w_, h_, [&](gmpi::cpugfx::RenderTarget& rt)
     {
-        if (rtRaw) rtRaw->release();
-        return;
-    }
-
-    rt->beginDraw();
-
-    auto brush = [&](gmpi::drawing::Color c)
-    {
-        gmpi::drawing::api::ISolidColorBrush* b{};
-        rt->createSolidColorBrush(&c, nullptr, &b);
-        return b;
-    };
-
-    const gmpi::drawing::Color bg{ 0.16f, 0.17f, 0.19f, 1.0f };
-    rt->clear(&bg);
-
-    auto* ink     = brush({ 0.92f, 0.93f, 0.95f, 1.0f });
-    auto* face    = brush({ 0.24f, 0.25f, 0.28f, 1.0f });
-    auto* faceHot = brush({ 0.30f, 0.44f, 0.68f, 1.0f });
-    auto* edge    = brush({ 0.38f, 0.39f, 0.43f, 1.0f });
-
-    if (font_ && ink)
-    {
-        const gmpi::drawing::Rect tr{ float(kDialogMargin), float(kDialogMargin),
-                                      float(kDialogMargin + kDialogTextWidth),
-                                      float(h_ - kDialogMargin - kDialogButtonH - 12) };
-        rt->drawTextU(text_.c_str(), uint32_t(text_.size()), font_, &tr, ink, 0);
-    }
-
-    for (size_t i = 0; i < buttons_.size(); ++i)
-    {
-        const auto& b = buttons_[i];
-        if (auto* fill = (int(i) == hovered_) ? faceHot : face; fill)
-            rt->fillRectangle(&b.rect, fill);
-        if (edge)
-            rt->drawRectangle(&b.rect, edge, 1.0f, nullptr);
-
-        if (font_ && ink)
-        {
-            // See the matching note in the Wayland backend on why the shared
-            // menu font is left alone rather than given Center alignment.
-            const auto o = labelOrigin(b);
-            const gmpi::drawing::Rect lr{ o.x, o.y, b.rect.right, b.rect.bottom };
-            rt->drawTextU(b.label.c_str(), uint32_t(b.label.size()), font_, &lr, ink, 0);
-        }
-    }
-
-    if (ink)     ink->release();
-    if (face)    face->release();
-    if (faceHot) faceHot->release();
-    if (edge)    edge->release();
-
-    rt->endDraw();
-
-    gmpi::drawing::api::IBitmap* bmRaw{};
-    rt->getBitmap(&bmRaw);
-    if (auto* bm = dynamic_cast<gmpi::cpugfx::Bitmap*>(bmRaw))
-    {
-        if (!image_)
-        {
-            auto* data = static_cast<char*>(std::calloc(size_t(w_) * h_, 4));
-            if (data)
-                image_ = XCreateImage(d.display, d.visual, d.depth, ZPixmap, 0,
-                                      data, w_, h_, 32, w_ * 4);
-            if (!image_ && data)
-                std::free(data);
-        }
-
-        if (image_)
-        {
-            const auto& s = bm->surface;
-            const gmpi::cpugfx::SourceSurface src{ s.pixels, s.stridePixels, s.width, s.height };
-            const gmpi::cpugfx::DestSurface   dst{ reinterpret_cast<uint8_t*>(image_->data),
-                                                   image_->bytes_per_line, w_, h_,
-                                                   gmpi::cpugfx::PixelEncoding::Bgra8888 };
-            gmpi::cpugfx::encodeDirtyRect(src, dst, gmpi::drawing::RectL{ 0, 0, w_, h_ });
-            XPutImage(d.display, window_, gc_, image_, 0, 0, 0, 0, unsigned(w_), unsigned(h_));
-        }
-    }
-
-    if (bmRaw) bmRaw->release();
-    rtRaw->release();
-
-    XFlush(d.display);
+        gmpi::stockdialog::render(&rt, text_, buttons_, font_, hovered_, h_);
+    });
 }
 
 void X11StockDialog::destroyWindow()

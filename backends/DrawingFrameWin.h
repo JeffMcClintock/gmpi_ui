@@ -11,6 +11,7 @@
 #include <memory>
 #include <chrono>
 #include <span>
+#include <utility>
 #include <dxgi1_6.h>
 #include <d3d11_1.h>
 #include <dcomp.h>
@@ -136,6 +137,14 @@ public:
 	std::span<const gmpi::drawing::RectL> get() const
 	{
 		return { rects.data(), rects.size() };
+	}
+
+	// Hands over everything queued and leaves the queue empty, so a paint can
+	// run over the taken rects while new ones (queued by the client as it
+	// paints) accumulate separately for the next frame.
+	std::vector<gmpi::drawing::RectL> take()
+	{
+		return std::exchange(rects, {});
 	}
 
 	void add(gmpi::drawing::RectL rect);
@@ -473,12 +482,22 @@ public:
 	// SE's call sites; new code should call PaintFrame directly.
 	void Paint(std::span<gmpi::drawing::RectL> dirty) { PaintFrame(dirty); }
 	// Drain-and-paint helper used by non-WM_PAINT-driven hosts (e.g. HostedView's
-	// SwapChainPanel timer): if there are queued dirty rects, paint them and clear.
+	// SwapChainPanel timer): if there are queued dirty rects, paint them.
+	//
+	// The queue is TAKEN before painting, not painted in place and cleared
+	// after. A client may invalidate while it paints -- SE's TiDE panel, told
+	// mid-render that a knob moved over it, asks for a full repaint so it can
+	// show its previous face while the new one traces -- and that rect used to
+	// land in the queue during Paint() and be thrown away by the clear right
+	// after, leaving stale pixels (a dragged module's selection adorner
+	// smeared across the panel) until something outside a paint invalidated
+	// again. Taking also keeps the span valid: a push_back into the vector
+	// being iterated could reallocate under it.
 	void PaintQueuedDirtyRects()
 	{
 		if (!hasDirtyRects()) return;
-		Paint(getDirtyRects());
-		clearDirtyRects();
+		auto dirty = backBufferDirtyRects.take();
+		Paint(dirty);
 	}
 
 	// IDrawingHost

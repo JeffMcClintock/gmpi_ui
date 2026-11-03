@@ -212,6 +212,14 @@ struct Button
 	Button(std::string_view caption, gmpi::drawing::Rect bounds = {});
 };
 
+// A determinate progress bar (see builder::ProgressBarView): bind view->fraction to a State<float> in 0..1.
+struct ProgressBar
+{
+	gmpi::ui::builder::ProgressBarView* view = {};
+
+	ProgressBar(gmpi::drawing::Rect bounds = {});
+};
+
 // A row of page titles (see builder::TabBarView):
 //
 //     TabBar tabs({ "Audio", "MIDI" }, { l, t, r, t + 40 });

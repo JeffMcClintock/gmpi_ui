@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include "builders.h"
 #include "forms.h"
@@ -558,7 +559,8 @@ void ButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas)
 	// colour that is guaranteed to contrast with it is the same gesture in
 	// both, with no second set of theme tokens to keep in step.
 	const float lift = pressed ? 0.28f : (hovered ? 0.12f : 0.0f);
-	const auto face = gmpi::drawing::interpolateColor(theme.controlBackground, theme.controlText, lift);
+	const auto textColor = accent ? theme.accentText : theme.controlText;
+	const auto face = gmpi::drawing::interpolateColor(accent ? theme.accent : theme.controlBackground, textColor, lift);
 
 	{
 		auto shapeStyle = new primitive::ShapeStyle();
@@ -569,7 +571,7 @@ void ButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas)
 		// for a control whose affordance is a chevron or a caret, but a button
 		// has neither. Without the outline it is invisible until hovered, which
 		// is precisely when a button no longer needs to advertise itself.
-		shapeStyle->strokeColor = theme.separator;
+		shapeStyle->strokeColor = accent ? gmpi::drawing::Colors::TransparentBlack : theme.separator;
 		shapeStyle->fillColor = face;
 		canvas.add(shapeStyle);
 
@@ -579,7 +581,7 @@ void ButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas)
 
 	{
 		auto textStyle = new primitive::TextBoxStyle(
-			theme.controlText
+			textColor
 			, gmpi::drawing::Colors::TransparentBlack
 		);
 		textStyle->textAlignment = (int)gmpi::drawing::TextAlignment::Center;
@@ -631,6 +633,39 @@ void ButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas)
 			if (onClick)
 				onClick();
 		};
+}
+
+ProgressBarView::ProgressBarView(gmpi::drawing::Rect pbounds) : bounds(pbounds)
+{
+	fraction.addObserver([this]()
+		{
+			setDirty();
+		});
+}
+
+void ProgressBarView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
+{
+	const auto& theme = currentTheme();
+	const auto r = getBounds();
+	const float radius = 0.5f * (r.bottom - r.top);
+
+	auto track = new primitive::ShapeStyle();
+	track->strokeColor = gmpi::drawing::Colors::TransparentBlack;
+	track->fillColor = theme.controlBackground;
+	canvas.add(track);
+	canvas.add(new primitive::RoundedRectangle(track, r, radius, radius));
+
+	const float f = std::clamp(fraction.get(), 0.0f, 1.0f);
+	if (f <= 0.0f)
+		return;
+
+	auto fill = new primitive::ShapeStyle();
+	fill->strokeColor = gmpi::drawing::Colors::TransparentBlack;
+	fill->fillColor = theme.accent;
+	canvas.add(fill);
+	auto bar = r;
+	bar.right = bar.left + std::max(2 * radius, f * (r.right - r.left));
+	canvas.add(new primitive::RoundedRectangle(fill, bar, radius, radius));
 }
 
 void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const

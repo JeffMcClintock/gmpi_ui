@@ -264,6 +264,14 @@ Button::Button(std::string_view caption, gmpi::drawing::Rect bounds)
 	result.push_back(std::move(button));
 }
 
+ProgressBar::ProgressBar(gmpi::drawing::Rect bounds)
+{
+	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
+	auto bar = std::make_unique<gmpi::ui::builder::ProgressBarView>(bounds);
+	view = bar.get();
+	result.push_back(std::move(bar));
+}
+
 TabBar::TabBar(std::vector<std::string> titles, gmpi::drawing::Rect bounds)
 {
 	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;

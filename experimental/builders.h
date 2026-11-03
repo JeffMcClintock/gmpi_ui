@@ -511,6 +511,28 @@ struct ButtonView : public View
 	// and Render is what installs the callbacks that write these.
 	mutable bool hovered = false;
 	mutable bool pressed = false;
+
+	// WinUI's AccentButtonStyle: the one default action on a page, filled with theme.accent.
+	bool accent = false;
+};
+
+// A determinate progress bar: a track with the accent filling 'fraction' (0..1) of it from the left.
+struct ProgressBarView : public View
+{
+	gmpi::drawing::Rect bounds;
+	mutable gmpi_forms::StateRef<float> fraction;
+
+	explicit ProgressBarView(gmpi::drawing::Rect bounds = {});
+
+	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;
+	gmpi::drawing::Rect getBounds() const override
+	{
+		return bounds;
+	}
+	void setBounds(gmpi::drawing::Rect newBounds) override
+	{
+		bounds = newBounds;
+	}
 };
 
 // A row of page titles, one of them selected - the WinUI Pivot's header: the

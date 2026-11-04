@@ -34,10 +34,14 @@
 namespace gmpi::gpu {
   class Shader;
 
+  inline ClampBounds clampToRect(const ClampBounds& clamp, const IBounds& rect, int x, int y) {
+    return clamp.clamp(static_cast<float>(rect.x() - x), static_cast<float>(rect.y() - y),
+                       static_cast<float>(rect.width()), static_cast<float>(rect.height()));
+  }
+
   inline int numShapePieces(const BaseShape& shape, int x, int y, const std::vector<IBounds>& invalid_rects) {
     auto check_overlap = [x, y, &shape](IBounds invalid_rect) {
-      ClampBounds clamp = shape.clamp.clamp(invalid_rect.x() - x, invalid_rect.y() - y,
-                                            invalid_rect.width(), invalid_rect.height());
+      ClampBounds clamp = clampToRect(shape.clamp, invalid_rect, x, y);
       return !shape.totallyClamped(clamp);
     };
     return std::count_if(invalid_rects.begin(), invalid_rects.end(), check_overlap);
@@ -101,8 +105,7 @@ namespace gmpi::gpu {
     for (const auto& batch : batches) {
       for (const T& shape : *batch.shapes) {
         for (const IBounds& invalid_rect : *batch.invalid_rects) {
-          ClampBounds clamp = shape.clamp.clamp(invalid_rect.x() - batch.x, invalid_rect.y() - batch.y,
-                                                invalid_rect.width(), invalid_rect.height());
+          ClampBounds clamp = clampToRect(shape.clamp, invalid_rect, batch.x, batch.y);
           if (shape.totallyClamped(clamp))
             continue;
 

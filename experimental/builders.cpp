@@ -721,13 +721,17 @@ void FileBrowseButtonView::Render(gmpi_forms::Environment* env, primitive::Canva
 				if (!fileDialog)
 					return;
 
-				std::filesystem::path filename = value.get();
+				const std::filesystem::path filename = value.get();
 
-				fileDialog->setInitialFilename(value.get().c_str());
+				fileDialog->setInitialFilename(filename.filename().string().c_str());
+				const auto folder = filename.has_parent_path() ? filename.parent_path().string() : initialDirectory;
+				if (!folder.empty())
+					fileDialog->setInitialDirectory(folder.c_str());
 
-				// TODO bind to extensions list properly. For now, just use the extension of the current value, if any.
-				if(filename.has_extension())
-					fileDialog->addExtension(filename.extension().string().c_str());
+				for (const auto& [ext, desc] : extensions)
+					fileDialog->addExtension(ext.c_str(), desc.c_str());
+				if (extensions.empty() && filename.has_extension())
+					fileDialog->addExtension(filename.extension().string().substr(1).c_str()); // without the dot
 				fileDialog->addExtension("*");
 
 				fileDialog->showAsync(

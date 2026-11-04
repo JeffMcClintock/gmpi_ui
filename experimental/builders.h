@@ -461,6 +461,11 @@ struct FileBrowseButtonView : public View
 	// exist yet can be typed, and picking an existing one warns before clobbering it.
 	bool saveMode{};
 
+	// File types offered, as {extension without the dot, description}. Empty: the current value's extension, then all files.
+	std::vector<std::pair<std::string, std::string>> extensions;
+	// Folder the dialog opens in when the current value names no file.
+	std::string initialDirectory;
+
 	FileBrowseButtonView(gmpi::drawing::Rect bounds) : bounds(bounds) {}
 
 	void Render(gmpi_forms::Environment* env, gmpi::forms::primitive::Canvas& canvas) const override;

@@ -2723,15 +2723,14 @@ public:
 		if (!extensions.empty())
 		{
 			std::vector<COMDLG_FILTERSPEC> filters;
-			std::vector<std::wstring> specs; // keep wstrings alive
+			std::vector<std::wstring> specs, names; // keep wstrings alive; reserved so c_str() pointers stay valid
+			specs.reserve(extensions.size());
+			names.reserve(extensions.size());
 			for (const auto& [ext, desc] : extensions)
 			{
-				std::wstring spec = L"*." + ext;
-				if (ext == L"*")
-					spec = L"*.*";
-				specs.push_back(spec);
-				const auto& descStr = desc.empty() ? ext : desc;
-				filters.push_back({ descStr.c_str(), specs.back().c_str() });
+				specs.push_back(ext == L"*" ? L"*.*" : L"*." + ext);
+				names.push_back(!desc.empty() ? desc : ext == L"*" ? L"All files" : specs.back());
+				filters.push_back({ names.back().c_str(), specs.back().c_str() });
 			}
 			dialog->SetFileTypes(static_cast<UINT>(filters.size()), filters.data());
 

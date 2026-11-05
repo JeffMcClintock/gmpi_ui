@@ -41,7 +41,7 @@ Every backend implements the same API. The Direct2D, software and GPU backends a
 | GPU | `backends/GpuGfx.h`, `backends/gpu/` | Windows, macOS, Linux | opt-in, see below |
 | JUCE | `backends/JuceGfx.h` | anywhere JUCE runs | |
 
-The Direct2D and CoreGraphics backends are the mature ones, with years of use in shipping plugins. The Linux frames and the GPU backend are recent additions; they pass the test suites but have seen little use outside them yet, so expect rough edges and please report what you find.
+Direct2D and CoreGraphics are the mature backends. The Linux frames and the GPU backend are recent and have seen little real-world use yet, so expect rough edges.
 
 ## Linux
 
@@ -52,9 +52,7 @@ Linux has two window frames, one per display protocol, and a plugin editor can b
 | X11 | `backends/DrawingFrameX11.h/.cpp` | Xlib, XShm, Xshape, xkbcommon |
 | Wayland | `backends/DrawingFrameWayland.h` | wayland-client, wayland-cursor, xkbcommon, libdecor |
 
-Both draw with the software backend by default (text through FreeType and HarfBuzz) and present with shared memory; both can present through the GPU backend instead (Vulkan). Both provide the whole `IDialogHost` surface: popup menus, tooltips, in-place text edit, the colour picker, child windows, clipboard, and file dialogs through the XDG desktop portal (D-Bus). The Wayland frame has been exercised mainly on Mutter and Weston, and X11 on Xvfb and Xorg; other compositors are untested.
-
-The Linux tests and demos live in `tests/` (`run.sh` builds and runs them against a private X server or a nested Wayland compositor).
+Both draw with the software backend by default (text through FreeType and HarfBuzz) and present with shared memory; both can present through the GPU backend instead (Vulkan). Both provide the whole `IDialogHost` surface: popup menus, tooltips, in-place text edit, the colour picker, child windows, clipboard, and file dialogs through the XDG desktop portal (D-Bus). Tested on Mutter and Weston (Wayland) and Xorg (X11); other compositors are untried.
 
 ## GPU backend
 
@@ -70,7 +68,7 @@ target_compile_definitions(my_target PRIVATE GMPI_UI_GPU_BACKEND=1)
 
 then ask for it at run time: `GMPI_UI_GPU=1` in the environment, or `gmpi::gpugfx::hostPreference()` from the host's own settings (the environment variable, 1 or 0, overrides the preference). Frames built with `GMPI_UI_GPU_BACKEND` then present through it: the Windows native-window frame (`DxDrawingFrameHwnd`), macOS (`DrawingFrameMac`), X11 and Wayland. A machine that cannot run the renderer keeps the default backend.
 
-It is a few weeks old. It matches the Direct2D reference images in the test suite and runs the headless benchmarks (`examples/WinBench`, `MacBench`, `WaylandBench`) on one machine per platform, but it has not yet been through a shipping plugin on real hardware variety: driver behaviour, swap-chain resizing and the text cache under long sessions are the places to watch. Direct2D and CoreGraphics stay the defaults for that reason.
+It is new and has not yet shipped in a plugin or been run on a wide range of GPUs and drivers, which is why Direct2D and CoreGraphics stay the defaults.
 
 It also offers an extension the other backends answer `NoSupport` to: shader brushes, whose colour comes from a fragment shader the module supplies (`GmpiApiShaders.h`).
 

@@ -15,11 +15,11 @@ GMPI Drawing:
 * Has a permissive open-source license
 * An open standard. No fees, contracts or NDAs
 * Has cross-platform support (Windows, macOS and Linux)
-* The native backends need nothing but the standard OS features and the standard C++ library
+* The Windows and macOS backends need nothing but the standard OS features and the standard C++ library; Linux adds a few common system libraries (see below)
 * A clean and bloat-free API surface
 * Provides all APIs in both C++ and in pure portable 'C' for maximum compatibility
 * Uses the platforms native drawing (Cocoa / Direct-2D) to minimise overhead and build times.
-* Optional GPU backend (Direct3D 12 / Metal / Vulkan) with custom shader brushes
+* Optional GPU backend (Direct3D 12 / Metal / Vulkan) with custom shader brushes - new, and lightly tested so far
 * Optional JUCE backend (juce::Graphics) for use inside JUCE projects and on other platforms
 * Text in any languages via UTF-8
 * Color emojis
@@ -41,6 +41,21 @@ Every backend implements the same API. The Direct2D, software and GPU backends a
 | GPU | `backends/GpuGfx.h`, `backends/gpu/` | Windows, macOS, Linux | opt-in, see below |
 | JUCE | `backends/JuceGfx.h` | anywhere JUCE runs | |
 
+The Direct2D and CoreGraphics backends are the mature ones, with years of use in shipping plugins. The Linux frames and the GPU backend are recent additions; they pass the test suites but have seen little use outside them yet, so expect rough edges and please report what you find.
+
+## Linux
+
+Linux has two window frames, one per display protocol, and a plugin editor can be embedded through either (VST3 hands an X11 window id or, from SDK 3.8, a `wl_surface`; [docs/vst3-linux-editor.md](docs/vst3-linux-editor.md) covers both):
+
+| Frame | Source | Needs |
+|---|---|---|
+| X11 | `backends/DrawingFrameX11.h/.cpp` | Xlib, XShm, Xshape, xkbcommon |
+| Wayland | `backends/DrawingFrameWayland.h` | wayland-client, wayland-cursor, xkbcommon, libdecor |
+
+Both draw with the software backend by default (text through FreeType and HarfBuzz) and present with shared memory; both can present through the GPU backend instead (Vulkan). Both provide the whole `IDialogHost` surface: popup menus, tooltips, in-place text edit, the colour picker, child windows, clipboard, and file dialogs through the XDG desktop portal (D-Bus). The Wayland frame has been exercised mainly on Mutter and Weston, and X11 on Xvfb and Xorg; other compositors are untested.
+
+The Linux tests and demos live in `tests/` (`run.sh` builds and runs them against a private X server or a nested Wayland compositor).
+
 ## GPU backend
 
 `backends/GpuGfx.h` draws through gmpi_ui's own GPU renderer (`backends/gpu/`, absorbed from [Visage](https://github.com/VitalAudio/visage)) over a vendored subset of [bgfx](https://github.com/bkaradzic/bgfx): Direct3D 12 on Windows, Metal on macOS, Vulkan on Linux. Like the Direct2D and software backends it works in premultiplied linear half-float, and it draws text with the software backend's text engine.
@@ -54,6 +69,8 @@ target_compile_definitions(my_target PRIVATE GMPI_UI_GPU_BACKEND=1)
 ```
 
 then ask for it at run time: `GMPI_UI_GPU=1` in the environment, or `gmpi::gpugfx::hostPreference()` from the host's own settings (the environment variable, 1 or 0, overrides the preference). Frames built with `GMPI_UI_GPU_BACKEND` then present through it: the Windows native-window frame (`DxDrawingFrameHwnd`), macOS (`DrawingFrameMac`), X11 and Wayland. A machine that cannot run the renderer keeps the default backend.
+
+It is a few weeks old. It matches the Direct2D reference images in the test suite and runs the headless benchmarks (`examples/WinBench`, `MacBench`, `WaylandBench`) on one machine per platform, but it has not yet been through a shipping plugin on real hardware variety: driver behaviour, swap-chain resizing and the text cache under long sessions are the places to watch. Direct2D and CoreGraphics stay the defaults for that reason.
 
 It also offers an extension the other backends answer `NoSupport` to: shader brushes, whose colour comes from a fragment shader the module supplies (`GmpiApiShaders.h`).
 

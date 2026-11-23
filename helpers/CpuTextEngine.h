@@ -1586,9 +1586,10 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
              + std::to_string(int(style)) + "/" + std::to_string(int(stretch));
     }
 
-    std::shared_ptr<detail::FontFace> loadFace(const char* family, FontWeight weight, FontStyle style, FontStretch stretch)
+    std::shared_ptr<detail::FontFace> loadFace(const char* family, FontWeight weight, FontStyle style, FontStretch stretch, bool exactFamily = false)
     {
-        const auto requestKey = cacheKey(family, weight, style, stretch);
+        // A substituted face must not satisfy a later exact request, so the two cache apart.
+        const auto requestKey = cacheKey(family, weight, style, stretch) + (exactFamily ? "/exact" : "");
         if (auto it = requestCache.find(requestKey); it != requestCache.end())
             return it->second;
 
@@ -1600,6 +1601,7 @@ class CpuTextEngine final : public cpugfx::ICpuTextEngine
         request.weight = weight;
         request.style = style;
         request.stretch = stretch;
+        request.exactFamily = exactFamily;
 
         FontData data;
         if (!fontProvider(request, data) || !data)
@@ -1788,7 +1790,8 @@ public:
     {
         *returnTextFormat = {};
 
-        auto face = loadFace(fontFamilyName, fontWeight, fontStyle, fontStretch);
+        const bool exactFamily = (fontFlags & int32_t(FontFlags::ExactFamily)) != 0;
+        auto face = loadFace(fontFamilyName, fontWeight, fontStyle, fontStretch, exactFamily);
         if (!face)
             return ReturnCode::Fail;
 

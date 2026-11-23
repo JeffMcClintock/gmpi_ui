@@ -639,12 +639,25 @@ inline bool hasEmojiPresentation(uint32_t c)
         || (c >= 0x1F1E6 && c <= 0x1F1FF);  // regional indicators (flags)
 }
 
+// CSS-style generic names, which fontconfig resolves to whatever is installed.
+inline bool isGenericFamily(const std::string& family)
+{
+    for (const char* generic : { "system-ui", "sans-serif", "sans", "serif", "monospace", "mono", "cursive", "fantasy", "emoji" })
+    {
+        if (FcStrCmpIgnoreCase(reinterpret_cast<const FcChar8*>(family.c_str()), reinterpret_cast<const FcChar8*>(generic)) == 0)
+            return true;
+    }
+    return false;
+}
+
 // One FcFontMatch. Returns the matched file, and whether it really covers the
 // codepoint — FcFontMatch always returns something, coverage or not.
 inline bool matchFontFile(const FontRequest& request, const std::string& family,
-                          std::string& returnPath, int& returnFaceIndex, bool& returnCovers)
+                          std::string& returnPath, int& returnFaceIndex, bool& returnCovers,
+                          bool& returnIsRequestedFamily)
 {
     returnCovers = false;
+    returnIsRequestedFamily = false;
 
     FcPattern* pattern = FcPatternCreate();
     if (!pattern)
@@ -677,6 +690,19 @@ inline bool matchFontFile(const FontRequest& request, const std::string& family,
     FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
     FcDefaultSubstitute(pattern);
 
+    // The family asked for plus its configured aliases (Arial -> Liberation Sans) bind strongly;
+    // the generic fallbacks fontconfig appends (DejaVu Sans, ...) bind weakly.
+    std::vector<std::string> wantedFamilies;
+    for (int i = 0; ; ++i)
+    {
+        FcValue value{};
+        FcValueBinding binding{};
+        if (FcPatternGetWithBinding(pattern, FC_FAMILY, i, &value, &binding) != FcResultMatch)
+            break;
+        if (value.type == FcTypeString && binding != FcValueBindingWeak)
+            wantedFamilies.emplace_back(reinterpret_cast<const char*>(value.u.s));
+    }
+
     FcResult result{};
     FcPattern* matched = FcFontMatch(nullptr, pattern, &result);
     FcPatternDestroy(pattern);
@@ -696,6 +722,19 @@ inline bool matchFontFile(const FontRequest& request, const std::string& family,
         FcCharSet* got{};
         if (FcPatternGetCharSet(matched, FC_CHARSET, 0, &got) == FcResultMatch && got)
             returnCovers = FcCharSetHasChar(got, request.mustCoverCodepoint) != FcFalse;
+    }
+
+    FcChar8* matchedFamily{};
+    for (int i = 0; !returnIsRequestedFamily && FcPatternGetString(matched, FC_FAMILY, i, &matchedFamily) == FcResultMatch; ++i)
+    {
+        for (const auto& wanted : wantedFamilies)
+        {
+            if (FcStrCmpIgnoreCase(matchedFamily, reinterpret_cast<const FcChar8*>(wanted.c_str())) == 0)
+            {
+                returnIsRequestedFamily = true;
+                break;
+            }
+        }
     }
 
     FcPatternDestroy(matched);
@@ -733,8 +772,14 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
         std::string candidate;
         int candidateIndex{};
         bool covers{};
-        if (!detail::matchFontFile(request, families[i], candidate, candidateIndex, covers))
+        bool isRequestedFamily{};
+        if (!detail::matchFontFile(request, families[i], candidate, candidateIndex, covers, isRequestedFamily))
             continue;
+
+        // FcFontMatch always answers. An exact request wants the family itself, an alias of it, or a generic.
+        if (request.exactFamily && request.mustCoverCodepoint == 0 && !isRequestedFamily
+            && !detail::isGenericFamily(requested))
+            return false;
 
         // Keep the first answer as a floor, then hold out for real coverage:
         // if no emoji font is installed, the monochrome glyph beats nothing.

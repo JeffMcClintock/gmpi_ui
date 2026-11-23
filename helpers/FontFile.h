@@ -33,6 +33,9 @@ struct FontRequest
     // this codepoint, for fallback across scripts. No single font covers Latin,
     // CJK and emoji, so text has to be split into runs by covering font.
     uint32_t mustCoverCodepoint{};
+
+    // FontFlags::ExactFamily: fail rather than return a substitute for a family that is not installed.
+    bool exactFamily{};
 };
 
 struct FontData

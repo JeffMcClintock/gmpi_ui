@@ -329,6 +329,38 @@ public:
         return windowsFont;
     }
 
+    // CoreText substitutes for a family it does not have rather than failing, so compare what came back.
+    static bool isFamilyInstalled(const char* pfontFamilyName)
+    {
+        const std::string family = fontSubstitute(pfontFamilyName);
+        if (family == "system-ui")
+            return true;
+
+        CFStringRef wanted = CFStringCreateWithCString(kCFAllocatorDefault, family.c_str(), kCFStringEncodingUTF8);
+        if (!wanted)
+            return false;
+
+        CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFDictionarySetValue(attrs, kCTFontFamilyNameAttribute, wanted);
+        CTFontDescriptorRef descriptor = CTFontDescriptorCreateWithAttributes(attrs);
+        CFRelease(attrs);
+
+        bool installed = false;
+        if (CTFontRef font = CTFontCreateWithFontDescriptor(descriptor, 12.0, nullptr))
+        {
+            if (CFStringRef resolved = CTFontCopyFamilyName(font))
+            {
+                installed = CFStringCompare(resolved, wanted, kCFCompareCaseInsensitive) == kCFCompareEqualTo;
+                CFRelease(resolved);
+            }
+            CFRelease(font);
+        }
+        CFRelease(descriptor);
+        CFRelease(wanted);
+        return installed;
+    }
+
     TextFormat(const char* pfontFamilyName, gmpi::drawing::FontWeight pfontWeight, gmpi::drawing::FontStyle pfontStyle, gmpi::drawing::FontStretch pfontStretch, float pfontSize) :
         fontWeight(pfontWeight)
         , fontStyle(pfontStyle)
@@ -2790,6 +2822,11 @@ inline float emSizeForFlags(const char* fontFamilyName, gmpi::drawing::FontWeigh
 
 inline gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, gmpi::drawing::FontWeight fontWeight, gmpi::drawing::FontStyle fontStyle, gmpi::drawing::FontStretch fontStretch, float fontSize, int32_t fontFlags, gmpi::drawing::api::ITextFormat** textFormat)
 {
+	*textFormat = {};
+
+	if ((fontFlags & static_cast<int32_t>(gmpi::drawing::FontFlags::ExactFamily)) != 0 && !TextFormat::isFamilyInstalled(fontFamilyName))
+		return gmpi::ReturnCode::Fail; // caller is walking a font stack.
+
 	fontSize = emSizeForFlags(fontFamilyName, fontWeight, fontStyle, fontStretch, fontSize, fontFlags);
 
 	gmpi::shared_ptr<gmpi::api::IUnknown> b2;
@@ -2800,6 +2837,11 @@ inline gmpi::ReturnCode Factory::createTextFormat(const char* fontFamilyName, gm
 
 inline gmpi::ReturnCode Factory::createRichTextFormat(const char* markdownText, float fontSize, const char* fontFamilyName, int32_t fontFlags, gmpi::drawing::TextAlignment textAlignment, gmpi::drawing::ParagraphAlignment paragraphAlignment, gmpi::drawing::WordWrapping wordWrapping, float lineSpacing, float baseline, gmpi::drawing::api::IRichTextFormat** richTextFormat)
 {
+	*richTextFormat = {};
+
+	if ((fontFlags & static_cast<int32_t>(gmpi::drawing::FontFlags::ExactFamily)) != 0 && !TextFormat::isFamilyInstalled(fontFamilyName))
+		return gmpi::ReturnCode::Fail; // caller is walking a font stack.
+
 	fontSize = emSizeForFlags(fontFamilyName, gmpi::drawing::FontWeight::Regular, gmpi::drawing::FontStyle::Normal, gmpi::drawing::FontStretch::Normal, fontSize, fontFlags);
 
 	// create a base TextFormat with regular weight/style (markdown controls bold/italic)

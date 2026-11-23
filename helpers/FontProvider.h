@@ -473,6 +473,8 @@ inline bool findFont(const FontRequest& request, FontData& returnFont)
     std::string family = request.familyName;
     if (family == "system-ui")
         family = ".AppleSystemUIFont";
+    else if (const char* generic = macGenericFamily(family.c_str()))
+        family = generic;
 
     CFStringRef name = CFStringCreateWithCString(kCFAllocatorDefault, family.c_str(), kCFStringEncodingUTF8);
     if (!name)

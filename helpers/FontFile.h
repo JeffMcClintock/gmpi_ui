@@ -17,6 +17,9 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#ifdef __APPLE__
+#include <strings.h> // strcasecmp
+#endif
 
 #include "../GmpiApiDrawing.h"
 
@@ -37,6 +40,27 @@ struct FontRequest
     // FontFlags::ExactFamily: fail rather than return a substitute for a family that is not installed.
     bool exactFamily{};
 };
+
+#ifdef __APPLE__
+// CSS generic family -> the macOS family matching what the Direct2D backend picks. Null if not generic.
+inline const char* macGenericFamily(const char* family)
+{
+    static const char* const generics[][2] = {
+        { "serif",      "Times New Roman" },
+        { "sans-serif", "Arial" },
+        { "monospace",  "Courier New" },
+        { "cursive",    "Apple Chancery" },
+        { "fantasy",    "Papyrus" },
+    };
+
+    for (const auto& generic : generics)
+    {
+        if (strcasecmp(family, generic[0]) == 0)
+            return generic[1];
+    }
+    return nullptr;
+}
+#endif
 
 struct FontData
 {

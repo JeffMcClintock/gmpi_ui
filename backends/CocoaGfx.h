@@ -30,6 +30,7 @@
 #include <ImageIO/ImageIO.h>
 #include "../Drawing.h"
 #include "../backends/Gfx_base.h"
+#include "../helpers/FontFile.h"
 #include "MarkdownParser.h"
 #define USE_BACKING_BUFFER 1
 
@@ -319,6 +320,9 @@ public:
             {"Palatino Linotype",   "Palatino"},
             {"Book Antiqua",        "Palatino"},
         };
+
+        if (const char* generic = gmpi::drawing::macGenericFamily(windowsFont))
+            return generic;
 
         const auto it = substitutes.find(windowsFont);
         if (it != substitutes.end())

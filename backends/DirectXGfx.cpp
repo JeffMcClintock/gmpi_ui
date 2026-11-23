@@ -441,6 +441,9 @@ gmpi::ReturnCode Factory_base::createTextFormat(
 
 	if(it == info.availableFonts.end())
 	{
+		if ((fontFlags & (int32_t)gmpi::drawing::FontFlags::ExactFamily) != 0)
+			return gmpi::ReturnCode::Fail; // caller is walking a font stack.
+
 		it = info.availableFonts.find("arial"); // must be lowercase here.
 	}
 

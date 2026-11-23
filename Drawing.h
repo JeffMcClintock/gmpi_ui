@@ -1539,6 +1539,9 @@ public:
 
 		constexpr std::string_view fallBackFontFamilyName = "Arial";
 
+		// First installed family in the stack wins. ExactFamily stops a backend substituting for a missing one.
+		const auto exactFlags = static_cast<int32_t>(flags) | static_cast<int32_t>(FontFlags::ExactFamily);
+
 		TextFormat returnTextFormat;
 		for (const auto fontFamilyName : fontFamilies)
 		{
@@ -1548,7 +1551,7 @@ public:
 				fontStyle,
 				fontStretch,
 				bodyHeight,
-				static_cast<int32_t>(flags),
+				exactFlags,
 				AccessPtr::put(returnTextFormat)
 			);
 
@@ -1586,6 +1589,8 @@ public:
 
 		constexpr std::string_view fallBackFontFamilyName = "Arial";
 
+		const auto exactFlags = static_cast<int32_t>(flags) | static_cast<int32_t>(FontFlags::ExactFamily);
+
 		RichTextFormat returnFormat;
 		for (const auto fontFamilyName : fontFamilies)
 		{
@@ -1593,7 +1598,7 @@ public:
 				markdownText.data(),
 				bodyHeight,
 				fontFamilyName.data(),
-				static_cast<int32_t>(flags),
+				exactFlags,
 				textAlignment,
 				paragraphAlignment,
 				wordWrapping,

@@ -1424,7 +1424,12 @@ public:
 			}
 
 			if (!found)
+			{
+				if ((fontFlags & static_cast<int32_t>(drawing::FontFlags::ExactFamily)) != 0)
+					return ReturnCode::Fail; // caller is walking a font stack.
+
 				family = juce::Font::getDefaultSansSerifFontName();
+			}
 		}
 
 		int styleFlags = juce::Font::plain;

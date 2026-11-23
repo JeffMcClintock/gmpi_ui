@@ -69,6 +69,7 @@ enum class FontFlags : int32_t
     BodyHeight = 0,   // height specifies the body-height of the font
     CapHeight = 1,    // height specifies the cap-height of the font
     SystemHeight = 2, // height is interpreted by the OS, results in uneven heights between different fonts.
+    ExactFamily = 4,  // fail if the family is not installed, rather than substituting another font. Combine with a height flag.
 };
 
 enum class TextAlignment : int32_t

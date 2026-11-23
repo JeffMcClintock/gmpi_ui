@@ -77,6 +77,7 @@ enum GMPI_FontFlags
     GMPI_FONT_FLAGS_BODY_HEIGHT   = 0, // height specifies the body-height of the font
     GMPI_FONT_FLAGS_CAP_HEIGHT    = 1, // height specifies the cap-height of the font
     GMPI_FONT_FLAGS_SYSTEM_HEIGHT = 2, // height is interpreted by the OS, results in uneven heights between different fonts.
+    GMPI_FONT_FLAGS_EXACT_FAMILY  = 4, // fail if the family is not installed, rather than substituting another font. Combine with a height flag.
 };
 
 enum GMPI_TextAlignment

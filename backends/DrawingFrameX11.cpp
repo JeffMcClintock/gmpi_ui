@@ -1242,9 +1242,9 @@ void X11DrawingFrame::processEvents()
             if (!d.inputClient)
                 break;
 
-            if (const auto vk = linuxkeys::navigationKeyToVk(uint32_t(keysym)))
+            if (const auto key = linuxkeys::nonCharacterKey(uint32_t(keysym)))
             {
-                d.inputClient->onKeyPress(vk);
+                d.inputClient->onKeyPress(key);
             }
             else
             {
@@ -1919,7 +1919,8 @@ void X11KeyListener::handleKey(uint32_t keysym, uint32_t utf32, int32_t flags, b
         return;
     }
 
-    const int32_t key = utf32 ? int32_t(utf32) : int32_t(keysym);
+    const auto special = linuxkeys::nonCharacterKey(keysym);
+    const int32_t key = special ? int32_t(special) : utf32 ? int32_t(utf32) : int32_t(keysym);
     if (down)
         cb->onKeyDown(key, flags);
     else

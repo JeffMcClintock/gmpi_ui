@@ -581,24 +581,10 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 	case WM_KEYDOWN:
 		if (inputClient)
 		{
-			switch (wParam)
-			{
-			case VK_RIGHT:
-			case VK_LEFT:
-			case VK_UP:
-			case VK_DOWN:
-			// Delete is not a character key, so TranslateMessage never synthesises a
-			// WM_CHAR for it and the case above cannot see it -- which is why the
-			// editor's delete-the-selection handler was unreachable on Windows.
-			// Backspace and Escape need no entry here: they DO produce a WM_CHAR
-			// (0x08, 0x1B) and already arrive that way.
-			//
-			// The virtual-key code is passed straight through, as the arrows are:
-			// VK_DELETE is 0x2E and VK_LEFT..VK_DOWN are 0x25..0x28, which is exactly
-			// what the client switches on (SynthEditLib ViewBase::onKey).
-			case VK_DELETE:
-				inputClient->onKeyPress((wchar_t)wParam);
-			}
+			// arrows and Delete make no WM_CHAR; Backspace and Escape do (0x08, 0x1B).
+			// Not their virtual-key codes: VK_DELETE is '.' and VK_LEFT..VK_DOWN are '%'..'('.
+			if (const auto key = win32::nonCharacterKey(wParam))
+				inputClient->onKeyPress(key);
 		}
 		break;
 
@@ -1971,23 +1957,8 @@ LRESULT PlatformKeyListener::WindowProc(HWND hwnd, UINT message, WPARAM wParam, 
 		// Translate the virtual-key code to a Unicode character
 		int result = ToUnicode(static_cast<UINT>(wParam), static_cast<UINT>((lParam >> 16) & 0xFF), keyboardState, key, 2, 0);
 
-		switch (wParam)
-		{
-		case VK_LEFT:
-			key[0] = 0x25;
-			break;
-		case VK_RIGHT:
-			key[0] = 0x27;
-			break;
-		case VK_DELETE:
-			key[0] = 0x7F;
-			break;
-
-		default:
-			// Handle other keys
-//			key = static_cast<wchar_t>(wParam);
-			break;
-		}
+		if (const auto k = win32::nonCharacterKey(wParam))
+			key[0] = k;
 
 		int32_t flags{};
 

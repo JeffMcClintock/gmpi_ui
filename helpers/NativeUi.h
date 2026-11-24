@@ -103,6 +103,17 @@ enum class PointerFlags : int32_t
 	KeyAlt       = 0x00040000, // Modifier key - <ALT> or <Option>.
 };
 
+// Keys that aren't characters, as IInputClient::onKeyPress and IKeyListenerCallback::onKeyDown receive them.
+// Unicode private-use values, as macOS reports them (NSUpArrowFunctionKey...), so no typed character can be mistaken for one.
+namespace keys
+{
+inline constexpr wchar_t Up     = 0xF700;
+inline constexpr wchar_t Down   = 0xF701;
+inline constexpr wchar_t Left   = 0xF702;
+inline constexpr wchar_t Right  = 0xF703;
+inline constexpr wchar_t Delete = 0xF728; // forward delete; Backspace is 0x08
+}
+
 struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 {
 	// Establish (or sever, when host is null) the connection to the host.

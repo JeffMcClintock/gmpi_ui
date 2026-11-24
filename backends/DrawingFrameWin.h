@@ -711,6 +711,20 @@ inline void beginMouseTracking(HWND hwnd, bool& isTrackingMouse)
 	}
 }
 
+// A key that types no character, as gmpi::api::keys; 0 for any other.
+inline wchar_t nonCharacterKey(WPARAM virtualKey)
+{
+	switch (virtualKey)
+	{
+	case VK_UP:     return gmpi::api::keys::Up;
+	case VK_DOWN:   return gmpi::api::keys::Down;
+	case VK_LEFT:   return gmpi::api::keys::Left;
+	case VK_RIGHT:  return gmpi::api::keys::Right;
+	case VK_DELETE: return gmpi::api::keys::Delete;
+	default:        return 0;
+	}
+}
+
 inline int32_t makePointerFlags(UINT message)
 {
 	int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact)

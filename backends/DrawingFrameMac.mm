@@ -880,30 +880,8 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
 
     if (drawingFrame.inputClient && characters.length > 0)
     {
-        wchar_t c = static_cast<wchar_t>([characters characterAtIndex:0]);
-
-        // MAP macOS FUNCTION KEYS ONTO THE CODES THE SHARED LAYER ALREADY SPEAKS.
-        //
-        // AppKit reports arrows and forward-delete as Unicode PRIVATE-USE values
-        // (NSUpArrowFunctionKey = 0xF700 and friends), while every other backend
-        // delivers Windows virtual-key codes -- ViewBase::onKey switches on 0x25
-        // -0x28 for the arrows and 0x2E for delete. Without this the codes simply
-        // never match: measured 2026-08-28, ESC and the Apple delete key worked
-        // (0x1B and 0x7F/0x08 collide with their VK values by luck) while the
-        // arrows and a PC keyboard's forward-delete did nothing at all.
-        //
-        // Translating HERE rather than in ViewBase keeps the platform knowledge in
-        // the platform backend, which is the same thing SynthEdit's own HostedView
-        // does on Windows when it maps VK_DELETE to 0x7F before passing it down.
-        switch (c)
-        {
-        case NSUpArrowFunctionKey:    c = 0x26; break; // VK_UP
-        case NSDownArrowFunctionKey:  c = 0x28; break; // VK_DOWN
-        case NSLeftArrowFunctionKey:  c = 0x25; break; // VK_LEFT
-        case NSRightArrowFunctionKey: c = 0x27; break; // VK_RIGHT
-        case NSDeleteFunctionKey:     c = 0x2E; break; // VK_DELETE (PC forward-delete)
-        default: break;
-        }
+        // arrows and forward-delete already arrive as gmpi::api::keys (AppKit's NS*FunctionKey values).
+        const wchar_t c = static_cast<wchar_t>([characters characterAtIndex:0]);
         if (drawingFrame.inputClient->onKeyPress(c) == gmpi::ReturnCode::Handled)
             return;
     }

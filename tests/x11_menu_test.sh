@@ -158,9 +158,9 @@ grep -q "^item chosen: 1$" "$OUT/test.log" \
 grep -q "^pointer grab inside the choice: 0$" "$OUT/test.log" \
   || { echo "FAIL: the menu still held the pointer grab while its choice ran (see test.log)"; exit 1; }
 
-# VK_LEFT, VK_DELETE, then a plain 'a'
-grep -q "^client keys: 25 2e 61$" "$OUT/test.log" \
-  || { echo "FAIL: arrow/Delete keys did not reach the client as VK codes (see test.log)"; exit 1; }
+# Left and Delete as gmpi::api::keys, then a plain 'a'
+grep -q "^client keys: f702 f728 61$" "$OUT/test.log" \
+  || { echo "FAIL: arrow/Delete keys did not reach the client as gmpi::api::keys (see test.log)"; exit 1; }
 
 grep -q "^stock dialog created$" "$OUT/test.log" \
   || { echo "FAIL: createStockDialog refused - the plugin frame still has no dialogs"; exit 1; }

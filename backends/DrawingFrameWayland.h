@@ -1799,8 +1799,8 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
     if (!down || !in.client_)
         return;
 
-    if (const auto vk = linuxkeys::navigationKeyToVk(keysym))
-        in.client_->onKeyPress(vk);
+    if (const auto key = linuxkeys::nonCharacterKey(keysym))
+        in.client_->onKeyPress(key);
     else if (utf32)
         in.client_->onKeyPress(static_cast<wchar_t>(utf32));
 }
@@ -3191,7 +3191,8 @@ inline void WaylandKeyListener::onRawKey(uint32_t keysym, uint32_t utf32, int32_
         return;
     }
 
-    const int32_t key = utf32 ? int32_t(utf32) : int32_t(keysym);
+    const auto special = linuxkeys::nonCharacterKey(keysym);
+    const int32_t key = special ? int32_t(special) : utf32 ? int32_t(utf32) : int32_t(keysym);
     if (down)
         cb->onKeyDown(key, flags);
     else

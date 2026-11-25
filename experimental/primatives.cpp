@@ -317,12 +317,13 @@ gmpi::drawing::Rect Portal::getContentRect() const
 
 void Portal::setScroll(float dx, float dy)
 {
-	const auto newTransform = makeTranslation({ bounds.left + dx, bounds.top + dy });
+	// the content is laid out in the parent's coordinates, so only the scroll moves it
+	const auto newTransform = makeTranslation({ dx, dy });
 	if(transform == newTransform) // prevent constant repaints.
 		return;
 
 	transform = newTransform;
-	reverseTransform = makeTranslation({ -bounds.left - dx, -bounds.top - dy });
+	reverseTransform = makeTranslation({ -dx, -dy });
 
 	// The portal's visible area is invariant under scroll — invalidate it once in
 	// parent coords. We bypass our own Invalidate(), which is built for children
@@ -386,8 +387,8 @@ void MousePortal::setScroll(float dx, float dy)
 
 	const auto originalMouse = transformPoint(transform, mousePoint);
 
-	transform = makeTranslation({ bounds.left + dx, bounds.top + dy });
-	reverseTransform = makeTranslation({ -bounds.left - dx, -bounds.top - dy });
+	transform = makeTranslation({ dx, dy });
+	reverseTransform = makeTranslation({ -dx, -dy });
 
 	// recalulate hovered object.
 	if(isHovered && prev != transform)

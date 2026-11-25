@@ -86,10 +86,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # its warnings (unknown '#pragma GCC', among others) out of this build's output.
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${immer_SOURCE_DIR})
 
-# compat/ holds a shim for a SynthEdit SDK header that builders.cpp includes.
-# See compat/it_enum_list.h.
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
-
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     UNICODE _UNICODE
     $<$<CONFIG:Debug>:_DEBUG>

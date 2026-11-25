@@ -401,5 +401,34 @@ TEST_F(TestUI, GridAutoSizeReadsInnerRowFlowGrid)
 	EXPECT_FLOAT_EQ(52.0f, outerKids[0]->getBounds().bottom);
 }
 
+// A ScrollPortal's content is laid out in its parent's coordinates, so only the scroll may move it.
+TEST_F(TestUI, PortalAwayFromOriginMovesContentByScrollOnly)
+{
+	using namespace gmpi::forms::primitive;
+
+	struct Root : IVisualParent, displayList
+	{
+		void Invalidate(gmpi::drawing::Rect) const override {}
+		gmpi_forms::Environment* getEnvironment() override { return {}; }
+		displayList& getDisplayList() override { return *this; }
+		gmpi::drawing::Matrix3x2 getTransform() const override { return {}; }
+	} root;
+
+	const gmpi::drawing::Rect bounds{ 200.0f, 30.0f, 400.0f, 300.0f };
+
+	Portal portal(bounds);
+	portal.parent = &root;
+	portal.setScroll(0.0f, -10.0f);
+	const auto drawn = gmpi::drawing::transformPoint(portal.getTransform(), { 210.0f, 40.0f });
+	EXPECT_FLOAT_EQ(210.0f, drawn.x);
+	EXPECT_FLOAT_EQ(30.0f, drawn.y);
+
+	MousePortal mousePortal(bounds);
+	mousePortal.setScroll(0.0f, -10.0f);
+	const auto hit = gmpi::drawing::transformPoint(mousePortal.reverseTransform, { 210.0f, 30.0f });
+	EXPECT_FLOAT_EQ(210.0f, hit.x);
+	EXPECT_FLOAT_EQ(40.0f, hit.y);
+}
+
 } // namespace UnitTestSynthEdit
 

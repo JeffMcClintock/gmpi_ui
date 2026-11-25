@@ -2,7 +2,7 @@
 #include <filesystem>
 #include "builders.h"
 #include "forms.h"
-#include "it_enum_list.h"
+#include "enum_list.h"
 #include "theme.h"
 
 using namespace gmpi::forms;
@@ -196,7 +196,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 	// Draw the text
 	// get the text for the current value of the enum.
-	const auto enum_str = enum_list_lookup_id(enum_list.get(), enum_value.get()).text;
+	const auto enum_str = enumListLookupId(enum_list.get(), enum_value.get()).text;
 	
 	auto textArea = comboBoxArea;
 	const auto symbol_width = 0.7f * getHeight(comboBoxArea);
@@ -251,7 +251,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 					callback.attach(new gmpi::sdk::PopupMenuCallback(
 						[this](int32_t selectedIndex)
 						{
-							const int32_t selectedId = enum_list_lookup_index(enum_list.get(), selectedIndex).id;
+							const int32_t selectedId = enumListLookupIndex(enum_list.get(), selectedIndex).id;
 
 							// one-way: route the selection through the back-channel (UI -> model).
 							if(validateAndSave)
@@ -261,7 +261,7 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 					// populate combo
 					constexpr int32_t flags{};
-					for(auto& [index, id, text] : it_enum_list2(enum_list.get()))
+					for(auto& [index, id, text] : parseEnumList(enum_list.get()))
 					{
 						combo->addItem(text.c_str(), index, flags, callback.get());
 					}
@@ -795,7 +795,7 @@ void PopupMenuView::Render(gmpi_forms::Environment* env, primitive::Canvas& canv
 			));
 
 			constexpr int32_t flags{};
-			for (auto& [index, id, text] : it_enum_list2(menuItems.get()))
+			for (auto& [index, id, text] : parseEnumList(menuItems.get()))
 			{
 				popupMenu->addItem(text.c_str(), id, flags, callback.get());
 			}
@@ -906,7 +906,7 @@ void ScrollPortal::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 	// the mouse target updates the model, not the portal directly.
 	mt->onMouseWheel_callback = [this, contentBounds](int32_t flags, int32_t delta, gmpi::drawing::Point p)
 		{
-			const auto maxScroll = -(std::max)(0.0f, portal->getContentRect().bottom - getHeight(contentBounds));
+			const auto maxScroll = -(std::max)(0.0f, portal->getContentRect().bottom - contentBounds.bottom);
 			const auto newScroll = std::clamp(scroll_state.get() + delta * 0.2f, maxScroll, 0.0f);
 
 			// the scrollbar owns/drives this state: write the source State directly (StateRef is read-only).

@@ -32,7 +32,6 @@ Files:
 | --- | --- |
 | `DemoForm.h/.cpp` | the Form: model, States, `Body()` |
 | `MainWin32.cpp` | the shell: an overlapped HWND hosting gmpi_ui's Direct2D `DrawingFrame` |
-| `compat/it_enum_list.h` | shim for a SynthEdit SDK header `experimental/builders.cpp` includes |
 
 ## Building
 

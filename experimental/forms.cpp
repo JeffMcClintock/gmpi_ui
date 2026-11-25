@@ -245,7 +245,7 @@ thread_local const Page* currentPage{};
 // a widget declared with no bounds is one row of the Page it is in
 gmpi::drawing::Rect rowBounds(gmpi::drawing::Rect bounds = {})
 {
-	if (bounds.left == 0.0f && bounds.top == 0.0f && bounds.right == 0.0f && bounds.bottom == 0.0f && currentPage)
+	if (bounds == gmpi::drawing::Rect{} && currentPage)
 		bounds.bottom = currentPage->style.rowHeight;
 	return bounds;
 }

@@ -14,8 +14,8 @@
 //     entry reject "abc" without the junk sticking, and lets "0" -> "0.0"
 //     count as no change at all.
 //
-//   * Rebuild on change: invalidateView() re-runs Body() whenever the model,
-//     the bounds or the theme change, so the summary line at the bottom is
+//   * Rebuild on change: Body() re-runs whenever the model, the bounds or the
+//     theme change, so the summary line at the bottom is
 //     simply re-created with fresh text rather than kept in sync piecemeal.
 //
 //   * An IMMUTABLE model with undo/redo. Every committed edit produces a new
@@ -51,18 +51,6 @@ public:
 
     void Body() override;
 
-    // Form's base arrange/render neither keep the bounds nor clear - a Form
-    // subclass owns that. Without these the page has zero bounds and paints black.
-    gmpi::ReturnCode measure(const gmpi::drawing::Size*, gmpi::drawing::Size*) override
-    { return gmpi::ReturnCode::Ok; }
-    gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override;
-    gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* dc) override;
-    gmpi::ReturnCode getClipArea(gmpi::drawing::Rect* returnRect) override
-    {
-        *returnRect = bounds;
-        return gmpi::ReturnCode::Ok;
-    }
-
 private:
     // Every version of the model, oldest first; never empty. history_[cursor_]
     // is the current one; anything after it is what redo would restore.
@@ -81,7 +69,4 @@ private:
 
     // Move the cursor (undo/redo both land here) and rebuild the page.
     void showVersion(std::size_t index);
-
-    gmpi::drawing::Rect bounds{};
-    gmpi::ui::ThemeMode lastRenderedTheme_ = gmpi::ui::ThemeMode::Dark;
 };

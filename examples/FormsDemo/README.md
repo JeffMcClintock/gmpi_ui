@@ -15,8 +15,8 @@ What it demonstrates:
   that receives the user's edit, which the form validates before committing.
   The editor keeps showing the model's value, so `abc` typed into the number
   entry is simply rejected, and `1.50` over `1.5` counts as no change.
-* **Rebuild on change.** `invalidateView()` re-runs `Body()` whenever the
-  model, the bounds or the theme change; the summary line is simply rebuilt.
+* **Rebuild on change.** `Body()` re-runs whenever the model changes
+  (`invalidateView()`), and when the bounds or the theme do; the summary line is simply rebuilt.
 * **An immutable model with undo/redo.** `Model` is a plain value; every
   committed edit appends a new one to an `immer::vector` (a persistent
   structure from [immer](https://github.com/arximboldi/immer), fetched by

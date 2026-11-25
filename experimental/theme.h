@@ -15,10 +15,10 @@ enum class ThemeMode
 // entries at the END.
 struct ColorTheme
 {
-	gmpi::drawing::Color panelBackground;    // background for panels (properties, module browser)
+	gmpi::drawing::Color panelBackground;    // background for panels (properties); Form's default background
 	gmpi::drawing::Color labelText;          // muted text (labels, headings)
 	gmpi::drawing::Color controlText;        // text in editors, combos, buttons, checkboxes
-	gmpi::drawing::Color controlBackground;  // background for editors, combos, buttons, checkboxes
+	gmpi::drawing::Color controlBackground;  // background for editors, combos, buttons, checkboxes; also the module browser and settings pages
 	gmpi::drawing::Color separator;
 	gmpi::drawing::Color scrollbarTrack;
 	gmpi::drawing::Color scrollbarThumb;

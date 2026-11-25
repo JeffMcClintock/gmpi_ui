@@ -12,6 +12,7 @@
 #include "./primatives.h"
 #include "helpers/Timer.h"
 #include "ui_facades.h"
+#include "theme.h"
 
 #define editor_padding 4.f;
 
@@ -46,11 +47,15 @@ protected:
 
 	void DoUpdates();
 	bool viewInvalid = false; // see invalidateView()
+	ThemeMode builtTheme = ThemeMode::Dark; // the theme Body() last ran under
 	void restoreMouseState(gmpi::forms::primitive::Interactor* prevMouseOverObject);
 
 public:
 	gmpi_forms::Environment env;
 	inline static bool darkMode = true;
+
+	// What render() fills the form's bounds with, as a colour of the current theme; nullptr paints nothing.
+	gmpi::drawing::Color ColorTheme::* background = &ColorTheme::panelBackground;
 
 	Form();
 	~Form()
@@ -108,11 +113,16 @@ public:
 		return {};
 	}
 
+	// Paints behind the widgets: fills 'background'. Override to draw more behind them.
+	virtual void renderBackground(gmpi::drawing::Graphics& g);
+
 	// IDrawingClient (setHost is declared under IEditor below; one override serves all three client interfaces)
-	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override { return gmpi::ReturnCode::NoSupport; };
-	gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override; // { return gmpi::ReturnCode::NoSupport; }
-	gmpi::ReturnCode getClipArea(gmpi::drawing::Rect* returnRect) override { return gmpi::ReturnCode::NoSupport; }	// IInputClient
+	// A form fills whatever room it is given, and lays itself out in 'bounds'.
+	gmpi::ReturnCode measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize) override;
+	gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override;
+	// Runs Body() if the view is invalid or the theme changed, then paints the background and the widgets.
+	gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* drawingContext) override;
+	gmpi::ReturnCode getClipArea(gmpi::drawing::Rect* returnRect) override;
 
 	// IInputClient
 	gmpi::ReturnCode setHover(bool isMouseOverMe) override;// { return gmpi::ReturnCode::NoSupport; }

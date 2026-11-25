@@ -36,6 +36,37 @@ void Form::restoreMouseState(gmpi::forms::primitive::Interactor* prevMouseOverOb
 	mouseList::restoreMouseState(prevMouseOverObject);
 }
 
+void Form::renderBackground(gmpi::drawing::Graphics& g)
+{
+	if (!background)
+		return;
+
+	auto brush = g.createSolidColorBrush(currentTheme().*background);
+	g.fillRectangle(gmpi::drawing::empty(bounds) ? g.getAxisAlignedClip() : bounds, brush);
+}
+
+gmpi::ReturnCode Form::measure(const gmpi::drawing::Size* availableSize, gmpi::drawing::Size* returnDesiredSize)
+{
+	*returnDesiredSize = *availableSize;
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode Form::arrange(const gmpi::drawing::Rect* finalRect)
+{
+	if (*finalRect != bounds)
+	{
+		bounds = *finalRect;
+		invalidateView();
+	}
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode Form::getClipArea(gmpi::drawing::Rect* returnRect)
+{
+	*returnRect = bounds;
+	return gmpi::ReturnCode::Ok;
+}
+
 void Form::invalidateView()
 {
 	viewInvalid = true;
@@ -53,6 +84,7 @@ void Form::scrollToTop(std::string_view portalName)
 void Form::renderVisuals()
 {
 	viewInvalid = false;
+	builtTheme = themeModeStorage();
 	gmpi::forms::primitive::displayList::clear();
 	gmpi::forms::primitive::mouseList::clear();
 	gmpi::ui::builder::ViewParent::clear();
@@ -98,10 +130,18 @@ gmpi::ReturnCode Form::render(gmpi::drawing::api::IDeviceContext* drawingContext
 	//const auto originalTransform = g.getTransform();
 	//const auto adjustedTransform = transform * originalTransform;
 	//g.setTransform(adjustedTransform);
-	if (viewInvalid)
+	// A theme change recolours everything, so it rebuilds like a model change. It is noticed only here:
+	// setThemeMode() repaints nothing, so an idle form keeps its colours until something invalidates it.
+	if (viewInvalid || themeModeStorage() != builtTheme)
 		renderVisuals();
 
 	gmpi::drawing::Graphics g(drawingContext);
+
+	std::optional<gmpi::drawing::ClipDrawingToBounds> clip;
+	if (!gmpi::drawing::empty(bounds))
+		clip.emplace(g, bounds);
+
+	renderBackground(g);
 
 	const auto clipRect = g.getAxisAlignedClip();
 

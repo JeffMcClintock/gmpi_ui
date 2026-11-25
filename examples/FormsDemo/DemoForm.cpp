@@ -103,27 +103,6 @@ void DemoForm::showVersion(std::size_t index)
     invalidateView();
 }
 
-gmpi::ReturnCode DemoForm::arrange(const gmpi::drawing::Rect* finalRect)
-{
-    bounds = *finalRect;
-    invalidateView();
-    return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode DemoForm::render(gmpi::drawing::api::IDeviceContext* dc)
-{
-    if (const auto mode = gmpi::ui::themeModeStorage(); mode != lastRenderedTheme_)
-    {
-        lastRenderedTheme_ = mode;
-        renderVisuals();
-    }
-
-    gmpi::drawing::Graphics g(dc);
-    g.clear(gmpi::ui::currentTheme().panelBackground);
-
-    return Form::render(dc);
-}
-
 void DemoForm::Body()
 {
     Page page(bounds, kPageStyle);

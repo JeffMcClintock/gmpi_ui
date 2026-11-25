@@ -307,6 +307,7 @@ struct TextEditView : public View
 	bool rightAlign = false;
 	bool multiLine = false;
 	bool readOnly = false;
+	bool mixed = false; // several values: shows "Multiple values" and edits from empty
 
 	mutable gmpi::shared_ptr<gmpi::api::ITextEdit> textEdit;
 
@@ -329,6 +330,7 @@ struct ComboBoxView : public View
 {
 	gmpi::drawing::Rect bounds;
 	bool readOnly = false;
+	bool mixed = false; // several values: shows "Multiple values"
 	mutable gmpi_forms::StateRef<std::string> enum_list;
 	mutable gmpi_forms::StateRef<int32_t> enum_value;
 
@@ -365,6 +367,7 @@ struct TickBox : public View
 {
 	gmpi::drawing::Rect bounds;
 	bool readOnly = false;
+	bool mixed = false; // several values: shows a dash, and a click ticks
 	mutable gmpi_forms::StateRef<bool> value;
 
 	// new. clean separated one-way back-channel (mirrors TextEditView::validateAndSave).

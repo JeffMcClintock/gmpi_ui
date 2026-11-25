@@ -420,6 +420,7 @@ struct TextBoxStyle : public Child
 
 	std::string fontFamily = "system-ui"; // OS system UI font by default
 	float bodyHeight = 12; // i.e. text size
+	gmpi::drawing::FontStyle fontStyle = gmpi::drawing::FontStyle::Normal;
 	float fixedLineSpacing = 0.0f; // 0.0f = auto.
 	int textAlignment = (int) gmpi::drawing::TextAlignment::Leading; //left
 	// Vertical placement within the box. Defaults to Near (the top), which is

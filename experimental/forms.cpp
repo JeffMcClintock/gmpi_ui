@@ -379,7 +379,7 @@ ComboBox::ComboBox(gmpi::drawing::Rect bounds)
 	result.push_back(std::move(combo));
 }
 
-ComboBox::ComboBox(const std::vector<Item>& items, int32_t value, std::function<void(int32_t)> commit)
+ComboBox::ComboBox(const std::vector<Item>& items, std::optional<int32_t> value, std::function<void(int32_t)> commit)
 {
 	std::string enumList; // "text=id,..."
 	for (const auto& item : items)
@@ -387,16 +387,18 @@ ComboBox::ComboBox(const std::vector<Item>& items, int32_t value, std::function<
 
 	auto combo = std::make_unique<gmpi::ui::builder::ComboBoxView>();
 	combo->enum_list.own(std::move(enumList));
-	combo->enum_value.own(value);
+	combo->enum_value.own(value.value_or(0));
+	combo->mixed = !value;
 	combo->validateAndSave = std::move(commit);
 	combo->bounds = rowBounds();
 	view = add(std::move(combo));
 }
 
-TickBox::TickBox(bool value, std::function<void(bool)> commit)
+TickBox::TickBox(std::optional<bool> value, std::function<void(bool)> commit)
 {
 	auto tick = std::make_unique<gmpi::ui::builder::TickBox>();
-	tick->value.own(value);
+	tick->value.own(value.value_or(false));
+	tick->mixed = !value;
 	tick->validateAndSave = std::move(commit);
 	tick->bounds = rowBounds();
 	view = add(std::move(tick));
@@ -445,10 +447,11 @@ TextEdit::TextEdit(
 	result.push_back(std::move(editor));
 }
 
-TextEdit::TextEdit(std::string value, std::function<void(const std::string&)> commit)
+TextEdit::TextEdit(std::optional<std::string> value, std::function<void(const std::string&)> commit)
 {
 	auto editor = std::make_unique<gmpi::ui::builder::TextEditView>();
-	editor->text.own(std::move(value));
+	editor->mixed = !value;
+	editor->text.own(value ? std::move(*value) : std::string{});
 	editor->validateAndSave = std::move(commit);
 	editor->bounds = rowBounds();
 	view = add(std::move(editor));

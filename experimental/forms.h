@@ -276,8 +276,8 @@ public:
 	};
 
 	ComboBox(gmpi::drawing::Rect bounds);
-	// shows 'value' (an item's id); 'commit' gets the id picked
-	ComboBox(const std::vector<Item>& items, int32_t value, std::function<void(int32_t)> commit);
+	// shows 'value' (an item's id), or "Multiple values" when there is none; 'commit' gets the id picked
+	ComboBox(const std::vector<Item>& items, std::optional<int32_t> value, std::function<void(int32_t)> commit);
 };
 
 // A square box with a tick, at the left of its cell.
@@ -285,8 +285,8 @@ struct TickBox
 {
 	gmpi::ui::builder::TickBox* view = {};
 
-	// shows 'value'; 'commit' gets the value the click asks for
-	TickBox(bool value, std::function<void(bool)> commit);
+	// shows 'value', or a dash when there is none; 'commit' gets the value the click asks for
+	TickBox(std::optional<bool> value, std::function<void(bool)> commit);
 };
 
 // A push button. `onClick` is the whole interface:
@@ -330,9 +330,9 @@ struct TextEdit
 		, std::function <void(const std::string&)> validateAndSave = {}
 	);
 
-	// Shows 'value'; 'commit' gets what the user typed. One-way: the box keeps showing 'value'
-	// until Body() runs again, so a model that rejects the text needs do nothing.
-	TextEdit(std::string value, std::function<void(const std::string&)> commit);
+	// Shows 'value', or "Multiple values" when there is none; 'commit' gets what the user typed. One-way:
+	// the box keeps showing 'value' until Body() runs again, so a model that rejects the text needs do nothing.
+	TextEdit(std::optional<std::string> value, std::function<void(const std::string&)> commit);
 };
 
 } // namespace gmpi::ui

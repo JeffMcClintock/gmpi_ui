@@ -9,6 +9,18 @@ using namespace gmpi::forms;
 
 namespace gmpi::ui::builder
 {
+namespace
+{
+// What an editor shows for a selection whose values differ: muted italic, so no value can be mistaken for it.
+constexpr const char* multipleValues = "Multiple values";
+
+primitive::TextBoxStyle* multipleValuesStyle(const ColorTheme& theme)
+{
+	auto style = new primitive::TextBoxStyle(theme.labelText, gmpi::drawing::Colors::TransparentBlack);
+	style->fontStyle = gmpi::drawing::FontStyle::Italic;
+	return style;
+}
+} // namespace
 
 void ViewParent::doChildLayout()
 {
@@ -85,8 +97,15 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 		canvas.add(backGroundRect);
 	}
 
+	if (mixed)
+	{
+		style = multipleValuesStyle(theme);
+		style->textAlignment = (int)(rightAlign ? gmpi::drawing::TextAlignment::Trailing : gmpi::drawing::TextAlignment::Leading);
+		canvas.add(style);
+	}
+
 	// Draw the text
-	auto tbox = new primitive::TextBox(style, textBoxArea, text.getSource() ? text.get() : "!!!");
+	auto tbox = new primitive::TextBox(style, textBoxArea, mixed ? multipleValues : text.getSource() ? text.get() : "!!!");
 
 	canvas.add(
 		tbox
@@ -121,7 +140,7 @@ void TextEditView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 				// TODO: !!! set font (at least height).
 				textEdit->setAlignment(flags);
-				textEdit->setText(tbox->text.c_str());
+				textEdit->setText(mixed ? "" : tbox->text.c_str());
 
 				textEdit->showAsync(
 					new gmpi::sdk::TextEditCallback
@@ -196,13 +215,19 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 
 	// Draw the text
 	// get the text for the current value of the enum.
-	const auto enum_str = enumListLookupId(enum_list.get(), enum_value.get()).text;
+	const auto enum_str = mixed ? std::string(multipleValues) : enumListLookupId(enum_list.get(), enum_value.get()).text;
 	
 	auto textArea = comboBoxArea;
 	const auto symbol_width = 0.7f * getHeight(comboBoxArea);
 	textArea.right -= symbol_width;
 
-	auto tbox = new primitive::TextBox(style, textArea, enum_str);
+	auto textStyle = style;
+	if (mixed)
+	{
+		textStyle = multipleValuesStyle(theme);
+		canvas.add(textStyle);
+	}
+	auto tbox = new primitive::TextBox(textStyle, textArea, enum_str);
 
 	canvas.add(
 		tbox
@@ -312,7 +337,7 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 	}
 
 	// Draw the text
-	const char* text = value.get() ? "\xE2\x9C\x93" : " ";
+	const char* text = mixed ? "\xE2\x80\x93" : value.get() ? "\xE2\x9C\x93" : " "; // en dash, tick
 
 	auto textbox = new primitive::TextBox(style, textBoxArea, text);
 
@@ -329,7 +354,7 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 				{
 					// one-way: route the toggled value through the back-channel (UI -> model).
 					if(validateAndSave)
-						validateAndSave(!value.get());
+						validateAndSave(mixed || !value.get());
 				};
 
 			// don't work?

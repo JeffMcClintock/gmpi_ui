@@ -29,7 +29,9 @@ Files:
 
 | | |
 | --- | --- |
-| `DemoForm.h/.cpp` | the Form: model, undo history, `Body()` |
+| `DemoForm.h/.cpp` | the Form: the model, and `Body()` describing the page |
+| `History.h` | the undo history: an `immer::vector` of versions and a cursor |
+| `TextHelpers.h` | text to value and back: `trimmed`, `parseDouble`, `niceDoubleToString` |
 | `MainWin32.cpp` | the shell: an overlapped HWND hosting gmpi_ui's Direct2D `DrawingFrame` |
 
 ## Building

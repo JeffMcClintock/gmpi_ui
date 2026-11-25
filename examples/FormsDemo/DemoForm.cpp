@@ -1,11 +1,9 @@
 #include "DemoForm.h"
 
-#include <cstdlib>
 #include <format>
-#include <memory>
-#include <string_view>
 
 #include "experimental/builders.h"
+#include "TextHelpers.h"
 
 using namespace gmpi::ui;
 using gmpi::ui::builder::fr;
@@ -18,54 +16,16 @@ namespace
 const PageStyle kPageStyle{
     .margin = 12.0f, .rowHeight = 22.0f, .headingHeight = 16.0f, .gap = 4.0f, .labelFraction = 0.35f, .scrolls = false };
 
-// "1.5", "100", "0.001" - the shortest text that reads back as the same
-// double. What a number entry should SHOW, as opposed to what the user typed.
-std::string niceDoubleToString(double v)
-{
-    return std::format("{}", v);
-}
-
-// Parse the whole string as a number, allowing surrounding whitespace and
-// nothing else. "12abc" is rejected rather than read as 12.
-bool parseDouble(const std::string& text, double& out)
-{
-    const char* begin = text.c_str();
-    char* end{};
-    const double v = std::strtod(begin, &end);
-
-    if (end == begin)
-        return false;
-
-    while (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')
-        ++end;
-
-    if (*end != '\0')
-        return false;
-
-    out = v;
-    return true;
-}
-
-std::string trimmed(std::string s)
-{
-    const auto isSpace = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
-    size_t b = 0, e = s.size();
-    while (b < e && isSpace(s[b])) ++b;
-    while (e > b && isSpace(s[e - 1])) --e;
-    return s.substr(b, e - b);
-}
-
 } // namespace
 
 DemoForm::DemoForm()
 {
-    // Keyboard shortcuts. The frame delivers WM_CHAR, so a control chord
-    // arrives as the ASCII control code: ctrl+Z is 0x1A, ctrl+Y is 0x19.
+    // The frame delivers WM_CHAR, so a control chord arrives as its ASCII control code.
     setKeyboardHandler([this](std::string glyph)
     {
-        if (glyph == std::string(1, char(0x1A)))
+        if (glyph == "\x1A") // ctrl+Z
             undo();
-        else if (glyph == std::string(1, char(0x19)))
+        else if (glyph == "\x19") // ctrl+Y
             redo();
     });
 }
@@ -76,82 +36,43 @@ DemoForm::~DemoForm()
     clear();
 }
 
-void DemoForm::commit(Model next)
-{
-    // take() and push_back() each return a NEW vector sharing structure with
-    // the old one; the versions they keep are untouched and still addressable.
-    // Truncating first is what discards the redo tail after an undo.
-    history_ = history_.take(cursor_ + 1).push_back(std::move(next));
-    showVersion(history_.size() - 1);
-}
-
-void DemoForm::undo()
-{
-    if (canUndo())
-        showVersion(cursor_ - 1);
-}
-
-void DemoForm::redo()
-{
-    if (canRedo())
-        showVersion(cursor_ + 1);
-}
-
-void DemoForm::showVersion(std::size_t index)
-{
-    cursor_ = index;
-    invalidateView();
-}
-
 void DemoForm::Body()
 {
+    const auto& m = model();
+
     Page page(bounds, kPageStyle);
 
     Heading heading("PROPERTIES");
 
-    // A number entry commits only text that parses as a number AND differs in
-    // value, so retyping "1.50" over "1.5" is a no-op and "abc" is ignored.
+    // Commits only text that is a number AND a different value: "abc", and "1.50" over "1.5", are ignored.
     {
         LabeledRow row("Amount");
-        TextEdit editor(niceDoubleToString(model().amount), [this](const std::string& val)
+        TextEdit editor(niceDoubleToString(m.amount), [this](const std::string& text)
         {
-            double v{};
-            if (parseDouble(val, v) && v != model().amount)
-            {
-                auto next = model();
-                next.amount = v;
-                commit(std::move(next));
-            }
+            if (const auto v = parseDouble(text); v && *v != model().amount)
+                edit([&](Model& next) { next.amount = *v; });
         });
     }
 
     {
         LabeledRow row("Name");
-        TextEdit editor(model().name, [this](const std::string& val)
+        TextEdit editor(m.name, [this](const std::string& text)
         {
-            if (const auto newName = trimmed(val); newName != model().name)
-            {
-                auto next = model();
-                next.name = newName;
-                commit(std::move(next));
-            }
+            if (const auto name = trimmed(text); name != model().name)
+                edit([&](Model& next) { next.name = name; });
         });
     }
 
     {
         LabeledRow row("Enabled");
-        TickBox tickBox(model().enabled, [this](bool newValue)
+        TickBox tickBox(m.enabled, [this](bool on)
         {
-            auto next = model();
-            next.enabled = newValue;
-            commit(std::move(next));
+            edit([on](Model& next) { next.enabled = on; });
         });
     }
 
-    // --- undo / redo ---------------------------------------------------------
-    // A row of two fixed-width buttons and a filler that absorbs the rest. A
-    // button with nothing to do is still drawn (the widget set has no disabled
-    // look) but says so in its caption, and its click is a no-op.
+    // Undo / redo: two fixed-width buttons and a filler. The widget set has no
+    // disabled look, so a button with nothing to do says so in its caption.
     {
         constexpr float kButtonW = 90.0f;
 
@@ -160,25 +81,21 @@ void DemoForm::Body()
             , {}
         );
 
-        Button undo(canUndo() ? "Undo" : "(no undo)");
+        Button undo(history_.canUndo() ? "Undo" : "(no undo)");
         undo.view->onClick = [this] { this->undo(); };
 
-        Button redo(canRedo() ? "Redo" : "(no redo)");
+        Button redo(history_.canRedo() ? "Redo" : "(no redo)");
         redo.view->onClick = [this] { this->redo(); };
 
         Label filler("");
     }
 
-    // --- summary -------------------------------------------------------------
-    // What the model currently holds, so an edit's effect is visible even when
-    // the editor re-shows exactly what was typed. Heading-sized: a label's
-    // text scales with its row, and at editor height this line would not fit.
+    // Summary: what the model holds, at heading size so the line fits.
     Spacer spacer({ 0, 0, 0, kPageStyle.headingHeight });
-    const auto& m = model();
     Label summary(
           std::format("amount = {}   name = \"{}\"   enabled = {}   (version {} of {})",
                       niceDoubleToString(m.amount), m.name, m.enabled ? "true" : "false",
-                      cursor_ + 1, history_.size())
+                      history_.version(), history_.size())
         , { 0, 0, 0, kPageStyle.headingHeight }
     );
 }

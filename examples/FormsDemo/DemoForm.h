@@ -26,14 +26,13 @@
 //     tail), as every editor does. No command objects, no inverse operations:
 //     the history IS the undo stack.
 
-#include <cstddef>
 #include <string>
-
-#include <immer/vector.hpp>
+#include <utility>
 
 #include "GmpiUiDrawing.h"
 #include "experimental/forms.h"
 #include "experimental/theme.h"
+#include "History.h"
 
 // What the page is FOR. A plain value: edits make a new one.
 struct Model
@@ -52,21 +51,20 @@ public:
     void Body() override;
 
 private:
-    // Every version of the model, oldest first; never empty. history_[cursor_]
-    // is the current one; anything after it is what redo would restore.
-    immer::vector<Model> history_{ Model{} };
-    std::size_t          cursor_ = 0;
+    History<Model> history_;
 
-    const Model& model() const { return history_[cursor_]; }
+    const Model& model() const { return history_.current(); }
 
-    bool canUndo() const { return cursor_ > 0; }
-    bool canRedo() const { return cursor_ + 1 < history_.size(); }
-    void undo();
-    void redo();
+    // Commit a copy of the model with 'change' made to it, and rebuild the page.
+    template <class Change>
+    void edit(Change change)
+    {
+        auto next = model();
+        change(next);
+        history_.commit(std::move(next));
+        invalidateView();
+    }
 
-    // Commit a new version: drop any redo tail, append it, rebuild the page.
-    void commit(Model next);
-
-    // Move the cursor (undo/redo both land here) and rebuild the page.
-    void showVersion(std::size_t index);
+    void undo() { if (history_.undo()) invalidateView(); }
+    void redo() { if (history_.redo()) invalidateView(); }
 };

@@ -60,6 +60,8 @@ add_executable(${PROJECT_NAME} WIN32
     MainWin32.cpp
     DemoForm.h
     DemoForm.cpp
+    History.h
+    TextHelpers.h
 
     # The widget set and the Form that hosts it.
     ${GMPI_UI_SDK}/experimental/builders.cpp

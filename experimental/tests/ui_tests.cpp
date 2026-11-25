@@ -430,5 +430,23 @@ TEST_F(TestUI, PortalAwayFromOriginMovesContentByScrollOnly)
 	EXPECT_FLOAT_EQ(40.0f, hit.y);
 }
 
+// A widget can show a value no model holds; a copy of its ref keeps that value alive.
+TEST_F(TestUI, StateRefOwnsAValueNoModelHolds)
+{
+	gmpi_forms::StateRef<std::string> ref;
+	ref.own("first");
+	EXPECT_EQ("first", ref.get());
+
+	const gmpi_forms::StateRef<std::string> copy(ref);
+	ref.own("second");
+	EXPECT_EQ("second", ref.get());
+	EXPECT_EQ("first", copy.get());
+
+	gmpi_forms::State<std::string> model("model");
+	ref.setSource(&model);
+	EXPECT_EQ("model", ref.get());
+	ref.setSource(nullptr);
+}
+
 } // namespace UnitTestSynthEdit
 

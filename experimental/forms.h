@@ -4,6 +4,8 @@
 #include <functional>
 #include <vector>
 #include <algorithm>
+#include <optional>
+#include <string_view>
 #include <cassert>
 #include "GmpiUiDrawing.h"
 #include "Core/GmpiApiEditor.h"
@@ -43,6 +45,7 @@ protected:
 	bool onTimer() override;
 
 	void DoUpdates();
+	bool viewInvalid = false; // see invalidateView()
 	void restoreMouseState(gmpi::forms::primitive::Interactor* prevMouseOverObject);
 
 public:
@@ -90,6 +93,10 @@ public:
 	// just redraw, without any changes to visuals
 	void redraw();
 	virtual void renderVisuals();
+	// Runs Body() again before the next paint. Call it when what Body() reads (the model, the bounds) changes.
+	void invalidateView();
+	// Scrolls a ScrollPortal back to the top, e.g. when the page shows a different object.
+	void scrollToTop(std::string_view portalName = {});
 	void setKeyboardHandler(std::function<void(std::string glyph)> pOnKey);
 
 	// IVisualParent
@@ -155,6 +162,60 @@ public:
 	~ScrollPortal();
 };
 
+// The metrics of a Page's rows.
+struct PageStyle
+{
+	float margin = 8.0f;
+	float rowHeight = 16.0f;
+	float headingHeight = 14.0f;
+	float gap = 3.0f;
+	float labelFraction = 0.4f; // of the text width, for LabeledRow
+	bool scrolls = true;
+	std::string scrollName; // when a form has more than one scrolling page
+};
+
+// A page of rows, as a properties pane is: it scrolls, keeps a margin, and stacks what is declared
+// inside it top to bottom. A widget declared with no bounds takes the page's row height.
+//
+//     Page page(area);
+//     Heading _("OSCILLATOR");
+//     { LabeledRow row("Pitch"); TextEdit _(pitchText, [this](auto& s) { setPitch(s); }); }
+class Page
+{
+	const Page* outer;
+	std::optional<ScrollPortal> portal;
+	std::optional<Grid> rows;
+
+public:
+	const PageStyle style;
+	float labelWidth{};
+
+	Page(gmpi::drawing::Rect bounds, PageStyle style = {});
+	~Page();
+
+	// the innermost Page being built, if any
+	static const Page* current();
+};
+
+// A Page row with a label column: the label, then whatever is declared inside it (an editor).
+// With no text, the row's first child is the label column (e.g. an editable name).
+class LabeledRow
+{
+	Grid grid;
+
+public:
+	LabeledRow();
+	LabeledRow(std::string_view label);
+};
+
+// a section heading
+struct Heading
+{
+	gmpi::ui::builder::TextLabelView* view = {};
+
+	Heading(std::string_view text);
+};
+
 struct Spacer
 {
 	gmpi::ui::builder::Seperator* view = {};
@@ -198,7 +259,24 @@ class ComboBox
 public:
 	gmpi::ui::builder::ComboBoxView* view = {};
 
+	struct Item
+	{
+		std::string text;
+		int32_t id{};
+	};
+
 	ComboBox(gmpi::drawing::Rect bounds);
+	// shows 'value' (an item's id); 'commit' gets the id picked
+	ComboBox(const std::vector<Item>& items, int32_t value, std::function<void(int32_t)> commit);
+};
+
+// A square box with a tick, at the left of its cell.
+struct TickBox
+{
+	gmpi::ui::builder::TickBox* view = {};
+
+	// shows 'value'; 'commit' gets the value the click asks for
+	TickBox(bool value, std::function<void(bool)> commit);
 };
 
 // A push button. `onClick` is the whole interface:
@@ -241,6 +319,10 @@ struct TextEdit
 		// new. clean separated one-way back-channel.
 		, std::function <void(const std::string&)> validateAndSave = {}
 	);
+
+	// Shows 'value'; 'commit' gets what the user typed. One-way: the box keeps showing 'value'
+	// until Body() runs again, so a model that rejects the text needs do nothing.
+	TextEdit(std::string value, std::function<void(const std::string&)> commit);
 };
 
 } // namespace gmpi::ui

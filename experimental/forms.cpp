@@ -36,9 +36,23 @@ void Form::restoreMouseState(gmpi::forms::primitive::Interactor* prevMouseOverOb
 	mouseList::restoreMouseState(prevMouseOverObject);
 }
 
+void Form::invalidateView()
+{
+	viewInvalid = true;
+	redraw();
+}
+
+void Form::scrollToTop(std::string_view portalName)
+{
+	const auto path = portalName.empty() ? std::string("ScrollPortal.scroll") : "ScrollPortal.scroll." + std::string(portalName);
+	if (auto scroll = dynamic_cast<gmpi_forms::State<float>*>(env.findState(path)))
+		scroll->set(0.0f);
+}
+
 // map current state => drawables
 void Form::renderVisuals()
 {
+	viewInvalid = false;
 	gmpi::forms::primitive::displayList::clear();
 	gmpi::forms::primitive::mouseList::clear();
 	gmpi::ui::builder::ViewParent::clear();
@@ -84,6 +98,9 @@ gmpi::ReturnCode Form::render(gmpi::drawing::api::IDeviceContext* drawingContext
 	//const auto originalTransform = g.getTransform();
 	//const auto adjustedTransform = transform * originalTransform;
 	//g.setTransform(adjustedTransform);
+	if (viewInvalid)
+		renderVisuals();
+
 	gmpi::drawing::Graphics g(drawingContext);
 
 	const auto clipRect = g.getAxisAlignedClip();
@@ -221,21 +238,87 @@ ToggleSwitch::ToggleSwitch(
 	result.push_back(std::move(temp));
 }
 
+namespace
+{
+thread_local const Page* currentPage{};
+
+// a widget declared with no bounds is one row of the Page it is in
+gmpi::drawing::Rect rowBounds(gmpi::drawing::Rect bounds = {})
+{
+	if (bounds.left == 0.0f && bounds.top == 0.0f && bounds.right == 0.0f && bounds.bottom == 0.0f && currentPage)
+		bounds.bottom = currentPage->style.rowHeight;
+	return bounds;
+}
+
+builder::ViewParent::Initializer labeledRowSpec()
+{
+	const PageStyle style = currentPage ? currentPage->style : PageStyle{};
+	const float labelWidth = currentPage ? currentPage->labelWidth : 100.0f;
+	return { .gap = style.gap, .auto_rows = style.rowHeight, .auto_flow = builder::ViewParent::eAutoFlow::columns, .column_widths = { labelWidth, builder::fr(1.0f) } };
+}
+
+template<typename V>
+V* add(std::unique_ptr<V> view)
+{
+	auto* raw = view.get();
+	builder::ThreadLocalCurrentBuilder->push_back(std::move(view));
+	return raw;
+}
+} // namespace
+
+Page::Page(gmpi::drawing::Rect bounds, PageStyle pstyle) : outer(currentPage), style(std::move(pstyle))
+{
+	constexpr float scrollBarWidth = 12.0f; // builder::ScrollPortal's
+
+	auto text = bounds;
+	text.left += style.margin;
+	text.top += style.margin;
+	text.right -= style.margin;
+	text.bottom -= style.margin;
+
+	if (style.scrolls)
+	{
+		portal.emplace(bounds, style.scrollName);
+		text.right -= scrollBarWidth;
+	}
+
+	labelWidth = style.labelFraction * getWidth(text);
+	rows.emplace(builder::ViewParent::Initializer{ .gap = style.gap, .auto_flow = builder::ViewParent::eAutoFlow::rows, .default_track_size = builder::auto_size() }, text);
+
+	currentPage = this;
+}
+
+Page::~Page()
+{
+	currentPage = outer;
+}
+
+const Page* Page::current()
+{
+	return currentPage;
+}
+
+LabeledRow::LabeledRow() : grid(labeledRowSpec(), {})
+{
+}
+
+LabeledRow::LabeledRow(std::string_view label) : LabeledRow()
+{
+	Label _(label);
+}
+
+Heading::Heading(std::string_view text)
+{
+	Label label(text, { 0.0f, 0.0f, 0.0f, currentPage ? currentPage->style.headingHeight : 14.0f });
+	view = label.view;
+}
+
 Label::Label(std::string_view text, gmpi::drawing::Rect bounds)
 {
-	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
-
 	auto label = std::make_unique<gmpi::ui::builder::TextLabelView>();
-	
-	// own the state myself. Todo constructor that accepts state directly.
-	auto state = std::make_unique< gmpi_forms::State<std::string> >();
-	label->text2.setSource(state.get());
-	state->set((std::string)text);
-	label->selfOwnedStates.push_back(std::move(state));
-
-	label->bounds = bounds;
-	view = label.get();
-	result.push_back(std::move(label));
+	label->text2.own(std::string(text));
+	label->bounds = rowBounds(bounds);
+	view = add(std::move(label));
 }
 
 Label::Label(gmpi::drawing::Rect bounds)
@@ -254,6 +337,29 @@ ComboBox::ComboBox(gmpi::drawing::Rect bounds)
 	combo->bounds = bounds;
 	view = combo.get();
 	result.push_back(std::move(combo));
+}
+
+ComboBox::ComboBox(const std::vector<Item>& items, int32_t value, std::function<void(int32_t)> commit)
+{
+	std::string enumList; // "text=id,..."
+	for (const auto& item : items)
+		enumList += (enumList.empty() ? "" : ",") + item.text + "=" + std::to_string(item.id);
+
+	auto combo = std::make_unique<gmpi::ui::builder::ComboBoxView>();
+	combo->enum_list.own(std::move(enumList));
+	combo->enum_value.own(value);
+	combo->validateAndSave = std::move(commit);
+	combo->bounds = rowBounds();
+	view = add(std::move(combo));
+}
+
+TickBox::TickBox(bool value, std::function<void(bool)> commit)
+{
+	auto tick = std::make_unique<gmpi::ui::builder::TickBox>();
+	tick->value.own(value);
+	tick->validateAndSave = std::move(commit);
+	tick->bounds = rowBounds();
+	view = add(std::move(tick));
 }
 
 Button::Button(std::string_view caption, gmpi::drawing::Rect bounds)
@@ -297,6 +403,15 @@ TextEdit::TextEdit(
 
 	auto& result = *gmpi::ui::builder::ThreadLocalCurrentBuilder;
 	result.push_back(std::move(editor));
+}
+
+TextEdit::TextEdit(std::string value, std::function<void(const std::string&)> commit)
+{
+	auto editor = std::make_unique<gmpi::ui::builder::TextEditView>();
+	editor->text.own(std::move(value));
+	editor->validateAndSave = std::move(commit);
+	editor->bounds = rowBounds();
+	view = add(std::move(editor));
 }
 
 

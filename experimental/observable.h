@@ -2,6 +2,7 @@
 #include <cassert>
 #include <algorithm>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -163,6 +164,17 @@ struct StateRef : public thing
 		state = newStateHolder;
 		if (state)
 			state->watchers.push_back(this);
+		if (owned && owned.get() != state)
+			owned.reset();
+	}
+
+	// Shows a value no model owns, such as a field of an immutable document: the ref keeps a State
+	// of its own. One-way: the value changes when the view is rebuilt with a new one.
+	void own(T value)
+	{
+		auto s = std::make_shared<State<T>>(std::move(value));
+		setSource(s.get());
+		owned = std::move(s);
 	}
 
 	State<T>* getSource() const {
@@ -173,6 +185,7 @@ protected:
 	// ~State() nulls this on any watcher that outlives it -- see there.
 	friend struct State<T>;
 	State<T>* state = {};
+	std::shared_ptr<State<T>> owned; // see own(). Shared, so a copy of this ref keeps it alive too.
 	std::vector < std::function<void(void)> > callbacks;
 };
 } // namespace gmpi_forms

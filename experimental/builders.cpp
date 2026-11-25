@@ -275,11 +275,16 @@ void ComboBoxView::Render(gmpi_forms::Environment* env, primitive::Canvas& canva
 void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) const
 {
 	const auto& theme = currentTheme();
+
+	// a square at the left of the cell
+	auto box = getBounds();
+	box.right = (std::min)(box.right, box.left + getHeight(box));
+
 	// Mac CoreText can fail to render when the text box is too small.
 	// Use a slightly larger rect than the visible background; symmetric
 	// horizontal padding keeps the centred glyph over the tickbox, and
 	// extending only the bottom preserves its top-aligned vertical position.
-	gmpi::drawing::Rect textBoxArea = getBounds();
+	gmpi::drawing::Rect textBoxArea = box;
 	textBoxArea.left   -= 6.f;
 	textBoxArea.right  += 6.f;
 	textBoxArea.bottom += 8.f;
@@ -302,7 +307,7 @@ void TickBox::Render(gmpi_forms::Environment* env, primitive::Canvas& canvas) co
 
 		canvas.add(style2);
 
-		auto backGroundRect = new primitive::RoundedRectangle(style2, getBounds(), radius, radius);
+		auto backGroundRect = new primitive::RoundedRectangle(style2, box, radius, radius);
 		canvas.add(backGroundRect);
 	}
 

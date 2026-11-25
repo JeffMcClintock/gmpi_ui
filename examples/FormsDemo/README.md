@@ -9,15 +9,14 @@ and a tick box - wired the way SynthEdit's PropertiesBrowser wires its rows
 
 What it demonstrates:
 
-* **Layout by grid.** A stack of rows (`auto_size` tracks), each a nested
-  two-column grid: a fixed-width label column and a `1fr` editor column.
-* **One-way bindings.** Widgets read a `gmpi_forms::State` the form owns.
-  Edits arrive through the widget's `validateAndSave` back-channel, where the
-  form validates, updates its model, and only then re-seeds the State. So
-  `abc` typed into the number entry is rejected and the old value restored,
-  and `1.50` over `1.5` counts as no change.
-* **Rebuild-on-dirty rendering.** `Body()` is re-run whenever the model, the
-  bounds or the theme change; the summary line is simply rebuilt.
+* **A page of rows.** `Page` stacks rows, `LabeledRow` gives each a label
+  column, and `Heading` marks a section.
+* **One-way editors.** Each editor is given the model's value and a function
+  that receives the user's edit, which the form validates before committing.
+  The editor keeps showing the model's value, so `abc` typed into the number
+  entry is simply rejected, and `1.50` over `1.5` counts as no change.
+* **Rebuild on change.** `invalidateView()` re-runs `Body()` whenever the
+  model, the bounds or the theme change; the summary line is simply rebuilt.
 * **An immutable model with undo/redo.** `Model` is a plain value; every
   committed edit appends a new one to an `immer::vector` (a persistent
   structure from [immer](https://github.com/arximboldi/immer), fetched by
@@ -30,7 +29,7 @@ Files:
 
 | | |
 | --- | --- |
-| `DemoForm.h/.cpp` | the Form: model, States, `Body()` |
+| `DemoForm.h/.cpp` | the Form: model, undo history, `Body()` |
 | `MainWin32.cpp` | the shell: an overlapped HWND hosting gmpi_ui's Direct2D `DrawingFrame` |
 
 ## Building

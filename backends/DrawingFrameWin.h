@@ -725,6 +725,19 @@ inline wchar_t nonCharacterKey(WPARAM virtualKey)
 	}
 }
 
+// the modifier keys held, as PointerFlags
+inline int32_t keyModifiers()
+{
+	int32_t flags{};
+	if (GetKeyState(VK_SHIFT) < 0)
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
+	if (GetKeyState(VK_CONTROL) < 0)
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
+	if (GetKeyState(VK_MENU) < 0)
+		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
+	return flags;
+}
+
 inline int32_t makePointerFlags(UINT message)
 {
 	int32_t flags = static_cast<int32_t>(gmpi::api::PointerFlags::InContact)
@@ -756,20 +769,7 @@ inline int32_t makePointerFlags(UINT message)
 		break;
 	}
 
-	if(GetKeyState(VK_SHIFT) < 0)
-	{
-		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
-	}
-	if(GetKeyState(VK_CONTROL) < 0)
-	{
-		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
-	}
-	if(GetKeyState(VK_MENU) < 0)
-	{
-		flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
-	}
-
-	return flags;
+	return flags | keyModifiers();
 }
 
 inline int32_t makeWheelFlags(UINT message, WPARAM wParam)

@@ -1244,7 +1244,7 @@ void X11DrawingFrame::processEvents()
 
             if (const auto key = linuxkeys::nonCharacterKey(uint32_t(keysym)))
             {
-                d.inputClient->onKeyPress(key);
+                gmpi::api::sendKeyPress(d.inputClient, key, keyFlags);
             }
             else
             {
@@ -1252,7 +1252,7 @@ void X11DrawingFrame::processEvents()
                 // takes. Anything wider needs an XIM input context - a text edit
                 // in the plugin GUI will want one; a knob never does.
                 for (int i = 0; i < n; ++i)
-                    d.inputClient->onKeyPress(static_cast<wchar_t>(static_cast<unsigned char>(buf[i])));
+                    gmpi::api::sendKeyPress(d.inputClient, static_cast<wchar_t>(static_cast<unsigned char>(buf[i])), keyFlags);
             }
             break;
         }

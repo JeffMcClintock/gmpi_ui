@@ -133,7 +133,7 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	// right-click menu
 	virtual ReturnCode populateContextMenu(gmpi::drawing::Point point, gmpi::api::IUnknown* contextMenuItemsSink) = 0;
 
-	// keyboard events.
+	// keyboard events. Superseded by IInputClient2::onKeyStroke, which also gets the modifier keys.
 	virtual ReturnCode onKeyPress(wchar_t c) = 0;
 
 	// Tooltip text under the pointer. Return Ok and fill returnString to show a tooltip,
@@ -144,6 +144,30 @@ struct DECLSPEC_NOVTABLE IInputClient : gmpi::api::IUnknown
 	inline static const gmpi::api::Guid guid =
 	{ 0xd2d020d1, 0xbcee, 0x49f9, { 0xa1, 0x73, 0x97, 0xbc, 0x64, 0x60, 0xa7, 0x27 } };
 };
+
+// IInputClient plus keys with their modifiers. A client answers both GUIDs; hosts send keys with sendKeyPress().
+struct DECLSPEC_NOVTABLE IInputClient2 : IInputClient
+{
+	// key: a character, or one of gmpi::api::keys. flags: PointerFlags::KeyShift, KeyControl, KeyAlt.
+	virtual ReturnCode onKeyStroke(int32_t key, int32_t flags) = 0;
+
+	// {DF8B1CEC-7347-4B39-BDA1-A6D37A2A2708}
+	inline static const gmpi::api::Guid guid =
+	{ 0xdf8b1cec, 0x7347, 0x4b39, { 0xbd, 0xa1, 0xa6, 0xd3, 0x7a, 0x2a, 0x27, 0x08 } };
+};
+
+// A key to any input client: with its modifiers to an IInputClient2, as a bare character to an older one.
+inline ReturnCode sendKeyPress(IInputClient* client, wchar_t key, int32_t flags)
+{
+	IInputClient2* client2{};
+	if (client->queryInterface(&IInputClient2::guid, reinterpret_cast<void**>(&client2)) == ReturnCode::Ok && client2)
+	{
+		const auto r = client2->onKeyStroke(key, flags);
+		client2->release();
+		return r;
+	}
+	return client->onKeyPress(key);
+}
 
 struct DECLSPEC_NOVTABLE IDrawingHost : gmpi::api::IUnknown
 {

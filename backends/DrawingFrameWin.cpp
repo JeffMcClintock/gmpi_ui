@@ -575,7 +575,7 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 
 	case WM_CHAR:
 		if (inputClient)
-			inputClient->onKeyPress((wchar_t) wParam);
+			gmpi::api::sendKeyPress(inputClient.get(), (wchar_t) wParam, win32::keyModifiers());
 		break;
 
 	case WM_KEYDOWN:
@@ -584,7 +584,7 @@ LRESULT DxDrawingFrameHwnd::WindowProc(
 			// arrows and Delete make no WM_CHAR; Backspace and Escape do (0x08, 0x1B).
 			// Not their virtual-key codes: VK_DELETE is '.' and VK_LEFT..VK_DOWN are '%'..'('.
 			if (const auto key = win32::nonCharacterKey(wParam))
-				inputClient->onKeyPress(key);
+				gmpi::api::sendKeyPress(inputClient.get(), key, win32::keyModifiers());
 		}
 		break;
 
@@ -1960,22 +1960,7 @@ LRESULT PlatformKeyListener::WindowProc(HWND hwnd, UINT message, WPARAM wParam, 
 		if (const auto k = win32::nonCharacterKey(wParam))
 			key[0] = k;
 
-		int32_t flags{};
-
-		if (GetKeyState(VK_SHIFT) < 0)
-		{
-			flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
-		}
-		if (GetKeyState(VK_CONTROL) < 0)
-		{
-			flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
-		}
-		if (GetKeyState(VK_MENU) < 0) // don't work.
-		{
-			flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
-		}
-
-		callback2->onKeyDown(key[0], flags);
+		callback2->onKeyDown(key[0], win32::keyModifiers());
 		break;
 	}
 	break;

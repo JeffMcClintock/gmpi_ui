@@ -1800,9 +1800,9 @@ inline void InputDispatch::keyboardKey(void* data, wl_keyboard*, uint32_t serial
         return;
 
     if (const auto key = linuxkeys::nonCharacterKey(keysym))
-        in.client_->onKeyPress(key);
+        gmpi::api::sendKeyPress(in.client_, key, in.modifierFlags());
     else if (utf32)
-        in.client_->onKeyPress(static_cast<wchar_t>(utf32));
+        gmpi::api::sendKeyPress(in.client_, static_cast<wchar_t>(utf32), in.modifierFlags());
 }
 
 inline void InputDispatch::keyboardEnter(void* data, wl_keyboard*, uint32_t, wl_surface* surf, wl_array*)

@@ -71,7 +71,7 @@ public:
 	GMPI_REFCOUNT
 };
 
-class PluginEditor : public PluginEditorBase, public gmpi::api::IDrawingClient, public gmpi::api::IInputClient
+class PluginEditor : public PluginEditorBase, public gmpi::api::IDrawingClient, public gmpi::api::IInputClient2
 {
 protected:
 	gmpi::drawing::Rect bounds;
@@ -175,9 +175,14 @@ public:
 	{
 		return ReturnCode::Unhandled;
 	}
+	// Override onKeyStroke to get the modifier keys too, or onKeyPress; each default passes the key to the other.
 	gmpi::ReturnCode onKeyPress(wchar_t c) override
 	{
-		return ReturnCode::Unhandled;
+		return passKey(c, 0, false);
+	}
+	gmpi::ReturnCode onKeyStroke(int32_t key, int32_t flags) override
+	{
+		return passKey(key, flags, true);
 	}
 	gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point point, int32_t flags, int32_t delta) override
 	{
@@ -201,10 +206,23 @@ public:
 	{
 		GMPI_QUERYINTERFACE(gmpi::api::IEditor);
 		GMPI_QUERYINTERFACE(gmpi::api::IInputClient);
+		GMPI_QUERYINTERFACE(gmpi::api::IInputClient2);
 		GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
 		return ReturnCode::NoSupport;
 	}
 	GMPI_REFCOUNT
+
+private:
+	bool passingKey{};
+	ReturnCode passKey(int32_t key, int32_t flags, bool toKeyPress)
+	{
+		if (passingKey) // neither is overridden
+			return ReturnCode::Unhandled;
+		passingKey = true;
+		const auto r = toKeyPress ? onKeyPress(static_cast<wchar_t>(key)) : onKeyStroke(key, flags);
+		passingKey = false;
+		return r;
+	}
 };
 
 } // namespace gmpi

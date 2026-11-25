@@ -882,7 +882,9 @@ void* gmpi_ui_create_key_listener(void* parent, int width, int height)
     {
         // arrows and forward-delete already arrive as gmpi::api::keys (AppKit's NS*FunctionKey values).
         const wchar_t c = static_cast<wchar_t>([characters characterAtIndex:0]);
-        if (drawingFrame.inputClient->onKeyPress(c) == gmpi::ReturnCode::Handled)
+        int32_t flags{};
+        applyKeyModifiers(flags, theEvent);
+        if (gmpi::api::sendKeyPress(drawingFrame.inputClient.get(), c, flags) == gmpi::ReturnCode::Handled)
             return;
     }
 

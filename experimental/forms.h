@@ -335,4 +335,21 @@ struct TextEdit
 	TextEdit(std::optional<std::string> value, std::function<void(const std::string&)> commit);
 };
 
+// A number entry. Shows 'value' in the fewest digits that read back the same, or "Multiple values" when there
+// is none; 'commit' gets only a number that differs from 'value', so junk and the same value retyped are ignored.
+struct NumberEdit
+{
+	gmpi::ui::builder::TextEditView* view = {};
+
+	NumberEdit(std::optional<double> value, std::function<void(double)> commit);
+};
+
+// The same, for a whole number.
+struct IntegerEdit
+{
+	gmpi::ui::builder::TextEditView* view = {};
+
+	IntegerEdit(std::optional<int32_t> value, std::function<void(int32_t)> commit);
+};
+
 } // namespace gmpi::ui

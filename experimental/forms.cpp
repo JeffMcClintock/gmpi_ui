@@ -1,3 +1,7 @@
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include "forms.h"
 #include "builders.h"
 #include "helpers/unicode_conversion.h"
@@ -455,6 +459,70 @@ TextEdit::TextEdit(std::optional<std::string> value, std::function<void(const st
 	editor->validateAndSave = std::move(commit);
 	editor->bounds = rowBounds();
 	view = add(std::move(editor));
+}
+
+namespace
+{
+bool onlyBlanks(const char* s)
+{
+	while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+		++s;
+	return *s == '\0';
+}
+
+// the whole of 'text' as a number, else nothing: "12abc" is rejected, not read as 12
+std::optional<double> parseNumber(const std::string& text)
+{
+	char* end{};
+	const double v = std::strtod(text.c_str(), &end);
+	if (end == text.c_str() || !onlyBlanks(end) || !std::isfinite(v))
+		return {};
+	return v;
+}
+
+std::optional<int32_t> parseInteger(const std::string& text)
+{
+	char* end{};
+	const long long v = std::strtoll(text.c_str(), &end, 10);
+	if (end == text.c_str() || !onlyBlanks(end) || v < INT32_MIN || v > INT32_MAX)
+		return {};
+	return static_cast<int32_t>(v);
+}
+
+// the fewest digits that read back as the same double: "1.5", "100", "0.001"
+std::string numberText(double v)
+{
+	char text[32]{};
+	for (int digits = 15; digits <= 17; ++digits)
+	{
+		std::snprintf(text, sizeof text, "%.*g", digits, v);
+		if (std::strtod(text, nullptr) == v)
+			break;
+	}
+	return text;
+}
+
+// a TextEdit showing 'value' as text, that commits what the typed text parses to when that differs from 'value'
+template<typename T>
+builder::TextEditView* addNumberEdit(std::optional<T> value, std::string (*toText)(T), std::optional<T> (*parse)(const std::string&), std::function<void(T)> commit)
+{
+	return TextEdit(value ? toText(*value) : std::optional<std::string>{}
+		, [value, parse, commit = std::move(commit)](const std::string& text)
+		{
+			if (const auto typed = parse(text); typed && typed != value)
+				commit(*typed);
+		}).view;
+}
+} // namespace
+
+NumberEdit::NumberEdit(std::optional<double> value, std::function<void(double)> commit)
+{
+	view = addNumberEdit<double>(value, numberText, parseNumber, std::move(commit));
+}
+
+IntegerEdit::IntegerEdit(std::optional<int32_t> value, std::function<void(int32_t)> commit)
+{
+	view = addNumberEdit<int32_t>(value, [](int32_t v) { return std::to_string(v); }, parseInteger, std::move(commit));
 }
 
 

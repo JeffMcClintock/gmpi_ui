@@ -448,5 +448,73 @@ TEST_F(TestUI, StateRefOwnsAValueNoModelHolds)
 	ref.setSource(nullptr);
 }
 
+// A number entry passes on only text that is a number, and a different one from the value it shows.
+TEST_F(TestUI, NumberEditCommitsOnlyAChangedNumber)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	std::vector<double> committed;
+	gmpi::ui::NumberEdit editor(1.5, [&](double v) { committed.push_back(v); });
+	EXPECT_EQ("1.5", editor.view->text.get());
+	EXPECT_FALSE(editor.view->mixed);
+
+	for (const char* ignored : { "abc", "12abc", "", "  ", "1.50", " 1.5 ", "inf", "nan" })
+		editor.view->validateAndSave(ignored);
+	EXPECT_TRUE(committed.empty());
+
+	editor.view->validateAndSave(" 2.25 ");
+	editor.view->validateAndSave("-1e3");
+	EXPECT_EQ((std::vector<double>{ 2.25, -1000.0 }), committed);
+}
+
+TEST_F(TestUI, NumberEditShowsTheFewestDigitsThatReadBack)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	const auto shown = [](double v) { return gmpi::ui::NumberEdit(v, {}).view->text.get(); };
+
+	EXPECT_EQ("0", shown(0.0));
+	EXPECT_EQ("100", shown(100.0));
+	EXPECT_EQ("0.001", shown(0.001));
+	EXPECT_EQ("0.1", shown(0.1));
+	EXPECT_EQ("1000000", shown(1000000.0));
+	EXPECT_EQ(1.0 / 3.0, std::strtod(shown(1.0 / 3.0).c_str(), nullptr));
+}
+
+// With no single value to show, any number is a change.
+TEST_F(TestUI, NumberEditWithNoValueCommitsAnyNumber)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	std::vector<double> committed;
+	gmpi::ui::NumberEdit editor(std::nullopt, [&](double v) { committed.push_back(v); });
+	EXPECT_TRUE(editor.view->mixed);
+
+	editor.view->validateAndSave("abc");
+	editor.view->validateAndSave("0");
+	EXPECT_EQ((std::vector<double>{ 0.0 }), committed);
+}
+
+TEST_F(TestUI, IntegerEditCommitsOnlyAChangedWholeNumber)
+{
+	gmpi::ui::builder::ViewParent builder;
+	gmpi::ui::builder::ThreadLocalCurrentBuilder = &builder;
+
+	std::vector<int32_t> committed;
+	gmpi::ui::IntegerEdit editor(4, [&](int32_t v) { committed.push_back(v); });
+	EXPECT_EQ("4", editor.view->text.get());
+
+	for (const char* ignored : { "abc", "", "4", " 4 ", "4.5", "4x", "99999999999" })
+		editor.view->validateAndSave(ignored);
+	EXPECT_TRUE(committed.empty());
+
+	editor.view->validateAndSave("-7");
+	editor.view->validateAndSave(" 2147483647 ");
+	EXPECT_EQ((std::vector<int32_t>{ -7, 2147483647 }), committed);
+}
+
 } // namespace UnitTestSynthEdit
 

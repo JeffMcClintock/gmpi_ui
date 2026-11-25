@@ -44,13 +44,12 @@ void DemoForm::Body()
 
     Heading heading("PROPERTIES");
 
-    // Commits only text that is a number AND a different value: "abc", and "1.50" over "1.5", are ignored.
+    // A NumberEdit passes on only a changed number: "abc", and "1.50" over "1.5", are ignored.
     {
         LabeledRow row("Amount");
-        TextEdit editor(niceDoubleToString(m.amount), [this](const std::string& text)
+        NumberEdit editor(m.amount, [this](double v)
         {
-            if (const auto v = parseDouble(text); v && *v != model().amount)
-                edit([&](Model& next) { next.amount = *v; });
+            edit([v](Model& next) { next.amount = v; });
         });
     }
 
@@ -94,7 +93,7 @@ void DemoForm::Body()
     Spacer spacer({ 0, 0, 0, kPageStyle.headingHeight });
     Label summary(
           std::format("amount = {}   name = \"{}\"   enabled = {}   (version {} of {})",
-                      niceDoubleToString(m.amount), m.name, m.enabled ? "true" : "false",
+                      m.amount, m.name, m.enabled ? "true" : "false",
                       history_.version(), history_.size())
         , { 0, 0, 0, kPageStyle.headingHeight }
     );
